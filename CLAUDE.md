@@ -85,7 +85,7 @@ python3 traceroute_simulator.py --routing-dir testing/routing_facts <source> <de
 
 ### Directory Organization
 ```
-show_route/
+traceroute_simulator/
 ├── traceroute_simulator.py        # Main application
 ├── get_routing_info.yml           # Data collection playbook
 ├── testing/                       # Complete test environment

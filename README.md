@@ -39,7 +39,7 @@ A comprehensive network path discovery tool that simulates traceroute behavior u
 1. **Clone the repository**:
    ```bash
    git clone <repository-url>
-   cd show_route
+   cd traceroute_simulator
    ```
 
 2. **Install Python dependencies**:
@@ -524,7 +524,7 @@ We welcome contributions to improve the traceroute simulator!
 ### Project Structure
 
 ```
-show_route/
+traceroute_simulator/
 ├── traceroute_simulator.py      # Main simulator script
 ├── get_routing_info.yml         # Ansible data collection playbook
 ├── testing/                     # Test environment directory

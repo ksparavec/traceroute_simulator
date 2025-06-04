@@ -1,0 +1,41 @@
+---
+# Ansible Playbook for collecting routing information from all Linux routers
+# Each router is contacted to gather routing tables and policy rules as JSON files
+
+- name: Collect routing information from all routers
+  hosts: all 
+  gather_facts: no
+  vars:
+    output_dir: "routing_facts"
+  tasks:
+    - name: Create output directory on Ansible controller
+      delegate_to: localhost
+      file:
+        path: "{{ output_dir }}"
+        state: directory
+        mode: '0755'
+
+    - name: Get routing tables (ip route)
+      command: ip --json route list
+      register: ip_route_output
+
+    - name: Get policy rules (ip rule)
+      command: ip --json rule list
+      register: ip_rule_output
+
+    - name: Save routing tables to file
+      copy:
+        content: "{{ ip_route_output.stdout }}"
+        dest: "{{ output_dir }}/{{ inventory_hostname }}_route.json"
+      delegate_to: localhost
+
+    - name: Save policy rules to file
+      copy:
+        content: "{{ ip_rule_output.stdout }}"
+        dest: "{{ output_dir }}/{{ inventory_hostname }}_rule.json"
+      delegate_to: localhost
+
+# Notes:
+# - Set up the 'linux_routers' group in your inventory file with the desired routers.
+# - After the playbook run, all routing and rule information will be available as individual JSON files
+#   in the 'routing_facts' directory on the controller.

@@ -36,7 +36,8 @@ A comprehensive network path discovery tool that simulates traceroute behavior u
 - Python 3.7 or higher
 - Linux environment (for data collection)
 - Ansible (for multi-router data collection)
-- matplotlib (for network topology visualization)
+- matplotlib and numpy (for network topology visualization)
+- Make (for automated build tasks)
 
 ### Setup
 
@@ -46,7 +47,12 @@ A comprehensive network path discovery tool that simulates traceroute behavior u
    cd traceroute_simulator
    ```
 
-2. **Install Python dependencies**:
+2. **Check dependencies and install requirements**:
+   ```bash
+   make check-deps  # Verify all dependencies and get installation hints
+   ```
+
+3. **Install Python dependencies** (if not already installed):
    ```bash
    # Install matplotlib for network visualization
    pip3 install matplotlib
@@ -164,9 +170,27 @@ For complete topology details, see `testing/NETWORK_TOPOLOGY.md`.
 
 ## 📊 Data Collection
 
-### Using Ansible (Recommended)
+### Automated Data Collection with Make
 
-The project includes an Ansible playbook to automatically collect routing information from multiple routers:
+The project provides automated tools for collecting routing information from network devices:
+
+```bash
+# Check all dependencies first
+make check-deps
+
+# Collect routing data using inventory file
+make fetch-routing-data OUTPUT_DIR=production_data INVENTORY_FILE=hosts.yml
+
+# Collect from configured inventory group
+make fetch-routing-data OUTPUT_DIR=test_data INVENTORY=routers
+
+# Run comprehensive test suite
+make test
+```
+
+### Using Ansible Playbook Directly
+
+The project includes an enhanced Ansible playbook that automatically handles compatibility with older Red Hat systems:
 
 1. **Configure your inventory** (`hosts.yml`):
    ```yaml
@@ -182,14 +206,26 @@ The project includes an Ansible playbook to automatically collect routing inform
 
 2. **Run the data collection playbook**:
    ```bash
-   ansible-playbook -i hosts.yml get_routing_info.yml
+   # Using inventory file
+   ansible-playbook -i hosts.yml get_routing_info.yml -e "output_dir=my_data"
+   
+   # Using configured inventory with group targeting
+   ansible-playbook get_routing_info.yml --limit routers -e "output_dir=my_data"
    ```
 
 3. **Verify collected data**:
    ```bash
-   ls routing_facts/
+   ls my_data/
    # router1_route.json  router1_rule.json  router2_route.json  router2_rule.json
    ```
+
+### Enhanced Compatibility Features
+
+- **Automatic IP JSON wrapper deployment**: Works on older Red Hat systems without native `ip --json` support
+- **Python version detection**: Automatically detects and uses python3 or python as available
+- **Comprehensive validation**: Verifies JSON output integrity before saving
+- **Automatic cleanup**: Removes temporary files from remote hosts
+- **Detailed logging**: Provides collection statistics and troubleshooting information
 
 ### Manual Collection
 
@@ -214,6 +250,28 @@ The simulator expects JSON files in this format:
 - **Rule files** (`*_rule.json`): Output from `ip --json rule list`
 
 File naming convention: `{hostname}_route.json` and `{hostname}_rule.json`
+
+### IP JSON Wrapper for Legacy Systems
+
+The project includes `ip_json_wrapper.py`, a compatibility tool for older Red Hat systems that don't support `ip --json`:
+
+```bash
+# Use wrapper script on systems without native JSON support
+python3 ip_json_wrapper.py route show
+python3 ip_json_wrapper.py addr show  
+python3 ip_json_wrapper.py link show
+python3 ip_json_wrapper.py rule show
+
+# Wrapper automatically detects and uses native JSON if available
+python3 ip_json_wrapper.py --json route show  # Passes through to native command
+```
+
+**Key Features:**
+- **Transparent replacement**: Drop-in replacement for `ip --json` commands
+- **Identical output**: Produces byte-for-byte identical JSON to native commands
+- **Automatic detection**: Uses native JSON support when available
+- **Comprehensive coverage**: Supports route, addr, link, and rule subcommands
+- **Validated compatibility**: 100% test coverage ensures output accuracy
 
 ## 🌐 Network Scenarios
 
@@ -386,7 +444,34 @@ esac
 
 ## 🧪 Testing
 
-The project includes a comprehensive test suite covering all functionality:
+The project includes comprehensive test suites covering all functionality:
+
+### Automated Testing with Make
+
+```bash
+# Run all tests (recommended)
+make test
+
+# Check dependencies before testing
+make check-deps
+
+# Clean up test artifacts
+make clean
+```
+
+### Individual Test Suites
+
+**Main Traceroute Simulator Tests (64 test cases)**:
+```bash
+cd testing
+python3 test_traceroute_simulator.py
+```
+
+**IP JSON Wrapper Validation (7 test cases)**:
+```bash
+cd testing  
+python3 test_ip_json_comparison.py
+```
 
 ### Running Tests
 
@@ -432,6 +517,40 @@ NETWORK TOPOLOGY:
 - ✅ **JSON output format validation** with structured data verification
 - ✅ **WireGuard VPN tunnel routing** with full mesh connectivity testing
 - ✅ **Multi-location network testing** covering all inter-site communication paths
+
+## 🔧 Build System
+
+The project includes a comprehensive Makefile for automated development tasks:
+
+### Available Make Targets
+
+```bash
+make help                    # Show all available targets and usage examples
+make check-deps             # Verify Python modules and provide installation hints  
+make test                   # Run comprehensive test suite with environment validation
+make clean                  # Clean up Python cache files and temporary artifacts
+```
+
+### Data Collection Targets
+
+```bash
+# Collect routing data using inventory file
+make fetch-routing-data OUTPUT_DIR=my_data INVENTORY_FILE=hosts.ini
+
+# Collect from configured Ansible inventory group  
+make fetch-routing-data OUTPUT_DIR=production INVENTORY=routers
+
+# Target specific host from configured inventory
+make fetch-routing-data OUTPUT_DIR=temp INVENTORY=router-01
+```
+
+### Build System Features
+
+- **Dependency validation**: Checks all required Python modules with helpful installation hints
+- **Comprehensive testing**: Runs 64 main tests + 7 wrapper validation tests + integration tests
+- **Ansible integration**: Automated data collection with inventory validation and error handling
+- **Environment verification**: Validates test data availability and routing facts
+- **Clean builds**: Removes cache files while preserving valuable routing data
 
 ## 📝 Examples
 

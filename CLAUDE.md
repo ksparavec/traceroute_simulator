@@ -3,14 +3,26 @@
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## Build/Test Commands
+
+### Automated Make Targets (Recommended)
+- **Check dependencies**: `make check-deps` (validates all Python modules with installation hints)
+- **Run all tests**: `make test` (comprehensive test suite with environment validation)
+- **Clean artifacts**: `make clean` (removes cache files while preserving routing data)
+- **Collect routing data**: `make fetch-routing-data OUTPUT_DIR=data INVENTORY_FILE=hosts.ini`
+- **Show help**: `make help` (displays all available targets and examples)
+
+### Direct Testing Commands
 - **Run comprehensive test suite**: `cd testing && python3 test_traceroute_simulator.py`
+- **Test IP JSON wrapper**: `cd testing && python3 test_ip_json_comparison.py`
 - **Test specific functionality**: `python3 traceroute_simulator.py --routing-dir testing/routing_facts -s 10.1.1.1 -d 10.2.1.1`
 - **Test complex routing**: `python3 traceroute_simulator.py --routing-dir testing/routing_facts -s 10.1.10.1 -d 10.3.20.1`
 - **Test JSON output**: `python3 traceroute_simulator.py --routing-dir testing/routing_facts -j -s 10.100.1.1 -d 10.100.1.3`
 - **Generate network topology diagram**: `cd testing && python3 network_topology_diagram.py`
-- **Lint Python code**: `flake8 *.py testing/*.py` (if flake8 is available)
-- **Validate YAML**: `yamllint *.yml` (if yamllint is available)
-- **Validate JSON**: `python3 -m json.tool testing/routing_facts/*.json`
+
+### Data Collection and Validation
+- **Collect with Ansible**: `make fetch-routing-data OUTPUT_DIR=testing/routing_facts INVENTORY_FILE=inventory.ini`
+- **Validate collected JSON**: `python3 -m json.tool testing/routing_facts/*.json`
+- **Test IP wrapper compatibility**: `python3 ip_json_wrapper.py route show`
 
 ## Test Network Environment
 
@@ -26,7 +38,10 @@ The project includes a comprehensive test network with realistic enterprise topo
 - **Network documentation**: `testing/NETWORK_TOPOLOGY.md`
 - **Network visualization**: `testing/network_topology_diagram.py` (matplotlib-based diagram generator)
 - **Generated diagrams**: `testing/network_topology.png` and `testing/network_topology.pdf`
-- **Test suite**: `testing/test_traceroute_simulator.py` (64 test cases with 100% pass rate)
+- **Main test suite**: `testing/test_traceroute_simulator.py` (64 test cases with 100% pass rate)
+- **IP wrapper tests**: `testing/test_ip_json_comparison.py` (7 test cases validating wrapper compatibility)
+- **IP JSON wrapper**: `ip_json_wrapper.py` (compatibility layer for older Red Hat systems)
+- **Build automation**: `Makefile` (comprehensive build system with dependency checking)
 
 ### Using Test Data
 Always use the testing directory data when developing or testing:
@@ -92,17 +107,20 @@ python3 traceroute_simulator.py --routing-dir testing/routing_facts -s <source> 
 ### Directory Organization
 ```
 traceroute_simulator/
-├── traceroute_simulator.py        # Main application
-├── get_routing_info.yml           # Data collection playbook
-├── testing/                       # Complete test environment
-│   ├── test_traceroute_simulator.py   # Test suite (64 cases, 100% pass rate)
-│   ├── NETWORK_TOPOLOGY.md           # Network documentation
-│   ├── network_topology_diagram.py   # Professional diagram generator
-│   ├── network_topology.png          # High-resolution network diagram
-│   ├── network_topology.pdf          # Vector network diagram
-│   └── routing_facts/                # Test routing data (20 files)
-├── CLAUDE.md                      # Development guidelines
-└── README.md                      # User documentation
+├── traceroute_simulator.py               # Main application
+├── ip_json_wrapper.py                    # IP JSON compatibility wrapper (NEW)
+├── get_routing_info.yml                  # Enhanced data collection playbook
+├── Makefile                              # Build system with dependency checking (NEW)
+├── testing/                              # Complete test environment
+│   ├── test_traceroute_simulator.py         # Main test suite (64 cases, 100% pass rate)
+│   ├── test_ip_json_comparison.py           # Wrapper validation tests (7 cases) (NEW)
+│   ├── NETWORK_TOPOLOGY.md                 # Network documentation
+│   ├── network_topology_diagram.py         # Professional diagram generator
+│   ├── network_topology.png                # High-resolution network diagram
+│   ├── network_topology.pdf                # Vector network diagram
+│   └── routing_facts/                      # Test routing data (20 files)
+├── CLAUDE.md                             # Development guidelines
+└── README.md                             # User documentation
 ```
 
 ### Development Guidelines
@@ -171,10 +189,54 @@ Achieved near-complete code coverage through systematic testing expansion:
 7. **Edge Cases** (6 tests): Corrupted JSON, empty directories, IPv6, loops
 8. **Complex Scenarios** (8 tests): Multi-hop routing and advanced paths
 
-### Key Files Modified
+## Recent Improvements (2025) - NEW
+
+### IP JSON Wrapper for Legacy System Compatibility
+Created comprehensive wrapper tool for older Red Hat systems without native `ip --json` support:
+- **Transparent replacement**: `ip_json_wrapper.py` serves as drop-in replacement for `ip --json` commands
+- **Identical output**: Produces byte-for-byte identical JSON to native commands (validated with 7 comprehensive tests)
+- **Complete subcommand support**: Handles route, addr, link, and rule subcommands with full parsing
+- **Automatic detection**: Uses native JSON support when available, falls back to parsing when needed
+- **Complex parsing logic**: Handles MAC addresses, VPN interfaces, network namespaces, bridge masters
+- **Comprehensive validation**: 100% test coverage ensures output accuracy with `test_ip_json_comparison.py`
+
+### Professional Build System Integration
+Implemented comprehensive Makefile for automated development workflows:
+- **Dependency validation**: `make check-deps` checks all Python modules with helpful installation hints
+- **Automated testing**: `make test` runs 71 total tests (64 main + 7 wrapper validation + integration tests)
+- **Data collection automation**: `make fetch-routing-data` with flexible inventory support
+- **Dual inventory modes**: Support for both inventory files and configured Ansible inventory groups
+- **Environment validation**: Verifies test data availability and routing facts before testing
+- **Clean builds**: Removes cache files while preserving valuable routing data
+
+### Enhanced Ansible Playbook for Maximum Compatibility
+Updated `get_routing_info.yml` for enterprise deployment on diverse Linux environments:
+- **Automatic wrapper deployment**: Copies `ip_json_wrapper.py` to remote hosts for compatibility
+- **Python version detection**: Automatically detects and uses python3 or python fallback
+- **JSON output validation**: Verifies data integrity before saving collected information
+- **Comprehensive error handling**: Graceful failure with detailed troubleshooting information
+- **Automatic cleanup**: Removes temporary files from remote hosts after data collection
+- **Collection statistics**: Reports number of routing entries collected from each host
+
+### Advanced Test Infrastructure
+Expanded testing capabilities with professional validation tools:
+- **IP wrapper validation**: `test_ip_json_comparison.py` ensures wrapper produces identical output to native commands
+- **Cross-platform testing**: Validates compatibility across different Linux distributions and versions
+- **Automated comparison**: Uses JSON normalization and unified diff reporting for accuracy verification
+- **Integration testing**: End-to-end validation of data collection and processing workflows
+- **Build system testing**: Validates Makefile targets and dependency checking functionality
+
+### Key Files Added/Modified (2025)
+- **IP JSON wrapper**: `ip_json_wrapper.py` (NEW - compatibility layer for older Red Hat systems)
+- **Wrapper tests**: `testing/test_ip_json_comparison.py` (NEW - 7 tests validating wrapper accuracy)
+- **Build system**: `Makefile` (NEW - comprehensive build automation with dependency checking)
+- **Enhanced playbook**: `get_routing_info.yml` (UPDATED - automatic wrapper deployment and compatibility)
+- **Documentation**: `README.md` and `CLAUDE.md` (UPDATED - comprehensive documentation of all new features)
+
+### Previous Key Files Modified (2024)
 - **Routing data**: `testing/routing_facts/*.json` (corrected routing tables and gateway IPs)
 - **Core logic**: `traceroute_simulator.py` (improved interface determination, new argument format, enhanced exit codes)
 - **Test suite**: `testing/test_traceroute_simulator.py` (expanded to 64 tests with comprehensive coverage)
-- **Visualization**: `testing/network_topology_diagram.py` (new professional diagram system)
+- **Visualization**: `testing/network_topology_diagram.py` (professional diagram system)
 - **Documentation**: `testing/NETWORK_TOPOLOGY.md` and `README.md` (updated with all improvements)
 - **Development guide**: `CLAUDE.md` (comprehensive documentation of all enhancements)

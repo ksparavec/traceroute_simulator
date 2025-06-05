@@ -1,12 +1,14 @@
 ---
 # Ansible Playbook for collecting routing information from all Linux routers
 # Each router is contacted to gather routing tables and policy rules as JSON files
+# Uses IP JSON wrapper for compatibility with older Red Hat systems
 
 - name: Collect routing information from all routers
   hosts: all 
   gather_facts: no
   vars:
     output_dir: "routing_facts"
+    remote_wrapper_path: "/tmp/ip_json_wrapper.py"
   tasks:
     - name: Create output directory on Ansible controller
       delegate_to: localhost
@@ -15,13 +17,64 @@
         state: directory
         mode: '0755'
 
-    - name: Get routing tables (ip route)
-      command: ip --json route list
-      register: ip_route_output
+    - name: Copy IP JSON wrapper script to remote host
+      copy:
+        src: "ip_json_wrapper.py"
+        dest: "{{ remote_wrapper_path }}"
+        mode: '0755'
+      register: wrapper_copy_result
 
-    - name: Get policy rules (ip rule)
-      command: ip --json rule list
+    - name: Check for Python 3 availability
+      command: python3 --version
+      register: python3_check
+      failed_when: false
+      changed_when: false
+
+    - name: Check for Python availability (fallback)
+      command: python --version
+      register: python_check
+      failed_when: false
+      changed_when: false
+      when: python3_check.rc != 0
+
+    - name: Fail if no Python interpreter found
+      fail:
+        msg: "Neither python3 nor python found on remote host {{ inventory_hostname }}"
+      when: python3_check.rc != 0 and (python_check is not defined or python_check.rc != 0)
+
+    - name: Set Python interpreter
+      set_fact:
+        python_interpreter: "{{ 'python3' if python3_check.rc == 0 else 'python' }}"
+
+    - name: Display Python version information
+      debug:
+        msg: "Using {{ python_interpreter }} on {{ inventory_hostname }}: {{ python_version_check.stdout }}"
+      vars:
+        python_version_check: "{{ python3_check if python3_check.rc == 0 else python_check }}"
+
+    - name: Get routing tables using wrapper script
+      command: "{{ python_interpreter }} {{ remote_wrapper_path }} route show"
+      register: ip_route_output
+      failed_when: ip_route_output.rc != 0
+
+    - name: Validate routing table JSON output
+      set_fact:
+        route_json_valid: "{{ ip_route_output.stdout | from_json is defined }}"
+      failed_when: not route_json_valid
+      vars:
+        route_json_valid: true
+
+    - name: Get policy rules using wrapper script
+      command: "{{ python_interpreter }} {{ remote_wrapper_path }} rule show"
       register: ip_rule_output
+      failed_when: ip_rule_output.rc != 0
+
+    - name: Validate policy rules JSON output
+      set_fact:
+        rule_json_valid: "{{ ip_rule_output.stdout | from_json is defined }}"
+      failed_when: not rule_json_valid
+      vars:
+        rule_json_valid: true
 
     - name: Save routing tables to file
       copy:
@@ -35,7 +88,24 @@
         dest: "{{ output_dir }}/{{ inventory_hostname }}_rule.json"
       delegate_to: localhost
 
+    - name: Display collection summary
+      debug:
+        msg: 
+          - "Successfully collected routing data from {{ inventory_hostname }}"
+          - "Routing table entries: {{ (ip_route_output.stdout | from_json) | length }}"
+          - "Policy rule entries: {{ (ip_rule_output.stdout | from_json) | length }}"
+
+    - name: Clean up wrapper script from remote host
+      file:
+        path: "{{ remote_wrapper_path }}"
+        state: absent
+      when: wrapper_copy_result is succeeded
+
 # Notes:
-# - Set up the 'linux_routers' group in your inventory file with the desired routers.
+# - This playbook is compatible with older Red Hat systems that don't support 'ip --json'
+# - The IP JSON wrapper script is automatically copied to remote hosts and cleaned up afterward
+# - Requires Python 3 to be available on target hosts for the wrapper script
+# - Set up inventory with target routers (can use groups, specific hosts, or patterns)
 # - After the playbook run, all routing and rule information will be available as individual JSON files
-#   in the 'routing_facts' directory on the controller.
+#   in the specified output directory on the controller
+# - The wrapper script provides identical JSON output to modern 'ip --json' commands

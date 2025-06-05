@@ -10,6 +10,8 @@ A comprehensive network path discovery tool that simulates traceroute behavior u
 - **Error Detection**: Identifies routing loops, blackhole routes, and unreachable destinations
 - **Automation Friendly**: Exit codes and quiet mode for script integration
 - **Comprehensive Testing**: Full test suite with 100% pass rate
+- **Professional Visualization**: High-quality network topology diagrams with matplotlib
+- **Accurate Interface Tracking**: Precise incoming/outgoing interface determination
 
 ## 📋 Table of Contents
 
@@ -19,6 +21,7 @@ A comprehensive network path discovery tool that simulates traceroute behavior u
 - [Command Line Options](#command-line-options)
 - [Data Collection](#data-collection)
 - [Network Scenarios](#network-scenarios)
+- [Network Visualization](#network-visualization)
 - [Output Formats](#output-formats)
 - [Exit Codes](#exit-codes)
 - [Testing](#testing)
@@ -33,6 +36,7 @@ A comprehensive network path discovery tool that simulates traceroute behavior u
 - Python 3.7 or higher
 - Linux environment (for data collection)
 - Ansible (for multi-router data collection)
+- matplotlib (for network topology visualization)
 
 ### Setup
 
@@ -44,7 +48,10 @@ A comprehensive network path discovery tool that simulates traceroute behavior u
 
 2. **Install Python dependencies**:
    ```bash
-   # No external dependencies required - uses Python standard library
+   # Install matplotlib for network visualization
+   pip3 install matplotlib
+   
+   # Verify Python version
    python3 --version  # Ensure Python 3.7+
    ```
 
@@ -146,20 +153,10 @@ The project includes a comprehensive test network with 10 routers across 3 locat
 - Realistic enterprise network design with redundancy
 
 ### Network Diagram
-```
-Location A (HQ)         Location B (Branch)      Location C (DC)
-10.1.0.0/16            10.2.0.0/16              10.3.0.0/16
 
-    hq-gw                  br-gw                    dc-gw
-10.1.1.1 (eth1)        10.2.1.1 (eth1)         10.3.1.1 (eth1)
-10.100.1.1 (wg0)       10.100.1.2 (wg0)        10.100.1.3 (wg0)
-203.0.113.10 (eth0)    198.51.100.10 (eth0)    192.0.2.10 (eth0)
-      │                      │                       │
-   hq-core                br-core                 dc-core
-      │                      │                       │
-   ┌──┴───┐                  │                       │
- hq-dmz hq-lab            br-wifi                 dc-srv
-```
+![Network Topology](testing/network_topology.png)
+
+The complete network topology diagram shows all 10 routers with their interface assignments and connections. High-resolution versions are available as `testing/network_topology.png` and `testing/network_topology.pdf`.
 
 For complete topology details, see `testing/NETWORK_TOPOLOGY.md`.
 
@@ -244,6 +241,48 @@ Path: hq-gw[wg0] → br-gw[wg0]
 10.1.11.100 (HQ lab host) → 10.3.21.200 (DC server host)
 Path: lab-network → hq-lab → hq-core → hq-gw → [WireGuard] → dc-gw → dc-core → dc-srv → server-network
 ```
+
+## 🎨 Network Visualization
+
+The project includes a professional network topology visualization system that generates high-quality diagrams of the test network.
+
+### Generating Network Diagrams
+
+```bash
+# Generate network topology diagram
+cd testing
+python3 network_topology_diagram.py
+
+# Generated files:
+# - network_topology.png (300 DPI raster image)
+# - network_topology.pdf (vector format for printing)
+```
+
+### Visualization Features
+
+- **Professional Layout**: Clean hierarchical design with proper spacing
+- **No Crossing Connections**: Optimized routing to avoid visual clutter  
+- **Adaptive Sizing**: Router boxes automatically scale based on interface count
+- **Color Coding**: Different colors for gateway, core, and access routers
+- **Comprehensive Information**: All router names, IP addresses, and interfaces
+- **Multiple Formats**: High-resolution PNG and scalable PDF output
+
+### Customization Options
+
+The visualization can be customized by editing `testing/network_topology_diagram.py`:
+
+- **Router Positions**: Modify coordinates in `gateways`, `cores`, and `access` arrays
+- **Colors**: Update the `colors` dictionary for different themes
+- **Font Sizes**: Adjust text sizing for different display requirements
+- **Box Sizing**: Automatic scaling based on interface count (2-4 interfaces)
+- **Export Formats**: PNG (300 DPI) and PDF (vector) formats supported
+
+### Use Cases
+
+- **Documentation**: Professional network diagrams for technical documentation
+- **Presentations**: High-quality visuals for network architecture presentations  
+- **Training**: Visual aids for understanding complex network topologies
+- **Planning**: Reference diagrams for network expansion or modifications
 
 ## 📄 Output Formats
 
@@ -530,6 +569,9 @@ traceroute_simulator/
 ├── testing/                     # Test environment directory
 │   ├── test_traceroute_simulator.py # Comprehensive test suite  
 │   ├── NETWORK_TOPOLOGY.md      # Detailed network documentation
+│   ├── network_topology_diagram.py  # Network visualization generator
+│   ├── network_topology.png     # High-resolution network diagram
+│   ├── network_topology.pdf     # Vector network diagram
 │   └── routing_facts/           # Test network routing data
 │       ├── hq-gw_route.json     # HQ gateway routing table
 │       ├── hq-gw_rule.json      # HQ gateway policy rules

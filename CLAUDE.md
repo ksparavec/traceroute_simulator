@@ -7,6 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **Test specific functionality**: `python3 traceroute_simulator.py --routing-dir testing/routing_facts 10.1.1.1 10.2.1.1`
 - **Test complex routing**: `python3 traceroute_simulator.py --routing-dir testing/routing_facts 10.1.10.1 10.3.20.1`
 - **Test JSON output**: `python3 traceroute_simulator.py --routing-dir testing/routing_facts -j 10.100.1.1 10.100.1.3`
+- **Generate network topology diagram**: `cd testing && python3 network_topology_diagram.py`
 - **Lint Python code**: `flake8 *.py testing/*.py` (if flake8 is available)
 - **Validate YAML**: `yamllint *.yml` (if yamllint is available)
 - **Validate JSON**: `python3 -m json.tool testing/routing_facts/*.json`
@@ -23,6 +24,8 @@ The project includes a comprehensive test network with realistic enterprise topo
 ### Test Data Location
 - **Primary test data**: `testing/routing_facts/` (20 JSON files)
 - **Network documentation**: `testing/NETWORK_TOPOLOGY.md`
+- **Network visualization**: `testing/network_topology_diagram.py` (matplotlib-based diagram generator)
+- **Generated diagrams**: `testing/network_topology.png` and `testing/network_topology.pdf`
 - **Test suite**: `testing/test_traceroute_simulator.py` (57 test cases)
 
 ### Using Test Data
@@ -91,6 +94,9 @@ traceroute_simulator/
 ├── testing/                       # Complete test environment
 │   ├── test_traceroute_simulator.py   # Test suite (57 cases)
 │   ├── NETWORK_TOPOLOGY.md           # Network documentation
+│   ├── network_topology_diagram.py   # Professional diagram generator
+│   ├── network_topology.png          # High-resolution network diagram
+│   ├── network_topology.pdf          # Vector network diagram
 │   └── routing_facts/                # Test routing data (20 files)
 ├── CLAUDE.md                      # Development guidelines
 └── README.md                      # User documentation
@@ -102,3 +108,34 @@ traceroute_simulator/
 - **Document changes**: Update both code comments and README.md
 - **Validate thoroughly**: Run full test suite before submitting changes
 - **Maintain topology**: Keep test network topology realistic and comprehensive
+
+## Recent Improvements (2024)
+
+### Routing Data Fixes
+The routing data has been comprehensively fixed to ensure accurate traceroute simulation:
+- **Invalid gateway IPs corrected**: Fixed gateway references to use actual router interface IPs
+- **Removed invalid scope:link routes**: Eliminated overly broad /16 scope:link routes that caused incorrect routing
+- **Added missing network routes**: Included routes for all network segments (10.1.11.0/24, 10.2.6.0/24, 10.3.21.0/24)
+- **Consistent routing behavior**: All routers now have proper routing tables that reflect real network topology
+
+### Interface Logic Improvements
+Enhanced the traceroute simulator's interface determination logic:
+- **Added `_get_incoming_interface()` method**: Properly determines incoming interfaces based on network topology
+- **Fixed interface name determination**: Uses network-based lookup rather than assumptions
+- **Improved hop-by-hop accuracy**: More precise tracking of traffic flow through router interfaces
+- **Better network segment handling**: Correctly identifies interfaces for directly connected networks
+
+### Professional Network Visualization
+Replaced problematic ASCII diagrams with professional matplotlib-based visualization:
+- **Clean hierarchical layout**: Proper spacing and positioning to avoid overlaps
+- **No crossing connections**: Optimized connection routing for visual clarity
+- **Adaptive box sizing**: Router boxes automatically scale based on interface count
+- **Multiple output formats**: High-resolution PNG (300 DPI) and vector PDF formats
+- **Comprehensive information**: All router names, IP addresses, and interface details
+- **Easy customization**: Simple modification of positions, colors, and styling
+
+### Key Files Modified
+- **Routing data**: `testing/routing_facts/*.json` (corrected routing tables and gateway IPs)
+- **Core logic**: `traceroute_simulator.py` (improved interface determination)
+- **Visualization**: `testing/network_topology_diagram.py` (new professional diagram system)
+- **Documentation**: `testing/NETWORK_TOPOLOGY.md` (updated with diagram generation instructions)

@@ -30,7 +30,7 @@ from typing import Dict, List, Optional, Tuple
 # These codes allow automated scripts to determine the result without parsing output
 EXIT_SUCCESS = 0        # Path found successfully between source and destination
 EXIT_NO_PATH = 1        # Source and destination found, but no path between them
-EXIT_NOT_FOUND = 2      # Either source or destination not found in any router network
+EXIT_NOT_FOUND = 2      # Source not found in router network or destination not reachable
 EXIT_ERROR = 3          # Input validation errors or system errors
 
 
@@ -408,7 +408,7 @@ class TracerouteSimulator:
         
         Args:
             src_ip: Source IP address (must be reachable by some router)
-            dst_ip: Destination IP address (must be reachable by some router)
+            dst_ip: Destination IP address (can be any valid IP address)
             
         Returns:
             List of hop tuples containing:
@@ -421,15 +421,14 @@ class TracerouteSimulator:
             - outgoing_interface: Interface used to reach next hop
             
         Raises:
-            ValueError: If source or destination IP not reachable by any router
+            ValueError: If source IP not reachable by any router
         """
         # Validate source IP reachability
         if not self._validate_ip_reachability(src_ip):
             raise ValueError(f"Source IP {src_ip} is not configured on any router or in any directly connected network")
         
-        # Validate destination IP reachability
-        if not self._validate_ip_reachability(dst_ip):
-            raise ValueError(f"Destination IP {dst_ip} is not configured on any router or in any directly connected network")
+        # Note: Destination IP is no longer required to be reachable by routers
+        # It can be any valid IP address that routing decisions can be made for
         
         # Find starting router - the router that owns or can directly reach the source IP
         current_router = self._find_router_by_ip(src_ip)
@@ -668,17 +667,18 @@ def main():
 Exit codes (for -q/--quiet mode):
   0: Path found successfully
   1: Source and destination found, but no path between them
-  2: Either source or destination not found
+  2: Source not found in router network or destination not reachable
   3: Other errors
 
 Examples:
-  %(prog)s 192.168.1.1 10.0.0.1
-  %(prog)s -v 192.168.1.1 10.0.0.1        # Verbose output
-  %(prog)s -q 192.168.1.1 10.0.0.1        # Quiet mode (check $?)
-  %(prog)s -j 192.168.1.1 10.0.0.1        # JSON output
+  %(prog)s -s 10.1.1.1 -d 10.2.1.1                    # HQ to Branch routing
+  %(prog)s -s 10.1.1.1 -d 10.2.1.1 -v                 # Verbose output
+  %(prog)s -s 10.1.1.1 -d 10.2.1.1 -q                 # Quiet mode (check $?)
+  %(prog)s -s 10.100.1.1 -d 10.100.1.3 -j             # JSON output (WireGuard tunnel)
+  %(prog)s --routing-dir testing/routing_facts -s 10.1.10.1 -d 10.3.20.1  # Complex multi-hop
         """)
-    parser.add_argument('source_ip', help='Source IP address')
-    parser.add_argument('destination_ip', help='Destination IP address')
+    parser.add_argument('-s', '--source', required=True, help='Source IP address')
+    parser.add_argument('-d', '--destination', required=True, help='Destination IP address')
     parser.add_argument('--routing-dir', default='routing_facts',
                        help='Directory containing routing facts (default: routing_facts)')
     parser.add_argument('-v', '--verbose', action='store_true',
@@ -692,8 +692,8 @@ Examples:
     
     try:
         # Validate IP addresses
-        ipaddress.ip_address(args.source_ip)
-        ipaddress.ip_address(args.destination_ip)
+        ipaddress.ip_address(args.source)
+        ipaddress.ip_address(args.destination)
     except (ipaddress.AddressValueError, ValueError) as e:
         if not args.quiet:
             print(f"Error: Invalid IP address - {e}", file=sys.stderr)
@@ -702,26 +702,40 @@ Examples:
     try:
         simulator = TracerouteSimulator(args.routing_dir, verbose=args.verbose)
         
-        path = simulator.simulate_traceroute(args.source_ip, args.destination_ip)
+        path = simulator.simulate_traceroute(args.source, args.destination)
         
         # Check if path was found successfully
         has_no_route = any("No route" in str(item) for item in path)
         
-        if args.quiet:
-            if has_no_route:
-                sys.exit(EXIT_NO_PATH)
+        # Determine exit code first
+        exit_code = EXIT_SUCCESS
+        if has_no_route:
+            # Determine if destination is reachable by any router
+            dst_reachable = simulator._validate_ip_reachability(args.destination)
+            if dst_reachable:
+                # Both source and destination are in network but no path exists (misconfiguration)
+                exit_code = EXIT_NO_PATH
             else:
-                sys.exit(EXIT_SUCCESS)
+                # Destination is not in network (external IP)
+                exit_code = EXIT_NOT_FOUND
+        
+        # Handle output and exit based on mode
+        if args.quiet:
+            sys.exit(exit_code)
         
         # Non-quiet output
         if not args.json:
-            print(f"traceroute to {args.destination_ip} from {args.source_ip}")
+            print(f"traceroute to {args.destination} from {args.source}")
         
         if args.json:
             print(format_path_json(path))
         else:
             for line in format_path_text(path):
                 print(line)
+        
+        # Exit with determined code for non-quiet mode
+        if exit_code != EXIT_SUCCESS:
+            sys.exit(exit_code)
                 
     except ValueError as e:
         error_msg = str(e)

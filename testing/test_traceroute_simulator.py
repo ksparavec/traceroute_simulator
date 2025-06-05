@@ -215,7 +215,7 @@ class TracerouteSimulatorTester:
         ]
         
         for src_ip, dst_ip, description in test_cases:
-            returncode, stdout, stderr = self.run_simulator([src_ip, dst_ip])
+            returncode, stdout, stderr = self.run_simulator(["-s", src_ip, "-d", dst_ip])
             
             success = returncode == 0 and "traceroute to" in stdout
             details = f"{description}: {'success' if success else 'failed'}"
@@ -259,7 +259,7 @@ class TracerouteSimulatorTester:
         ]
         
         for src_ip, dst_ip, description in test_cases:
-            returncode, stdout, stderr = self.run_simulator([src_ip, dst_ip])
+            returncode, stdout, stderr = self.run_simulator(["-s", src_ip, "-d", dst_ip])
             
             success = returncode == 0 and "traceroute to" in stdout
             details = f"{description}: {'success' if success else 'failed'}"
@@ -298,7 +298,7 @@ class TracerouteSimulatorTester:
         ]
         
         for src_ip, dst_ip, description in test_cases:
-            returncode, stdout, stderr = self.run_simulator([src_ip, dst_ip])
+            returncode, stdout, stderr = self.run_simulator(["-s", src_ip, "-d", dst_ip])
             
             # Accept both success and "not found" for network segment IPs
             # as they may not all be configured as directly connected
@@ -327,7 +327,7 @@ class TracerouteSimulatorTester:
         src_ip, dst_ip = "10.1.1.1", "10.2.1.1"  # HQ to Branch gateway
         
         # Test verbose mode
-        returncode, stdout, stderr = self.run_simulator(["-v", src_ip, dst_ip])
+        returncode, stdout, stderr = self.run_simulator(["-v", "-s", src_ip, "-d", dst_ip])
         verbose_works = "Loaded router:" in stderr and returncode == 0
         self.add_result(TestResult(
             "Verbose mode (-v)",
@@ -336,7 +336,7 @@ class TracerouteSimulatorTester:
         ))
         
         # Test JSON output
-        returncode, stdout, stderr = self.run_simulator(["-j", src_ip, dst_ip])
+        returncode, stdout, stderr = self.run_simulator(["-j", "-s", src_ip, "-d", dst_ip])
         json_works = False
         json_details = ""
         if returncode == 0:
@@ -356,7 +356,7 @@ class TracerouteSimulatorTester:
         ))
         
         # Test quiet mode with successful path
-        returncode, stdout, stderr = self.run_simulator(["-q", src_ip, dst_ip])
+        returncode, stdout, stderr = self.run_simulator(["-q", "-s", src_ip, "-d", dst_ip])
         quiet_success = returncode == 0 and stdout.strip() == ""
         self.add_result(TestResult(
             "Quiet mode success (-q)",
@@ -366,7 +366,7 @@ class TracerouteSimulatorTester:
         
         # Test custom routing directory
         returncode, stdout, stderr = self.run_simulator([
-            "--routing-dir", ROUTING_FACTS_DIR, src_ip, dst_ip
+            "--routing-dir", ROUTING_FACTS_DIR, "-s", src_ip, "-d", dst_ip
         ])
         custom_dir_works = returncode == 0 and "traceroute to" in stdout
         self.add_result(TestResult(
@@ -381,7 +381,7 @@ class TracerouteSimulatorTester:
         
         # Test invalid IP addresses
         for invalid_ip in INVALID_IPS:
-            returncode, stdout, stderr = self.run_simulator([invalid_ip, "10.1.1.1"])
+            returncode, stdout, stderr = self.run_simulator(["-s", invalid_ip, "-d", "10.1.1.1"])
             error_detected = returncode == 3 and "Invalid IP address" in stderr
             self.add_result(TestResult(
                 f"Invalid source IP: {invalid_ip}",
@@ -389,7 +389,7 @@ class TracerouteSimulatorTester:
                 f"Expected exit code 3 and error message, got code {returncode}, stderr: {stderr[:100]}"
             ))
             
-            returncode, stdout, stderr = self.run_simulator(["10.1.1.1", invalid_ip])
+            returncode, stdout, stderr = self.run_simulator(["-s", "10.1.1.1", "-d", invalid_ip])
             error_detected = returncode == 3 and "Invalid IP address" in stderr
             self.add_result(TestResult(
                 f"Invalid destination IP: {invalid_ip}",
@@ -400,7 +400,7 @@ class TracerouteSimulatorTester:
         # Test non-existent IP addresses (valid format but not in network)
         non_existent_ips = ["172.16.1.1", "192.168.1.1", "10.99.99.99"]
         for ip in non_existent_ips:
-            returncode, stdout, stderr = self.run_simulator([ip, "10.1.1.1"])
+            returncode, stdout, stderr = self.run_simulator(["-s", ip, "-d", "10.1.1.1"])
             not_found = returncode == 2 and "not configured on any router" in stderr
             self.add_result(TestResult(
                 f"Non-existent source IP: {ip}",
@@ -422,7 +422,7 @@ class TracerouteSimulatorTester:
         print("Testing exit codes...")
         
         # Test successful path (exit code 0)
-        returncode, stdout, stderr = self.run_simulator(["-q", "10.1.1.1", "10.2.1.1"])
+        returncode, stdout, stderr = self.run_simulator(["-q", "-s", "10.1.1.1", "-d", "10.2.1.1"])
         success_code = returncode == 0
         self.add_result(TestResult(
             "Exit code 0 (success)",
@@ -431,7 +431,7 @@ class TracerouteSimulatorTester:
         ))
         
         # Test not found (exit code 2)
-        returncode, stdout, stderr = self.run_simulator(["-q", "172.16.1.1", "10.1.1.1"])
+        returncode, stdout, stderr = self.run_simulator(["-q", "-s", "172.16.1.1", "-d", "10.1.1.1"])
         not_found_code = returncode == 2
         self.add_result(TestResult(
             "Exit code 2 (not found)",
@@ -440,13 +440,223 @@ class TracerouteSimulatorTester:
         ))
         
         # Test invalid IP (exit code 3)
-        returncode, stdout, stderr = self.run_simulator(["-q", "invalid.ip", "10.1.1.1"])
+        returncode, stdout, stderr = self.run_simulator(["-q", "-s", "invalid.ip", "-d", "10.1.1.1"])
         invalid_code = returncode == 3
         self.add_result(TestResult(
             "Exit code 3 (invalid IP)",
             invalid_code,
             f"Expected exit code 3, got {returncode}"
         ))
+        
+        # Test routing misconfiguration scenario (exit code 1)
+        # This simulates a case where both source and destination are in the network
+        # but due to routing misconfiguration, no path exists between them
+        self.test_routing_misconfiguration()
+    
+    def test_routing_misconfiguration(self):
+        """
+        Test a scenario where both source and destination are found in the network
+        but no route exists between them due to routing misconfiguration.
+        
+        This simulates a realistic scenario where a network administrator accidentally
+        removes a crucial routing entry, creating a "routing black hole".
+        """
+        # Create a temporary misconfigured routing setup
+        temp_dir = tempfile.mkdtemp()
+        
+        try:
+            # Copy all existing routing files to temp directory
+            for file in os.listdir(ROUTING_FACTS_DIR):
+                shutil.copy(os.path.join(ROUTING_FACTS_DIR, file), temp_dir)
+            
+            # Create a misconfigured hq-core router that has no route to DMZ
+            # This simulates an administrator accidentally removing the DMZ route
+            misconfigured_hq_core_routes = [
+                {"dst": "default", "gateway": "10.1.1.1", "dev": "eth0", "metric": 1},
+                {"dst": "10.1.1.0/24", "dev": "eth0", "protocol": "kernel", "scope": "link", "prefsrc": "10.1.1.2"},
+                {"dst": "10.1.2.0/24", "dev": "eth1", "protocol": "kernel", "scope": "link", "prefsrc": "10.1.2.1"},
+                # Missing: {"dst": "10.1.3.0/24", "gateway": "10.1.2.3", "dev": "eth1", "metric": 1},
+                {"dst": "10.1.10.0/24", "gateway": "10.1.2.4", "dev": "eth1", "metric": 1},
+                {"dst": "10.1.11.0/24", "gateway": "10.1.2.4", "dev": "eth1", "metric": 1},
+                {"dst": "10.2.0.0/16", "gateway": "10.1.1.1", "dev": "eth0", "metric": 10},
+                {"dst": "10.3.0.0/16", "gateway": "10.1.1.1", "dev": "eth0", "metric": 10}
+            ]
+            
+            # Also misconfigure hq-gw to not have route to DMZ
+            # This creates a true routing black hole
+            misconfigured_hq_gw_routes = [
+                {"dst": "default", "gateway": "203.0.113.1", "dev": "eth0", "metric": 100},
+                {"dst": "10.1.1.0/24", "dev": "eth1", "protocol": "kernel", "scope": "link", "prefsrc": "10.1.1.1"},
+                {"dst": "10.1.2.0/24", "gateway": "10.1.1.2", "dev": "eth1", "metric": 1},
+                # Missing: {"dst": "10.1.3.0/24", "gateway": "10.1.1.2", "dev": "eth1", "metric": 1},
+                {"dst": "10.1.10.0/24", "gateway": "10.1.1.2", "dev": "eth1", "metric": 1},
+                {"dst": "10.1.11.0/24", "gateway": "10.1.1.2", "dev": "eth1", "metric": 1},
+                {"dst": "10.2.0.0/16", "gateway": "10.100.1.2", "dev": "wg0", "metric": 10},
+                {"dst": "10.3.0.0/16", "gateway": "10.100.1.3", "dev": "wg0", "metric": 10},
+                {"dst": "10.100.1.0/24", "dev": "wg0", "protocol": "kernel", "scope": "link", "prefsrc": "10.100.1.1"},
+                {"dst": "203.0.113.0/24", "dev": "eth0", "protocol": "kernel", "scope": "link", "prefsrc": "203.0.113.10"}
+            ]
+            
+            # Write the misconfigured routing tables
+            with open(os.path.join(temp_dir, "hq-core_route.json"), 'w') as f:
+                json.dump(misconfigured_hq_core_routes, f, indent=2)
+            
+            with open(os.path.join(temp_dir, "hq-gw_route.json"), 'w') as f:
+                json.dump(misconfigured_hq_gw_routes, f, indent=2)
+            
+            # Test scenario: Try to route from hq-lab (10.1.10.1) to hq-dmz (10.1.3.1)
+            # Both IPs are in the network and reachable individually, but the broken
+            # hq-core routing means traffic from lab can't reach DMZ
+            returncode, stdout, stderr = self.run_simulator([
+                "-q", "--routing-dir", temp_dir, "-s", "10.1.10.1", "-d", "10.1.3.1"
+            ])
+            
+            # This should result in EXIT_NO_PATH (1) because both endpoints exist
+            # but no path exists due to misconfiguration
+            no_path_code = returncode == 1
+            
+            # Also test in non-quiet mode to see the actual routing behavior
+            returncode_verbose, stdout_verbose, stderr_verbose = self.run_simulator([
+                "--routing-dir", temp_dir, "-s", "10.1.10.1", "-d", "10.1.3.1"
+            ])
+            
+            # The verbose output should show the routing stops at hq-core with no route
+            has_routing_failure = "No route" in stdout_verbose or returncode_verbose != 0
+            
+            self.add_result(TestResult(
+                "Exit code 1 (routing misconfiguration)",
+                no_path_code and has_routing_failure,
+                f"Expected exit code 1 with routing failure, got code {returncode}, verbose: {stdout_verbose.strip()}"
+            ))
+            
+        finally:
+            # Clean up temporary directory
+            shutil.rmtree(temp_dir)
+    
+    def test_edge_cases(self):
+        """Test additional edge cases for better code coverage."""
+        print("Testing edge cases...")
+        
+        # Test 1: Corrupted JSON file
+        temp_dir = tempfile.mkdtemp()
+        try:
+            # Create directory with corrupted JSON
+            corrupted_json = '{"invalid": json content without closing brace'
+            with open(os.path.join(temp_dir, "corrupted_route.json"), 'w') as f:
+                f.write(corrupted_json)
+            
+            # This should handle the JSON decode error gracefully
+            returncode, stdout, stderr = self.run_simulator([
+                "-s", "10.1.1.1", "-d", "10.2.1.1", "--routing-dir", temp_dir
+            ], expect_error=True)
+            
+            # Should fail gracefully with an error about no router data
+            json_error_handled = returncode != 0
+            self.add_result(TestResult(
+                "Corrupted JSON handling",
+                json_error_handled,
+                f"Expected non-zero exit code for corrupted JSON, got {returncode}"
+            ))
+        finally:
+            shutil.rmtree(temp_dir)
+        
+        # Test 2: Empty routing directory
+        temp_dir = tempfile.mkdtemp()
+        try:
+            # Directory exists but has no routing files
+            returncode, stdout, stderr = self.run_simulator([
+                "-s", "10.1.1.1", "-d", "10.2.1.1", "--routing-dir", temp_dir
+            ], expect_error=True)
+            
+            empty_dir_handled = returncode != 0 and "No router data found" in stderr
+            self.add_result(TestResult(
+                "Empty routing directory",
+                empty_dir_handled,
+                f"Expected 'No router data found' error, got code {returncode}, stderr: {stderr[:100]}"
+            ))
+        finally:
+            shutil.rmtree(temp_dir)
+        
+        # Test 3: Non-existent routing directory
+        returncode, stdout, stderr = self.run_simulator([
+            "-s", "10.1.1.1", "-d", "10.2.1.1", "--routing-dir", "/non/existent/directory"
+        ], expect_error=True)
+        
+        nonexistent_dir_handled = returncode != 0
+        self.add_result(TestResult(
+            "Non-existent routing directory",
+            nonexistent_dir_handled,
+            f"Expected error for non-existent directory, got code {returncode}"
+        ))
+        
+        # Test 4: Missing rule file (test the warning path)
+        temp_dir = tempfile.mkdtemp()
+        try:
+            # Copy only route files, not rule files
+            for file in os.listdir(ROUTING_FACTS_DIR):
+                if file.endswith('_route.json'):
+                    shutil.copy(os.path.join(ROUTING_FACTS_DIR, file), temp_dir)
+            
+            # Test with verbose mode to see if missing rule file warning appears
+            returncode, stdout, stderr = self.run_simulator([
+                "-v", "-s", "10.1.1.1", "-d", "10.2.1.1", "--routing-dir", temp_dir
+            ])
+            
+            # Should work but show warnings about missing rule files
+            missing_rules_handled = returncode == 0 and ("Warning" in stderr or "rule" in stderr)
+            self.add_result(TestResult(
+                "Missing rule files with verbose",
+                missing_rules_handled,
+                f"Expected warnings about missing rule files in verbose mode, stderr: {stderr[:200]}"
+            ))
+        finally:
+            shutil.rmtree(temp_dir)
+        
+        # Test 5: IPv6 address support
+        returncode, stdout, stderr = self.run_simulator([
+            "-s", "2001:db8::1", "-d", "2001:db8::2", "--routing-dir", ROUTING_FACTS_DIR
+        ], expect_error=True)
+        
+        ipv6_handled = returncode == 2  # Should be "not found" since we don't have IPv6 routers
+        self.add_result(TestResult(
+            "IPv6 address handling",
+            ipv6_handled,
+            f"Expected exit code 2 for IPv6 (not found), got {returncode}"
+        ))
+        
+        # Test 6: Test timeout/max hops scenario
+        temp_dir = tempfile.mkdtemp()
+        try:
+            # Create a routing loop that could exceed max hops
+            # Copy existing files first
+            for file in os.listdir(ROUTING_FACTS_DIR):
+                shutil.copy(os.path.join(ROUTING_FACTS_DIR, file), temp_dir)
+            
+            # Create a router that routes back to itself (potential infinite loop)
+            loop_routes = [
+                {"dst": "default", "gateway": "10.1.1.1", "dev": "eth0", "metric": 1},
+                {"dst": "10.1.1.0/24", "dev": "eth0", "protocol": "kernel", "scope": "link", "prefsrc": "10.1.1.2"},
+                {"dst": "10.1.2.0/24", "dev": "eth1", "protocol": "kernel", "scope": "link", "prefsrc": "10.1.2.1"},
+                {"dst": "10.99.99.0/24", "gateway": "10.1.2.1", "dev": "eth1", "metric": 1},  # Creates a potential loop
+            ]
+            
+            with open(os.path.join(temp_dir, "hq-core_route.json"), 'w') as f:
+                json.dump(loop_routes, f, indent=2)
+            
+            # Test a route that could potentially loop
+            returncode, stdout, stderr = self.run_simulator([
+                "-s", "10.1.1.1", "-d", "10.99.99.1", "--routing-dir", temp_dir
+            ])
+            
+            # Should handle gracefully (either loop detection or max hops)
+            max_hops_handled = returncode != 0 or "loop detected" in stdout.lower() or "no route" in stdout.lower()
+            self.add_result(TestResult(
+                "Max hops/loop handling",
+                max_hops_handled,
+                f"Expected loop detection or no route, got code {returncode}, output: {stdout.strip()}"
+            ))
+        finally:
+            shutil.rmtree(temp_dir)
     
     def test_complex_scenarios(self):
         """Test complex routing scenarios specific to the new topology."""
@@ -538,6 +748,7 @@ class TracerouteSimulatorTester:
             self.test_command_line_options,
             self.test_error_conditions,
             self.test_exit_codes,
+            self.test_edge_cases,
             self.test_complex_scenarios,
         ]
         

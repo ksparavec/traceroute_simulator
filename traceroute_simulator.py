@@ -283,6 +283,41 @@ class TracerouteSimulator:
         """Find which router owns an IP address."""
         return self.router_lookup.get(ip)
     
+    def _get_incoming_interface(self, router_name: str, from_ip: str) -> Optional[str]:
+        """
+        Determine the incoming interface on a router based on the source IP.
+        
+        When traffic arrives at a router from another router's IP address,
+        we need to find which interface on the receiving router is in the
+        same network as the source IP.
+        
+        Args:
+            router_name: Name of the receiving router
+            from_ip: IP address of the sending router
+            
+        Returns:
+            Interface name that receives traffic from from_ip, or None if not found
+        """
+        if router_name not in self.routers:
+            return None
+            
+        router = self.routers[router_name]
+        from_addr = ipaddress.ip_address(from_ip)
+        
+        # Check each interface to see if from_ip is in the same network
+        for route in router.routes:
+            if (route.get('protocol') == 'kernel' and 
+                route.get('scope') == 'link' and 
+                route.get('dst', '').count('/') == 1):
+                try:
+                    network = ipaddress.ip_network(route['dst'], strict=False)
+                    if from_addr in network:
+                        return route.get('dev')
+                except (ValueError, ipaddress.AddressValueError):
+                    continue
+        
+        return None
+    
     def _is_destination_reachable(self, router_name: str, dst_ip: str) -> Tuple[bool, bool]:
         """
         Check if destination IP is directly reachable from this router.
@@ -546,7 +581,9 @@ class TracerouteSimulator:
             
             # Determine if next IP is router-owned and incoming interface
             next_is_owned = self._find_router_by_ip(next_ip) is not None
-            next_incoming_interface = outgoing_interface  # The outgoing interface becomes the incoming interface on next router
+            # Determine the correct incoming interface based on the current router's outgoing interface IP
+            current_router_outgoing_ip = self.routers[current_router].get_interface_ip(outgoing_interface) if outgoing_interface else None
+            next_incoming_interface = self._get_incoming_interface(next_router, current_router_outgoing_ip) if current_router_outgoing_ip else outgoing_interface
             
             path.append((hop, next_router, next_ip, next_incoming_interface or "", next_is_owned, "", ""))
             visited.add(next_router)

@@ -24,13 +24,30 @@
         state: directory
         mode: '0755'
 
+    - name: Find ip command in standard paths
+      shell: |
+        for path in /sbin/ip /usr/sbin/ip /bin/ip /usr/bin/ip; do
+          if [ -x "$path" ]; then
+            echo "$path"
+            exit 0
+          fi
+        done
+        echo "ip command not found in standard paths" >&2
+        exit 1
+      register: ip_command_path
+      failed_when: ip_command_path.rc != 0
+
+    - name: Display found ip command path
+      debug:
+        msg: "Using ip command at: {{ ip_command_path.stdout }}"
+
     - name: Get routing tables as text output
-      command: ip route show
+      command: "{{ ip_command_path.stdout }} route show"
       register: ip_route_text
       failed_when: ip_route_text.rc != 0
 
     - name: Get policy rules as text output
-      command: ip rule show
+      command: "{{ ip_command_path.stdout }} rule show"
       register: ip_rule_text
       failed_when: ip_rule_text.rc != 0
 
@@ -86,6 +103,8 @@
 
 # Notes:
 # - This playbook executes only basic 'ip' commands on remote hosts (no Python dependencies)
+# - Automatically searches for 'ip' command in standard paths (/sbin, /usr/sbin, /bin, /usr/bin)
+# - Uses full path to 'ip' command for maximum reliability across different Linux distributions
 # - Text output is transferred to the Ansible controller for JSON conversion
 # - Uses the IP JSON wrapper on the controller to convert text to JSON format
 # - Requires Python 3 to be available only on the Ansible controller, not remote hosts

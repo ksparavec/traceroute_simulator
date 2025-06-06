@@ -222,6 +222,8 @@ The project includes an enhanced Ansible playbook that executes basic `ip` comma
 ### Enhanced Compatibility Features
 
 - **Text-only remote execution**: Executes only basic `ip route show` and `ip rule show` commands on remote hosts
+- **Automatic path discovery**: Searches standard utility paths (`/sbin`, `/usr/sbin`, `/bin`, `/usr/bin`) for `ip` command
+- **Full path execution**: Uses complete path to `ip` command for maximum reliability across Linux distributions
 - **Controller-side JSON conversion**: Transfers text output to Ansible controller for JSON transformation
 - **No remote Python dependencies**: Remote hosts only need the standard `ip` command available
 - **IP JSON wrapper on controller**: Uses `ip_json_wrapper.py` on the controller to convert text to JSON

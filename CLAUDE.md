@@ -211,11 +211,12 @@ Implemented comprehensive Makefile for automated development workflows:
 
 ### Enhanced Ansible Playbook for Maximum Compatibility
 Updated `get_routing_info.yml` for enterprise deployment on diverse Linux environments:
-- **Automatic wrapper deployment**: Copies `ip_json_wrapper.py` to remote hosts for compatibility
-- **Python version detection**: Automatically detects and uses python3 or python fallback
-- **JSON output validation**: Verifies data integrity before saving collected information
+- **Text-only remote execution**: Executes only basic `ip route show` and `ip rule show` commands on remote hosts
+- **Controller-side JSON conversion**: Transfers text output to Ansible controller for JSON transformation
+- **No remote Python dependencies**: Remote hosts only need the standard `ip` command available
+- **IP JSON wrapper on controller**: Uses `ip_json_wrapper.py` on the controller to convert text to JSON
 - **Comprehensive error handling**: Graceful failure with detailed troubleshooting information
-- **Automatic cleanup**: Removes temporary files from remote hosts after data collection
+- **Automatic cleanup**: Removes temporary text files from controller after processing
 - **Collection statistics**: Reports number of routing entries collected from each host
 
 ### Advanced Test Infrastructure
@@ -230,7 +231,7 @@ Expanded testing capabilities with professional validation tools:
 - **IP JSON wrapper**: `ip_json_wrapper.py` (NEW - compatibility layer for older Red Hat systems)
 - **Wrapper tests**: `testing/test_ip_json_comparison.py` (NEW - 7 tests validating wrapper accuracy)
 - **Build system**: `Makefile` (NEW - comprehensive build automation with dependency checking)
-- **Enhanced playbook**: `get_routing_info.yml` (UPDATED - automatic wrapper deployment and compatibility)
+- **Enhanced playbook**: `get_routing_info.yml` (UPDATED - text-only remote execution with controller-side JSON conversion)
 - **Documentation**: `README.md` and `CLAUDE.md` (UPDATED - comprehensive documentation of all new features)
 
 ### Previous Key Files Modified (2024)

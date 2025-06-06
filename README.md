@@ -190,7 +190,7 @@ make test
 
 ### Using Ansible Playbook Directly
 
-The project includes an enhanced Ansible playbook that automatically handles compatibility with older Red Hat systems:
+The project includes an enhanced Ansible playbook that executes basic `ip` commands on remote hosts and converts text output to JSON on the controller:
 
 1. **Configure your inventory** (`hosts.yml`):
    ```yaml
@@ -221,10 +221,11 @@ The project includes an enhanced Ansible playbook that automatically handles com
 
 ### Enhanced Compatibility Features
 
-- **Automatic IP JSON wrapper deployment**: Works on older Red Hat systems without native `ip --json` support
-- **Python version detection**: Automatically detects and uses python3 or python as available
-- **Comprehensive validation**: Verifies JSON output integrity before saving
-- **Automatic cleanup**: Removes temporary files from remote hosts
+- **Text-only remote execution**: Executes only basic `ip route show` and `ip rule show` commands on remote hosts
+- **Controller-side JSON conversion**: Transfers text output to Ansible controller for JSON transformation
+- **No remote Python dependencies**: Remote hosts only need the standard `ip` command available
+- **IP JSON wrapper on controller**: Uses `ip_json_wrapper.py` on the controller to convert text to JSON
+- **Automatic cleanup**: Removes temporary text files after processing
 - **Detailed logging**: Provides collection statistics and troubleshooting information
 
 ### Manual Collection

@@ -1,14 +1,14 @@
 ---
 # Ansible Playbook for collecting routing information from all Linux routers
-# Each router is contacted to gather routing tables and policy rules as JSON files
-# Uses IP JSON wrapper for compatibility with older Red Hat systems
+# Each router is contacted to gather routing tables and policy rules as text output
+# Text output is then converted to JSON on the Ansible controller using IP JSON wrapper
 
 - name: Collect routing information from all routers
   hosts: all 
   gather_facts: no
   vars:
     output_dir: "routing_facts"
-    remote_wrapper_path: "/tmp/ip_json_wrapper.py"
+    temp_dir: "/tmp/routing_collection"
   tasks:
     - name: Create output directory on Ansible controller
       delegate_to: localhost
@@ -17,74 +17,54 @@
         state: directory
         mode: '0755'
 
-    - name: Copy IP JSON wrapper script to remote host
-      copy:
-        src: "ip_json_wrapper.py"
-        dest: "{{ remote_wrapper_path }}"
+    - name: Create temporary directory for text output on Ansible controller
+      delegate_to: localhost
+      file:
+        path: "{{ temp_dir }}"
+        state: directory
         mode: '0755'
-      register: wrapper_copy_result
 
-    - name: Check for Python 3 availability
-      command: python3 --version
-      register: python3_check
-      failed_when: false
-      changed_when: false
+    - name: Get routing tables as text output
+      command: ip route show
+      register: ip_route_text
+      failed_when: ip_route_text.rc != 0
 
-    - name: Check for Python availability (fallback)
-      command: python --version
-      register: python_check
-      failed_when: false
-      changed_when: false
-      when: python3_check.rc != 0
+    - name: Get policy rules as text output
+      command: ip rule show
+      register: ip_rule_text
+      failed_when: ip_rule_text.rc != 0
 
-    - name: Fail if no Python interpreter found
-      fail:
-        msg: "Neither python3 nor python found on remote host {{ inventory_hostname }}"
-      when: python3_check.rc != 0 and (python_check is not defined or python_check.rc != 0)
-
-    - name: Set Python interpreter
-      set_fact:
-        python_interpreter: "{{ 'python3' if python3_check.rc == 0 else 'python' }}"
-
-    - name: Display Python version information
-      debug:
-        msg: "Using {{ python_interpreter }} on {{ inventory_hostname }}: {{ python_version_check.stdout }}"
-      vars:
-        python_version_check: "{{ python3_check if python3_check.rc == 0 else python_check }}"
-
-    - name: Get routing tables using wrapper script
-      command: "{{ python_interpreter }} {{ remote_wrapper_path }} route show"
-      register: ip_route_output
-      failed_when: ip_route_output.rc != 0
-
-    - name: Validate routing table JSON output
-      set_fact:
-        route_json_valid: "{{ ip_route_output.stdout | from_json is defined }}"
-      failed_when: not route_json_valid
-      vars:
-        route_json_valid: true
-
-    - name: Get policy rules using wrapper script
-      command: "{{ python_interpreter }} {{ remote_wrapper_path }} rule show"
-      register: ip_rule_output
-      failed_when: ip_rule_output.rc != 0
-
-    - name: Validate policy rules JSON output
-      set_fact:
-        rule_json_valid: "{{ ip_rule_output.stdout | from_json is defined }}"
-      failed_when: not rule_json_valid
-      vars:
-        rule_json_valid: true
-
-    - name: Save routing tables to file
+    - name: Save routing text output to temporary file
       copy:
-        content: "{{ ip_route_output.stdout }}"
+        content: "{{ ip_route_text.stdout }}"
+        dest: "{{ temp_dir }}/{{ inventory_hostname }}_route.txt"
+      delegate_to: localhost
+
+    - name: Save policy rules text output to temporary file
+      copy:
+        content: "{{ ip_rule_text.stdout }}"
+        dest: "{{ temp_dir }}/{{ inventory_hostname }}_rule.txt"
+      delegate_to: localhost
+
+    - name: Convert routing text to JSON using wrapper
+      shell: "python3 -c 'import sys; sys.path.insert(0, \"{{ playbook_dir }}\"); from ip_json_wrapper import IPCommandParser; import json; parser = IPCommandParser(); content = open(\"{{ temp_dir }}/{{ inventory_hostname }}_route.txt\").read(); print(json.dumps(parser.parse_route_output(content), indent=2))'"
+      register: route_json_output
+      delegate_to: localhost
+
+    - name: Convert policy rules text to JSON using wrapper
+      shell: "python3 -c 'import sys; sys.path.insert(0, \"{{ playbook_dir }}\"); from ip_json_wrapper import IPCommandParser; import json; parser = IPCommandParser(); content = open(\"{{ temp_dir }}/{{ inventory_hostname }}_rule.txt\").read(); print(json.dumps(parser.parse_rule_output(content), indent=2))'"
+      register: rule_json_output
+      delegate_to: localhost
+
+    - name: Save routing tables JSON to file
+      copy:
+        content: "{{ route_json_output.stdout }}"
         dest: "{{ output_dir }}/{{ inventory_hostname }}_route.json"
       delegate_to: localhost
 
-    - name: Save policy rules to file
+    - name: Save policy rules JSON to file
       copy:
-        content: "{{ ip_rule_output.stdout }}"
+        content: "{{ rule_json_output.stdout }}"
         dest: "{{ output_dir }}/{{ inventory_hostname }}_rule.json"
       delegate_to: localhost
 
@@ -92,20 +72,25 @@
       debug:
         msg: 
           - "Successfully collected routing data from {{ inventory_hostname }}"
-          - "Routing table entries: {{ (ip_route_output.stdout | from_json) | length }}"
-          - "Policy rule entries: {{ (ip_rule_output.stdout | from_json) | length }}"
+          - "Routing table lines: {{ ip_route_text.stdout_lines | length }}"
+          - "Policy rule lines: {{ ip_rule_text.stdout_lines | length }}"
 
-    - name: Clean up wrapper script from remote host
+    - name: Clean up temporary text files
       file:
-        path: "{{ remote_wrapper_path }}"
+        path: "{{ temp_dir }}/{{ inventory_hostname }}_{{ item }}.txt"
         state: absent
-      when: wrapper_copy_result is succeeded
+      delegate_to: localhost
+      loop:
+        - route
+        - rule
 
 # Notes:
-# - This playbook is compatible with older Red Hat systems that don't support 'ip --json'
-# - The IP JSON wrapper script is automatically copied to remote hosts and cleaned up afterward
-# - Requires Python 3 to be available on target hosts for the wrapper script
+# - This playbook executes only basic 'ip' commands on remote hosts (no Python dependencies)
+# - Text output is transferred to the Ansible controller for JSON conversion
+# - Uses the IP JSON wrapper on the controller to convert text to JSON format
+# - Requires Python 3 to be available only on the Ansible controller, not remote hosts
 # - Set up inventory with target routers (can use groups, specific hosts, or patterns)
 # - After the playbook run, all routing and rule information will be available as individual JSON files
 #   in the specified output directory on the controller
 # - The wrapper script provides identical JSON output to modern 'ip --json' commands
+# - Temporary text files are automatically cleaned up after processing

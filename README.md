@@ -5,11 +5,12 @@ A comprehensive network path discovery tool that simulates traceroute behavior u
 ## 🌟 Features
 
 - **Real Routing Data**: Uses actual routing tables and policy rules from Linux routers
-- **Multiple Output Formats**: Text, JSON, and verbose modes
+- **MTR Fallback**: Automatic fallback to real MTR execution when simulation cannot complete paths
+- **Multiple Output Formats**: Text, JSON, and verbose modes with consistent formatting
 - **Complex Network Support**: Handles VPN tunnels, WireGuard, multi-interface scenarios
 - **Error Detection**: Identifies routing loops, blackhole routes, and unreachable destinations
-- **Automation Friendly**: Exit codes and quiet mode for script integration
-- **Comprehensive Testing**: Full test suite with 100% pass rate
+- **Automation Friendly**: Comprehensive exit codes and quiet mode for script integration
+- **Comprehensive Testing**: Full test suite with 79 tests and 100% pass rate
 - **Professional Visualization**: High-quality network topology diagrams with matplotlib
 - **Accurate Interface Tracking**: Precise incoming/outgoing interface determination
 
@@ -61,11 +62,6 @@ A comprehensive network path discovery tool that simulates traceroute behavior u
    python3 --version  # Ensure Python 3.7+
    ```
 
-3. **Make scripts executable**:
-   ```bash
-   chmod +x traceroute_simulator.py
-   chmod +x test_traceroute_simulator.py
-   ```
 
 ## 🏃 Quick Start
 
@@ -121,17 +117,42 @@ echo "Exit code: $?"
 | `-h` | `--help` | Show help message and exit |
 | `-s IP` | `--source IP` | **Required:** Source IP address for traceroute |
 | `-d IP` | `--destination IP` | **Required:** Destination IP address for traceroute |
-| `-v` | `--verbose` | Enable verbose output with router loading information |
+| `-v` | `--verbose` | Enable verbose output (-v basic, -vv detailed debugging) |
 | `-q` | `--quiet` | Quiet mode - no output, use exit codes only |
 | `-j` | `--json` | Output results in JSON format |
 | | `--routing-dir DIR` | Custom directory containing routing facts (default: `routing_facts`) |
+| | `--no-mtr` | Disable MTR fallback (simulation only) |
 
 ### Detailed Option Descriptions
 
 - **Verbose Mode (`-v`)**: Shows router loading process and additional debugging information
+  - `-v`: Basic verbose output with router loading information
+  - `-vv`: Detailed debugging including simulation output and MTR command details
 - **Quiet Mode (`-q`)**: Suppresses all output, useful for automation scripts that check exit codes
 - **JSON Mode (`-j`)**: Outputs structured data suitable for parsing by other tools
 - **Custom Directory**: Allows using different sets of routing data for testing or multiple environments (default: `routing_facts`)
+- **MTR Fallback (`--no-mtr`)**: Disable automatic MTR fallback for simulation-only mode
+
+## 🔄 MTR Integration
+
+The simulator includes automatic MTR (My TraceRoute) fallback functionality:
+
+### How It Works
+1. **Simulation First**: Attempts normal route simulation using collected routing data
+2. **Automatic Fallback**: If simulation cannot complete the path, automatically falls back to real MTR execution
+3. **SSH Execution**: Executes `mtr --report -c 1 -m 30 <destination>` via SSH on the appropriate Linux router
+4. **Linux Router Filtering**: Filters MTR results to show only Linux routers from inventory
+5. **Consistent Output**: Formats MTR results to match simulation output format
+
+### Use Cases
+- **Mixed Networks**: Networks containing both Linux and non-Linux routers
+- **External Destinations**: Tracing to internet destinations beyond your network
+- **Verification**: Cross-checking simulation results with real network behavior
+
+### Requirements
+- SSH access to Linux routers (passwordless recommended)
+- MTR installed on target routers: `sudo apt-get install mtr-tiny`
+- Proper hostname resolution for router identification
 
 ## 🌐 Network Topology
 
@@ -430,18 +451,20 @@ The simulator uses standard exit codes for automation and error handling:
 | `0` | **Success** | Path found successfully between source and destination |
 | `1` | **No Path** | Source and destination found, but no routing path exists |
 | `2` | **Not Found** | Source or destination IP not reachable by any router |
-| `3` | **Error** | Input validation error or system error |
+| `4` | **No Linux Routers** | MTR executed but no Linux routers found in path |
+| `10` | **Error** | Input validation error or system error |
 
 ### Using Exit Codes in Scripts
 
 ```bash
 #!/bin/bash
-python3 traceroute_simulator.py -q "$1" "$2"
+python3 traceroute_simulator.py --routing-dir routing_facts -q -s "$1" -d "$2"
 case $? in
     0) echo "Route found" ;;
     1) echo "No path available" ;;
     2) echo "IP not reachable" ;;
-    3) echo "Invalid input" ;;
+    4) echo "No Linux routers found" ;;
+    10) echo "Invalid input or error" ;;
 esac
 ```
 
@@ -693,9 +716,15 @@ We welcome contributions to improve the traceroute simulator!
 ```
 traceroute_simulator/
 ├── traceroute_simulator.py      # Main simulator script
+├── mtr_executor.py              # MTR execution and SSH management
+├── route_formatter.py           # Output formatting for simulation and MTR results
+├── ip_json_wrapper.py           # IP JSON compatibility wrapper for legacy systems
 ├── get_routing_info.yml         # Ansible data collection playbook
+├── Makefile                     # Comprehensive build system
 ├── testing/                     # Test environment directory
-│   ├── test_traceroute_simulator.py # Comprehensive test suite  
+│   ├── test_traceroute_simulator.py # Main test suite (64 tests)
+│   ├── test_ip_json_comparison.py   # IP wrapper validation (7 tests)
+│   ├── test_mtr_integration.py      # MTR integration tests (8 tests)
 │   ├── NETWORK_TOPOLOGY.md      # Detailed network documentation
 │   ├── network_topology_diagram.py  # Network visualization generator
 │   ├── network_topology.png     # High-resolution network diagram

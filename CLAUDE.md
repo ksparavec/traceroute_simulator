@@ -14,9 +14,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ### Direct Testing Commands
 - **Run comprehensive test suite**: `cd testing && python3 test_traceroute_simulator.py`
 - **Test IP JSON wrapper**: `cd testing && python3 test_ip_json_comparison.py`
+- **Test MTR integration**: `cd testing && python3 test_mtr_integration.py`
 - **Test specific functionality**: `python3 traceroute_simulator.py --routing-dir testing/routing_facts -s 10.1.1.1 -d 10.2.1.1`
 - **Test complex routing**: `python3 traceroute_simulator.py --routing-dir testing/routing_facts -s 10.1.10.1 -d 10.3.20.1`
 - **Test JSON output**: `python3 traceroute_simulator.py --routing-dir testing/routing_facts -j -s 10.100.1.1 -d 10.100.1.3`
+- **Test MTR fallback**: `python3 traceroute_simulator.py --routing-dir testing/routing_facts -s 10.1.1.1 -d 1.1.1.1 -vv`
 - **Generate network topology diagram**: `cd testing && python3 network_topology_diagram.py`
 
 ### Data Collection and Validation
@@ -40,6 +42,7 @@ The project includes a comprehensive test network with realistic enterprise topo
 - **Generated diagrams**: `testing/network_topology.png` and `testing/network_topology.pdf`
 - **Main test suite**: `testing/test_traceroute_simulator.py` (64 test cases with 100% pass rate)
 - **IP wrapper tests**: `testing/test_ip_json_comparison.py` (7 test cases validating wrapper compatibility)
+- **MTR integration tests**: `testing/test_mtr_integration.py` (8 test cases validating MTR fallback functionality)
 - **IP JSON wrapper**: `ip_json_wrapper.py` (compatibility layer for older Red Hat systems)
 - **Build automation**: `Makefile` (comprehensive build system with dependency checking)
 
@@ -84,7 +87,7 @@ python3 traceroute_simulator.py --routing-dir testing/routing_facts -s <source> 
 - **Performance considerations**: Note any optimization decisions
 
 ### Testing Standards
-- **Comprehensive coverage**: 64 test cases providing near-complete code coverage
+- **Comprehensive coverage**: 79 total test cases (64 main + 8 MTR + 7 IP wrapper) providing near-complete code coverage
 - **Network topology testing**: Tests for intra-location, inter-location, and multi-hop routing
 - **Test documentation**: Comment test purposes and expected outcomes
 - **Error testing**: Include tests for all error conditions and edge cases
@@ -108,12 +111,15 @@ python3 traceroute_simulator.py --routing-dir testing/routing_facts -s <source> 
 ```
 traceroute_simulator/
 ├── traceroute_simulator.py               # Main application
+├── mtr_executor.py                       # MTR execution and SSH management (NEW)
+├── route_formatter.py                    # Output formatting for simulation and MTR results (NEW)
 ├── ip_json_wrapper.py                    # IP JSON compatibility wrapper (NEW)
 ├── get_routing_info.yml                  # Enhanced data collection playbook
 ├── Makefile                              # Build system with dependency checking (NEW)
 ├── testing/                              # Complete test environment
 │   ├── test_traceroute_simulator.py         # Main test suite (64 cases, 100% pass rate)
-│   ├── test_ip_json_comparison.py           # Wrapper validation tests (7 cases) (NEW)
+│   ├── test_ip_json_comparison.py           # Wrapper validation tests (7 cases)
+│   ├── test_mtr_integration.py              # MTR integration tests (8 cases)
 │   ├── NETWORK_TOPOLOGY.md                 # Network documentation
 │   ├── network_topology_diagram.py         # Professional diagram generator
 │   ├── network_topology.png                # High-resolution network diagram
@@ -191,6 +197,17 @@ Achieved near-complete code coverage through systematic testing expansion:
 
 ## Recent Improvements (2025) - NEW
 
+### MTR Integration for Enhanced Path Discovery
+Implemented comprehensive MTR (My TraceRoute) fallback functionality for mixed Linux/non-Linux networks:
+- **Automatic fallback logic**: Seamlessly transitions from simulation to real MTR when simulation cannot complete paths
+- **SSH-based execution**: Direct SSH execution of MTR commands on remote Linux routers without Ansible dependency
+- **Linux router filtering**: Filters MTR results to show only Linux routers from inventory using reverse DNS lookup
+- **Consistent output formatting**: Unified output format between simulation and MTR results in both text and JSON
+- **Two-level verbose debugging**: `-v` for basic output, `-vv` for detailed debugging including MTR command details
+- **Enhanced exit codes**: New exit code 4 for MTR traces with no Linux routers found
+- **Comprehensive testing**: 8 dedicated MTR integration tests validating all functionality
+- **Router name detection**: Proper source router name display vs "source" label based on router ownership
+
 ### IP JSON Wrapper for Legacy System Compatibility
 Created comprehensive wrapper tool for older Red Hat systems without native `ip --json` support:
 - **Transparent replacement**: `ip_json_wrapper.py` serves as drop-in replacement for `ip --json` commands
@@ -203,7 +220,7 @@ Created comprehensive wrapper tool for older Red Hat systems without native `ip 
 ### Professional Build System Integration
 Implemented comprehensive Makefile for automated development workflows:
 - **Dependency validation**: `make check-deps` checks all Python modules with helpful installation hints
-- **Automated testing**: `make test` runs 71 total tests (64 main + 7 wrapper validation + integration tests)
+- **Automated testing**: `make test` runs 79 total tests (64 main + 8 MTR + 7 wrapper validation + integration tests)
 - **Data collection automation**: `make fetch-routing-data` with flexible inventory support
 - **Dual inventory modes**: Support for both inventory files and configured Ansible inventory groups
 - **Environment validation**: Verifies test data availability and routing facts before testing
@@ -230,10 +247,14 @@ Expanded testing capabilities with professional validation tools:
 - **Build system testing**: Validates Makefile targets and dependency checking functionality
 
 ### Key Files Added/Modified (2025)
+- **MTR executor**: `mtr_executor.py` (NEW - SSH-based MTR execution and Linux router filtering)
+- **Route formatter**: `route_formatter.py` (NEW - unified output formatting for simulation and MTR results)
+- **MTR integration tests**: `testing/test_mtr_integration.py` (NEW - 8 tests validating MTR fallback functionality)
 - **IP JSON wrapper**: `ip_json_wrapper.py` (NEW - compatibility layer for older Red Hat systems)
 - **Wrapper tests**: `testing/test_ip_json_comparison.py` (NEW - 7 tests validating wrapper accuracy)
 - **Build system**: `Makefile` (NEW - comprehensive build automation with dependency checking)
 - **Enhanced playbook**: `get_routing_info.yml` (UPDATED - text-only remote execution with controller-side JSON conversion)
+- **Core simulator**: `traceroute_simulator.py` (UPDATED - enhanced with MTR fallback and new exit codes)
 - **Documentation**: `README.md` and `CLAUDE.md` (UPDATED - comprehensive documentation of all new features)
 
 ### Previous Key Files Modified (2024)

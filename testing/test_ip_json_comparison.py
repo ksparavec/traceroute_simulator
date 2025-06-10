@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Test Script for IP JSON Wrapper Comparison
 

@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Network Topology Diagram Generator
 

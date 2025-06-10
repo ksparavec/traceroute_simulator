@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Traceroute Simulator - Network Path Discovery Tool
 
@@ -39,7 +38,8 @@ except ImportError:
 EXIT_SUCCESS = 0        # Path found successfully between source and destination
 EXIT_NO_PATH = 1        # Source and destination found, but no path between them
 EXIT_NOT_FOUND = 2      # Source not found in router network or destination not reachable
-EXIT_ERROR = 3          # Input validation errors or system errors
+EXIT_NO_LINUX = 4       # MTR executed but no Linux routers found in path
+EXIT_ERROR = 10         # Input validation errors or system errors
 
 
 class Router:
@@ -192,21 +192,19 @@ class TracerouteSimulator:
         router_lookup (Dict[str, str]): IP address to router name mapping
         mtr_executor (MTRExecutor): MTR execution handler (if available)
         route_formatter (RouteFormatter): Output formatting handler
-        inventory_file (str): Path to Ansible inventory file for MTR execution
     """
     
-    def __init__(self, routing_facts_dir: str = 'routing_facts', verbose: bool = False, 
-                 inventory_file: str = 'inventory.ini'):
+    def __init__(self, routing_facts_dir: str = 'routing_facts', verbose: bool = False, verbose_level: int = 1):
         """
         Initialize the traceroute simulator.
         
         Args:
             routing_facts_dir: Directory containing *_route.json and *_rule.json files
             verbose: Enable verbose output for debugging router loading
-            inventory_file: Path to Ansible inventory file for MTR execution
+            verbose_level: Verbosity level (1=basic, 2=detailed debugging)
         """
         self.verbose = verbose
-        self.inventory_file = inventory_file
+        self.verbose_level = verbose_level
         # Load all router data from JSON files
         self.routers = self._load_routers(routing_facts_dir)
         # Build fast lookup table for IP-to-router mapping
@@ -214,7 +212,9 @@ class TracerouteSimulator:
         
         # Initialize MTR executor and route formatter if available
         if MTR_AVAILABLE:
-            self.mtr_executor = MTRExecutor(inventory_file, verbose)
+            # Use router names as known Linux routers (since we have their routing data)
+            linux_routers = set(self.routers.keys())
+            self.mtr_executor = MTRExecutor(linux_routers, verbose, verbose_level)
             self.route_formatter = RouteFormatter(verbose)
         else:
             self.mtr_executor = None
@@ -653,6 +653,18 @@ class TracerouteSimulator:
         try:
             simulated_path = self.simulate_traceroute(src_ip, dst_ip)
             
+            # Show simulation output in detailed debug mode
+            if self.verbose_level >= 2:
+                print("=== SIMULATION OUTPUT ===", file=sys.stderr)
+                if self.route_formatter:
+                    sim_lines = self.route_formatter._format_simulated_text(simulated_path)
+                    for line in sim_lines:
+                        print(f"SIM: {line}", file=sys.stderr)
+                else:
+                    for hop in simulated_path:
+                        print(f"SIM: {hop}", file=sys.stderr)
+                print("=== END SIMULATION ===", file=sys.stderr)
+            
             # Check if simulation completed successfully
             if not self.route_formatter or not self.route_formatter.has_route_failure(simulated_path):
                 return simulated_path, False  # Simulation successful, no MTR needed
@@ -692,17 +704,17 @@ class TracerouteSimulator:
         if not mtr_source_router:
             raise ValueError("No suitable Linux router found for MTR execution")
         
-        if self.verbose:
-            print(f"Executing MTR from {mtr_source_router} to {dst_ip}", file=sys.stderr)
         
-        # Execute MTR and get filtered results
+        # Execute MTR and get both all hops and filtered results
         try:
-            mtr_hops = self.mtr_executor.execute_and_filter(mtr_source_router, dst_ip)
+            all_mtr_hops, filtered_mtr_hops = self.mtr_executor.execute_and_filter(mtr_source_router, dst_ip)
             
-            if not mtr_hops:
-                raise ValueError("MTR execution produced no Linux router hops")
+            if not filtered_mtr_hops:
+                # Special case: MTR executed successfully but no Linux routers found in path
+                # This indicates network connectivity exists but path goes through non-Linux infrastructure
+                raise ValueError("MTR_NO_LINUX_ROUTERS")
             
-            return mtr_hops, True  # MTR results
+            return (all_mtr_hops, filtered_mtr_hops, src_ip, dst_ip), True  # MTR results with context
             
         except Exception as e:
             raise ValueError(f"MTR execution failed: {e}")
@@ -779,7 +791,8 @@ Exit codes (for -q/--quiet mode):
   0: Path found successfully
   1: Source and destination found, but no path between them
   2: Source not found in router network or destination not reachable
-  3: Other errors
+  4: MTR executed but no Linux routers found in path
+  10: Other errors
 
 Examples:
   %(prog)s -s 10.1.1.1 -d 10.2.1.1                    # HQ to Branch routing
@@ -792,10 +805,8 @@ Examples:
     parser.add_argument('-d', '--destination', required=True, help='Destination IP address')
     parser.add_argument('--routing-dir', default='routing_facts',
                        help='Directory containing routing facts (default: routing_facts)')
-    parser.add_argument('--inventory', default='inventory.ini',
-                       help='Ansible inventory file for MTR execution (default: inventory.ini)')
-    parser.add_argument('-v', '--verbose', action='store_true',
-                       help='Enable verbose output (show router loading messages)')
+    parser.add_argument('-v', '--verbose', action='count', default=0,
+                       help='Enable verbose output (-v for basic, -vv for detailed debugging)')
     parser.add_argument('-q', '--quiet', action='store_true',
                        help='Quiet mode (no output, exit code indicates result)')
     parser.add_argument('-j', '--json', action='store_true',
@@ -815,8 +826,7 @@ Examples:
         sys.exit(EXIT_ERROR)
     
     try:
-        simulator = TracerouteSimulator(args.routing_dir, verbose=args.verbose, 
-                                      inventory_file=args.inventory)
+        simulator = TracerouteSimulator(args.routing_dir, verbose=args.verbose >= 1, verbose_level=args.verbose)
         
         # Decide which simulation method to use
         if args.no_mtr or not MTR_AVAILABLE:
@@ -831,8 +841,12 @@ Examples:
         # Check if path was found successfully (handle both formats)
         has_no_route = False
         if used_mtr:
-            # MTR results - check if empty
-            has_no_route = not path
+            # MTR results - check if filtered hops are empty
+            if isinstance(path, tuple) and len(path) == 4:
+                all_mtr_hops, filtered_mtr_hops, src_ip, dst_ip = path
+                has_no_route = not filtered_mtr_hops
+            else:
+                has_no_route = not path
         else:
             # Simulated results - check for route failures
             has_no_route = any("No route" in str(item) for item in path)
@@ -863,11 +877,20 @@ Examples:
         # Format output using appropriate formatter
         if used_mtr and simulator.route_formatter:
             # Use route formatter for MTR results
-            if args.json:
-                print(simulator.route_formatter.format_mtr_path(path, 1, "json"))
+            if isinstance(path, tuple) and len(path) == 4:
+                all_mtr_hops, filtered_mtr_hops, src_ip, dst_ip = path
+                if args.json:
+                    print(simulator.route_formatter.format_complete_mtr_path(all_mtr_hops, filtered_mtr_hops, src_ip, dst_ip, "json", simulator._find_router_by_ip))
+                else:
+                    for line in simulator.route_formatter.format_complete_mtr_path(all_mtr_hops, filtered_mtr_hops, src_ip, dst_ip, "text", simulator._find_router_by_ip):
+                        print(line)
             else:
-                for line in simulator.route_formatter.format_mtr_path(path, 1, "text"):
-                    print(line)
+                # Fallback for old format
+                if args.json:
+                    print(simulator.route_formatter.format_mtr_path(path, 1, "json"))
+                else:
+                    for line in simulator.route_formatter.format_mtr_path(path, 1, "text"):
+                        print(line)
         else:
             # Use original formatting for simulated results
             if args.json:
@@ -888,6 +911,8 @@ Examples:
         # Determine appropriate exit code based on error message
         if "not configured on any router" in error_msg or "not in any directly connected network" in error_msg:
             sys.exit(EXIT_NOT_FOUND)
+        elif "MTR_NO_LINUX_ROUTERS" in error_msg:
+            sys.exit(EXIT_NO_LINUX)
         else:
             sys.exit(EXIT_ERROR)
             

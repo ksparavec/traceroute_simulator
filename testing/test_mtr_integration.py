@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Test script for MTR integration functionality.
 
@@ -15,6 +14,16 @@ Author: Network Analysis Tool
 import subprocess
 import sys
 import json
+import os
+
+def get_simulator_path():
+    """Get the correct path to traceroute_simulator.py relative to current working directory."""
+    # Check if we're running from the testing directory
+    if os.path.basename(os.getcwd()) == 'testing':
+        return '../traceroute_simulator.py'
+    # Otherwise assume we're running from the project root
+    else:
+        return 'traceroute_simulator.py'
 
 def run_test(description, command, expected_success=True):
     """Run a test command and report results."""
@@ -53,6 +62,10 @@ def run_test(description, command, expected_success=True):
 
 def main():
     """Run comprehensive tests for MTR integration."""
+    # Get correct paths based on current working directory
+    simulator_path = get_simulator_path()
+    routing_dir = "routing_facts" if os.path.basename(os.getcwd()) == 'testing' else "testing/routing_facts"
+    
     print("MTR Integration Test Suite")
     print("Testing enhanced traceroute simulator with MTR fallback")
     
@@ -63,7 +76,7 @@ def main():
     total_tests += 1
     if run_test(
         "Normal simulation - HQ to Branch",
-        "python3 traceroute_simulator.py --routing-dir testing/routing_facts -s 10.1.1.1 -d 10.2.1.1 --no-mtr"
+        f"python3 {simulator_path} --routing-dir {routing_dir} -s 10.1.1.1 -d 10.2.1.1 --no-mtr"
     ):
         tests_passed += 1
     
@@ -71,7 +84,7 @@ def main():
     total_tests += 1
     if run_test(
         "JSON output format",
-        "python3 traceroute_simulator.py --routing-dir testing/routing_facts -s 10.1.1.1 -d 10.2.1.1 --no-mtr -j"
+        f"python3 {simulator_path} --routing-dir {routing_dir} -s 10.1.1.1 -d 10.2.1.1 --no-mtr -j"
     ):
         tests_passed += 1
     
@@ -79,7 +92,7 @@ def main():
     total_tests += 1
     if run_test(
         "Complex multi-hop routing",
-        "python3 traceroute_simulator.py --routing-dir testing/routing_facts -s 10.1.10.1 -d 10.3.20.1 --no-mtr"
+        f"python3 {simulator_path} --routing-dir {routing_dir} -s 10.1.10.1 -d 10.3.20.1 --no-mtr"
     ):
         tests_passed += 1
     
@@ -87,7 +100,7 @@ def main():
     total_tests += 1
     if run_test(
         "MTR fallback logic test",
-        "python3 traceroute_simulator.py --routing-dir testing/routing_facts -s 10.1.1.1 -d 8.8.8.8",
+        f"python3 {simulator_path} --routing-dir {routing_dir} -s 10.1.1.1 -d 8.8.8.8",
         expected_success=False
     ):
         tests_passed += 1
@@ -96,7 +109,7 @@ def main():
     total_tests += 1
     if run_test(
         "Quiet mode - simulation success",
-        "python3 traceroute_simulator.py --routing-dir testing/routing_facts -s 10.1.1.1 -d 10.2.1.1 --no-mtr -q"
+        f"python3 {simulator_path} --routing-dir {routing_dir} -s 10.1.1.1 -d 10.2.1.1 --no-mtr -q"
     ):
         tests_passed += 1
     
@@ -104,7 +117,7 @@ def main():
     total_tests += 1
     if run_test(
         "Help output",
-        "python3 traceroute_simulator.py --help"
+        f"python3 {simulator_path} --help"
     ):
         tests_passed += 1
     
@@ -112,7 +125,7 @@ def main():
     total_tests += 1
     if run_test(
         "Invalid IP address handling",
-        "python3 traceroute_simulator.py --routing-dir testing/routing_facts -s invalid -d 10.2.1.1 --no-mtr",
+        f"python3 {simulator_path} --routing-dir {routing_dir} -s invalid -d 10.2.1.1 --no-mtr",
         expected_success=False
     ):
         tests_passed += 1
@@ -125,6 +138,9 @@ def main():
     print('='*60)
     
     try:
+        # Add parent directory to path for imports
+        sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+        
         from mtr_executor import MTRExecutor
         from route_formatter import RouteFormatter
         import traceroute_simulator

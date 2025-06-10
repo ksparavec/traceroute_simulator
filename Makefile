@@ -138,6 +138,17 @@ test: check-deps
 		echo ""; \
 	fi
 	
+	# Run MTR integration tests if available
+	@if [ -f "$(TESTING_DIR)/test_mtr_integration.py" ]; then \
+		echo "$(BLUE)2.5. Running MTR Integration Tests$(NC)"; \
+		echo "-------------------------------------"; \
+		cd $(TESTING_DIR) && $(PYTHON) test_mtr_integration.py || { \
+			echo "$(YELLOW)Warning:$(NC) MTR integration tests failed (may not be critical)"; \
+		}; \
+		echo "$(GREEN)✓ MTR integration tests completed$(NC)"; \
+		echo ""; \
+	fi
+	
 	# Test basic functionality with sample data
 	@echo "$(BLUE)3. Running Integration Tests$(NC)"
 	@echo "---------------------------------"

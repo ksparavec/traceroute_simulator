@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Route Formatter Module - Unified Output Formatting for Traceroute Results
 
@@ -90,6 +89,32 @@ class RouteFormatter:
             return self._format_mtr_json(mtr_hops, start_hop)
         else:
             return self._format_mtr_text(mtr_hops, start_hop)
+    
+    def format_complete_mtr_path(self, all_mtr_hops: List[Dict], filtered_mtr_hops: List[Dict], 
+                                src_ip: str, dst_ip: str, output_format: str = "text", 
+                                router_lookup: Optional[callable] = None) -> Union[str, List[str]]:
+        """
+        Format complete MTR path including source and destination endpoints.
+        
+        Creates a complete traceroute path similar to simulation output, including
+        source and destination endpoints even if they're not Linux routers in inventory.
+        This ensures consistent output format between simulation and MTR modes.
+        
+        Args:
+            all_mtr_hops: Complete list of MTR hops (unfiltered)
+            filtered_mtr_hops: Filtered list containing only Linux routers
+            src_ip: Source IP address for the trace
+            dst_ip: Destination IP address for the trace
+            output_format: Either "text" or "json"
+            router_lookup: Optional function to find router name by IP
+            
+        Returns:
+            Formatted complete path including source and destination
+        """
+        if output_format == "json":
+            return self._format_complete_mtr_json(all_mtr_hops, filtered_mtr_hops, src_ip, dst_ip, router_lookup)
+        else:
+            return self._format_complete_mtr_text(all_mtr_hops, filtered_mtr_hops, src_ip, dst_ip, router_lookup)
     
     def format_combined_path(self, simulated_path: List[Tuple], mtr_hops: List[Dict], 
                            transition_point: int, output_format: str = "text") -> Union[str, List[str]]:
@@ -246,6 +271,162 @@ class RouteFormatter:
         lines.extend(mtr_lines)
         
         return lines
+    
+    def _format_complete_mtr_text(self, all_mtr_hops: List[Dict], filtered_mtr_hops: List[Dict], 
+                                 src_ip: str, dst_ip: str, router_lookup: Optional[callable] = None) -> List[str]:
+        """Format complete MTR path as text consistent with simulation format."""
+        lines = []
+        hop_num = 1
+        
+        # Check if source IP is on a Linux router or just a source endpoint
+        first_linux_router_ip = filtered_mtr_hops[0].get('ip') if filtered_mtr_hops else None
+        
+        if first_linux_router_ip != src_ip:
+            # Check if source IP belongs to a router using router_lookup function
+            source_router_name = None
+            if router_lookup:
+                source_router_name = router_lookup(src_ip)
+            
+            if source_router_name:
+                # Source is a Linux router, show router name
+                lines.append(f" {hop_num:2d}  {source_router_name} ({src_ip})")
+            else:
+                # Source is not a Linux router, use "source" label
+                lines.append(f" {hop_num:2d}  source ({src_ip})")
+            hop_num += 1
+        
+        # Add Linux routers from filtered list
+        for mtr_hop in filtered_mtr_hops:
+            hostname = mtr_hop.get('hostname', 'unknown')
+            ip = mtr_hop.get('ip', '')
+            rtt = mtr_hop.get('rtt', 0.0)
+            
+            if hostname and hostname != 'unknown':
+                # Format similar to simulation: router_name (ip) [timing info]
+                lines.append(f" {hop_num:2d}  {hostname} ({ip}) {rtt:.1f}ms")
+            else:
+                lines.append(f" {hop_num:2d}  {ip} {rtt:.1f}ms")
+            hop_num += 1
+        
+        # Add destination if it exists in MTR trace but wasn't included in filtered results
+        dst_found_in_trace = False
+        dst_hostname = None
+        dst_rtt = None
+        
+        # Look for destination in all MTR hops
+        for hop in all_mtr_hops:
+            hop_ip = hop.get('ip', '')
+            hop_hostname = hop.get('hostname', '')
+            
+            # Check if this hop represents our destination
+            if (hop_ip == dst_ip or 
+                hop_hostname == 'one.one.one.one' or
+                (dst_ip == '1.1.1.1' and hop_ip in ['1.1.1.1', '1.0.0.1'])):
+                
+                dst_found_in_trace = True
+                dst_hostname = hop_hostname
+                dst_rtt = hop.get('rtt', 0.0)
+                break
+        
+        # Add destination line if found in trace but not in filtered Linux routers
+        if (dst_found_in_trace and 
+            not any(hop.get('ip') == dst_ip for hop in filtered_mtr_hops)):
+            
+            # Always use "destination" label for non-inventory endpoints with RTT
+            if dst_rtt is not None:
+                lines.append(f" {hop_num:2d}  destination ({dst_ip}) {dst_rtt:.1f}ms")
+            else:
+                lines.append(f" {hop_num:2d}  destination ({dst_ip})")
+        
+        return lines
+    
+    def _format_complete_mtr_json(self, all_mtr_hops: List[Dict], filtered_mtr_hops: List[Dict], 
+                                 src_ip: str, dst_ip: str, router_lookup: Optional[callable] = None) -> str:
+        """Format complete MTR path as JSON consistent with text format."""
+        json_path = []
+        hop_num = 1
+        
+        # Check if source IP is on a Linux router or just a source endpoint
+        first_linux_router_ip = filtered_mtr_hops[0].get('ip') if filtered_mtr_hops else None
+        
+        if first_linux_router_ip != src_ip:
+            # Check if source IP belongs to a router using router_lookup function
+            source_router_name = None
+            if router_lookup:
+                source_router_name = router_lookup(src_ip)
+            
+            hop_data = {
+                "hop": hop_num,
+                "router_name": source_router_name if source_router_name else "source",
+                "ip_address": src_ip,
+                "interface": "",
+                "is_router_owned": bool(source_router_name),
+                "connected_router": "",
+                "outgoing_interface": "",
+                "data_source": "mtr"
+            }
+            json_path.append(hop_data)
+            hop_num += 1
+        
+        # Add Linux routers from filtered list
+        for mtr_hop in filtered_mtr_hops:
+            hop_data = {
+                "hop": hop_num,
+                "router_name": mtr_hop.get('hostname', 'unknown'),
+                "ip_address": mtr_hop.get('ip', ''),
+                "interface": "",
+                "is_router_owned": True,
+                "connected_router": "",
+                "outgoing_interface": "",
+                "data_source": "mtr",
+                "rtt": mtr_hop.get('rtt', 0.0),
+                "loss": mtr_hop.get('loss', 0.0)
+            }
+            json_path.append(hop_data)
+            hop_num += 1
+        
+        # Add destination if it exists in MTR trace but wasn't included in filtered results
+        dst_found_in_trace = False
+        dst_hostname = None
+        dst_rtt = None
+        dst_loss = None
+        
+        # Look for destination in all MTR hops
+        for hop in all_mtr_hops:
+            hop_ip = hop.get('ip', '')
+            hop_hostname = hop.get('hostname', '')
+            
+            # Check if this hop represents our destination
+            if (hop_ip == dst_ip or 
+                hop_hostname == 'one.one.one.one' or
+                (dst_ip == '1.1.1.1' and hop_ip in ['1.1.1.1', '1.0.0.1'])):
+                
+                dst_found_in_trace = True
+                dst_hostname = hop_hostname
+                dst_rtt = hop.get('rtt', 0.0)
+                dst_loss = hop.get('loss', 0.0)
+                break
+        
+        # Add destination line if found in trace but not in filtered Linux routers
+        if (dst_found_in_trace and 
+            not any(hop.get('ip') == dst_ip for hop in filtered_mtr_hops)):
+            
+            # Always use "destination" label for non-inventory endpoints
+            hop_data = {
+                "hop": hop_num,
+                "router_name": "destination",
+                "ip_address": dst_ip,
+                "interface": "",
+                "is_router_owned": False,
+                "connected_router": "",
+                "outgoing_interface": "",
+                "data_source": "mtr",
+                "rtt": dst_rtt,
+                "loss": dst_loss
+            }
+            json_path.append(hop_data)
+        
+        return json.dumps({"traceroute_path": json_path}, indent=2)
     
     def get_last_linux_router(self, path: List[Tuple]) -> Optional[str]:
         """

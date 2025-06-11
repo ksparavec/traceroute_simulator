@@ -96,14 +96,35 @@ def main():
     ):
         tests_passed += 1
     
-    # Test 4: MTR fallback logic (should succeed with working SSH environment)
+    # Test 4: MTR fallback logic (should return exit code 4 when no Linux routers found)
     total_tests += 1
-    if run_test(
-        "MTR fallback logic test",
-        f"python3 {simulator_path} --routing-dir {routing_dir} -s 10.1.1.1 -d 8.8.8.8",
-        expected_success=True
-    ):
-        tests_passed += 1
+    print(f"\n{'='*60}")
+    print("TEST: MTR fallback logic test")
+    command = f"python3 {simulator_path} --routing-dir {routing_dir} -s 10.1.1.1 -d 8.8.8.8"
+    print(f"COMMAND: {command}")
+    print('='*60)
+    
+    try:
+        result = subprocess.run(command, shell=True, capture_output=True, text=True)
+        
+        # This test should return exit code 4 (EXIT_NO_LINUX) when MTR executes 
+        # successfully but no Linux routers are found in the path
+        if result.returncode == 4:
+            print("✓ PASS: MTR executed successfully, no Linux routers found (exit code 4)")
+            if result.stdout:
+                print("OUTPUT:")
+                print(result.stdout)
+            tests_passed += 1
+        else:
+            print(f"✗ FAIL: Expected exit code 4 (EXIT_NO_LINUX), got {result.returncode}")
+            if result.stdout:
+                print("STDOUT:")
+                print(result.stdout)
+            if result.stderr:
+                print("STDERR:")
+                print(result.stderr)
+    except Exception as e:
+        print(f"✗ FAIL: Exception occurred: {e}")
     
     # Test 5: Quiet mode with simulation
     total_tests += 1

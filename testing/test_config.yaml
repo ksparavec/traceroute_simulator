@@ -1,0 +1,7 @@
+# Test configuration for traceroute simulator
+routing_dir: "routing_facts"
+verbose: true
+verbose_level: 2
+json_output: false
+enable_mtr_fallback: false  # Disable MTR for testing
+enable_reverse_trace: false

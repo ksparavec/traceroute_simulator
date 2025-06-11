@@ -400,11 +400,11 @@ class TracerouteSimulatorTester:
         non_existent_ips = ["172.16.1.1", "192.168.1.1", "10.99.99.99"]
         for ip in non_existent_ips:
             returncode, stdout, stderr = self.run_simulator(["-s", ip, "-d", "10.1.1.1"])
-            not_found = returncode == 10 and ("not configured on any router" in stderr or "No suitable Linux router" in stderr)
+            not_found = returncode == 2 and ("not configured on any router" in stderr or "not in any directly connected network" in stderr)
             self.add_result(TestResult(
                 f"Non-existent source IP: {ip}",
                 not_found,
-                f"Expected exit code 10, got code {returncode}"
+                f"Expected exit code 2 (EXIT_NOT_FOUND), got code {returncode}"
             ))
         
         # Test missing arguments
@@ -429,13 +429,13 @@ class TracerouteSimulatorTester:
             f"Expected exit code 0, got {returncode}"
         ))
         
-        # Test not found (exit code 10) - non-existent IPs now return 10 due to MTR fallback failure
+        # Test not found (exit code 2) - non-existent source IPs return EXIT_NOT_FOUND
         returncode, stdout, stderr = self.run_simulator(["-q", "-s", "172.16.1.1", "-d", "10.1.1.1"])
-        not_found_code = returncode == 10
+        not_found_code = returncode == 2
         self.add_result(TestResult(
-            "Exit code 10 (not found)",
+            "Exit code 2 (not found)",
             not_found_code,
-            f"Expected exit code 10, got {returncode}"
+            f"Expected exit code 2 (EXIT_NOT_FOUND), got {returncode}"
         ))
         
         # Test invalid IP (exit code 10)
@@ -617,11 +617,11 @@ class TracerouteSimulatorTester:
             "-s", "2001:db8::1", "-d", "2001:db8::2", "--routing-dir", ROUTING_FACTS_DIR
         ], expect_error=True)
         
-        ipv6_handled = returncode == 10  # Should be "error" since we don't have IPv6 routers and MTR fallback fails
+        ipv6_handled = returncode == 2  # Should be "not found" since we don't have IPv6 routers in routing data
         self.add_result(TestResult(
             "IPv6 address handling",
             ipv6_handled,
-            f"Expected exit code 10 for IPv6 (not found), got {returncode}"
+            f"Expected exit code 2 (EXIT_NOT_FOUND) for IPv6, got {returncode}"
         ))
         
         # Test 6: Test timeout/max hops scenario

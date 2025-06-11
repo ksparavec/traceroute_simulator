@@ -23,7 +23,14 @@ import argparse
 import ipaddress
 import os
 import glob
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Any
+
+# Import YAML for configuration file support
+try:
+    import yaml
+    YAML_AVAILABLE = True
+except ImportError:
+    YAML_AVAILABLE = False
 
 # Import MTR execution, route formatting, and reverse path tracing modules
 try:
@@ -169,6 +176,123 @@ class Router:
             IP address string if interface exists, None otherwise
         """
         return self.interfaces.get(interface)
+
+
+def load_configuration() -> Dict[str, Any]:
+    """
+    Load configuration from YAML file with proper precedence.
+    
+    Configuration file location precedence:
+    1. Environment variable TRACEROUTE_SIMULATOR_CONF (if set)
+    2. ~/traceroute_simulator.yaml (user's home directory)
+    3. ./traceroute_simulator.yaml (current directory)
+    
+    Returns:
+        Dictionary containing configuration values
+    """
+    config = {}
+    
+    if not YAML_AVAILABLE:
+        return config
+    
+    # Define potential configuration file locations in order of precedence
+    config_files = []
+    
+    # 1. Environment variable (highest precedence)
+    env_config = os.environ.get('TRACEROUTE_SIMULATOR_CONF')
+    if env_config:
+        config_files.append(env_config)
+    
+    # 2. User's home directory
+    home_config = os.path.expanduser('~/traceroute_simulator.yaml')
+    config_files.append(home_config)
+    
+    # 3. Current directory (lowest precedence)
+    local_config = './traceroute_simulator.yaml'
+    config_files.append(local_config)
+    
+    # Try to load configuration from the first available file
+    for config_file in config_files:
+        try:
+            if os.path.isfile(config_file):
+                with open(config_file, 'r') as f:
+                    config = yaml.safe_load(f) or {}
+                break
+        except (yaml.YAMLError, IOError, OSError) as e:
+            # Continue to next file if current one fails
+            continue
+    
+    return config
+
+
+def get_default_config() -> Dict[str, Any]:
+    """
+    Get hard-coded default configuration values.
+    
+    Returns:
+        Dictionary containing default configuration
+    """
+    return {
+        'routing_dir': 'routing_facts',
+        'verbose': False,
+        'verbose_level': 1,
+        'quiet': False,
+        'json_output': False,
+        'enable_mtr_fallback': True,
+        'enable_reverse_trace': False,
+        'controller_ip': None
+    }
+
+
+def merge_config(defaults: Dict[str, Any], config_file: Dict[str, Any], 
+                 args: argparse.Namespace) -> Dict[str, Any]:
+    """
+    Merge configuration from defaults, config file, and command line arguments.
+    
+    Precedence (highest to lowest):
+    1. Command line arguments
+    2. Configuration file values
+    3. Hard-coded defaults
+    
+    Args:
+        defaults: Hard-coded default values
+        config_file: Values from configuration file
+        args: Parsed command line arguments
+        
+    Returns:
+        Merged configuration dictionary
+    """
+    config = defaults.copy()
+    
+    # Apply configuration file values (override defaults)
+    config.update(config_file)
+    
+    # Apply command line arguments (override config file and defaults)
+    # Only set values that were explicitly provided on command line
+    if hasattr(args, 'routing_dir') and args.routing_dir:
+        config['routing_dir'] = args.routing_dir
+    if hasattr(args, 'verbose') and args.verbose is not None:
+        if args.verbose == 0:
+            config['verbose'] = False
+            config['verbose_level'] = 1
+        elif args.verbose == 1:
+            config['verbose'] = True
+            config['verbose_level'] = 1
+        elif args.verbose >= 2:
+            config['verbose'] = True
+            config['verbose_level'] = args.verbose
+    if hasattr(args, 'quiet') and args.quiet:
+        config['quiet'] = True
+    if hasattr(args, 'json') and args.json:
+        config['json_output'] = True
+    if hasattr(args, 'no_mtr') and args.no_mtr:
+        config['enable_mtr_fallback'] = False
+    if hasattr(args, 'reverse_trace') and args.reverse_trace:
+        config['enable_reverse_trace'] = True
+    if hasattr(args, 'controller_ip') and args.controller_ip:
+        config['controller_ip'] = args.controller_ip
+    
+    return config
 
 
 class TracerouteSimulator:
@@ -882,6 +1006,14 @@ def main():
         description='Simulate traceroute between two IP addresses using collected routing data',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
+Configuration File Support:
+  Options can be configured in a YAML file. Location precedence:
+  1. $TRACEROUTE_SIMULATOR_CONF environment variable
+  2. ~/traceroute_simulator.yaml (user's home directory)
+  3. ./traceroute_simulator.yaml (current directory)
+  
+  Command line arguments override configuration file values.
+
 Exit codes (for -q/--quiet mode):
   0: Path found successfully
   1: Source and destination found, but no path between them
@@ -916,24 +1048,29 @@ Examples:
     
     args = parser.parse_args()
     
+    # Load configuration with proper precedence
+    defaults = get_default_config()
+    config_file = load_configuration()
+    config = merge_config(defaults, config_file, args)
+    
     try:
         # Validate IP addresses
         ipaddress.ip_address(args.source)
         ipaddress.ip_address(args.destination)
     except (ipaddress.AddressValueError, ValueError) as e:
-        if not args.quiet:
+        if not config['quiet']:
             print(f"Error: Invalid IP address - {e}", file=sys.stderr)
         sys.exit(EXIT_ERROR)
     
     try:
-        simulator = TracerouteSimulator(args.routing_dir, verbose=args.verbose >= 1, verbose_level=args.verbose)
+        simulator = TracerouteSimulator(config['routing_dir'], verbose=config['verbose'], verbose_level=config['verbose_level'])
         
         # Decide which simulation method to use
         path = None
         used_mtr = False
         used_reverse = False
         
-        if args.no_mtr or not MTR_AVAILABLE:
+        if not config['enable_mtr_fallback'] or not MTR_AVAILABLE:
             # Use original simulation only
             path = simulator.simulate_traceroute(args.source, args.destination)
             used_mtr = False
@@ -944,16 +1081,16 @@ Examples:
                 path = path_data
             except ValueError as e:
                 # If both simulation and MTR failed, try reverse path tracing
-                if args.reverse_trace and REVERSE_TRACER_AVAILABLE:
-                    if args.verbose:
+                if config['enable_reverse_trace'] and REVERSE_TRACER_AVAILABLE:
+                    if config['verbose']:
                         print(f"Forward methods failed ({e}), attempting reverse path tracing", file=sys.stderr)
                     
                     # Initialize reverse path tracer
                     reverse_tracer = ReversePathTracer(
                         simulator, 
-                        args.controller_ip, 
-                        verbose=args.verbose >= 1, 
-                        verbose_level=args.verbose
+                        config['controller_ip'], 
+                        verbose=config['verbose'], 
+                        verbose_level=config['verbose_level']
                     )
                     
                     # Perform reverse path tracing
@@ -964,11 +1101,11 @@ Examples:
                     if success:
                         path = reverse_path
                         used_reverse = True
-                        if args.verbose:
+                        if config['verbose']:
                             print("Reverse path tracing successful", file=sys.stderr)
                     else:
                         # All methods failed
-                        if not args.quiet:
+                        if not config['quiet']:
                             print(f"Error: All tracing methods failed - {e}", file=sys.stderr)
                         sys.exit(reverse_exit_code)
                 else:
@@ -1026,11 +1163,11 @@ Examples:
                 exit_code = EXIT_NOT_FOUND
         
         # Handle output and exit based on mode
-        if args.quiet:
+        if config['quiet']:
             sys.exit(exit_code)
         
         # Non-quiet output
-        if not args.json:
+        if not config['json_output']:
             trace_info = f"traceroute to {args.destination} from {args.source}"
             if used_mtr:
                 trace_info += " (using forward path tracing with mtr tool)"
@@ -1043,7 +1180,7 @@ Examples:
             # Use route formatter for MTR results
             if isinstance(path, tuple) and len(path) == 4:
                 all_mtr_hops, filtered_mtr_hops, src_ip, dst_ip = path
-                if args.json:
+                if config['json_output']:
                     print(simulator.route_formatter.format_complete_mtr_path(all_mtr_hops, filtered_mtr_hops, src_ip, dst_ip, "json", simulator._find_router_by_ip))
                 else:
                     for line in simulator.route_formatter.format_complete_mtr_path(all_mtr_hops, filtered_mtr_hops, src_ip, dst_ip, "text", simulator._find_router_by_ip):
@@ -1051,21 +1188,21 @@ Examples:
             else:
                 # Special case: MTR was used but returned simple path format (no Linux routers found)
                 # Use original formatting for simple path results
-                if args.json:
+                if config['json_output']:
                     print(format_path_json(path))
                 else:
                     for line in format_path_text(path):
                         print(line)
         elif used_reverse:
             # Use original formatting for reverse path tracing results (they use simulation format)
-            if args.json:
+            if config['json_output']:
                 print(format_path_json(path))
             else:
                 for line in format_path_text(path):
                     print(line)
         else:
             # Use original formatting for simulated results
-            if args.json:
+            if config['json_output']:
                 print(format_path_json(path))
             else:
                 for line in format_path_text(path):
@@ -1077,7 +1214,7 @@ Examples:
                 
     except ValueError as e:
         error_msg = str(e)
-        if not args.quiet:
+        if not config['quiet']:
             print(f"Error: {error_msg}", file=sys.stderr)
         
         # Determine appropriate exit code based on error message

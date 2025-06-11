@@ -1,0 +1,46 @@
+# Traceroute Simulator Configuration File
+# 
+# This file contains default configuration options for the traceroute simulator.
+# Command line arguments take precedence over these settings.
+#
+# Configuration file location precedence:
+# 1. Environment variable TRACEROUTE_SIMULATOR_CONF (if set)
+# 2. ~/traceroute_simulator.yaml (user's home directory)
+# 3. ./traceroute_simulator.yaml (current directory - this file)
+#
+# Option value precedence (highest to lowest):
+# 1. Command line arguments
+# 2. Configuration file values
+# 3. Hard-coded defaults
+
+# Network and routing configuration
+routing_dir: "routing_facts"                    # Directory containing routing facts
+
+# Output configuration  
+verbose: false                                  # Enable verbose output (-v flag)
+verbose_level: 1                               # Verbosity level (1=basic, 2=detailed)
+quiet: false                                   # Quiet mode (no output, exit codes only)
+json_output: false                             # Output results in JSON format
+
+# Tracing behavior
+enable_mtr_fallback: true                      # Enable MTR fallback for incomplete paths
+enable_reverse_trace: false                    # Enable reverse path tracing when forward fails
+
+# Network discovery
+controller_ip: null                            # Ansible controller IP (auto-detect if null)
+
+# Examples of usage:
+#
+# Basic configuration for simulation-only mode:
+# enable_mtr_fallback: false
+# verbose: true
+#
+# JSON output with reverse tracing:
+# json_output: true  
+# enable_reverse_trace: true
+# verbose_level: 2
+#
+# Production environment with custom routing directory:
+# routing_dir: "/etc/traceroute-simulator/routing_facts"
+# enable_mtr_fallback: true
+# controller_ip: "192.168.1.100"

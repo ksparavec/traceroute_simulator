@@ -166,7 +166,8 @@ class RouteFormatter:
             elif " -> " in router_name:  # Single router scenario
                 lines.append(f" {hop_num:2d}  {router_name} ({ip_addr}) {interface}")
             else:
-                if router_name in ["source", "destination"]:
+                # Check if this is an endpoint (not a router in our inventory)
+                if not is_router_owned:
                     # Source and destination use "via interface on router"
                     if interface:
                         connector = "on" if is_router_owned else "via"
@@ -447,7 +448,8 @@ class RouteFormatter:
         
         for hop_num, router_name, ip_addr, interface, is_router_owned, connected_router, outgoing_interface in path:
             # Skip special entries
-            if router_name in ["source", "destination", "* * *"]:
+            # Skip special entries (endpoints are now FQDNs, so check if not router-owned)
+            if router_name == "* * *" or not is_router_owned:
                 continue
             if " -> " in router_name:  # Single router scenario
                 continue

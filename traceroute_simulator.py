@@ -382,6 +382,44 @@ class TracerouteSimulator:
                 return True
         return False
     
+    def _resolve_ip_to_fqdn(self, ip: str) -> str:
+        """
+        Resolve IP address to FQDN using reverse DNS lookup.
+        
+        Uses the same getent hosts approach as MTR executor for consistency.
+        Falls back to original IP if resolution fails.
+        
+        Args:
+            ip: IP address to resolve
+            
+        Returns:
+            FQDN if resolution succeeds, original IP if it fails
+        """
+        try:
+            import subprocess
+            ipaddress.ip_address(ip)  # Validate IP address
+            
+            # Use getent hosts for reverse DNS lookup
+            result = subprocess.run(
+                ['getent', 'hosts', ip],
+                capture_output=True,
+                text=True,
+                timeout=2  # Shorter timeout for UI responsiveness
+            )
+            
+            if result.returncode == 0 and result.stdout.strip():
+                # Parse getent output: "IP hostname [aliases...]"
+                parts = result.stdout.strip().split()
+                if len(parts) >= 2:
+                    hostname = parts[1]
+                    return hostname
+            
+            return ip  # Fallback to IP if resolution fails
+            
+        except (subprocess.TimeoutExpired, subprocess.CalledProcessError, 
+                ValueError, ipaddress.AddressValueError, FileNotFoundError):
+            return ip  # Fallback to IP if any error occurs
+    
     def _get_next_hop(self, current_router: str, dst_ip: str, src_ip: str) -> Tuple[Optional[str], Optional[str], Optional[str]]:
         """Get next hop router, gateway IP, and interface for destination."""
         if current_router not in self.routers:
@@ -527,7 +565,9 @@ class TracerouteSimulator:
                             break
                     except (ValueError, ipaddress.AddressValueError):
                         continue
-            path.append((hop, "source", src_ip, src_interface or "", False, current_router, ""))
+            # Try to resolve source IP to FQDN
+            src_label = self._resolve_ip_to_fqdn(src_ip)
+            path.append((hop, src_label, src_ip, src_interface or "", False, current_router, ""))
             hop += 1
             # Add the router that the source connects through - will get outgoing interface from next hop
             router_ip = self.routers[current_router].interfaces.get(src_interface, "")
@@ -583,7 +623,9 @@ class TracerouteSimulator:
                                         break
                                 except (ValueError, ipaddress.AddressValueError):
                                     continue
-                        path.append((hop, "destination", dst_ip, dst_interface, False, current_router, ""))
+                        # Try to resolve destination IP to FQDN
+                        dst_label = self._resolve_ip_to_fqdn(dst_ip)
+                        path.append((hop, dst_label, dst_ip, dst_interface, False, current_router, ""))
                 break
             
             # Find next hop
@@ -734,12 +776,14 @@ class TracerouteSimulator:
                 # Return simple source->destination path with timing information
                 # Check if source IP belongs to a router
                 src_router_name = self._find_router_by_ip(src_ip)
-                src_label = src_router_name if src_router_name else "source"
+                # Try to resolve source and destination to FQDNs
+                src_label = src_router_name if src_router_name else self._resolve_ip_to_fqdn(src_ip)
+                dst_label = self._resolve_ip_to_fqdn(dst_ip)
                 src_is_router_owned = src_router_name is not None
                 
                 simple_path = [
                     (1, src_label, src_ip, "", src_is_router_owned, "", "", 0.0),
-                    (2, "destination", dst_ip, "", False, "", "", destination_rtt)
+                    (2, dst_label, dst_ip, "", False, "", "", destination_rtt)
                 ]
                 return simple_path, True  # Simple path, but MTR was used
             
@@ -933,13 +977,32 @@ Examples:
         
         # Check if path was found successfully (handle both formats)
         has_no_route = False
+        mtr_no_linux_routers = False
+        
         if used_mtr:
-            # MTR results - check if filtered hops are empty
+            # MTR results - distinguish between execution failure and no Linux routers found
             if isinstance(path, tuple) and len(path) == 4:
                 all_mtr_hops, filtered_mtr_hops, src_ip, dst_ip = path
-                has_no_route = not filtered_mtr_hops
+                # MTR executed successfully if all_mtr_hops has data
+                mtr_executed_successfully = bool(all_mtr_hops)
+                if mtr_executed_successfully and not filtered_mtr_hops:
+                    # MTR executed successfully but no Linux routers found in path
+                    mtr_no_linux_routers = True
+                    has_no_route = False  # Don't treat as route failure
+                else:
+                    # Either MTR failed or Linux routers were found
+                    has_no_route = not filtered_mtr_hops
             else:
-                has_no_route = not path
+                # Simple path format - this happens when MTR executed successfully 
+                # but no Linux routers were found, so a simple source->destination path was created
+                if path and len(path) == 2:
+                    # Check if this is a simple source->destination path created due to no Linux routers
+                    # This indicates MTR executed successfully but found no Linux routers
+                    mtr_no_linux_routers = True
+                    has_no_route = False  # Don't treat as route failure
+                else:
+                    # Other simple path scenarios (actual failures)
+                    has_no_route = not path
         elif used_reverse:
             # Reverse path tracing results - check for route failures
             has_no_route = not path or any("No route" in str(item) for item in path)
@@ -949,7 +1012,10 @@ Examples:
         
         # Determine exit code first
         exit_code = EXIT_SUCCESS
-        if has_no_route:
+        if mtr_no_linux_routers:
+            # MTR executed successfully but no Linux routers found in path
+            exit_code = EXIT_NO_LINUX
+        elif has_no_route:
             # Determine if destination is reachable by any router
             dst_reachable = simulator._validate_ip_reachability(args.destination)
             if dst_reachable:

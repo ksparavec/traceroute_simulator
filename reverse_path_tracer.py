@@ -228,7 +228,9 @@ class ReversePathTracer:
                     # If destination was reached, add it as final hop
                     if destination_reached:
                         dest_hop_num = len(mtr_path) + 1
-                        mtr_path.append((dest_hop_num, "destination", destination, "", False, "", "", destination_rtt))
+                        # Try to resolve destination IP to FQDN
+                        dst_label = self.simulator._resolve_ip_to_fqdn(destination)
+                        mtr_path.append((dest_hop_num, dst_label, destination, "", False, "", "", destination_rtt))
                     else:
                         # Destination not reached by MTR - this should fail
                         raise ValueError(f"Destination {destination} not reachable via mtr tool")
@@ -335,8 +337,10 @@ class ReversePathTracer:
                         
                         # Create simple destination path with timing information
                         # Note: Don't include last_linux_router here as it's already in forward_path
+                        # Try to resolve original source IP to FQDN  
+                        src_label = self.simulator._resolve_ip_to_fqdn(original_src)
                         simple_path = [
-                            (1, "destination", original_src, "", False, "", "", destination_rtt)
+                            (1, src_label, original_src, "", False, "", "", destination_rtt)
                         ]
                         if self.verbose >= 2:
                             print("Reverse mtr tool successful: direct path (no Linux routers found)")
@@ -354,8 +358,10 @@ class ReversePathTracer:
                     # so we create a simple path without timing information
                     # Create simple destination path without timing information
                     # Note: Don't include last_linux_router here as it's already in forward_path
+                    # Try to resolve original source IP to FQDN
+                    src_label = self.simulator._resolve_ip_to_fqdn(original_src)
                     simple_path = [
-                        (1, "destination", original_src, "", False, "", "", 0.0)
+                        (1, src_label, original_src, "", False, "", "", 0.0)
                     ]
                     if self.verbose >= 2:
                         print("Reverse mtr tool successful: direct path (no Linux routers found)")
@@ -411,7 +417,8 @@ class ReversePathTracer:
         # Add the original source as the first hop
         # Check if original source belongs to a router
         src_router_name = self.simulator._find_router_by_ip(original_src)
-        src_label = src_router_name if src_router_name else "source"
+        # Try to resolve source IP to FQDN if not a router
+        src_label = src_router_name if src_router_name else self.simulator._resolve_ip_to_fqdn(original_src)
         src_is_router_owned = src_router_name is not None
         
         final_path.append((hop_counter, src_label, original_src, "", src_is_router_owned, "", "", 0.0))
@@ -426,8 +433,9 @@ class ReversePathTracer:
                 hop_num, router_name, ip, interface, is_router, connected_to, outgoing, rtt = hop_data
             else:
                 hop_num, router_name, ip, interface, is_router, connected_to, outgoing = hop_data
-            # Skip source/destination entries and the starting router
-            if router_name not in ["source", "destination"] and not router_name.startswith("*"):
+            # Skip source/destination entries (router_name could be FQDN now) and the starting router
+            # Check if this is an endpoint by seeing if is_router is False (endpoints are not routers)
+            if is_router and not router_name.startswith("*"):
                 filtered_reverse.append(hop_data)
         
         # Reverse the filtered path
@@ -486,7 +494,9 @@ class ReversePathTracer:
                     destination_rtt = 0.0
                     break
             
-            final_path.append((hop_counter, "destination", original_dst, "", False, "", "", destination_rtt))
+            # Try to resolve destination IP to FQDN
+            dst_label = self.simulator._resolve_ip_to_fqdn(original_dst)
+            final_path.append((hop_counter, dst_label, original_dst, "", False, "", "", destination_rtt))
         
         if self.verbose >= 2:
             print(f"Final combined path has {len(final_path)} hops")
@@ -552,9 +562,9 @@ class ReversePathTracer:
             else:
                 hop_num, router_name, ip, interface, is_router, connected_to, outgoing = hop_data
             
-            # Check if this is a Linux router (not source/destination/failure)
+            # Check if this is a Linux router (not endpoint/failure)
+            # With FQDN resolution, endpoints won't be exactly "source"/"destination" anymore
             if (is_router and router_name in self.simulator.routers and 
-                router_name not in ["source", "destination"] and 
                 not router_name.startswith("*")):
                 last_linux_router = router_name
         

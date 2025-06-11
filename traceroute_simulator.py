@@ -25,13 +25,16 @@ import os
 import glob
 from typing import Dict, List, Optional, Tuple
 
-# Import MTR execution and route formatting modules
+# Import MTR execution, route formatting, and reverse path tracing modules
 try:
     from mtr_executor import MTRExecutor
     from route_formatter import RouteFormatter
+    from reverse_path_tracer import ReversePathTracer
     MTR_AVAILABLE = True
+    REVERSE_TRACER_AVAILABLE = True
 except ImportError:
     MTR_AVAILABLE = False
+    REVERSE_TRACER_AVAILABLE = False
 
 # Exit codes for quiet mode operation
 # These codes allow automated scripts to determine the result without parsing output
@@ -670,18 +673,18 @@ class TracerouteSimulator:
                 return simulated_path, False  # Simulation successful, no MTR needed
             
             if self.verbose:
-                print("Simulation incomplete, attempting MTR fallback", file=sys.stderr)
+                print("Simulation incomplete, attempting mtr tool fallback", file=sys.stderr)
             
         except ValueError as e:
             if self.verbose:
-                print(f"Simulation failed: {e}, attempting MTR fallback", file=sys.stderr)
+                print(f"Simulation failed: {e}, attempting mtr tool fallback", file=sys.stderr)
             simulated_path = []
         
-        # MTR fallback is needed
+        # mtr tool fallback is needed
         if not MTR_AVAILABLE or not self.mtr_executor:
-            raise ValueError("MTR fallback not available - modules not imported")
+            raise ValueError("mtr tool fallback not available - modules not imported")
         
-        # Find the last Linux router for MTR execution
+        # Find the last Linux router for mtr tool execution
         mtr_source_router = None
         
         if simulated_path:
@@ -702,29 +705,62 @@ class TracerouteSimulator:
                         break
         
         if not mtr_source_router:
-            raise ValueError("No suitable Linux router found for MTR execution")
+            # No suitable router found - this should trigger reverse path tracing
+            raise ValueError("No suitable Linux router found for mtr tool execution")
         
         
-        # Execute MTR and get both all hops and filtered results
+        # Execute mtr tool and get both all hops and filtered results
         try:
             all_mtr_hops, filtered_mtr_hops = self.mtr_executor.execute_and_filter(mtr_source_router, dst_ip)
             
             if not filtered_mtr_hops:
-                # Special case: MTR executed successfully but no Linux routers found in path
+                # Special case: mtr tool executed successfully but no Linux routers found in path
                 # This indicates network connectivity exists but path goes through non-Linux infrastructure
-                raise ValueError("MTR_NO_LINUX_ROUTERS")
+                # Check if destination was actually reached in MTR results
+                destination_reached = False
+                destination_rtt = 0.0
+                if all_mtr_hops:
+                    # Check if any hop actually reached the destination IP
+                    for hop in all_mtr_hops:
+                        if hop.get('ip') == dst_ip:
+                            destination_reached = True
+                            destination_rtt = hop.get('rtt', 0.0)
+                            break
+                
+                # If destination was not reached, this should be treated as unreachable
+                if not destination_reached:
+                    raise ValueError(f"Destination {dst_ip} not reachable via mtr tool")
+                
+                # Return simple source->destination path with timing information
+                # Check if source IP belongs to a router
+                src_router_name = self._find_router_by_ip(src_ip)
+                src_label = src_router_name if src_router_name else "source"
+                src_is_router_owned = src_router_name is not None
+                
+                simple_path = [
+                    (1, src_label, src_ip, "", src_is_router_owned, "", "", 0.0),
+                    (2, "destination", dst_ip, "", False, "", "", destination_rtt)
+                ]
+                return simple_path, True  # Simple path, but MTR was used
             
-            return (all_mtr_hops, filtered_mtr_hops, src_ip, dst_ip), True  # MTR results with context
+            return (all_mtr_hops, filtered_mtr_hops, src_ip, dst_ip), True  # mtr tool results with context
             
         except Exception as e:
-            raise ValueError(f"MTR execution failed: {e}")
+            raise ValueError(f"mtr tool execution failed: {e}")
 
 
 def format_path_json(path: List[Tuple]) -> str:
     """Convert path to JSON format."""
     json_path = []
-    for hop_num, router_name, ip_addr, interface, is_router_owned, connected_router, outgoing_interface in path:
-        hop_data = {
+    for hop_data in path:
+        # Handle both 7-tuple and 8-tuple formats (with optional RTT)
+        if len(hop_data) == 8:
+            hop_num, router_name, ip_addr, interface, is_router_owned, connected_router, outgoing_interface, rtt = hop_data
+        else:
+            hop_num, router_name, ip_addr, interface, is_router_owned, connected_router, outgoing_interface = hop_data
+            rtt = None
+        
+        hop_json = {
             "hop": hop_num,
             "router_name": router_name,
             "ip_address": ip_addr,
@@ -733,7 +769,12 @@ def format_path_json(path: List[Tuple]) -> str:
             "connected_router": connected_router,
             "outgoing_interface": outgoing_interface
         }
-        json_path.append(hop_data)
+        
+        # Add RTT if available
+        if rtt is not None:
+            hop_json["rtt"] = rtt
+        
+        json_path.append(hop_json)
     
     return json.dumps({"traceroute_path": json_path}, indent=2)
 
@@ -741,7 +782,13 @@ def format_path_json(path: List[Tuple]) -> str:
 def format_path_text(path: List[Tuple]) -> List[str]:
     """Convert path to text format lines."""
     lines = []
-    for hop_num, router_name, ip_addr, interface, is_router_owned, connected_router, outgoing_interface in path:
+    for hop_data in path:
+        # Handle both 7-tuple and 8-tuple formats (with optional RTT)
+        if len(hop_data) == 8:
+            hop_num, router_name, ip_addr, interface, is_router_owned, connected_router, outgoing_interface, rtt = hop_data
+        else:
+            hop_num, router_name, ip_addr, interface, is_router_owned, connected_router, outgoing_interface = hop_data
+            rtt = None
         if router_name == "* * *":
             lines.append(f" {hop_num:2d}  {ip_addr}")
         elif " -> " in router_name:  # Single router scenario
@@ -760,7 +807,9 @@ def format_path_text(path: List[Tuple]) -> List[str]:
                 else:
                     router_str = ""
                 
-                lines.append(f" {hop_num:2d}  {router_name} ({ip_addr}){interface_str}{router_str}")
+                # Add timing information if available
+                timing_str = f" {rtt:.1f}ms" if rtt is not None and rtt > 0 else ""
+                lines.append(f" {hop_num:2d}  {router_name} ({ip_addr}){interface_str}{router_str}{timing_str}")
             else:
                 # Router lines use "from incoming to outgoing"
                 if interface and outgoing_interface:
@@ -771,7 +820,9 @@ def format_path_text(path: List[Tuple]) -> List[str]:
                 else:
                     interface_str = ""
                 
-                lines.append(f" {hop_num:2d}  {router_name} ({ip_addr}){interface_str}")
+                # Add timing information if available
+                timing_str = f" {rtt:.1f}ms" if rtt is not None and rtt > 0 else ""
+                lines.append(f" {hop_num:2d}  {router_name} ({ip_addr}){interface_str}{timing_str}")
     return lines
 
 
@@ -800,6 +851,7 @@ Examples:
   %(prog)s -s 10.1.1.1 -d 10.2.1.1 -q                 # Quiet mode (check $?)
   %(prog)s -s 10.100.1.1 -d 10.100.1.3 -j             # JSON output (WireGuard tunnel)
   %(prog)s --routing-dir testing/routing_facts -s 10.1.10.1 -d 10.3.20.1  # Complex multi-hop
+  %(prog)s -s 10.1.1.1 -d 192.168.1.1 --reverse-trace # Enable reverse path tracing
         """)
     parser.add_argument('-s', '--source', required=True, help='Source IP address')
     parser.add_argument('-d', '--destination', required=True, help='Destination IP address')
@@ -813,6 +865,10 @@ Examples:
                        help='Output traceroute path in JSON format')
     parser.add_argument('--no-mtr', action='store_true',
                        help='Disable MTR fallback (simulation only)')
+    parser.add_argument('--reverse-trace', action='store_true',
+                       help='Enable reverse path tracing when forward simulation fails')
+    parser.add_argument('--controller-ip', 
+                       help='Ansible controller IP address (auto-detected if not specified)')
     
     args = parser.parse_args()
     
@@ -829,14 +885,51 @@ Examples:
         simulator = TracerouteSimulator(args.routing_dir, verbose=args.verbose >= 1, verbose_level=args.verbose)
         
         # Decide which simulation method to use
+        path = None
+        used_mtr = False
+        used_reverse = False
+        
         if args.no_mtr or not MTR_AVAILABLE:
             # Use original simulation only
             path = simulator.simulate_traceroute(args.source, args.destination)
             used_mtr = False
         else:
             # Use enhanced simulation with MTR fallback
-            path_data, used_mtr = simulator.simulate_traceroute_with_fallback(args.source, args.destination)
-            path = path_data
+            try:
+                path_data, used_mtr = simulator.simulate_traceroute_with_fallback(args.source, args.destination)
+                path = path_data
+            except ValueError as e:
+                # If both simulation and MTR failed, try reverse path tracing
+                if args.reverse_trace and REVERSE_TRACER_AVAILABLE:
+                    if args.verbose:
+                        print(f"Forward methods failed ({e}), attempting reverse path tracing", file=sys.stderr)
+                    
+                    # Initialize reverse path tracer
+                    reverse_tracer = ReversePathTracer(
+                        simulator, 
+                        args.controller_ip, 
+                        verbose=args.verbose >= 1, 
+                        verbose_level=args.verbose
+                    )
+                    
+                    # Perform reverse path tracing
+                    success, reverse_path, reverse_exit_code = reverse_tracer.perform_reverse_trace(
+                        args.source, args.destination
+                    )
+                    
+                    if success:
+                        path = reverse_path
+                        used_reverse = True
+                        if args.verbose:
+                            print("Reverse path tracing successful", file=sys.stderr)
+                    else:
+                        # All methods failed
+                        if not args.quiet:
+                            print(f"Error: All tracing methods failed - {e}", file=sys.stderr)
+                        sys.exit(reverse_exit_code)
+                else:
+                    # Re-raise original error if reverse tracing not enabled
+                    raise
         
         # Check if path was found successfully (handle both formats)
         has_no_route = False
@@ -847,6 +940,9 @@ Examples:
                 has_no_route = not filtered_mtr_hops
             else:
                 has_no_route = not path
+        elif used_reverse:
+            # Reverse path tracing results - check for route failures
+            has_no_route = not path or any("No route" in str(item) for item in path)
         else:
             # Simulated results - check for route failures
             has_no_route = any("No route" in str(item) for item in path)
@@ -871,7 +967,9 @@ Examples:
         if not args.json:
             trace_info = f"traceroute to {args.destination} from {args.source}"
             if used_mtr:
-                trace_info += " (using MTR)"
+                trace_info += " (using forward path tracing with mtr tool)"
+            elif used_reverse:
+                trace_info += " (using reverse path tracing with mtr tool)"
             print(trace_info)
         
         # Format output using appropriate formatter
@@ -885,12 +983,20 @@ Examples:
                     for line in simulator.route_formatter.format_complete_mtr_path(all_mtr_hops, filtered_mtr_hops, src_ip, dst_ip, "text", simulator._find_router_by_ip):
                         print(line)
             else:
-                # Fallback for old format
+                # Special case: MTR was used but returned simple path format (no Linux routers found)
+                # Use original formatting for simple path results
                 if args.json:
-                    print(simulator.route_formatter.format_mtr_path(path, 1, "json"))
+                    print(format_path_json(path))
                 else:
-                    for line in simulator.route_formatter.format_mtr_path(path, 1, "text"):
+                    for line in format_path_text(path):
                         print(line)
+        elif used_reverse:
+            # Use original formatting for reverse path tracing results (they use simulation format)
+            if args.json:
+                print(format_path_json(path))
+            else:
+                for line in format_path_text(path):
+                    print(line)
         else:
             # Use original formatting for simulated results
             if args.json:
@@ -910,6 +1016,8 @@ Examples:
         
         # Determine appropriate exit code based on error message
         if "not configured on any router" in error_msg or "not in any directly connected network" in error_msg:
+            sys.exit(EXIT_NOT_FOUND)
+        elif "not reachable via mtr tool" in error_msg:
             sys.exit(EXIT_NOT_FOUND)
         elif "MTR_NO_LINUX_ROUTERS" in error_msg:
             sys.exit(EXIT_NO_LINUX)

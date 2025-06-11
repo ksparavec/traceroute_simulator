@@ -96,12 +96,12 @@ def main():
     ):
         tests_passed += 1
     
-    # Test 4: MTR fallback logic (expected to fail due to no Ansible environment)
+    # Test 4: MTR fallback logic (should succeed with working SSH environment)
     total_tests += 1
     if run_test(
         "MTR fallback logic test",
         f"python3 {simulator_path} --routing-dir {routing_dir} -s 10.1.1.1 -d 8.8.8.8",
-        expected_success=False
+        expected_success=True
     ):
         tests_passed += 1
     

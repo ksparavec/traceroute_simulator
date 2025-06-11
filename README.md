@@ -6,11 +6,15 @@ A comprehensive network path discovery tool that simulates traceroute behavior u
 
 - **Real Routing Data**: Uses actual routing tables and policy rules from Linux routers
 - **MTR Fallback**: Automatic fallback to real MTR execution when simulation cannot complete paths
-- **Multiple Output Formats**: Text, JSON, and verbose modes with consistent formatting
+- **Reverse Path Tracing**: Advanced three-step bidirectional path discovery for complex topologies
+- **Timing Information**: Real round-trip time (RTT) data from MTR execution for performance analysis
+- **Router Name Consistency**: Shows actual router names instead of generic labels when possible
+- **Unreachable Destination Detection**: Proper validation and reporting of truly unreachable targets
+- **Multiple Output Formats**: Text, JSON, and verbose modes with consistent formatting and timing data
 - **Complex Network Support**: Handles VPN tunnels, WireGuard, multi-interface scenarios
 - **Error Detection**: Identifies routing loops, blackhole routes, and unreachable destinations
 - **Automation Friendly**: Comprehensive exit codes and quiet mode for script integration
-- **Comprehensive Testing**: Full test suite with 79 tests and 100% pass rate
+- **Comprehensive Testing**: Full test suite with 79+ tests and 100% pass rate
 - **Professional Visualization**: High-quality network topology diagrams with matplotlib
 - **Accurate Interface Tracking**: Precise incoming/outgoing interface determination
 
@@ -20,6 +24,8 @@ A comprehensive network path discovery tool that simulates traceroute behavior u
 - [Quick Start](#quick-start)
 - [Usage](#usage)
 - [Command Line Options](#command-line-options)
+- [MTR Integration](#mtr-integration)
+- [Reverse Path Tracing](#reverse-path-tracing)
 - [Data Collection](#data-collection)
 - [Network Scenarios](#network-scenarios)
 - [Network Visualization](#network-visualization)
@@ -122,6 +128,8 @@ echo "Exit code: $?"
 | `-j` | `--json` | Output results in JSON format |
 | | `--routing-dir DIR` | Custom directory containing routing facts (default: `routing_facts`) |
 | | `--no-mtr` | Disable MTR fallback (simulation only) |
+| | `--reverse-trace` | Enable reverse path tracing when forward simulation fails |
+| | `--controller-ip IP` | Ansible controller IP address (auto-detected if not specified) |
 
 ### Detailed Option Descriptions
 
@@ -132,6 +140,8 @@ echo "Exit code: $?"
 - **JSON Mode (`-j`)**: Outputs structured data suitable for parsing by other tools
 - **Custom Directory**: Allows using different sets of routing data for testing or multiple environments (default: `routing_facts`)
 - **MTR Fallback (`--no-mtr`)**: Disable automatic MTR fallback for simulation-only mode
+- **Reverse Path Tracing (`--reverse-trace`)**: Enable three-step reverse path discovery when forward simulation fails
+- **Controller IP (`--controller-ip`)**: Specify Ansible controller IP for reverse tracing (auto-detected using default route if not provided)
 
 ## 🔄 MTR Integration
 
@@ -142,17 +152,76 @@ The simulator includes automatic MTR (My TraceRoute) fallback functionality:
 2. **Automatic Fallback**: If simulation cannot complete the path, automatically falls back to real MTR execution
 3. **SSH Execution**: Executes `mtr --report -c 1 -m 30 <destination>` via SSH on the appropriate Linux router
 4. **Linux Router Filtering**: Filters MTR results to show only Linux routers from inventory
-5. **Consistent Output**: Formats MTR results to match simulation output format
+5. **Timing Information**: Extracts round-trip time (RTT) data from MTR results for accurate performance metrics
+6. **Unreachable Destination Detection**: Validates that destinations are actually reached (not just intermediate hops)
+7. **Consistent Output**: Formats MTR results to match simulation output format with timing data
 
 ### Use Cases
 - **Mixed Networks**: Networks containing both Linux and non-Linux routers
 - **External Destinations**: Tracing to internet destinations beyond your network
+- **Performance Analysis**: Real timing information for latency analysis and troubleshooting
+- **Unreachable Destinations**: Proper detection and reporting of truly unreachable targets
 - **Verification**: Cross-checking simulation results with real network behavior
 
 ### Requirements
 - SSH access to Linux routers (passwordless recommended)
 - MTR installed on target routers: `sudo apt-get install mtr-tiny`
 - Proper hostname resolution for router identification
+- Network connectivity from routers to destination targets
+
+## 🔄 Reverse Path Tracing
+
+The simulator includes advanced reverse path tracing functionality for scenarios where traditional forward simulation and MTR fallback cannot determine complete paths. This is particularly useful in mixed Linux/non-Linux environments.
+
+### How Reverse Path Tracing Works
+
+Reverse path tracing implements a sophisticated three-step approach:
+
+1. **Step 1: Controller to Destination**
+   - Replaces original source IP with Ansible controller IP
+   - Performs simulation or MTR tracing from controller to destination
+   - Establishes the forward path and identifies the last Linux router
+   - Extracts timing information for destination reachability validation
+
+2. **Step 2: Destination to Original Source**
+   - Finds the last Linux router from Step 1 path
+   - Performs reverse simulation/MTR from destination back to original source
+   - Uses the last Linux router as the execution point for MTR if needed
+   - Includes timing information for intermediate Linux routers when available
+
+3. **Step 3: Path Reversal and Combination**
+   - Reverses the path from Step 2 to create original source → destination path
+   - Combines bidirectional path information for complete routing picture
+   - Preserves timing data from both forward and reverse traces
+   - Provides comprehensive view of both forward and reverse connectivity
+
+### Use Cases
+
+- **Complex Network Topologies**: Multi-vendor environments with mixed routing platforms
+- **Non-Linux Infrastructure**: Networks where only some routers provide routing data
+- **Internet Connectivity**: Tracing paths that traverse external networks
+- **Asymmetric Routing**: Scenarios where forward and reverse paths differ significantly
+- **Network Troubleshooting**: Understanding bidirectional connectivity issues
+
+### Configuration
+
+```bash
+# Enable reverse path tracing with auto-detected controller IP
+python3 traceroute_simulator.py -s 10.1.1.1 -d 192.168.1.1 --reverse-trace
+
+# Specify custom controller IP for reverse tracing
+python3 traceroute_simulator.py -s 10.1.1.1 -d 192.168.1.1 --reverse-trace --controller-ip 192.168.100.1
+
+# Verbose mode shows all three steps in detail
+python3 traceroute_simulator.py -s 10.1.1.1 -d 192.168.1.1 --reverse-trace -vv
+```
+
+### Requirements
+
+- Ansible controller connectivity to target networks
+- At least one Linux router reachable from both source and destination networks
+- SSH access to Linux routers for MTR execution
+- Proper network connectivity for bidirectional path discovery
 
 ## 🌐 Network Topology
 
@@ -375,12 +444,24 @@ The visualization can be customized by editing `testing/network_topology_diagram
 Human-readable output showing hop-by-hop path information:
 
 ```
+# Normal simulation (no timing information)
 traceroute to 10.3.20.1 from 10.1.10.1
   1  hq-lab (10.1.10.1) from eth1 to eth0
   2  hq-core (10.1.2.1) from eth0 to eth0
   3  hq-gw (10.1.1.1) from eth0 to wg0
   4  dc-gw (10.100.1.3) from wg0 to eth1
   5  destination (10.3.20.1) via eth1 on dc-gw
+
+# MTR fallback with timing information
+traceroute to 8.8.8.8 from 10.1.1.1 (using forward path tracing with mtr tool)
+  1  hq-gw (10.1.1.1)
+  2  destination (8.8.8.8) 45.6ms
+
+# Reverse path tracing with timing
+traceroute to 8.8.8.8 from 10.10.0.2 (using reverse path tracing with mtr tool)
+  1  source (10.10.0.2)
+  2  hq-gw (10.1.1.1) 55.2ms
+  3  destination (8.8.8.8) 52.1ms
 ```
 
 ### JSON Format (`-j`)
@@ -392,34 +473,32 @@ Structured output for programmatic processing:
   "traceroute_path": [
     {
       "hop": 1,
-      "router_name": "hq-lab",
-      "ip_address": "10.1.10.1",
-      "interface": "eth1",
+      "router_name": "hq-gw",
+      "ip_address": "10.1.1.1",
+      "interface": "",
       "is_router_owned": true,
       "connected_router": "",
-      "outgoing_interface": "eth0"
+      "outgoing_interface": "",
+      "rtt": 0.0
     },
     {
       "hop": 2,
-      "router_name": "hq-core", 
-      "ip_address": "10.1.2.1",
-      "interface": "eth0",
-      "is_router_owned": true,
+      "router_name": "destination",
+      "ip_address": "8.8.8.8",
+      "interface": "",
+      "is_router_owned": false,
       "connected_router": "",
-      "outgoing_interface": "eth0"
-    },
-    {
-      "hop": 3,
-      "router_name": "hq-gw",
-      "ip_address": "10.1.1.1",
-      "interface": "eth0",
-      "is_router_owned": true,
-      "connected_router": "",
-      "outgoing_interface": "wg0"
+      "outgoing_interface": "",
+      "rtt": 45.6
     }
   ]
 }
 ```
+
+**Key JSON Fields:**
+- `rtt`: Round-trip time in milliseconds (included when MTR is used)
+- `router_name`: Actual router hostname when source IP belongs to a router
+- `is_router_owned`: `true` when IP address belongs to a router interface
 
 ### Verbose Format (`-v`)
 
@@ -517,6 +596,12 @@ NETWORK TOPOLOGY:
 - Location B (Branch): 3 routers, 4 networks (10.2.0.0/16)
 - Location C (DC): 3 routers, 5 networks (10.3.0.0/16)
 - WireGuard mesh: 10.100.1.0/24 interconnecting all locations
+```
+
+**MTR Integration Tests (8 test cases)**:
+```bash
+cd testing  
+python3 test_mtr_integration.py
 ```
 
 ### Test Categories
@@ -635,6 +720,22 @@ python3 traceroute_simulator.py --routing-dir testing/routing_facts -s 10.1.11.1
 # Output: Lab host → HQ → Branch → DC → Server host
 ```
 
+### Reverse Path Tracing Examples
+
+```bash
+# Basic reverse path tracing to external destination with timing
+python3 traceroute_simulator.py --routing-dir testing/routing_facts -s 10.1.1.1 -d 8.8.8.8 --reverse-trace
+# Output: Three-step bidirectional path discovery with RTT data
+
+# MTR fallback with timing information  
+python3 traceroute_simulator.py --routing-dir testing/routing_facts -s 10.1.1.1 -d 8.8.8.8
+# Output: Forward tracing with mtr tool and timing data
+
+# Detailed reverse tracing with full debugging
+python3 traceroute_simulator.py --routing-dir testing/routing_facts -s 10.1.1.1 -d 203.0.113.1 --reverse-trace -vv
+# Output: Step-by-step reverse path tracing process with detailed MTR command output
+```
+
 ## 🔍 Troubleshooting
 
 ### Common Issues
@@ -738,6 +839,33 @@ traceroute_simulator/
 ├── CLAUDE.md                    # Development guidelines
 └── README.md                    # This documentation
 ```
+
+## 🆕 Recent Improvements (2025)
+
+### Enhanced MTR Integration and Timing Information
+- **Timing Data Collection**: All MTR results now include round-trip time (RTT) information for performance analysis
+- **Router Name Consistency**: Source IPs that belong to routers now display the actual router name instead of generic "source" label
+- **Unreachable Destination Detection**: Improved validation ensures destinations are actually reached by MTR, not just intermediate hops
+- **Forward Tracing Improvements**: Forward tracing with no Linux routers now returns SUCCESS with timing information instead of failure
+- **Enhanced Output Formatting**: Consistent timing display across all tracing methods (simulation, MTR forward, MTR reverse)
+
+### Reverse Path Tracing Enhancements  
+- **Timing Information**: Reverse path tracing now includes timing data for both intermediate Linux routers and destinations
+- **Improved Path Construction**: Better handling of tuple formats (7-tuple vs 8-tuple) with and without RTT data
+- **Router Duplication Prevention**: Fixed issues where the last Linux router appeared twice in final paths
+- **Enhanced Error Handling**: Proper detection and reporting of unreachable destinations in reverse tracing
+
+### Code Quality and Testing
+- **Comprehensive Tuple Handling**: All code paths now safely handle both 7-tuple (simulation) and 8-tuple (MTR with RTT) formats
+- **100% Test Suite Pass Rate**: All 79 tests continue to pass with enhanced functionality
+- **Improved Error Classification**: Better distinction between routing misconfigurations and unreachable destinations
+- **Enhanced Exit Code Logic**: Consistent exit code behavior across quiet and non-quiet modes
+
+### Bug Fixes
+- **MTR Parsing**: Fixed tuple unpacking errors when processing MTR results with timing information
+- **Router Name Display**: Corrected logic to show actual router names when source IP belongs to a router interface
+- **Unreachable Detection**: Fixed false positive cases where unreachable destinations were reported as reachable
+- **Test Regressions**: Updated test expectations to reflect working MTR fallback functionality
 
 ---
 

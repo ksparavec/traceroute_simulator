@@ -60,31 +60,44 @@ class MTRExecutor:
     
     def _perform_reverse_dns(self, ip: str) -> Optional[str]:
         """
-        Perform reverse DNS lookup for an IP address.
+        Perform reverse hostname lookup for an IP address using getent hosts.
         
-        Attempts to resolve IP address to hostname using reverse DNS lookup.
-        This is used to identify routers by their DNS names and match them
-        against the inventory of known Linux routers.
+        Uses getent hosts command to resolve IP address to hostname. This approach
+        queries the local system's name resolution including /etc/hosts, which may
+        contain router names that are not in DNS server configuration.
         
         Args:
-            ip: IP address to perform reverse DNS lookup on
+            ip: IP address to perform reverse lookup on
             
         Returns:
-            Hostname if reverse DNS succeeds, None otherwise
+            Hostname if lookup succeeds, None otherwise
         """
         try:
             # Validate IP address first
             ipaddress.ip_address(ip)
             
-            # Perform reverse DNS lookup
-            hostname = socket.gethostbyaddr(ip)[0]
+            # Use getent hosts to resolve IP to hostname
+            import subprocess
+            result = subprocess.run(
+                ['getent', 'hosts', ip],
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
             
-            # Clean up hostname - remove domain suffix for matching
-            short_hostname = hostname.split('.')[0]
+            if result.returncode == 0 and result.stdout.strip():
+                # Parse getent output: "IP hostname [aliases...]"
+                parts = result.stdout.strip().split()
+                if len(parts) >= 2:
+                    hostname = parts[1]
+                    # Clean up hostname - remove domain suffix for matching
+                    short_hostname = hostname.split('.')[0]
+                    return short_hostname
             
-            return short_hostname
+            return None
             
-        except (socket.herror, socket.gaierror, ValueError, ipaddress.AddressValueError):
+        except (subprocess.TimeoutExpired, subprocess.CalledProcessError, 
+                ValueError, ipaddress.AddressValueError, FileNotFoundError):
             return None
     
     def _is_linux_router(self, ip: str, hostname: Optional[str] = None) -> bool:
@@ -152,14 +165,14 @@ class MTRExecutor:
         except ipaddress.AddressValueError:
             raise ValueError(f"Invalid destination IP address: {destination_ip}")
         
-        # Construct SSH command to run MTR directly
+        # Construct SSH command to run MTR directly with --no-dns to get IP addresses
         ssh_command = [
             'ssh', source_router,
-            f'mtr --report -c 1 -m 30 {destination_ip}'
+            f'mtr --report --no-dns -c 1 -m 30 {destination_ip}'
         ]
         
         if self.verbose:
-            print(f"Executing MTR from {source_router} to {destination_ip}", file=sys.stderr)
+            print(f"Executing mtr tool from {source_router} to {destination_ip}", file=sys.stderr)
             print(f"Command: {' '.join(ssh_command)}", file=sys.stderr)
         
         try:
@@ -182,9 +195,9 @@ class MTRExecutor:
             return self._parse_mtr_output(result.stdout)
             
         except subprocess.TimeoutExpired:
-            raise ValueError("MTR execution timed out")
+            raise ValueError("mtr tool execution timed out")
         except subprocess.CalledProcessError as e:
-            error_msg = f"MTR execution failed on {source_router}: {e.stderr}"
+            error_msg = f"mtr tool execution failed on {source_router}: {e.stderr}"
             if self.verbose:
                 print(error_msg, file=sys.stderr)
             raise ValueError(error_msg)
@@ -250,10 +263,25 @@ class MTRExecutor:
                     except (ipaddress.AddressValueError, ValueError):
                         # It's a hostname
                         hostname = ip_or_hostname
-                        # Try to resolve hostname to IP
+                        # Try to resolve hostname to IP using getent hosts
                         try:
-                            ip = socket.gethostbyname(hostname)
-                        except socket.gaierror:
+                            import subprocess
+                            result = subprocess.run(
+                                ['getent', 'hosts', hostname],
+                                capture_output=True,
+                                text=True,
+                                timeout=5
+                            )
+                            if result.returncode == 0 and result.stdout.strip():
+                                # Parse getent output: "IP hostname [aliases...]"
+                                parts = result.stdout.strip().split()
+                                if len(parts) >= 1:
+                                    ip = parts[0]
+                                else:
+                                    ip = ip_or_hostname  # Use hostname as IP placeholder
+                            else:
+                                ip = ip_or_hostname  # Use hostname as IP placeholder
+                        except (subprocess.TimeoutExpired, subprocess.CalledProcessError, FileNotFoundError):
                             # Can't resolve hostname, but that's okay
                             ip = ip_or_hostname  # Use hostname as IP placeholder
                     
@@ -266,7 +294,7 @@ class MTRExecutor:
                     })
         
         if not hops:
-            raise ValueError("No valid MTR data found in output")
+            raise ValueError("No valid mtr tool data found in output")
         
         return hops
     
@@ -324,6 +352,6 @@ class MTRExecutor:
         linux_hops = self.filter_linux_hops(all_hops)
         
         if not linux_hops and self.verbose:
-            print("Warning: No Linux routers found in MTR trace", file=sys.stderr)
+            print("Warning: No Linux routers found in mtr tool trace", file=sys.stderr)
         
         return all_hops, linux_hops

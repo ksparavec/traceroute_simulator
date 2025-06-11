@@ -643,9 +643,9 @@ class TracerouteSimulatorTester:
             with open(os.path.join(temp_dir, "hq-core_route.json"), 'w') as f:
                 json.dump(loop_routes, f, indent=2)
             
-            # Test a route that could potentially loop
+            # Test a route that could potentially loop (disable MTR to test simulation loop detection)
             returncode, stdout, stderr = self.run_simulator([
-                "-s", "10.1.1.1", "-d", "10.99.99.1", "--routing-dir", temp_dir
+                "-s", "10.1.1.1", "-d", "10.99.99.1", "--routing-dir", temp_dir, "--no-mtr"
             ])
             
             # Should handle gracefully (either loop detection or max hops)

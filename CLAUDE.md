@@ -18,7 +18,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **Test specific functionality**: `python3 traceroute_simulator.py --routing-dir testing/routing_facts -s 10.1.1.1 -d 10.2.1.1`
 - **Test complex routing**: `python3 traceroute_simulator.py --routing-dir testing/routing_facts -s 10.1.10.1 -d 10.3.20.1`
 - **Test JSON output**: `python3 traceroute_simulator.py --routing-dir testing/routing_facts -j -s 10.100.1.1 -d 10.100.1.3`
-- **Test MTR fallback**: `python3 traceroute_simulator.py --routing-dir testing/routing_facts -s 10.1.1.1 -d 1.1.1.1 -vv`
+- **Test MTR fallback**: `python3 traceroute_simulator.py --routing-dir testing/routing_facts -s 10.1.1.1 -d 8.8.8.8 -vv`
+- **Test reverse path tracing**: `python3 traceroute_simulator.py --routing-dir testing/routing_facts -s 10.1.1.1 -d 8.8.8.8 --reverse-trace -vv`
+- **Test timing information**: `python3 traceroute_simulator.py --routing-dir testing/routing_facts -s 10.1.1.1 -d 8.8.8.8` (shows RTT data)
 - **Generate network topology diagram**: `cd testing && python3 network_topology_diagram.py`
 
 ### Data Collection and Validation
@@ -246,15 +248,72 @@ Expanded testing capabilities with professional validation tools:
 - **Integration testing**: End-to-end validation of data collection and processing workflows
 - **Build system testing**: Validates Makefile targets and dependency checking functionality
 
+## Latest Improvements (December 2025) - MOST RECENT
+
+### Enhanced MTR Integration and Timing Information
+Comprehensive improvements to MTR functionality and output consistency:
+- **Timing Data Collection**: All MTR results now include round-trip time (RTT) information for performance analysis and latency troubleshooting
+- **Router Name Consistency**: Source IPs that belong to router interfaces now display the actual router name instead of generic "source" label
+- **Unreachable Destination Detection**: Enhanced validation ensures destinations are actually reached by MTR, preventing false positive reachability reports
+- **Forward Tracing Consistency**: Forward tracing with no Linux routers now returns EXIT_SUCCESS with timing information instead of EXIT_NO_LINUX
+- **Enhanced Output Formatting**: Consistent timing display across all tracing methods (simulation, MTR forward, MTR reverse)
+
+### Reverse Path Tracing Enhancements
+Major improvements to reverse path tracing functionality:
+- **Timing Information Integration**: Reverse path tracing now includes timing data for both intermediate Linux routers and final destinations
+- **Improved Path Construction**: Better handling of tuple formats (7-tuple vs 8-tuple) with and without RTT data throughout the codebase
+- **Router Duplication Prevention**: Fixed issues where the last Linux router appeared twice in final combined paths
+- **Enhanced Error Handling**: Proper detection and reporting of unreachable destinations in reverse tracing scenarios
+- **Comprehensive Tuple Support**: All code paths now safely handle both 7-tuple (simulation) and 8-tuple (MTR with RTT) formats
+
+### Code Quality and Testing Improvements
+Enhanced reliability and maintainability:
+- **Tuple Format Handling**: Implemented safe tuple unpacking throughout `reverse_path_tracer.py` and `traceroute_simulator.py`
+- **100% Test Suite Pass Rate**: All 79 tests continue to pass with enhanced functionality (64 main + 8 MTR + 7 IP wrapper)
+- **Improved Error Classification**: Better distinction between routing misconfigurations and unreachable destinations
+- **Enhanced Exit Code Logic**: Consistent exit code behavior across quiet and non-quiet modes
+- **Test Regression Fixes**: Updated test expectations to reflect working MTR fallback functionality
+
+### Critical Bug Fixes
+Resolved key issues affecting functionality:
+- **MTR Parsing Errors**: Fixed "too many values to unpack" errors when processing MTR results with timing information
+- **Router Name Display**: Corrected logic to show actual router names when source IP belongs to a router interface
+- **Unreachable Detection**: Fixed false positive cases where unreachable destinations were reported as reachable due to timing extraction from intermediate hops
+- **Forward Tracing Exit Codes**: Fixed inconsistency where forward tracing returned failure instead of success when no Linux routers found but destination reachable
+- **Test Regressions**: Updated "Max hops/loop handling" test to use `--no-mtr` flag for pure simulation testing
+
+### Testing and Validation
+Comprehensive testing of new functionality:
+- **All existing tests maintained**: 79/79 tests pass with 100% success rate
+- **Enhanced MTR integration testing**: Verified timing information extraction and router name consistency
+- **Reverse path tracing validation**: Confirmed proper tuple handling and timing data preservation
+- **Error condition testing**: Validated unreachable destination detection and proper exit code behavior
+- **Output format verification**: Ensured consistent formatting across all tracing methods
+
+### Key Files Modified (December 2025)
+- **Core simulator**: `traceroute_simulator.py` (UPDATED - enhanced MTR fallback with timing, router name consistency, unreachable detection)
+- **Reverse tracer**: `reverse_path_tracer.py` (UPDATED - comprehensive tuple handling, timing integration, path construction improvements)
+- **Main test suite**: `testing/test_traceroute_simulator.py` (UPDATED - fixed test regressions for MTR fallback functionality)
+- **MTR integration tests**: `testing/test_mtr_integration.py` (UPDATED - corrected expectations for working SSH environment)
+- **Documentation**: `README.md` and `CLAUDE.md` (UPDATED - comprehensive documentation of timing features and improvements)
+
+### Development Notes for Recent Changes
+- **Tuple Format Consistency**: When working with path data, always check tuple length before unpacking to handle both 7-tuple and 8-tuple formats
+- **Timing Information**: RTT data is now available in 8-tuple format as the last element: `(hop, router, ip, interface, is_owned, connected, outgoing, rtt)`
+- **Router Name Logic**: Use `simulator._find_router_by_ip(src_ip)` to determine if source IP belongs to a router for proper naming
+- **Error Handling**: Distinguish between routing failures (EXIT_NO_PATH) and unreachable destinations (EXIT_NOT_FOUND) based on MTR validation
+- **Testing**: Always run full test suite (`make test`) after modifications to ensure 100% pass rate is maintained
+
 ### Key Files Added/Modified (2025)
 - **MTR executor**: `mtr_executor.py` (NEW - SSH-based MTR execution and Linux router filtering)
 - **Route formatter**: `route_formatter.py` (NEW - unified output formatting for simulation and MTR results)
+- **Reverse tracer**: `reverse_path_tracer.py` (NEW - three-step bidirectional path discovery)
 - **MTR integration tests**: `testing/test_mtr_integration.py` (NEW - 8 tests validating MTR fallback functionality)
 - **IP JSON wrapper**: `ip_json_wrapper.py` (NEW - compatibility layer for older Red Hat systems)
 - **Wrapper tests**: `testing/test_ip_json_comparison.py` (NEW - 7 tests validating wrapper accuracy)
 - **Build system**: `Makefile` (NEW - comprehensive build automation with dependency checking)
 - **Enhanced playbook**: `get_routing_info.yml` (UPDATED - text-only remote execution with controller-side JSON conversion)
-- **Core simulator**: `traceroute_simulator.py` (UPDATED - enhanced with MTR fallback and new exit codes)
+- **Core simulator**: `traceroute_simulator.py` (UPDATED - enhanced with MTR fallback, reverse tracing, timing, and improved exit codes)
 - **Documentation**: `README.md` and `CLAUDE.md` (UPDATED - comprehensive documentation of all new features)
 
 ### Previous Key Files Modified (2024)

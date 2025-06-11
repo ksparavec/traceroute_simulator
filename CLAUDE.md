@@ -21,6 +21,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **Test MTR fallback**: `python3 traceroute_simulator.py --routing-dir testing/routing_facts -s 10.1.1.1 -d 8.8.8.8 -vv`
 - **Test reverse path tracing**: `python3 traceroute_simulator.py --routing-dir testing/routing_facts -s 10.1.1.1 -d 8.8.8.8 --reverse-trace -vv`
 - **Test timing information**: `python3 traceroute_simulator.py --routing-dir testing/routing_facts -s 10.1.1.1 -d 8.8.8.8` (shows RTT data)
+- **Test YAML configuration**: `TRACEROUTE_SIMULATOR_CONF=testing/test_config.yaml python3 traceroute_simulator.py -s 10.1.1.1 -d 10.2.1.1`
+- **Test FQDN resolution**: `python3 traceroute_simulator.py --routing-dir testing/routing_facts -s 10.1.1.1 -d 8.8.8.8` (shows dns.google)
 - **Generate network topology diagram**: `cd testing && python3 network_topology_diagram.py`
 
 ### Data Collection and Validation
@@ -248,7 +250,27 @@ Expanded testing capabilities with professional validation tools:
 - **Integration testing**: End-to-end validation of data collection and processing workflows
 - **Build system testing**: Validates Makefile targets and dependency checking functionality
 
-## Latest Improvements (December 2025) - MOST RECENT
+## Latest Improvements (June 2025) - MOST RECENT
+
+### YAML Configuration Support (Latest)
+Complete YAML configuration file support for flexible enterprise deployment:
+- **Comprehensive Configuration**: Full YAML configuration file support with proper precedence handling
+- **Environment Variable Support**: `TRACEROUTE_SIMULATOR_CONF` environment variable for custom configuration file paths
+- **Precedence Handling**: Command line arguments → Configuration file values → Hard-coded defaults
+- **Positive Logic Configuration**: All options use intuitive positive logic (e.g., `enable_mtr_fallback: true` instead of `--no-mtr`)
+- **Production Ready**: Graceful degradation when PyYAML module is not available
+- **Complete Coverage**: All command line options configurable except source/destination IPs (which must be provided via CLI)
+- **Multiple Locations**: Support for `~/traceroute_simulator.yaml`, `./traceroute_simulator.yaml`, and environment variable paths
+
+### FQDN Resolution for Endpoints (Latest)
+Enhanced hostname resolution for improved network troubleshooting:
+- **Automatic DNS Resolution**: Automatically resolves source and destination IP addresses to FQDNs when possible
+- **Smart Fallback**: Falls back to original IP address if reverse DNS resolution fails
+- **Consistent Methodology**: Uses same `getent hosts` approach as MTR executor for consistency
+- **Router Priority**: Router-owned IP addresses still display router names instead of FQDNs
+- **Fast Resolution**: 2-second timeout for responsive UI experience in production environments
+- **Production Examples**: Shows `dns.google (8.8.8.8)` instead of generic `destination (8.8.8.8)`
+- **Backward Compatibility**: All existing functionality preserved with enhanced labeling
 
 ### Enhanced MTR Integration and Timing Information
 Comprehensive improvements to MTR functionality and output consistency:
@@ -305,7 +327,10 @@ Comprehensive testing of new functionality:
 - **Testing**: Always run full test suite (`make test`) after modifications to ensure 100% pass rate is maintained
 
 ### Key Files Added/Modified (2025)
-- **MTR executor**: `mtr_executor.py` (NEW - SSH-based MTR execution and Linux router filtering)
+- **YAML configuration file**: `traceroute_simulator.yaml` (NEW - example configuration file with comprehensive options)
+- **Configuration system**: Added YAML configuration loading to `traceroute_simulator.py` (UPDATED - complete configuration management)
+- **FQDN resolution**: Enhanced `traceroute_simulator.py`, `reverse_path_tracer.py`, `route_formatter.py` (UPDATED - automatic hostname resolution)
+- **MTR executor**: `mtr_executor.py` (UPDATED - enhanced hostname matching and debug output for production troubleshooting)
 - **Route formatter**: `route_formatter.py` (NEW - unified output formatting for simulation and MTR results)
 - **Reverse tracer**: `reverse_path_tracer.py` (NEW - three-step bidirectional path discovery)
 - **MTR integration tests**: `testing/test_mtr_integration.py` (NEW - 8 tests validating MTR fallback functionality)
@@ -313,8 +338,9 @@ Comprehensive testing of new functionality:
 - **Wrapper tests**: `testing/test_ip_json_comparison.py` (NEW - 7 tests validating wrapper accuracy)
 - **Build system**: `Makefile` (NEW - comprehensive build automation with dependency checking)
 - **Enhanced playbook**: `get_routing_info.yml` (UPDATED - text-only remote execution with controller-side JSON conversion)
-- **Core simulator**: `traceroute_simulator.py` (UPDATED - enhanced with MTR fallback, reverse tracing, timing, and improved exit codes)
-- **Documentation**: `README.md` and `CLAUDE.md` (UPDATED - comprehensive documentation of all new features)
+- **Core simulator**: `traceroute_simulator.py` (UPDATED - enhanced with YAML config, FQDN resolution, MTR fallback, reverse tracing, timing)
+- **Test corrections**: `testing/test_traceroute_simulator.py` (UPDATED - corrected exit code expectations for logical behavior)
+- **Documentation**: `README.md` and `CLAUDE.md` (UPDATED - comprehensive documentation including configuration and FQDN features)
 
 ### Previous Key Files Modified (2024)
 - **Routing data**: `testing/routing_facts/*.json` (corrected routing tables and gateway IPs)

@@ -5,6 +5,8 @@ A comprehensive network path discovery tool that simulates traceroute behavior u
 ## 🌟 Features
 
 - **Real Routing Data**: Uses actual routing tables and policy rules from Linux routers
+- **YAML Configuration Support**: Flexible configuration with environment variables and precedence handling
+- **FQDN Resolution**: Automatically resolves source and destination IPs to hostnames when possible
 - **MTR Fallback**: Automatic fallback to real MTR execution when simulation cannot complete paths
 - **Reverse Path Tracing**: Advanced three-step bidirectional path discovery for complex topologies
 - **Timing Information**: Real round-trip time (RTT) data from MTR execution for performance analysis
@@ -22,10 +24,12 @@ A comprehensive network path discovery tool that simulates traceroute behavior u
 
 - [Installation](#installation)
 - [Quick Start](#quick-start)
+- [Configuration](#configuration)
 - [Usage](#usage)
 - [Command Line Options](#command-line-options)
 - [MTR Integration](#mtr-integration)
 - [Reverse Path Tracing](#reverse-path-tracing)
+- [FQDN Resolution](#fqdn-resolution)
 - [Data Collection](#data-collection)
 - [Network Scenarios](#network-scenarios)
 - [Network Visualization](#network-visualization)
@@ -90,6 +94,71 @@ A comprehensive network path discovery tool that simulates traceroute behavior u
      2  br-gw (10.100.1.2) from wg0 to eth1
      3  br-gw (10.2.1.1) on eth1
    ```
+
+## ⚙️ Configuration
+
+The traceroute simulator supports comprehensive YAML configuration files for flexible deployment scenarios.
+
+### Configuration File Locations (by precedence)
+
+1. **Environment Variable**: `TRACEROUTE_SIMULATOR_CONF` (highest precedence)
+2. **User Home Directory**: `~/traceroute_simulator.yaml`
+3. **Current Directory**: `./traceroute_simulator.yaml` (lowest precedence)
+
+### Configuration Options
+
+Create a `traceroute_simulator.yaml` file with your preferred settings:
+
+```yaml
+# Network and routing configuration
+routing_dir: "routing_facts"                    # Directory containing routing facts
+
+# Output configuration  
+verbose: false                                  # Enable verbose output (-v flag)
+verbose_level: 1                               # Verbosity level (1=basic, 2=detailed)
+quiet: false                                   # Quiet mode (no output, exit codes only)
+json_output: false                             # Output results in JSON format
+
+# Tracing behavior
+enable_mtr_fallback: true                      # Enable MTR fallback for incomplete paths
+enable_reverse_trace: false                    # Enable reverse path tracing when forward fails
+
+# Network discovery
+controller_ip: null                            # Ansible controller IP (auto-detect if null)
+```
+
+### Configuration Examples
+
+**Production Environment:**
+```yaml
+routing_dir: "/etc/traceroute-simulator/routing_facts"
+enable_mtr_fallback: true
+enable_reverse_trace: true
+verbose: false
+controller_ip: "192.168.1.100"
+```
+
+**Development/Testing:**
+```yaml
+routing_dir: "testing/routing_facts"
+enable_mtr_fallback: false  # Simulation only
+verbose: true
+verbose_level: 2
+json_output: true
+```
+
+### Precedence Rules
+
+Configuration values are resolved in this order (highest to lowest):
+1. **Command line arguments** (e.g., `-v`, `--json`)
+2. **Configuration file values**
+3. **Hard-coded defaults**
+
+```bash
+# Example: Override config file settings via command line
+TRACEROUTE_SIMULATOR_CONF=production.yaml python3 traceroute_simulator.py -s 10.1.1.1 -d 10.2.1.1 -v
+# Uses production.yaml settings but enables verbose mode
+```
 
 ## 💻 Usage
 
@@ -168,6 +237,44 @@ The simulator includes automatic MTR (My TraceRoute) fallback functionality:
 - MTR installed on target routers: `sudo apt-get install mtr-tiny`
 - Proper hostname resolution for router identification
 - Network connectivity from routers to destination targets
+
+## 🌐 FQDN Resolution
+
+The simulator automatically resolves IP addresses to Fully Qualified Domain Names (FQDNs) for improved readability and network troubleshooting.
+
+### How It Works
+
+1. **Automatic Resolution**: Uses reverse DNS lookup via `getent hosts` for consistency with MTR executor
+2. **Smart Fallback**: Falls back to original IP address if resolution fails
+3. **Router Priority**: Router-owned IPs still show router names (not FQDNs)
+4. **Fast Resolution**: Uses 2-second timeout for UI responsiveness
+
+### Before and After
+
+**Before (Generic Labels):**
+```
+traceroute to 8.8.8.8 from 10.1.1.1
+  1  hq-gw (10.1.1.1)
+  2  destination (8.8.8.8) 45.9ms
+```
+
+**After (FQDN Resolution):**
+```
+traceroute to 8.8.8.8 from 10.1.1.1
+  1  hq-gw (10.1.1.1)
+  2  dns.google (8.8.8.8) 45.9ms
+```
+
+### Configuration
+
+FQDN resolution is enabled by default and works automatically. No configuration required.
+
+### Benefits
+
+- **Better Clarity**: `dns.google (8.8.8.8)` instead of `destination (8.8.8.8)`
+- **Easier Troubleshooting**: Real hostnames help identify network endpoints
+- **Consistent Behavior**: Uses same DNS resolution approach as MTR filtering
+- **Production Ready**: Graceful fallback ensures reliability
 
 ## 🔄 Reverse Path Tracing
 
@@ -841,6 +948,22 @@ traceroute_simulator/
 ```
 
 ## 🆕 Recent Improvements (2025)
+
+### YAML Configuration Support (Latest)
+- **Comprehensive Configuration**: Full YAML configuration file support with flexible location precedence
+- **Environment Variable Support**: `TRACEROUTE_SIMULATOR_CONF` for custom configuration file paths
+- **Precedence Handling**: Command line → Configuration file → Hard-coded defaults
+- **Positive Logic**: All options use intuitive positive logic (e.g., `enable_mtr_fallback: true`)
+- **Production Ready**: Graceful degradation when PyYAML is not available
+- **Complete Coverage**: All command line options configurable except source/destination IPs
+
+### FQDN Resolution (Latest)
+- **Automatic DNS Resolution**: Resolves source and destination IPs to FQDNs when possible
+- **Smart Fallback**: Uses original IP if DNS resolution fails
+- **Consistent Behavior**: Same DNS resolution approach as MTR filtering for consistency
+- **Router Priority**: Router-owned IPs still show router names instead of FQDNs
+- **Fast Resolution**: 2-second timeout for responsive UI experience
+- **Production Examples**: Shows `dns.google (8.8.8.8)` instead of `destination (8.8.8.8)`
 
 ### Enhanced MTR Integration and Timing Information
 - **Timing Data Collection**: All MTR results now include round-trip time (RTT) information for performance analysis

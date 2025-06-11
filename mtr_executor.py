@@ -90,9 +90,8 @@ class MTRExecutor:
                 parts = result.stdout.strip().split()
                 if len(parts) >= 2:
                     hostname = parts[1]
-                    # Clean up hostname - remove domain suffix for matching
-                    short_hostname = hostname.split('.')[0]
-                    return short_hostname
+                    # Return full hostname (FQDN) to match production naming
+                    return hostname
             
             return None
             
@@ -135,8 +134,19 @@ class MTRExecutor:
         # This handles cases where either could be FQDN or short names
         known_short_names = {router.split('.')[0].lower() for router in self.linux_routers}
         
+        # Debug output for production troubleshooting
+        if self.verbose and self.verbose_level >= 2:
+            print(f"DEBUG: Checking hostname '{hostname}' -> short: '{short_hostname}'")
+            print(f"DEBUG: Known Linux routers: {list(self.linux_routers)}")
+            print(f"DEBUG: Known short names: {list(known_short_names)}")
+        
         # Check if short hostname matches any known router short name
-        return short_hostname in known_short_names
+        is_match = short_hostname in known_short_names
+        
+        if self.verbose and self.verbose_level >= 2:
+            print(f"DEBUG: Match result for '{hostname}': {is_match}")
+        
+        return is_match
     
     def execute_mtr(self, source_router: str, destination_ip: str) -> List[Dict]:
         """

@@ -106,7 +106,8 @@ class MTRExecutor:
         
         Checks if the given IP address or hostname corresponds to a Linux router
         that we can manage. Uses reverse DNS lookup if hostname is not provided
-        and ip is actually an IP address.
+        and ip is actually an IP address. Handles both short names and FQDNs
+        by comparing the short hostname portion against all known routers.
         
         Args:
             ip: IP address or hostname to check
@@ -127,8 +128,15 @@ class MTRExecutor:
         if not hostname:
             return False
         
-        # Check against known Linux routers (case-insensitive)
-        return hostname.lower() in {router.lower() for router in self.linux_routers}
+        # Extract short hostname (everything before first dot)
+        short_hostname = hostname.split('.')[0].lower()
+        
+        # Create sets of short names from both the hostname and known routers
+        # This handles cases where either could be FQDN or short names
+        known_short_names = {router.split('.')[0].lower() for router in self.linux_routers}
+        
+        # Check if short hostname matches any known router short name
+        return short_hostname in known_short_names
     
     def execute_mtr(self, source_router: str, destination_ip: str) -> List[Dict]:
         """

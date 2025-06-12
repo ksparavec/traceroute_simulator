@@ -332,10 +332,10 @@ class TracerouteSimulatorTester:
         src_ip, dst_ip = "10.1.1.1", "10.2.1.1"  # HQ to Branch gateway
         
         # Test verbose mode
-        returncode, stdout, stderr = self.run_simulator(["-v", "-s", src_ip, "-d", dst_ip])
+        returncode, stdout, stderr = self.run_simulator(["-vvv", "-s", src_ip, "-d", dst_ip])
         verbose_works = "Loaded router:" in stderr and returncode == 0
         self.add_result(TestResult(
-            "Verbose mode (-v)",
+            "Verbose mode (-vvv)",
             verbose_works,
             f"Expected router loading messages in stderr, got: {stderr[:100]}"
         ))
@@ -605,7 +605,7 @@ class TracerouteSimulatorTester:
             
             # Test with verbose mode to see if missing rule file warning appears
             returncode, stdout, stderr = self.run_simulator([
-                "-v", "-s", "10.1.1.1", "-d", "10.2.1.1", "--routing-dir", temp_dir
+                "-vvv", "-s", "10.1.1.1", "-d", "10.2.1.1", "--routing-dir", temp_dir
             ])
             
             # Should work but show warnings about missing rule files

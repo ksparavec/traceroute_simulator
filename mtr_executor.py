@@ -135,7 +135,7 @@ class MTRExecutor:
         known_short_names = {router.split('.')[0].lower() for router in self.linux_routers}
         
         # Debug output for production troubleshooting
-        if self.verbose and self.verbose_level >= 2:
+        if self.verbose and self.verbose_level >= 3:
             print(f"DEBUG: Checking hostname '{hostname}' -> short: '{short_hostname}'")
             print(f"DEBUG: Known Linux routers: {list(self.linux_routers)}")
             print(f"DEBUG: Known short names: {list(known_short_names)}")
@@ -143,7 +143,7 @@ class MTRExecutor:
         # Check if short hostname matches any known router short name
         is_match = short_hostname in known_short_names
         
-        if self.verbose and self.verbose_level >= 2:
+        if self.verbose and self.verbose_level >= 3:
             print(f"DEBUG: Match result for '{hostname}': {is_match}")
         
         return is_match
@@ -338,10 +338,10 @@ class MTRExecutor:
             
             if ip and self._is_linux_router(ip, hostname):
                 linux_hops.append(hop)
-                if self.verbose:
+                if self.verbose and self.verbose_level >= 3:
                     print(f"Including hop {hop['hop']}: {ip} ({hostname})", file=sys.stderr)
             else:
-                if self.verbose:
+                if self.verbose and self.verbose_level >= 3:
                     print(f"Filtering out hop {hop['hop']}: {ip} ({hostname}) - not a Linux router", file=sys.stderr)
         
         return linux_hops

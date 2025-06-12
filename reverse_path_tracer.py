@@ -96,7 +96,7 @@ class ReversePathTracer:
                 s.connect(("8.8.8.8", 80))
                 controller_ip = s.getsockname()[0]
                 
-            if self.verbose:
+            if self.verbose and self.verbose_level >= 3:
                 print(f"Detected Ansible controller IP: {controller_ip}")
                 
             return controller_ip

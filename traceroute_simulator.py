@@ -393,12 +393,12 @@ class TracerouteSimulator:
                     with open(rule_file, 'r') as f:
                         rules = json.load(f)
                 else:
-                    if self.verbose:
+                    if self.verbose and self.verbose_level >= 3:
                         print(f"Warning: Rule file for {name} not found, using empty rules", file=sys.stderr)
                 
                 # Create router object with loaded data
                 routers[name] = Router(name, routes, rules)
-                if self.verbose:
+                if self.verbose and self.verbose_level >= 3:
                     print(f"Loaded router: {name}", file=sys.stderr)
                     
             except (FileNotFoundError, json.JSONDecodeError) as e:
@@ -1023,7 +1023,9 @@ Exit codes (for -q/--quiet mode):
 
 Examples:
   %(prog)s -s 10.1.1.1 -d 10.2.1.1                    # HQ to Branch routing
-  %(prog)s -s 10.1.1.1 -d 10.2.1.1 -v                 # Verbose output
+  %(prog)s -s 10.1.1.1 -d 10.2.1.1 -v                 # Verbose output (basic)
+  %(prog)s -s 10.1.1.1 -d 10.2.1.1 -vv                # Detailed debugging output
+  %(prog)s -s 10.1.1.1 -d 10.2.1.1 -vvv               # Configuration details
   %(prog)s -s 10.1.1.1 -d 10.2.1.1 -q                 # Quiet mode (check $?)
   %(prog)s -s 10.100.1.1 -d 10.100.1.3 -j             # JSON output (WireGuard tunnel)
   %(prog)s --routing-dir tests/routing_facts -s 10.1.10.1 -d 10.3.20.1  # Complex multi-hop
@@ -1034,7 +1036,7 @@ Examples:
     parser.add_argument('--routing-dir', 
                        help='Directory containing routing facts (default: routing_facts)')
     parser.add_argument('-v', '--verbose', action='count', default=0,
-                       help='Enable verbose output (-v for basic, -vv for detailed debugging)')
+                       help='Enable verbose output (-v for basic, -vv for detailed debugging, -vvv for configuration details)')
     parser.add_argument('-q', '--quiet', action='store_true',
                        help='Quiet mode (no output, exit code indicates result)')
     parser.add_argument('-j', '--json', action='store_true',

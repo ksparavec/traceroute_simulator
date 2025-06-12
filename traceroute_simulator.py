@@ -1181,9 +1181,9 @@ Examples:
             if isinstance(path, tuple) and len(path) == 4:
                 all_mtr_hops, filtered_mtr_hops, src_ip, dst_ip = path
                 if config['json_output']:
-                    print(simulator.route_formatter.format_complete_mtr_path(all_mtr_hops, filtered_mtr_hops, src_ip, dst_ip, "json", simulator._find_router_by_ip))
+                    print(simulator.route_formatter.format_complete_mtr_path(all_mtr_hops, filtered_mtr_hops, src_ip, dst_ip, "json", simulator._find_router_by_ip, simulator._resolve_ip_to_fqdn))
                 else:
-                    for line in simulator.route_formatter.format_complete_mtr_path(all_mtr_hops, filtered_mtr_hops, src_ip, dst_ip, "text", simulator._find_router_by_ip):
+                    for line in simulator.route_formatter.format_complete_mtr_path(all_mtr_hops, filtered_mtr_hops, src_ip, dst_ip, "text", simulator._find_router_by_ip, simulator._resolve_ip_to_fqdn):
                         print(line)
             else:
                 # Special case: MTR was used but returned simple path format (no Linux routers found)

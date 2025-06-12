@@ -92,7 +92,8 @@ class RouteFormatter:
     
     def format_complete_mtr_path(self, all_mtr_hops: List[Dict], filtered_mtr_hops: List[Dict], 
                                 src_ip: str, dst_ip: str, output_format: str = "text", 
-                                router_lookup: Optional[callable] = None) -> Union[str, List[str]]:
+                                router_lookup: Optional[callable] = None,
+                                fqdn_resolver: Optional[callable] = None) -> Union[str, List[str]]:
         """
         Format complete MTR path including source and destination endpoints.
         
@@ -107,14 +108,15 @@ class RouteFormatter:
             dst_ip: Destination IP address for the trace
             output_format: Either "text" or "json"
             router_lookup: Optional function to find router name by IP
+            fqdn_resolver: Optional function to resolve IP addresses to FQDNs
             
         Returns:
             Formatted complete path including source and destination
         """
         if output_format == "json":
-            return self._format_complete_mtr_json(all_mtr_hops, filtered_mtr_hops, src_ip, dst_ip, router_lookup)
+            return self._format_complete_mtr_json(all_mtr_hops, filtered_mtr_hops, src_ip, dst_ip, router_lookup, fqdn_resolver)
         else:
-            return self._format_complete_mtr_text(all_mtr_hops, filtered_mtr_hops, src_ip, dst_ip, router_lookup)
+            return self._format_complete_mtr_text(all_mtr_hops, filtered_mtr_hops, src_ip, dst_ip, router_lookup, fqdn_resolver)
     
     def format_combined_path(self, simulated_path: List[Tuple], mtr_hops: List[Dict], 
                            transition_point: int, output_format: str = "text") -> Union[str, List[str]]:
@@ -274,7 +276,8 @@ class RouteFormatter:
         return lines
     
     def _format_complete_mtr_text(self, all_mtr_hops: List[Dict], filtered_mtr_hops: List[Dict], 
-                                 src_ip: str, dst_ip: str, router_lookup: Optional[callable] = None) -> List[str]:
+                                 src_ip: str, dst_ip: str, router_lookup: Optional[callable] = None,
+                                 fqdn_resolver: Optional[callable] = None) -> List[str]:
         """Format complete MTR path as text consistent with simulation format."""
         lines = []
         hop_num = 1
@@ -292,8 +295,12 @@ class RouteFormatter:
                 # Source is a Linux router, show router name
                 lines.append(f" {hop_num:2d}  {source_router_name} ({src_ip})")
             else:
-                # Source is not a Linux router, use "source" label
-                lines.append(f" {hop_num:2d}  source ({src_ip})")
+                # Source is not a Linux router, try to resolve to FQDN or use "source" label
+                if fqdn_resolver:
+                    src_label = fqdn_resolver(src_ip)
+                    lines.append(f" {hop_num:2d}  {src_label} ({src_ip})")
+                else:
+                    lines.append(f" {hop_num:2d}  source ({src_ip})")
             hop_num += 1
         
         # Add Linux routers from filtered list
@@ -333,16 +340,22 @@ class RouteFormatter:
         if (dst_found_in_trace and 
             not any(hop.get('ip') == dst_ip for hop in filtered_mtr_hops)):
             
-            # Always use "destination" label for non-inventory endpoints with RTT
-            if dst_rtt is not None:
-                lines.append(f" {hop_num:2d}  destination ({dst_ip}) {dst_rtt:.1f}ms")
+            # Try to resolve destination to FQDN or use "destination" label
+            if fqdn_resolver:
+                dst_label = fqdn_resolver(dst_ip)
             else:
-                lines.append(f" {hop_num:2d}  destination ({dst_ip})")
+                dst_label = "destination"
+            
+            if dst_rtt is not None:
+                lines.append(f" {hop_num:2d}  {dst_label} ({dst_ip}) {dst_rtt:.1f}ms")
+            else:
+                lines.append(f" {hop_num:2d}  {dst_label} ({dst_ip})")
         
         return lines
     
     def _format_complete_mtr_json(self, all_mtr_hops: List[Dict], filtered_mtr_hops: List[Dict], 
-                                 src_ip: str, dst_ip: str, router_lookup: Optional[callable] = None) -> str:
+                                 src_ip: str, dst_ip: str, router_lookup: Optional[callable] = None,
+                                 fqdn_resolver: Optional[callable] = None) -> str:
         """Format complete MTR path as JSON consistent with text format."""
         json_path = []
         hop_num = 1
@@ -356,9 +369,17 @@ class RouteFormatter:
             if router_lookup:
                 source_router_name = router_lookup(src_ip)
             
+            # Determine source label - use router name, FQDN, or "source"
+            if source_router_name:
+                src_label = source_router_name
+            elif fqdn_resolver:
+                src_label = fqdn_resolver(src_ip)
+            else:
+                src_label = "source"
+            
             hop_data = {
                 "hop": hop_num,
-                "router_name": source_router_name if source_router_name else "source",
+                "router_name": src_label,
                 "ip_address": src_ip,
                 "interface": "",
                 "is_router_owned": bool(source_router_name),
@@ -412,10 +433,15 @@ class RouteFormatter:
         if (dst_found_in_trace and 
             not any(hop.get('ip') == dst_ip for hop in filtered_mtr_hops)):
             
-            # Always use "destination" label for non-inventory endpoints
+            # Try to resolve destination to FQDN or use "destination" label
+            if fqdn_resolver:
+                dst_label = fqdn_resolver(dst_ip)
+            else:
+                dst_label = "destination"
+            
             hop_data = {
                 "hop": hop_num,
-                "router_name": "destination",
+                "router_name": dst_label,
                 "ip_address": dst_ip,
                 "interface": "",
                 "is_router_owned": False,

@@ -31,7 +31,7 @@ class IPJSONTester:
             verbose: Enable verbose output
         """
         self.verbose = verbose
-        self.wrapper_script = '../ip_json_wrapper.py'
+        self.wrapper_script = '../ip_json_wrapper.py'  # Relative path from tests/ to project root
         self.passed_tests = 0
         self.failed_tests = 0
         self.test_results = []

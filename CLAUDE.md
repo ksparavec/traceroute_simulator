@@ -12,22 +12,22 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **Show help**: `make help` (displays all available targets and examples)
 
 ### Direct Testing Commands
-- **Run comprehensive test suite**: `cd testing && python3 test_traceroute_simulator.py`
-- **Test IP JSON wrapper**: `cd testing && python3 test_ip_json_comparison.py`
-- **Test MTR integration**: `cd testing && python3 test_mtr_integration.py`
-- **Test specific functionality**: `python3 traceroute_simulator.py --routing-dir testing/routing_facts -s 10.1.1.1 -d 10.2.1.1`
-- **Test complex routing**: `python3 traceroute_simulator.py --routing-dir testing/routing_facts -s 10.1.10.1 -d 10.3.20.1`
-- **Test JSON output**: `python3 traceroute_simulator.py --routing-dir testing/routing_facts -j -s 10.100.1.1 -d 10.100.1.3`
-- **Test MTR fallback**: `python3 traceroute_simulator.py --routing-dir testing/routing_facts -s 10.1.1.1 -d 8.8.8.8 -vv`
-- **Test reverse path tracing**: `python3 traceroute_simulator.py --routing-dir testing/routing_facts -s 10.1.1.1 -d 8.8.8.8 --reverse-trace -vv`
-- **Test timing information**: `python3 traceroute_simulator.py --routing-dir testing/routing_facts -s 10.1.1.1 -d 8.8.8.8` (shows RTT data)
-- **Test YAML configuration**: `TRACEROUTE_SIMULATOR_CONF=testing/test_config.yaml python3 traceroute_simulator.py -s 10.1.1.1 -d 10.2.1.1`
-- **Test FQDN resolution**: `python3 traceroute_simulator.py --routing-dir testing/routing_facts -s 10.1.1.1 -d 8.8.8.8` (shows dns.google)
-- **Generate network topology diagram**: `cd testing && python3 network_topology_diagram.py`
+- **Run comprehensive test suite**: `cd tests && python3 test_traceroute_simulator.py`
+- **Test IP JSON wrapper**: `cd tests && python3 test_ip_json_comparison.py`
+- **Test MTR integration**: `cd tests && python3 test_mtr_integration.py`
+- **Test specific functionality**: `python3 traceroute_simulator.py --routing-dir tests/routing_facts -s 10.1.1.1 -d 10.2.1.1`
+- **Test complex routing**: `python3 traceroute_simulator.py --routing-dir tests/routing_facts -s 10.1.10.1 -d 10.3.20.1`
+- **Test JSON output**: `python3 traceroute_simulator.py --routing-dir tests/routing_facts -j -s 10.100.1.1 -d 10.100.1.3`
+- **Test MTR fallback**: `python3 traceroute_simulator.py --routing-dir tests/routing_facts -s 10.1.1.1 -d 8.8.8.8 -vv`
+- **Test reverse path tracing**: `python3 traceroute_simulator.py --routing-dir tests/routing_facts -s 10.1.1.1 -d 8.8.8.8 --reverse-trace -vv`
+- **Test timing information**: `python3 traceroute_simulator.py --routing-dir tests/routing_facts -s 10.1.1.1 -d 8.8.8.8` (shows RTT data)
+- **Test YAML configuration**: `TRACEROUTE_SIMULATOR_CONF=tests/test_config.yaml python3 traceroute_simulator.py -s 10.1.1.1 -d 10.2.1.1`
+- **Test FQDN resolution**: `python3 traceroute_simulator.py --routing-dir tests/routing_facts -s 10.1.1.1 -d 8.8.8.8` (shows dns.google)
+- **Generate network topology diagram**: `cd docs && python3 network_topology_diagram.py`
 
 ### Data Collection and Validation
-- **Collect with Ansible**: `make fetch-routing-data OUTPUT_DIR=testing/routing_facts INVENTORY_FILE=inventory.ini`
-- **Validate collected JSON**: `python3 -m json.tool testing/routing_facts/*.json`
+- **Collect with Ansible**: `make fetch-routing-data OUTPUT_DIR=tests/routing_facts INVENTORY_FILE=inventory.ini`
+- **Validate collected JSON**: `python3 -m json.tool tests/routing_facts/*.json`
 - **Test IP wrapper compatibility**: `python3 ip_json_wrapper.py route show`
 
 ## Test Network Environment
@@ -40,21 +40,21 @@ The project includes a comprehensive test network with realistic enterprise topo
 - **Realistic IP addressing**: 10.1.0.0/16 (HQ), 10.2.0.0/16 (Branch), 10.3.0.0/16 (DC)
 
 ### Test Data Location
-- **Primary test data**: `testing/routing_facts/` (20 JSON files)
-- **Network documentation**: `testing/NETWORK_TOPOLOGY.md`
-- **Network visualization**: `testing/network_topology_diagram.py` (matplotlib-based diagram generator)
-- **Generated diagrams**: `testing/network_topology.png` and `testing/network_topology.pdf`
-- **Main test suite**: `testing/test_traceroute_simulator.py` (64 test cases with 100% pass rate)
-- **IP wrapper tests**: `testing/test_ip_json_comparison.py` (7 test cases validating wrapper compatibility)
-- **MTR integration tests**: `testing/test_mtr_integration.py` (8 test cases validating MTR fallback functionality)
+- **Primary test data**: `tests/routing_facts/` (20 JSON files)
+- **Network documentation**: `docs/NETWORK_TOPOLOGY.md`
+- **Network visualization**: `docs/network_topology_diagram.py` (matplotlib-based diagram generator)
+- **Generated diagrams**: `docs/network_topology.png` and `docs/network_topology.pdf`
+- **Main test suite**: `tests/test_traceroute_simulator.py` (64 test cases with 100% pass rate)
+- **IP wrapper tests**: `tests/test_ip_json_comparison.py` (7 test cases validating wrapper compatibility)
+- **MTR integration tests**: `tests/test_mtr_integration.py` (8 test cases validating MTR fallback functionality)
 - **IP JSON wrapper**: `ip_json_wrapper.py` (compatibility layer for older Red Hat systems)
 - **Build automation**: `Makefile` (comprehensive build system with dependency checking)
 
 ### Using Test Data
-Always use the testing directory data when developing or testing:
+Always use the tests directory data when developing or testing:
 ```bash
 # Correct usage (note: -s/-d flags are required)
-python3 traceroute_simulator.py --routing-dir testing/routing_facts -s <source> -d <dest>
+python3 traceroute_simulator.py --routing-dir tests/routing_facts -s <source> -d <dest>
 
 # For new features, ensure compatibility with test network topology
 ```
@@ -105,7 +105,7 @@ python3 traceroute_simulator.py --routing-dir testing/routing_facts -s <source> 
 
 ## Project Structure Standards
 - **Separation of concerns**: Keep routing logic, testing, and data collection separate
-- **Testing isolation**: All test data and scripts in `testing/` directory
+- **Testing isolation**: All test data and scripts in `tests/` directory
 - **Modularity**: Design for reusability and extensibility
 - **Configuration**: Use external configuration files where appropriate
 - **Data format**: Maintain consistent JSON structure for routing data
@@ -115,26 +115,30 @@ python3 traceroute_simulator.py --routing-dir testing/routing_facts -s <source> 
 ```
 traceroute_simulator/
 ├── traceroute_simulator.py               # Main application
-├── mtr_executor.py                       # MTR execution and SSH management (NEW)
-├── route_formatter.py                    # Output formatting for simulation and MTR results (NEW)
-├── ip_json_wrapper.py                    # IP JSON compatibility wrapper (NEW)
-├── get_routing_info.yml                  # Enhanced data collection playbook
-├── Makefile                              # Build system with dependency checking (NEW)
-├── testing/                              # Complete test environment
+├── mtr_executor.py                       # MTR execution and SSH management
+├── route_formatter.py                    # Output formatting for simulation and MTR results
+├── ip_json_wrapper.py                    # IP JSON compatibility wrapper
+├── reverse_path_tracer.py                # Reverse path tracing functionality
+├── Makefile                              # Build system with dependency checking
+├── tests/                                # Complete test environment
 │   ├── test_traceroute_simulator.py         # Main test suite (64 cases, 100% pass rate)
 │   ├── test_ip_json_comparison.py           # Wrapper validation tests (7 cases)
 │   ├── test_mtr_integration.py              # MTR integration tests (8 cases)
+│   ├── test_config.yaml                     # Test-specific configuration
+│   └── routing_facts/                      # Test routing data (20 files)
+├── docs/                                 # Documentation and visualization
 │   ├── NETWORK_TOPOLOGY.md                 # Network documentation
 │   ├── network_topology_diagram.py         # Professional diagram generator
 │   ├── network_topology.png                # High-resolution network diagram
-│   ├── network_topology.pdf                # Vector network diagram
-│   └── routing_facts/                      # Test routing data (20 files)
+│   └── network_topology.pdf                # Vector network diagram
+├── ansible/                              # Data collection automation
+│   └── get_routing_info.yml                # Enhanced data collection playbook
 ├── CLAUDE.md                             # Development guidelines
 └── README.md                             # User documentation
 ```
 
 ### Development Guidelines
-- **Use test data**: Always test with `testing/routing_facts/` data
+- **Use test data**: Always test with `tests/routing_facts/` data
 - **Update tests**: Add tests for new features using realistic network scenarios
 - **Document changes**: Update both code comments and README.md
 - **Validate thoroughly**: Run full test suite before submitting changes
@@ -315,8 +319,8 @@ Comprehensive testing of new functionality:
 ### Key Files Modified (December 2025)
 - **Core simulator**: `traceroute_simulator.py` (UPDATED - enhanced MTR fallback with timing, router name consistency, unreachable detection)
 - **Reverse tracer**: `reverse_path_tracer.py` (UPDATED - comprehensive tuple handling, timing integration, path construction improvements)
-- **Main test suite**: `testing/test_traceroute_simulator.py` (UPDATED - fixed test regressions for MTR fallback functionality)
-- **MTR integration tests**: `testing/test_mtr_integration.py` (UPDATED - corrected expectations for working SSH environment)
+- **Main test suite**: `tests/test_traceroute_simulator.py` (UPDATED - fixed test regressions for MTR fallback functionality)
+- **MTR integration tests**: `tests/test_mtr_integration.py` (UPDATED - corrected expectations for working SSH environment)
 - **Documentation**: `README.md` and `CLAUDE.md` (UPDATED - comprehensive documentation of timing features and improvements)
 
 ### Development Notes for Recent Changes
@@ -333,19 +337,19 @@ Comprehensive testing of new functionality:
 - **MTR executor**: `mtr_executor.py` (UPDATED - enhanced hostname matching and debug output for production troubleshooting)
 - **Route formatter**: `route_formatter.py` (NEW - unified output formatting for simulation and MTR results)
 - **Reverse tracer**: `reverse_path_tracer.py` (NEW - three-step bidirectional path discovery)
-- **MTR integration tests**: `testing/test_mtr_integration.py` (NEW - 8 tests validating MTR fallback functionality)
+- **MTR integration tests**: `tests/test_mtr_integration.py` (NEW - 8 tests validating MTR fallback functionality)
 - **IP JSON wrapper**: `ip_json_wrapper.py` (NEW - compatibility layer for older Red Hat systems)
-- **Wrapper tests**: `testing/test_ip_json_comparison.py` (NEW - 7 tests validating wrapper accuracy)
+- **Wrapper tests**: `tests/test_ip_json_comparison.py` (NEW - 7 tests validating wrapper accuracy)
 - **Build system**: `Makefile` (NEW - comprehensive build automation with dependency checking)
-- **Enhanced playbook**: `get_routing_info.yml` (UPDATED - text-only remote execution with controller-side JSON conversion)
+- **Enhanced playbook**: `ansible/get_routing_info.yml` (UPDATED - text-only remote execution with controller-side JSON conversion)
 - **Core simulator**: `traceroute_simulator.py` (UPDATED - enhanced with YAML config, FQDN resolution, MTR fallback, reverse tracing, timing)
-- **Test corrections**: `testing/test_traceroute_simulator.py` (UPDATED - corrected exit code expectations for logical behavior)
+- **Test corrections**: `tests/test_traceroute_simulator.py` (UPDATED - corrected exit code expectations for logical behavior)
 - **Documentation**: `README.md` and `CLAUDE.md` (UPDATED - comprehensive documentation including configuration and FQDN features)
 
 ### Previous Key Files Modified (2024)
-- **Routing data**: `testing/routing_facts/*.json` (corrected routing tables and gateway IPs)
+- **Routing data**: `tests/routing_facts/*.json` (corrected routing tables and gateway IPs)
 - **Core logic**: `traceroute_simulator.py` (improved interface determination, new argument format, enhanced exit codes)
-- **Test suite**: `testing/test_traceroute_simulator.py` (expanded to 64 tests with comprehensive coverage)
-- **Visualization**: `testing/network_topology_diagram.py` (professional diagram system)
-- **Documentation**: `testing/NETWORK_TOPOLOGY.md` and `README.md` (updated with all improvements)
+- **Test suite**: `tests/test_traceroute_simulator.py` (expanded to 64 tests with comprehensive coverage)
+- **Visualization**: `docs/network_topology_diagram.py` (professional diagram system)
+- **Documentation**: `docs/NETWORK_TOPOLOGY.md` and `README.md` (updated with all improvements)
 - **Development guide**: `CLAUDE.md` (comprehensive documentation of all enhancements)

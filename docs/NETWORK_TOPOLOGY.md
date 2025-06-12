@@ -21,7 +21,7 @@ To regenerate or modify the network topology diagram:
 
 1. **Regenerate existing diagram:**
    ```bash
-   cd testing
+   cd docs
    python3 network_topology_diagram.py
    ```
 

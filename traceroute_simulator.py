@@ -269,7 +269,7 @@ def merge_config(defaults: Dict[str, Any], config_file: Dict[str, Any],
     
     # Apply command line arguments (override config file and defaults)
     # Only set values that were explicitly provided on command line
-    if hasattr(args, 'routing_dir') and args.routing_dir:
+    if hasattr(args, 'routing_dir') and args.routing_dir is not None:
         config['routing_dir'] = args.routing_dir
     if hasattr(args, 'verbose') and args.verbose is not None:
         if args.verbose == 0:
@@ -1026,12 +1026,12 @@ Examples:
   %(prog)s -s 10.1.1.1 -d 10.2.1.1 -v                 # Verbose output
   %(prog)s -s 10.1.1.1 -d 10.2.1.1 -q                 # Quiet mode (check $?)
   %(prog)s -s 10.100.1.1 -d 10.100.1.3 -j             # JSON output (WireGuard tunnel)
-  %(prog)s --routing-dir testing/routing_facts -s 10.1.10.1 -d 10.3.20.1  # Complex multi-hop
+  %(prog)s --routing-dir tests/routing_facts -s 10.1.10.1 -d 10.3.20.1  # Complex multi-hop
   %(prog)s -s 10.1.1.1 -d 192.168.1.1 --reverse-trace # Enable reverse path tracing
         """)
     parser.add_argument('-s', '--source', required=True, help='Source IP address')
     parser.add_argument('-d', '--destination', required=True, help='Destination IP address')
-    parser.add_argument('--routing-dir', default='routing_facts',
+    parser.add_argument('--routing-dir', 
                        help='Directory containing routing facts (default: routing_facts)')
     parser.add_argument('-v', '--verbose', action='count', default=0,
                        help='Enable verbose output (-v for basic, -vv for detailed debugging)')

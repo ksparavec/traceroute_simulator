@@ -18,9 +18,9 @@ import os
 
 def get_simulator_path():
     """Get the correct path to traceroute_simulator.py relative to current working directory."""
-    # Check if we're running from the testing directory
-    if os.path.basename(os.getcwd()) == 'testing':
-        return '../traceroute_simulator.py'
+    # Check if we're running from the tests directory
+    if os.path.basename(os.getcwd()) == 'tests':
+        return '../traceroute_simulator.py'  # Relative path from tests/ to project root
     # Otherwise assume we're running from the project root
     else:
         return 'traceroute_simulator.py'
@@ -64,7 +64,7 @@ def main():
     """Run comprehensive tests for MTR integration."""
     # Get correct paths based on current working directory
     simulator_path = get_simulator_path()
-    routing_dir = "routing_facts" if os.path.basename(os.getcwd()) == 'testing' else "testing/routing_facts"
+    routing_dir = "routing_facts" if os.path.basename(os.getcwd()) == 'tests' else "tests/routing_facts"
     
     print("MTR Integration Test Suite")
     print("Testing enhanced traceroute simulator with MTR fallback")

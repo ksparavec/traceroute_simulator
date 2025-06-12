@@ -30,8 +30,8 @@ import shutil
 from typing import List, Tuple, Dict, Any
 
 # Test configuration constants
-SIMULATOR_SCRIPT = "../traceroute_simulator.py"  # Path to script under test
-ROUTING_FACTS_DIR = "routing_facts"              # Directory with routing data
+SIMULATOR_SCRIPT = "../traceroute_simulator.py"  # Path to script under test (relative from tests/ to project root)
+ROUTING_FACTS_DIR = "routing_facts"              # Directory with routing data (relative to tests/)
 
 # Network topology data for the test environment
 # Each location has multiple routers with distinct IP ranges
@@ -169,12 +169,18 @@ class TracerouteSimulatorTester:
             Tuple of (return_code, stdout, stderr)
         """
         cmd = ["python3", SIMULATOR_SCRIPT] + args
+        
+        # Set up environment with test configuration
+        env = os.environ.copy()
+        env['TRACEROUTE_SIMULATOR_CONF'] = 'test_config.yaml'
+        
         try:
             result = subprocess.run(
                 cmd, 
                 capture_output=True, 
                 text=True, 
-                timeout=30
+                timeout=30,
+                env=env
             )
             return result.returncode, result.stdout, result.stderr
         except subprocess.TimeoutExpired:

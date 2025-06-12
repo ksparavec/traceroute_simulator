@@ -78,13 +78,13 @@ A comprehensive network path discovery tool that simulates traceroute behavior u
 1. **Use the provided test network** (see [Network Topology](#network-topology) for details):
    ```bash
    # Complex test network with 10 routers across 3 locations
-   ls testing/routing_facts/
+   ls tests/routing_facts/
    # hq-gw_route.json  hq-core_route.json  br-gw_route.json  dc-gw_route.json  ... (20 files total)
    ```
 
 2. **Run a basic traceroute simulation**:
    ```bash
-   python3 traceroute_simulator.py --routing-dir testing/routing_facts -s 10.1.1.1 -d 10.2.1.1
+   python3 traceroute_simulator.py --routing-dir tests/routing_facts -s 10.1.1.1 -d 10.2.1.1
    ```
 
 3. **View results**:
@@ -140,7 +140,7 @@ controller_ip: "192.168.1.100"
 
 **Development/Testing:**
 ```yaml
-routing_dir: "testing/routing_facts"
+routing_dir: "tests/routing_facts"
 enable_mtr_fallback: false  # Simulation only
 verbose: true
 verbose_level: 2
@@ -172,16 +172,16 @@ python3 traceroute_simulator.py [OPTIONS] -s SOURCE_IP -d DESTINATION_IP
 
 ```bash
 # Basic traceroute between router interfaces (HQ to Branch)
-python3 traceroute_simulator.py --routing-dir testing/routing_facts -s 10.1.1.1 -d 10.2.1.1
+python3 traceroute_simulator.py --routing-dir tests/routing_facts -s 10.1.1.1 -d 10.2.1.1
 
 # JSON output for programmatic processing (WireGuard tunnel)
-python3 traceroute_simulator.py --routing-dir testing/routing_facts -j -s 10.100.1.1 -d 10.100.1.3
+python3 traceroute_simulator.py --routing-dir tests/routing_facts -j -s 10.100.1.1 -d 10.100.1.3
 
 # Verbose output with debugging information (complex multi-hop)
-python3 traceroute_simulator.py --routing-dir testing/routing_facts -v -s 10.1.10.1 -d 10.3.20.1
+python3 traceroute_simulator.py --routing-dir tests/routing_facts -v -s 10.1.10.1 -d 10.3.20.1
 
 # Quiet mode for scripts (check exit code)
-python3 traceroute_simulator.py --routing-dir testing/routing_facts -q -s 10.1.1.1 -d 10.2.1.1
+python3 traceroute_simulator.py --routing-dir tests/routing_facts -q -s 10.1.1.1 -d 10.2.1.1
 echo "Exit code: $?"
 ```
 
@@ -359,11 +359,11 @@ The project includes a comprehensive test network with 10 routers across 3 locat
 
 ### Network Diagram
 
-![Network Topology](testing/network_topology.png)
+![Network Topology](docs/network_topology.png)
 
-The complete network topology diagram shows all 10 routers with their interface assignments and connections. High-resolution versions are available as `testing/network_topology.png` and `testing/network_topology.pdf`.
+The complete network topology diagram shows all 10 routers with their interface assignments and connections. High-resolution versions are available as `docs/network_topology.png` and `docs/network_topology.pdf`.
 
-For complete topology details, see `testing/NETWORK_TOPOLOGY.md`.
+For complete topology details, see `docs/NETWORK_TOPOLOGY.md`.
 
 ## 📊 Data Collection
 
@@ -529,7 +529,7 @@ python3 network_topology_diagram.py
 
 ### Customization Options
 
-The visualization can be customized by editing `testing/network_topology_diagram.py`:
+The visualization can be customized by editing `docs/network_topology_diagram.py`:
 
 - **Router Positions**: Modify coordinates in `gateways`, `cores`, and `access` arrays
 - **Colors**: Update the `colors` dictionary for different themes
@@ -776,11 +776,11 @@ make fetch-routing-data OUTPUT_DIR=temp INVENTORY=router-01
 
 ```bash
 # Intra-location routing (HQ internal)
-python3 traceroute_simulator.py --routing-dir testing/routing_facts -s 10.1.1.1 -d 10.1.2.1
+python3 traceroute_simulator.py --routing-dir tests/routing_facts -s 10.1.1.1 -d 10.1.2.1
 # Output: HQ gateway to core router
 
 # Inter-location routing (HQ to Branch)
-python3 traceroute_simulator.py --routing-dir testing/routing_facts -s 10.1.1.1 -d 10.2.1.1
+python3 traceroute_simulator.py --routing-dir tests/routing_facts -s 10.1.1.1 -d 10.2.1.1
 # Output: Cross-site via WireGuard tunnel
 ```
 
@@ -788,11 +788,11 @@ python3 traceroute_simulator.py --routing-dir testing/routing_facts -s 10.1.1.1 
 
 ```bash
 # From HQ lab network to DC server network
-python3 traceroute_simulator.py --routing-dir testing/routing_facts -s 10.1.10.100 -d 10.3.20.200
+python3 traceroute_simulator.py --routing-dir tests/routing_facts -s 10.1.10.100 -d 10.3.20.200
 # Output: Complex multi-hop path through multiple locations
 
 # Branch WiFi to Data Center servers  
-python3 traceroute_simulator.py --routing-dir testing/routing_facts -s 10.2.5.50 -d 10.3.21.100
+python3 traceroute_simulator.py --routing-dir tests/routing_facts -s 10.2.5.50 -d 10.3.21.100
 # Output: Cross-location routing via distribution layers
 ```
 
@@ -800,14 +800,14 @@ python3 traceroute_simulator.py --routing-dir testing/routing_facts -s 10.2.5.50
 
 ```bash
 # Check connectivity in script
-if python3 traceroute_simulator.py --routing-dir testing/routing_facts -q -s 10.1.1.1 -d 10.3.1.1; then
+if python3 traceroute_simulator.py --routing-dir tests/routing_facts -q -s 10.1.1.1 -d 10.3.1.1; then
     echo "HQ to DC route available"
 else
     echo "No route found"
 fi
 
 # JSON processing with jq
-python3 traceroute_simulator.py --routing-dir testing/routing_facts -j -s 10.1.10.1 -d 10.3.20.1 | \
+python3 traceroute_simulator.py --routing-dir tests/routing_facts -j -s 10.1.10.1 -d 10.3.20.1 | \
     jq '.traceroute_path[].router_name'
 ```
 
@@ -815,15 +815,15 @@ python3 traceroute_simulator.py --routing-dir testing/routing_facts -j -s 10.1.1
 
 ```bash
 # WireGuard tunnel mesh routing
-python3 traceroute_simulator.py --routing-dir testing/routing_facts -s 10.100.1.1 -d 10.100.1.3
+python3 traceroute_simulator.py --routing-dir tests/routing_facts -s 10.100.1.1 -d 10.100.1.3
 # Output: Direct VPN tunnel communication
 
 # Multi-hop cross-location routing
-python3 traceroute_simulator.py --routing-dir testing/routing_facts -v -s 10.1.11.1 -d 10.2.6.1  
+python3 traceroute_simulator.py --routing-dir tests/routing_facts -v -s 10.1.11.1 -d 10.2.6.1  
 # Output: HQ lab to Branch WiFi with detailed hop information
 
 # Maximum complexity: End-to-end across all 3 locations
-python3 traceroute_simulator.py --routing-dir testing/routing_facts -s 10.1.11.100 -d 10.3.21.200
+python3 traceroute_simulator.py --routing-dir tests/routing_facts -s 10.1.11.100 -d 10.3.21.200
 # Output: Lab host → HQ → Branch → DC → Server host
 ```
 
@@ -831,15 +831,15 @@ python3 traceroute_simulator.py --routing-dir testing/routing_facts -s 10.1.11.1
 
 ```bash
 # Basic reverse path tracing to external destination with timing
-python3 traceroute_simulator.py --routing-dir testing/routing_facts -s 10.1.1.1 -d 8.8.8.8 --reverse-trace
+python3 traceroute_simulator.py --routing-dir tests/routing_facts -s 10.1.1.1 -d 8.8.8.8 --reverse-trace
 # Output: Three-step bidirectional path discovery with RTT data
 
 # MTR fallback with timing information  
-python3 traceroute_simulator.py --routing-dir testing/routing_facts -s 10.1.1.1 -d 8.8.8.8
+python3 traceroute_simulator.py --routing-dir tests/routing_facts -s 10.1.1.1 -d 8.8.8.8
 # Output: Forward tracing with mtr tool and timing data
 
 # Detailed reverse tracing with full debugging
-python3 traceroute_simulator.py --routing-dir testing/routing_facts -s 10.1.1.1 -d 203.0.113.1 --reverse-trace -vv
+python3 traceroute_simulator.py --routing-dir tests/routing_facts -s 10.1.1.1 -d 203.0.113.1 --reverse-trace -vv
 # Output: Step-by-step reverse path tracing process with detailed MTR command output
 ```
 
@@ -849,17 +849,17 @@ python3 traceroute_simulator.py --routing-dir testing/routing_facts -s 10.1.1.1 
 
 **1. "No router data found" Error**
 ```bash
-Error: No router data found in testing/routing_facts
+Error: No router data found in tests/routing_facts
 ```
-- **Solution**: Ensure routing JSON files exist in the testing/routing_facts directory
-- **Check**: `ls testing/routing_facts/*_route.json` (should show 10 files)
+- **Solution**: Ensure routing JSON files exist in the tests/routing_facts directory
+- **Check**: `ls tests/routing_facts/*_route.json` (should show 10 files)
 
 **2. "IP not configured on any router" Error**
 ```bash
 Error: Source IP 1.2.3.4 is not configured on any router or in any directly connected network
 ```
 - **Solution**: Use IP addresses from the test topology (10.1.x.x, 10.2.x.x, 10.3.x.x, 10.100.1.x)
-- **Check**: See `testing/NETWORK_TOPOLOGY.md` for complete IP address listing
+- **Check**: See `docs/NETWORK_TOPOLOGY.md` for complete IP address listing
 
 **3. Invalid IP Address Error**
 ```bash
@@ -879,7 +879,7 @@ Error: Invalid IP address - '999.999.999.999' does not appear to be an IPv4 or I
 
 ```bash
 # Validate JSON files
-for file in testing/routing_facts/*.json; do
+for file in tests/routing_facts/*.json; do
     echo "Checking $file"
     python3 -m json.tool "$file" > /dev/null && echo "✓ Valid" || echo "✗ Invalid"
 done
@@ -887,7 +887,7 @@ done
 # List available router IPs
 python3 -c "
 import json, glob
-for f in glob.glob('testing/routing_facts/*_route.json'):
+for f in glob.glob('tests/routing_facts/*_route.json'):
     with open(f) as file:
         routes = json.load(file)
         print(f'{f}:')
@@ -897,7 +897,7 @@ for f in glob.glob('testing/routing_facts/*_route.json'):
 "
 
 # Quick test with known good IPs
-python3 traceroute_simulator.py --routing-dir testing/routing_facts -s 10.1.1.1 -d 10.2.1.1
+python3 traceroute_simulator.py --routing-dir tests/routing_facts -s 10.1.1.1 -d 10.2.1.1
 ```
 
 ## 🤝 Contributing
@@ -927,22 +927,20 @@ traceroute_simulator/
 ├── mtr_executor.py              # MTR execution and SSH management
 ├── route_formatter.py           # Output formatting for simulation and MTR results
 ├── ip_json_wrapper.py           # IP JSON compatibility wrapper for legacy systems
-├── get_routing_info.yml         # Ansible data collection playbook
 ├── Makefile                     # Comprehensive build system
-├── testing/                     # Test environment directory
+├── tests/                       # Test environment directory
 │   ├── test_traceroute_simulator.py # Main test suite (64 tests)
 │   ├── test_ip_json_comparison.py   # IP wrapper validation (7 tests)
 │   ├── test_mtr_integration.py      # MTR integration tests (8 tests)
+│   ├── test_config.yaml         # Test-specific configuration
+│   └── routing_facts/           # Test routing data (20 JSON files)
+├── docs/                        # Documentation and visualization
 │   ├── NETWORK_TOPOLOGY.md      # Detailed network documentation
 │   ├── network_topology_diagram.py  # Network visualization generator
 │   ├── network_topology.png     # High-resolution network diagram
-│   ├── network_topology.pdf     # Vector network diagram
-│   └── routing_facts/           # Test network routing data
-│       ├── hq-gw_route.json     # HQ gateway routing table
-│       ├── hq-gw_rule.json      # HQ gateway policy rules
-│       ├── br-gw_route.json     # Branch gateway routing table
-│       ├── dc-gw_route.json     # DC gateway routing table
-│       └── ...                  # Additional router data (20 files total)
+│   └── network_topology.pdf     # Vector network diagram
+├── ansible/                     # Data collection automation
+│   └── get_routing_info.yml     # Ansible data collection playbook
 ├── CLAUDE.md                    # Development guidelines
 └── README.md                    # This documentation
 ```

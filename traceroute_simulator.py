@@ -1013,6 +1013,8 @@ Configuration File Support:
   3. ./traceroute_simulator.yaml (current directory)
   
   Command line arguments override configuration file values.
+  
+  Note: Reverse path tracing requires 'controller_ip' to be set in configuration file.
 
 Exit codes (for -q/--quiet mode):
   0: Path found successfully
@@ -1046,7 +1048,7 @@ Examples:
     parser.add_argument('--reverse-trace', action='store_true',
                        help='Enable reverse path tracing when forward simulation fails')
     parser.add_argument('--controller-ip', 
-                       help='Ansible controller IP address (auto-detected if not specified)')
+                       help='Ansible controller IP address (for reverse tracing; can also be set in config file)')
     
     args = parser.parse_args()
     
@@ -1087,13 +1089,24 @@ Examples:
                     if config['verbose']:
                         print(f"Forward methods failed ({e}), attempting reverse path tracing", file=sys.stderr)
                     
+                    # Check if controller IP is provided for reverse tracing
+                    if not config.get('controller_ip'):
+                        if not config['quiet']:
+                            print("Error: Reverse path tracing requires controller_ip to be set in configuration file", file=sys.stderr)
+                        sys.exit(EXIT_ERROR)
+                    
                     # Initialize reverse path tracer
-                    reverse_tracer = ReversePathTracer(
-                        simulator, 
-                        config['controller_ip'], 
-                        verbose=config['verbose'], 
-                        verbose_level=config['verbose_level']
-                    )
+                    try:
+                        reverse_tracer = ReversePathTracer(
+                            simulator, 
+                            config['controller_ip'], 
+                            verbose=config['verbose'], 
+                            verbose_level=config['verbose_level']
+                        )
+                    except ValueError as rev_e:
+                        if not config['quiet']:
+                            print(f"Error: {rev_e}", file=sys.stderr)
+                        sys.exit(EXIT_ERROR)
                     
                     # Perform reverse path tracing
                     success, reverse_path, reverse_exit_code = reverse_tracer.perform_reverse_trace(

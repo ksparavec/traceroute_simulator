@@ -6,3 +6,4 @@ verbose_level: 2
 json_output: false
 enable_mtr_fallback: false  # Disable MTR for testing
 enable_reverse_trace: false
+# controller_ip: "192.168.1.100"  # Required for reverse path tracing

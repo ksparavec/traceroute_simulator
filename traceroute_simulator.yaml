@@ -26,8 +26,8 @@ json_output: false                             # Output results in JSON format
 enable_mtr_fallback: true                      # Enable MTR fallback for incomplete paths
 enable_reverse_trace: false                    # Enable reverse path tracing when forward fails
 
-# Network discovery
-controller_ip: null                            # Ansible controller IP (auto-detect if null)
+# Network discovery (required for reverse path tracing)
+controller_ip: null                            # Ansible controller IP (required for reverse tracing)
 
 # Examples of usage:
 #

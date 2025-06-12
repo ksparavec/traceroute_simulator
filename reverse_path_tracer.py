@@ -23,7 +23,6 @@ import sys
 import ipaddress
 import os
 from typing import Dict, List, Optional, Tuple, Any
-import socket
 
 # Import from existing modules
 try:
@@ -52,20 +51,26 @@ class ReversePathTracer:
         route_formatter: Route formatter for consistent output formatting
     """
     
-    def __init__(self, simulator, ansible_controller_ip: str = None, verbose: bool = False, verbose_level: int = 1):
+    def __init__(self, simulator, ansible_controller_ip: str, verbose: bool = False, verbose_level: int = 1):
         """
         Initialize reverse path tracer with simulator reference.
         
         Args:
             simulator: TracerouteSimulator instance for routing operations
-            ansible_controller_ip: IP address of Ansible controller (auto-detected if None)
+            ansible_controller_ip: IP address of Ansible controller (required)
             verbose: Enable verbose output for debugging operations
             verbose_level: Verbosity level (1=basic, 2=detailed debugging)
+            
+        Raises:
+            ValueError: If ansible_controller_ip is not provided
         """
+        if not ansible_controller_ip:
+            raise ValueError("Ansible controller IP address is required for reverse path tracing")
+        
         self.simulator = simulator
         self.verbose = verbose
         self.verbose_level = verbose_level
-        self.ansible_controller_ip = ansible_controller_ip or self._detect_controller_ip()
+        self.ansible_controller_ip = ansible_controller_ip
         
         # Initialize MTR executor and route formatter if available
         if MTR_AVAILABLE:
@@ -75,33 +80,6 @@ class ReversePathTracer:
         else:
             self.mtr_executor = None
             self.route_formatter = None
-    
-    def _detect_controller_ip(self) -> str:
-        """
-        Detect the IP address of the Ansible controller.
-        
-        Attempts to determine the controller IP by connecting to a public
-        DNS server and checking the local IP used for the connection.
-        This provides a reasonable default for controller-based tracing.
-        
-        Returns:
-            String representation of controller IP address
-            
-        Raises:
-            RuntimeError: If controller IP cannot be determined
-        """
-        try:
-            # Connect to public DNS to determine local IP
-            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
-                s.connect(("8.8.8.8", 80))
-                controller_ip = s.getsockname()[0]
-                
-            if self.verbose and self.verbose_level >= 3:
-                print(f"Detected Ansible controller IP: {controller_ip}")
-                
-            return controller_ip
-        except Exception as e:
-            raise RuntimeError(f"Failed to detect Ansible controller IP: {e}")
     
     def perform_reverse_trace(self, original_src: str, original_dst: str) -> Tuple[bool, List[Tuple], int]:
         """

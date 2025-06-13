@@ -54,12 +54,13 @@ EXIT_ERROR = 10         # Input validation errors or system errors
 
 class Router:
     """
-    Represents a Linux router with its routing table and policy rules.
+    Represents a router with its routing table, policy rules, and metadata.
     
     This class encapsulates all routing information for a single router including:
     - Routing table entries (from 'ip route' command)
     - Policy routing rules (from 'ip rule' command)  
     - Interface to IP address mappings
+    - Router metadata (Linux status, type, location, etc.)
     - Route selection and next-hop determination logic
     
     Attributes:
@@ -67,20 +68,23 @@ class Router:
         routes (List[Dict]): Routing table entries in JSON format
         rules (List[Dict]): Policy routing rules in JSON format
         interfaces (Dict[str, str]): Interface name to IP address mapping
+        metadata (Dict): Router metadata including linux flag, type, location, etc.
     """
     
-    def __init__(self, name: str, routes: List[Dict], rules: List[Dict]):
+    def __init__(self, name: str, routes: List[Dict], rules: List[Dict], metadata: Dict[str, Any]):
         """
-        Initialize router with routing data.
+        Initialize router with routing data and metadata.
         
         Args:
             name: Router identifier (typically hostname)
             routes: List of routing table entries from 'ip --json route list'
             rules: List of policy rules from 'ip --json rule list'
+            metadata: Router metadata including linux flag, type, location, etc.
         """
         self.name = name
         self.routes = routes
         self.rules = rules
+        self.metadata = metadata
         # Build interface mapping for quick lookups
         self.interfaces = self._extract_interfaces()
     
@@ -176,6 +180,69 @@ class Router:
             IP address string if interface exists, None otherwise
         """
         return self.interfaces.get(interface)
+    
+    def is_linux(self) -> bool:
+        """
+        Check if this router is a Linux system.
+        
+        Returns:
+            True if router is Linux-based, False otherwise
+        """
+        return self.metadata.get('linux', True)
+    
+    def get_type(self) -> str:
+        """
+        Get the router type (e.g., 'gateway', 'core', 'access').
+        
+        Returns:
+            Router type string
+        """
+        return self.metadata.get('type', 'none')
+    
+    def get_location(self) -> str:
+        """
+        Get the router location (e.g., 'hq', 'branch', 'datacenter').
+        
+        Returns:
+            Router location string
+        """
+        return self.metadata.get('location', 'none')
+    
+    def get_role(self) -> str:
+        """
+        Get the router role (e.g., 'distribution', 'gateway', 'server').
+        
+        Returns:
+            Router role string
+        """
+        return self.metadata.get('role', 'none')
+    
+    def get_vendor(self) -> str:
+        """
+        Get the router vendor (e.g., 'linux', 'cisco', 'juniper').
+        
+        Returns:
+            Router vendor string
+        """
+        return self.metadata.get('vendor', 'linux')
+    
+    def is_manageable(self) -> bool:
+        """
+        Check if this router is manageable via automation.
+        
+        Returns:
+            True if router is manageable, False otherwise
+        """
+        return self.metadata.get('manageable', True)
+    
+    def is_ansible_controller(self) -> bool:
+        """
+        Check if this router is the Ansible controller.
+        
+        Returns:
+            True if router is the Ansible controller, False otherwise
+        """
+        return self.metadata.get('ansible_controller', False)
 
 
 def load_configuration() -> Dict[str, Any]:
@@ -339,8 +406,8 @@ class TracerouteSimulator:
         
         # Initialize MTR executor and route formatter if available
         if MTR_AVAILABLE:
-            # Use router names as known Linux routers (since we have their routing data)
-            linux_routers = set(self.routers.keys())
+            # Filter to only Linux routers for MTR execution
+            linux_routers = {name for name, router in self.routers.items() if router.is_linux()}
             self.mtr_executor = MTRExecutor(linux_routers, verbose, verbose_level)
             self.route_formatter = RouteFormatter(verbose)
         else:
@@ -352,12 +419,13 @@ class TracerouteSimulator:
         Load all router data from JSON files dynamically.
         
         Discovers routers by scanning for *_route.json files, then loads
-        corresponding *_rule.json files. This allows adding new routers
+        corresponding *_rule.json and *_metadata.json files. This allows adding new routers
         without code changes - just add their JSON files to the directory.
         
         File naming convention:
         - {router_name}_route.json: Contains 'ip --json route list' output
-        - {router_name}_rule.json: Contains 'ip --json rule list' output
+        - {router_name}_rule.json: Contains 'ip --json rule list' output (optional)
+        - {router_name}_metadata.json: Contains router metadata (optional, defaults provided)
         
         Args:
             routing_facts_dir: Directory containing router JSON files
@@ -370,6 +438,17 @@ class TracerouteSimulator:
         """
         routers = {}
         
+        # Default metadata for routers when metadata file doesn't exist
+        default_metadata = {
+            "linux": True,
+            "type": "none",
+            "location": "none",
+            "role": "none",
+            "vendor": "linux",
+            "manageable": True,
+            "ansible_controller": False
+        }
+        
         # Discover all routers by finding their route files
         # This pattern allows dynamic addition of new routers
         route_files = glob.glob(os.path.join(routing_facts_dir, '*_route.json'))
@@ -379,8 +458,9 @@ class TracerouteSimulator:
             basename = os.path.basename(route_file)
             name = basename.replace('_route.json', '')
             
-            # Corresponding rule file (may not exist for simple setups)
+            # Corresponding rule and metadata files (may not exist for simple setups)
             rule_file = os.path.join(routing_facts_dir, f'{name}_rule.json')
+            metadata_file = os.path.join(routing_facts_dir, f'{name}_metadata.json')
             
             try:
                 # Load routing table (required)
@@ -396,10 +476,22 @@ class TracerouteSimulator:
                     if self.verbose and self.verbose_level >= 3:
                         print(f"Warning: Rule file for {name} not found, using empty rules", file=sys.stderr)
                 
+                # Load metadata (optional, use defaults if not found)
+                metadata = default_metadata.copy()
+                if os.path.exists(metadata_file):
+                    with open(metadata_file, 'r') as f:
+                        loaded_metadata = json.load(f)
+                        metadata.update(loaded_metadata)
+                    if self.verbose and self.verbose_level >= 3:
+                        print(f"Loaded metadata for {name}: {metadata}", file=sys.stderr)
+                else:
+                    if self.verbose and self.verbose_level >= 3:
+                        print(f"Warning: Metadata file for {name} not found, using defaults: {metadata}", file=sys.stderr)
+                
                 # Create router object with loaded data
-                routers[name] = Router(name, routes, rules)
+                routers[name] = Router(name, routes, rules, metadata)
                 if self.verbose and self.verbose_level >= 3:
-                    print(f"Loaded router: {name}", file=sys.stderr)
+                    print(f"Loaded router: {name} (Linux: {metadata['linux']}, Type: {metadata['type']})", file=sys.stderr)
                     
             except (FileNotFoundError, json.JSONDecodeError) as e:
                 if self.verbose:
@@ -496,6 +588,10 @@ class TracerouteSimulator:
                     except (ValueError, ipaddress.AddressValueError):
                         continue
         
+        # Special case: Gateway routers can reach public internet IPs
+        if router.get_type() == 'gateway' and self._is_public_ip(dst_ip):
+            return True, False
+        
         return False, False
     
     def _validate_ip_reachability(self, ip: str) -> bool:
@@ -544,6 +640,108 @@ class TracerouteSimulator:
                 ValueError, ipaddress.AddressValueError, FileNotFoundError):
             return ip  # Fallback to IP if any error occurs
     
+    def _is_public_ip(self, ip: str) -> bool:
+        """
+        Check if an IP address is a public internet IP address.
+        
+        Determines if the IP is outside of private/reserved IP ranges:
+        - RFC 1918 private networks (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16)
+        - Link-local addresses (169.254.0.0/16)
+        - Loopback addresses (127.0.0.0/8)
+        - Multicast addresses (224.0.0.0/4)
+        - Reserved ranges
+        
+        Args:
+            ip: IP address string to check
+            
+        Returns:
+            True if IP is a public internet address, False otherwise
+        """
+        try:
+            addr = ipaddress.ip_address(ip)
+            
+            # IPv6 is not considered public for this simulation
+            if addr.version == 6:
+                return False
+            
+            # Check if IP is in private/reserved ranges
+            private_networks = [
+                ipaddress.ip_network('10.0.0.0/8'),        # RFC 1918 Class A
+                ipaddress.ip_network('172.16.0.0/12'),     # RFC 1918 Class B
+                ipaddress.ip_network('192.168.0.0/16'),    # RFC 1918 Class C
+                ipaddress.ip_network('127.0.0.0/8'),       # Loopback
+                ipaddress.ip_network('169.254.0.0/16'),    # Link-local
+                ipaddress.ip_network('224.0.0.0/4'),       # Multicast
+                ipaddress.ip_network('240.0.0.0/4'),       # Reserved
+                ipaddress.ip_network('0.0.0.0/8'),         # Current network
+            ]
+            
+            for network in private_networks:
+                if addr in network:
+                    return False
+            
+            return True  # IP is public
+            
+        except (ValueError, ipaddress.AddressValueError):
+            return False  # Invalid IP is not public
+    
+    def _get_gateway_public_interface(self, router_name: str) -> Optional[str]:
+        """
+        Get the public internet interface for a gateway router.
+        
+        Gateway routers are expected to have a public interface (typically eth0)
+        with a public IP address for internet connectivity. This method identifies
+        that interface by finding one with a public IP address.
+        
+        Args:
+            router_name: Name of the gateway router
+            
+        Returns:
+            Interface name for public connectivity, or None if not found
+        """
+        if router_name not in self.routers:
+            return None
+        
+        router = self.routers[router_name]
+        
+        # Look for interface with public IP address
+        for interface, ip in router.interfaces.items():
+            if self._is_public_ip(ip):
+                return interface
+        
+        # Fallback: For gateway routers, eth0 is typically the public interface
+        if 'eth0' in router.interfaces:
+            return 'eth0'
+        
+        return None
+    
+    def get_ansible_controller_ip(self) -> Optional[str]:
+        """
+        Get the IP address of the router marked as Ansible controller.
+        
+        Searches through all routers to find the one with ansible_controller=true
+        in its metadata, then returns its primary outgoing IP address.
+        
+        Returns:
+            IP address of the Ansible controller router, or None if not found
+        """
+        for router_name, router in self.routers.items():
+            if router.is_ansible_controller():
+                # Return the first interface IP (typically the management interface)
+                # For consistency, prefer interfaces in this order: eth0, eth1, others
+                interface_priority = ['eth0', 'eth1']
+                
+                # Try priority interfaces first
+                for preferred_interface in interface_priority:
+                    if preferred_interface in router.interfaces:
+                        return router.interfaces[preferred_interface]
+                
+                # Fall back to any available interface
+                if router.interfaces:
+                    return next(iter(router.interfaces.values()))
+        
+        return None
+    
     def _get_next_hop(self, current_router: str, dst_ip: str, src_ip: str) -> Tuple[Optional[str], Optional[str], Optional[str]]:
         """Get next hop router, gateway IP, and interface for destination."""
         if current_router not in self.routers:
@@ -553,6 +751,12 @@ class TracerouteSimulator:
         route = router.get_best_route(dst_ip, src_ip)
         
         if not route:
+            # Special case: Gateway routers can route to public internet IPs via their public interface
+            if router.get_type() == 'gateway' and self._is_public_ip(dst_ip):
+                # Find the public interface (eth0) for internet connectivity
+                public_interface = self._get_gateway_public_interface(current_router)
+                if public_interface:
+                    return None, dst_ip, public_interface  # Direct internet access
             return None, None, None
         
         gateway = route.get('gateway')
@@ -755,8 +959,26 @@ class TracerouteSimulator:
             # Find next hop
             next_router, next_ip, outgoing_interface = self._get_next_hop(current_router, dst_ip, src_ip)
             
-            if not next_router or not next_ip:
+            if not next_ip:
                 # No route found
+                path.append((hop, "* * *", "No route", "", False, "", ""))
+                break
+            
+            # Special case: Gateway router reaching public internet IP directly
+            if not next_router and next_ip == dst_ip and self.routers[current_router].get_type() == 'gateway' and self._is_public_ip(dst_ip):
+                # Update previous router's outgoing interface for internet access
+                if len(path) > 0:
+                    prev_hop_num, prev_router_name, prev_ip, prev_incoming, prev_owned, prev_connected, _ = path[-1]
+                    if prev_router_name not in ["source", "destination"] and not (" -> " in prev_router_name):
+                        path[-1] = (prev_hop_num, prev_router_name, prev_ip, prev_incoming, prev_owned, prev_connected, outgoing_interface or "")
+                
+                # Add destination as reachable via internet
+                dst_label = self._resolve_ip_to_fqdn(dst_ip)
+                path.append((hop, dst_label, dst_ip, outgoing_interface or "", False, current_router, ""))
+                break
+            
+            if not next_router:
+                # No route found (not the special gateway internet case)
                 path.append((hop, "* * *", "No route", "", False, "", ""))
                 break
             
@@ -1014,7 +1236,7 @@ Configuration File Support:
   
   Command line arguments override configuration file values.
   
-  Note: Reverse path tracing requires 'controller_ip' to be set in configuration file.
+  Note: Reverse path tracing requires 'controller_ip' in configuration file or an Ansible controller router.
 
 Exit codes (for -q/--quiet mode):
   0: Path found successfully
@@ -1048,7 +1270,7 @@ Examples:
     parser.add_argument('--reverse-trace', action='store_true',
                        help='Enable reverse path tracing when forward simulation fails')
     parser.add_argument('--controller-ip', 
-                       help='Ansible controller IP address (for reverse tracing; can also be set in config file)')
+                       help='Ansible controller IP address (for reverse tracing; auto-detected from metadata if not specified)')
     
     args = parser.parse_args()
     
@@ -1090,16 +1312,23 @@ Examples:
                         print(f"Forward methods failed ({e}), attempting reverse path tracing", file=sys.stderr)
                     
                     # Check if controller IP is provided for reverse tracing
-                    if not config.get('controller_ip'):
+                    controller_ip = config.get('controller_ip')
+                    if not controller_ip:
+                        # Try to auto-detect Ansible controller IP from metadata
+                        controller_ip = simulator.get_ansible_controller_ip()
+                        if config['verbose'] and controller_ip:
+                            print(f"Auto-detected Ansible controller IP: {controller_ip}", file=sys.stderr)
+                    
+                    if not controller_ip:
                         if not config['quiet']:
-                            print("Error: Reverse path tracing requires controller_ip to be set in configuration file", file=sys.stderr)
+                            print("Error: Reverse path tracing requires controller_ip to be set in configuration file or an Ansible controller router in routing data", file=sys.stderr)
                         sys.exit(EXIT_ERROR)
                     
                     # Initialize reverse path tracer
                     try:
                         reverse_tracer = ReversePathTracer(
                             simulator, 
-                            config['controller_ip'], 
+                            controller_ip, 
                             verbose=config['verbose'], 
                             verbose_level=config['verbose_level']
                         )

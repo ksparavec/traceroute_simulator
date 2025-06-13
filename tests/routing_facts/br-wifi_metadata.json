@@ -1,0 +1,8 @@
+{
+  "linux": true,
+  "type": "access",
+  "location": "branch",
+  "role": "wifi",
+  "vendor": "linux",
+  "manageable": true
+}

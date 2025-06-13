@@ -1,0 +1,8 @@
+{
+  "linux": false,
+  "type": "core",
+  "location": "branch",
+  "role": "distribution",
+  "vendor": "linux",
+  "manageable": true
+}

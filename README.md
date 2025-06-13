@@ -5,6 +5,9 @@ A comprehensive network path discovery tool that simulates traceroute behavior u
 ## 🌟 Features
 
 - **Real Routing Data**: Uses actual routing tables and policy rules from Linux routers
+- **Router Metadata System**: Comprehensive router classification with Linux/non-Linux differentiation
+- **Gateway Internet Connectivity**: Realistic internet access simulation for gateway routers only
+- **Automatic Controller Detection**: Intelligent Ansible controller IP detection from metadata
 - **YAML Configuration Support**: Flexible configuration with environment variables and precedence handling
 - **FQDN Resolution**: Automatically resolves source and destination IPs to hostnames when possible
 - **MTR Fallback**: Automatic fallback to real MTR execution when simulation cannot complete paths
@@ -17,7 +20,7 @@ A comprehensive network path discovery tool that simulates traceroute behavior u
 - **Error Detection**: Identifies routing loops, blackhole routes, and unreachable destinations
 - **Automation Friendly**: Comprehensive exit codes and quiet mode for script integration
 - **Comprehensive Testing**: Full test suite with 79+ tests and 100% pass rate
-- **Professional Visualization**: High-quality network topology diagrams with matplotlib
+- **Professional Visualization**: High-quality network topology diagrams with metadata-aware color coding
 - **Accurate Interface Tracking**: Precise incoming/outgoing interface determination
 
 ## 📋 Table of Contents
@@ -25,6 +28,8 @@ A comprehensive network path discovery tool that simulates traceroute behavior u
 - [Installation](#installation)
 - [Quick Start](#quick-start)
 - [Configuration](#configuration)
+- [Router Metadata System](#router-metadata-system)
+- [Gateway Internet Connectivity](#gateway-internet-connectivity)
 - [Usage](#usage)
 - [Command Line Options](#command-line-options)
 - [MTR Integration](#mtr-integration)
@@ -160,6 +165,86 @@ TRACEROUTE_SIMULATOR_CONF=production.yaml python3 traceroute_simulator.py -s 10.
 # Uses production.yaml settings but enables verbose mode
 ```
 
+## 🏷️ Router Metadata System
+
+The traceroute simulator includes a comprehensive metadata system that classifies routers based on their network role, capabilities, and properties. This enables advanced features like Linux/non-Linux router differentiation, gateway internet connectivity, and automatic Ansible controller detection.
+
+### Metadata File Structure
+
+Each router can have an optional `*_metadata.json` file alongside its routing data:
+
+```json
+{
+  "linux": true,
+  "type": "gateway", 
+  "location": "hq",
+  "role": "gateway",
+  "vendor": "linux",
+  "manageable": true,
+  "ansible_controller": false
+}
+```
+
+### Metadata Properties
+
+- **`linux`** (boolean): Whether the router runs Linux OS (enables MTR execution)
+- **`type`** (string): Router type - `"gateway"`, `"core"`, `"access"`, or `"none"`
+- **`location`** (string): Physical location - `"hq"`, `"branch"`, `"datacenter"`, etc.
+- **`role`** (string): Network role - `"gateway"`, `"distribution"`, `"server"`, `"wifi"`, etc.
+- **`vendor`** (string): Router vendor - `"linux"`, `"cisco"`, `"juniper"`, etc.
+- **`manageable`** (boolean): Whether manageable via automation tools
+- **`ansible_controller`** (boolean): Whether this router is the Ansible controller
+
+### Enhanced Features
+
+1. **MTR Execution**: Only available on Linux routers (`linux: true`)
+2. **Gateway Internet Access**: Only gateway routers (`type: "gateway"`) can reach public IPs
+3. **Auto Controller Detection**: Router with `ansible_controller: true` provides controller IP
+4. **Network Visualization**: Diagrams color-coded by router type
+
+### Default Values
+
+When metadata files don't exist, routers use these defaults:
+```json
+{
+  "linux": true,
+  "type": "none", 
+  "location": "none",
+  "role": "none",
+  "vendor": "linux",
+  "manageable": true,
+  "ansible_controller": false
+}
+```
+
+## 🌐 Gateway Internet Connectivity
+
+Gateway routers with `type: "gateway"` can reach public internet IP addresses, providing realistic enterprise network simulation.
+
+### Internet Access Examples
+
+```bash
+# Gateway router direct internet access
+python3 traceroute_simulator.py --routing-dir tests/routing_facts -s 10.1.1.1 -d 1.1.1.1
+# Output: hq-gw (10.1.1.1) → one.one.one.one (1.1.1.1)
+
+# Multi-hop internet access from internal network
+python3 traceroute_simulator.py --routing-dir tests/routing_facts -s 10.1.10.1 -d 8.8.8.8
+# Output: hq-lab → hq-core → hq-gw → dns.google (8.8.8.8)
+```
+
+### Supported Internet Destinations
+
+- **DNS Servers**: 1.1.1.1, 8.8.8.8, 208.67.222.222
+- **Any Public IP**: Automatically detected using RFC standards
+- **FQDN Resolution**: Shows hostnames like `dns.google` when available
+
+### Gateway Routers in Test Network
+
+- **hq-gw**: 203.0.113.10 (HQ location)
+- **br-gw**: 198.51.100.10 (Branch location) 
+- **dc-gw**: 192.0.2.10 (Data Center location)
+
 ## 💻 Usage
 
 ### Basic Syntax
@@ -174,11 +259,20 @@ python3 traceroute_simulator.py [OPTIONS] -s SOURCE_IP -d DESTINATION_IP
 # Basic traceroute between router interfaces (HQ to Branch)
 python3 traceroute_simulator.py --routing-dir tests/routing_facts -s 10.1.1.1 -d 10.2.1.1
 
+# Gateway internet access (gateway to Cloudflare DNS)
+python3 traceroute_simulator.py --routing-dir tests/routing_facts -s 10.1.1.1 -d 1.1.1.1
+
+# Multi-hop internet access (internal network to Google DNS)
+python3 traceroute_simulator.py --routing-dir tests/routing_facts -s 10.1.10.1 -d 8.8.8.8
+
 # JSON output for programmatic processing (WireGuard tunnel)
 python3 traceroute_simulator.py --routing-dir tests/routing_facts -j -s 10.100.1.1 -d 10.100.1.3
 
-# Verbose output with debugging information (complex multi-hop)
-python3 traceroute_simulator.py --routing-dir tests/routing_facts -v -s 10.1.10.1 -d 10.3.20.1
+# Verbose output with metadata loading (shows router types)
+python3 traceroute_simulator.py --routing-dir tests/routing_facts -vvv -s 10.1.1.1 -d 10.2.1.1
+
+# Reverse path tracing with auto-detected controller IP
+python3 traceroute_simulator.py --routing-dir tests/routing_facts --reverse-trace -s 10.1.1.1 -d 192.168.1.1
 
 # Quiet mode for scripts (check exit code)
 python3 traceroute_simulator.py --routing-dir tests/routing_facts -q -s 10.1.1.1 -d 10.2.1.1

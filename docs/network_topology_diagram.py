@@ -9,6 +9,8 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 from matplotlib.patches import FancyBboxPatch
 import numpy as np
+import json
+import os
 
 def create_network_diagram():
     """Create a comprehensive network topology diagram with no crossing connections."""
@@ -20,12 +22,23 @@ def create_network_diagram():
     
     # Color scheme
     colors = {
-        'gateway': '#FF6B6B',    # Red for gateway routers
-        'core': '#4ECDC4',       # Teal for core routers  
-        'access': '#45B7D1',     # Blue for access routers
-        'internet': '#96CEB4',   # Green for internet
+        'linux': '#90EE90',      # Light green for Linux routers
+        'non_linux': '#FFB6C1',  # Light red for non-Linux routers
+        'location_bg': '#FFFFE0', # Light yellow for location headers
         'text': '#2D3436'        # Dark gray for text
     }
+    
+    # Load router metadata to determine Linux vs non-Linux
+    def is_linux_router(router_name):
+        metadata_path = f"../tests/routing_facts/{router_name}_metadata.json"
+        if os.path.exists(metadata_path):
+            try:
+                with open(metadata_path, 'r') as f:
+                    metadata = json.load(f)
+                    return metadata.get('linux', True)
+            except:
+                pass
+        return True  # Default to Linux if metadata not found
     
     # Title - moved higher to create more space
     ax.text(11, 15, 'Network Topology - 10 Routers Across 3 Locations', 
@@ -34,22 +47,22 @@ def create_network_diagram():
     # Location headers - positioned above each column with more space from title
     ax.text(4, 13, 'Location A (HQ)\n10.1.0.0/16', 
             fontsize=24, fontweight='bold', ha='center', 
-            bbox=dict(boxstyle="round,pad=0.6", facecolor='lightblue', alpha=0.8))
+            bbox=dict(boxstyle="round,pad=0.6", facecolor=colors['location_bg'], alpha=0.8))
     
     ax.text(11, 13, 'Location B (Branch)\n10.2.0.0/16', 
             fontsize=24, fontweight='bold', ha='center',
-            bbox=dict(boxstyle="round,pad=0.6", facecolor='lightgreen', alpha=0.8))
+            bbox=dict(boxstyle="round,pad=0.6", facecolor=colors['location_bg'], alpha=0.8))
     
     ax.text(18, 13, 'Location C (DC)\n10.3.0.0/16', 
             fontsize=24, fontweight='bold', ha='center',
-            bbox=dict(boxstyle="round,pad=0.6", facecolor='lightcoral', alpha=0.8))
+            bbox=dict(boxstyle="round,pad=0.6", facecolor=colors['location_bg'], alpha=0.8))
     
     
     # Gateway routers - positioned closer to location headers
     gateways = [
-        {'name': 'hq-gw', 'pos': (4, 11.5), 'interfaces': ['eth0: 203.0.113.10', 'eth1: 10.1.1.1']},
-        {'name': 'br-gw', 'pos': (11, 11.5), 'interfaces': ['eth0: 198.51.100.10', 'eth1: 10.2.1.1']},
-        {'name': 'dc-gw', 'pos': (18, 11.5), 'interfaces': ['eth0: 192.0.2.10', 'eth1: 10.3.1.1']}
+        {'name': 'hq-gw', 'pos': (4, 11.5), 'interfaces': ['eth0: 203.0.113.10', 'eth1: 10.1.1.1', 'wg0: 10.100.1.1']},
+        {'name': 'br-gw', 'pos': (11, 11.5), 'interfaces': ['eth0: 198.51.100.10', 'eth1: 10.2.1.1', 'wg0: 10.100.1.2']},
+        {'name': 'dc-gw', 'pos': (18, 11.5), 'interfaces': ['eth0: 192.0.2.10', 'eth1: 10.3.1.1', 'wg0: 10.100.1.3']}
     ]
     
     # Core routers - positioned proportionally
@@ -68,8 +81,15 @@ def create_network_diagram():
     ]
     
     # Draw routers with minimal size based on content
-    def draw_router(router_info, color):
+    def draw_router(router_info):
         x, y = router_info['pos']
+        router_name = router_info['name']
+        
+        # Determine color based on Linux status
+        if is_linux_router(router_name):
+            color = colors['linux']
+        else:
+            color = colors['non_linux']
         
         # Calculate size based on content - minimal padding
         num_interfaces = len(router_info['interfaces'])
@@ -98,13 +118,13 @@ def create_network_diagram():
     
     # Draw all routers
     for gateway in gateways:
-        draw_router(gateway, colors['gateway'])
+        draw_router(gateway)
     
     for core in cores:
-        draw_router(core, colors['core'])
+        draw_router(core)
         
     for acc in access:
-        draw_router(acc, colors['access'])
+        draw_router(acc)
     
     # Draw connections with NO crossings - all connections are perfectly vertical or horizontal
     
@@ -146,16 +166,39 @@ def create_network_diagram():
     dc_srv_top = 6.5 + 1.1     # Adjust for new position and smaller box (4 interfaces)
     ax.plot([dc_core_x, dc_core_x], [dc_core_bottom, dc_srv_top], '-', color='purple', linewidth=4)
     
+    # VPN connections between gateway routers
+    # hq-gw to br-gw - direct line
+    ax.plot([5.4, 9.6], [11.5, 11.5], '--', color='gray', linewidth=3, alpha=0.8)
+    
+    # br-gw to dc-gw - direct line  
+    ax.plot([12.4, 16.6], [11.5, 11.5], '--', color='gray', linewidth=3, alpha=0.8)
+    
+    # hq-gw to dc-gw - rectangular path going around location boxes
+    # Start from left side of hq-gw box, go around Location A and Location C boxes
+    hq_left_x = 1.5    # Further left to clear Location A box completely
+    dc_right_x = 20.5  # Further right to clear Location C box completely
+    top_y = 14.2       # Above location boxes but below title
+    
+    # Path: left -> up -> right -> down -> left
+    # 1. Connect from hq-gw box to left starting point, then go up to clear Location A box
+    ax.plot([2.6, hq_left_x], [11.5, 11.5], '--', color='gray', linewidth=3, alpha=0.8)  # Connect to hq-gw box
+    ax.plot([hq_left_x, hq_left_x], [11.5, top_y], '--', color='gray', linewidth=3, alpha=0.8)
+    # 2. Go right across the top, past Location C box
+    ax.plot([hq_left_x, dc_right_x], [top_y, top_y], '--', color='gray', linewidth=3, alpha=0.8)
+    # 3. Go down to dc-gw level
+    ax.plot([dc_right_x, dc_right_x], [top_y, 11.5], '--', color='gray', linewidth=3, alpha=0.8)
+    # 4. Go left to connect to dc-gw box edge (not entering the box)
+    ax.plot([dc_right_x, 19.4], [11.5, 11.5], '--', color='gray', linewidth=3, alpha=0.8)
+    
     # Legend
     legend_elements = [
-        plt.Line2D([0], [0], marker='s', color='w', markerfacecolor=colors['gateway'], 
-                   markersize=15, label='Gateway Routers'),
-        plt.Line2D([0], [0], marker='s', color='w', markerfacecolor=colors['core'], 
-                   markersize=15, label='Core Routers'),
-        plt.Line2D([0], [0], marker='s', color='w', markerfacecolor=colors['access'], 
-                   markersize=15, label='Access Routers'),
+        plt.Line2D([0], [0], marker='s', color='w', markerfacecolor=colors['linux'], 
+                   markersize=15, label='Linux Routers'),
+        plt.Line2D([0], [0], marker='s', color='w', markerfacecolor=colors['non_linux'], 
+                   markersize=15, label='Non-Linux Routers'),
         plt.Line2D([0], [0], color='blue', linewidth=4, label='Gateway-Core Connection'),
-        plt.Line2D([0], [0], color='purple', linewidth=4, label='Core-Access Connection')
+        plt.Line2D([0], [0], color='purple', linewidth=4, label='Core-Access Connection'),
+        plt.Line2D([0], [0], color='gray', linewidth=3, linestyle='--', label='VPN Connections')
     ]
     
     ax.legend(handles=legend_elements, loc='lower center', bbox_to_anchor=(0.5, 0.02), 
@@ -176,7 +219,7 @@ if __name__ == "__main__":
     plt.savefig('network_topology.pdf', bbox_inches='tight', 
                 facecolor='white', edgecolor='none')
     
-    plt.show()
+    # plt.show()  # Commented out for headless execution
     
     print("Network topology diagram saved as:")
     print("- network_topology.png (high-resolution)")

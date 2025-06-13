@@ -18,12 +18,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **Test specific functionality**: `python3 traceroute_simulator.py --routing-dir tests/routing_facts -s 10.1.1.1 -d 10.2.1.1`
 - **Test complex routing**: `python3 traceroute_simulator.py --routing-dir tests/routing_facts -s 10.1.10.1 -d 10.3.20.1`
 - **Test JSON output**: `python3 traceroute_simulator.py --routing-dir tests/routing_facts -j -s 10.100.1.1 -d 10.100.1.3`
-- **Test MTR fallback**: `python3 traceroute_simulator.py --routing-dir tests/routing_facts -s 10.1.1.1 -d 8.8.8.8 -vv`
-- **Test reverse path tracing**: `TRACEROUTE_SIMULATOR_CONF=tests/test_config.yaml python3 traceroute_simulator.py --routing-dir tests/routing_facts -s 10.1.1.1 -d 8.8.8.8 --reverse-trace -vv` (requires controller_ip in config)
+- **Test gateway internet access**: `python3 traceroute_simulator.py --routing-dir tests/routing_facts -s 10.1.1.1 -d 1.1.1.1` (gateway to Cloudflare DNS)
+- **Test multi-hop internet access**: `python3 traceroute_simulator.py --routing-dir tests/routing_facts -s 10.1.10.1 -d 8.8.8.8` (internal network to Google DNS)
+- **Test MTR fallback**: `python3 traceroute_simulator.py --routing-dir tests/routing_facts -s 10.1.1.1 -d 192.168.1.1 -vv` (triggers MTR for unreachable)
+- **Test reverse path tracing**: `python3 traceroute_simulator.py --routing-dir tests/routing_facts -s 10.1.1.1 -d 192.168.1.1 --reverse-trace -vv` (auto-detects controller IP)
 - **Test timing information**: `python3 traceroute_simulator.py --routing-dir tests/routing_facts -s 10.1.1.1 -d 8.8.8.8` (shows RTT data)
 - **Test YAML configuration**: `TRACEROUTE_SIMULATOR_CONF=tests/test_config.yaml python3 traceroute_simulator.py -s 10.1.1.1 -d 10.2.1.1`
 - **Test FQDN resolution**: `python3 traceroute_simulator.py --routing-dir tests/routing_facts -s 10.1.1.1 -d 8.8.8.8` (shows dns.google)
 - **Test verbose levels**: `python3 traceroute_simulator.py --routing-dir tests/routing_facts -s 10.1.1.1 -d 10.2.1.1 -v` (basic), `-vv` (debug), `-vvv` (config)
+- **Test metadata loading**: `python3 traceroute_simulator.py --routing-dir tests/routing_facts -s 10.1.1.1 -d 10.2.1.1 -vvv` (shows router types)
 - **Generate network topology diagram**: `cd docs && python3 network_topology_diagram.py`
 
 ### Data Collection and Validation
@@ -41,7 +44,8 @@ The project includes a comprehensive test network with realistic enterprise topo
 - **Realistic IP addressing**: 10.1.0.0/16 (HQ), 10.2.0.0/16 (Branch), 10.3.0.0/16 (DC)
 
 ### Test Data Location
-- **Primary test data**: `tests/routing_facts/` (20 JSON files)
+- **Primary test data**: `tests/routing_facts/` (30 JSON files: 10 route, 10 rule, 10 metadata)
+- **Router metadata**: `tests/routing_facts/*_metadata.json` (router classification and properties)
 - **Network documentation**: `docs/NETWORK_TOPOLOGY.md`
 - **Network visualization**: `docs/network_topology_diagram.py` (matplotlib-based diagram generator)
 - **Generated diagrams**: `docs/network_topology.png` and `docs/network_topology.pdf`
@@ -58,6 +62,98 @@ Always use the tests directory data when developing or testing:
 python3 traceroute_simulator.py --routing-dir tests/routing_facts -s <source> -d <dest>
 
 # For new features, ensure compatibility with test network topology
+```
+
+## Router Metadata System
+
+The traceroute simulator now includes a comprehensive metadata system that classifies routers based on their network role, capabilities, and properties. This enables advanced features like Linux/non-Linux router differentiation, gateway internet connectivity, and automatic Ansible controller detection.
+
+### Metadata File Structure
+
+Each router can have an optional `*_metadata.json` file that defines its properties:
+
+```json
+{
+  "linux": true,
+  "type": "gateway",
+  "location": "hq",
+  "role": "gateway",
+  "vendor": "linux",
+  "manageable": true,
+  "ansible_controller": false
+}
+```
+
+### Metadata Properties
+
+- **`linux`** (boolean): Whether the router runs Linux OS (enables MTR execution capability)
+- **`type`** (string): Router type - `"gateway"`, `"core"`, `"access"`, or `"none"`
+- **`location`** (string): Physical/logical location - `"hq"`, `"branch"`, `"datacenter"`, or `"none"`
+- **`role`** (string): Network role - `"gateway"`, `"distribution"`, `"server"`, `"wifi"`, `"dmz"`, etc.
+- **`vendor`** (string): Router vendor/platform - `"linux"`, `"cisco"`, `"juniper"`, etc.
+- **`manageable`** (boolean): Whether router is manageable via automation tools
+- **`ansible_controller`** (boolean): Whether this router serves as the Ansible controller
+
+### Default Metadata Values
+
+When metadata files don't exist, routers use these default values:
+```json
+{
+  "linux": true,
+  "type": "none",
+  "location": "none",
+  "role": "none",
+  "vendor": "linux",
+  "manageable": true,
+  "ansible_controller": false
+}
+```
+
+### Router Classification in Test Network
+
+**Linux Routers** (MTR-capable):
+- `hq-core`, `hq-dmz`, `hq-lab` (HQ location)
+- `br-wifi` (Branch location)
+- `dc-gw` (Data Center location)
+
+**Non-Linux Routers** (simulation-only):
+- `hq-gw`, `br-gw`, `br-core` (gateways and core)
+- `dc-core`, `dc-srv` (data center infrastructure)
+
+**Gateway Routers** (internet-capable):
+- `hq-gw` (203.0.113.10 → Internet)
+- `br-gw` (198.51.100.10 → Internet)
+- `dc-gw` (192.0.2.10 → Internet)
+
+**Ansible Controller**:
+- `hq-dmz` (10.1.2.3) - automatically detected for reverse path tracing
+
+### Enhanced Features Enabled by Metadata
+
+1. **MTR Fallback**: Only executed on Linux routers (`linux: true`)
+2. **Gateway Internet Access**: Routers with `type: "gateway"` can reach public IP addresses
+3. **Automatic Controller Detection**: Router with `ansible_controller: true` provides controller IP
+4. **Network Visualization**: Diagram colors routers based on Linux/non-Linux classification
+5. **Realistic Simulation**: Different router types behave according to real-world capabilities
+
+### File Naming Convention
+
+For each router, three optional JSON files can exist:
+- `{router_name}_route.json` - Routing table (required)
+- `{router_name}_rule.json` - Policy rules (optional)
+- `{router_name}_metadata.json` - Router metadata (optional, uses defaults if missing)
+
+### Metadata API Methods
+
+Router objects provide convenient access to metadata:
+```python
+router.is_linux()              # Boolean: Linux OS
+router.get_type()               # String: gateway, core, access, none
+router.get_location()           # String: hq, branch, datacenter, none
+router.get_role()               # String: distribution, server, wifi, etc.
+router.get_vendor()             # String: vendor information
+router.is_manageable()          # Boolean: automation capability
+router.is_ansible_controller()  # Boolean: controller status
 ```
 
 ## Code Style Guidelines
@@ -301,6 +397,45 @@ Enhanced reliability and maintainability:
 - **Enhanced Exit Code Logic**: Consistent exit code behavior across quiet and non-quiet modes
 - **Test Regression Fixes**: Updated test expectations to reflect working MTR fallback functionality
 
+## Latest Improvements (December 2025) - MOST RECENT
+
+### Router Metadata System (Latest)
+Comprehensive router classification and property management system:
+- **Metadata File Support**: Optional `*_metadata.json` files for each router with classification properties
+- **Router Properties**: Linux/non-Linux classification, type (gateway/core/access), location, role, vendor, and management capabilities
+- **Default Fallback**: Graceful handling when metadata files don't exist with sensible default values
+- **API Integration**: Convenient router object methods for accessing metadata (`router.is_linux()`, `router.get_type()`, etc.)
+- **Enhanced MTR Filtering**: MTR execution limited to Linux routers only based on metadata classification
+- **Network Visualization**: Professional diagrams color-coded by router type using metadata information
+- **Backward Compatibility**: Existing functionality preserved when no metadata files present
+
+### Gateway Internet Connectivity (Latest)
+Realistic internet access simulation for gateway routers:
+- **Public IP Detection**: Automatic classification of internet vs. private IP addresses using RFC standards
+- **Gateway-Only Internet Access**: Only routers with `type: "gateway"` can reach public internet destinations
+- **Multi-Hop Internet Routing**: Internal networks route through core to gateway for internet access
+- **Public Interface Detection**: Automatic identification of gateway public interfaces (typically eth0)
+- **FQDN Resolution**: Internet destinations resolve to hostnames (e.g., `dns.google (8.8.8.8)`)
+- **Realistic Behavior**: Models enterprise network architecture where only gateway routers provide internet connectivity
+- **Complete Path Simulation**: Shows full path from internal networks → core → gateway → internet
+
+### Automatic Ansible Controller Detection (Latest)
+Intelligent controller IP detection for reverse path tracing:
+- **Metadata-Based Detection**: Automatically finds router with `ansible_controller: true` in metadata
+- **Interface Priority**: Selects controller IP using eth0 → eth1 → any available interface precedence
+- **Configuration Precedence**: Command line `--controller-ip` → config file → auto-detection → error
+- **Verbose Feedback**: Shows auto-detected controller IP in verbose mode for transparency
+- **Error Enhancement**: Updated error messages mention both manual and automatic controller IP options
+- **Seamless Integration**: Works transparently with existing ReversePathTracer functionality
+
+### Enhanced Test Network Classification (Latest)
+Realistic mixed Linux/non-Linux router environment:
+- **Linux Routers** (5): `hq-core`, `hq-dmz`, `hq-lab`, `br-wifi`, `dc-gw` (MTR-capable)
+- **Non-Linux Routers** (5): `hq-gw`, `br-gw`, `br-core`, `dc-core`, `dc-srv` (simulation-only)
+- **Gateway Routers** (3): `hq-gw`, `br-gw`, `dc-gw` with public IP interfaces for internet access
+- **Ansible Controller**: `hq-dmz` (10.1.2.3) automatically detected for reverse path tracing
+- **Comprehensive Testing**: All 79 tests pass with new metadata-aware functionality
+
 ### Critical Bug Fixes
 Resolved key issues affecting functionality:
 - **MTR Parsing Errors**: Fixed "too many values to unpack" errors when processing MTR results with timing information
@@ -330,6 +465,12 @@ Comprehensive testing of new functionality:
 - **Router Name Logic**: Use `simulator._find_router_by_ip(src_ip)` to determine if source IP belongs to a router for proper naming
 - **Error Handling**: Distinguish between routing failures (EXIT_NO_PATH) and unreachable destinations (EXIT_NOT_FOUND) based on MTR validation
 - **Testing**: Always run full test suite (`make test`) after modifications to ensure 100% pass rate is maintained
+
+### Key Files Added/Modified (December 2025) - MOST RECENT
+- **Router metadata**: `tests/routing_facts/*_metadata.json` (NEW - 10 metadata files defining router properties and classification)
+- **Core simulator**: `traceroute_simulator.py` (UPDATED - metadata support, gateway internet connectivity, auto controller detection)
+- **Network diagram**: `docs/network_topology_diagram.py` (UPDATED - metadata-aware color coding for Linux/non-Linux routers)
+- **Documentation**: `CLAUDE.md` and `README.md` (UPDATED - comprehensive metadata system and gateway internet documentation)
 
 ### Key Files Added/Modified (2025)
 - **YAML configuration file**: `traceroute_simulator.yaml` (NEW - example configuration file with comprehensive options)

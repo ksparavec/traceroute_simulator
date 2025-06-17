@@ -27,12 +27,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **Test FQDN resolution**: `python3 traceroute_simulator.py --routing-dir tests/routing_facts -s 10.1.1.1 -d 8.8.8.8` (shows dns.google)
 - **Test verbose levels**: `python3 traceroute_simulator.py --routing-dir tests/routing_facts -s 10.1.1.1 -d 10.2.1.1 -v` (basic), `-vv` (debug), `-vvv` (config)
 - **Test metadata loading**: `python3 traceroute_simulator.py --routing-dir tests/routing_facts -s 10.1.1.1 -d 10.2.1.1 -vvv` (shows router types)
+- **Test iptables analyzer**: `python3 iptables_forward_analyzer.py --router hq-gw --routing-dir tests/routing_facts -s 10.1.1.1 -d 10.2.1.1 -p tcp -vv`
 - **Generate network topology diagram**: `cd docs && python3 network_topology_diagram.py`
 
 ### Data Collection and Validation
 - **Collect with Ansible**: `make fetch-routing-data OUTPUT_DIR=tests/routing_facts INVENTORY_FILE=inventory.ini`
 - **Validate collected JSON**: `python3 -m json.tool tests/routing_facts/*.json`
-- **Test IP wrapper compatibility**: `python3 ip_json_wrapper.py route show`
+- **Test IP wrapper compatibility**: `python3 ansible/ip_json_wrapper.py route show`
+- **Verify iptables data**: `head -50 tests/routing_facts/hq-gw_iptables.txt`
+- **Check ipset data**: `head -20 tests/routing_facts/hq-gw_ipsets.txt`
 
 ## Test Network Environment
 
@@ -46,13 +49,17 @@ The project includes a comprehensive test network with realistic enterprise topo
 ### Test Data Location
 - **Primary test data**: `tests/routing_facts/` (30 JSON files: 10 route, 10 rule, 10 metadata)
 - **Router metadata**: `tests/routing_facts/*_metadata.json` (router classification and properties)
+- **Iptables data**: `tests/routing_facts/*_iptables.txt` (firewall rules and configuration)
+- **Ipset data**: `tests/routing_facts/*_ipsets.txt` (IP set definitions and membership)
 - **Network documentation**: `docs/NETWORK_TOPOLOGY.md`
 - **Network visualization**: `docs/network_topology_diagram.py` (matplotlib-based diagram generator)
 - **Generated diagrams**: `docs/network_topology.png` and `docs/network_topology.pdf`
 - **Main test suite**: `tests/test_traceroute_simulator.py` (64 test cases with 100% pass rate)
 - **IP wrapper tests**: `tests/test_ip_json_comparison.py` (7 test cases validating wrapper compatibility)
 - **MTR integration tests**: `tests/test_mtr_integration.py` (8 test cases validating MTR fallback functionality)
-- **IP JSON wrapper**: `ip_json_wrapper.py` (compatibility layer for older Red Hat systems)
+- **IP JSON wrapper**: `ansible/ip_json_wrapper.py` (compatibility layer for older Red Hat systems)
+- **Iptables analyzer**: `iptables_forward_analyzer.py` (packet forwarding decision analysis)
+- **Data collection script**: `ansible/get_iptables_info.sh` (comprehensive iptables and network data collection)
 - **Build automation**: `Makefile` (comprehensive build system with dependency checking)
 
 ### Using Test Data
@@ -214,8 +221,8 @@ traceroute_simulator/
 ├── traceroute_simulator.py               # Main application
 ├── mtr_executor.py                       # MTR execution and SSH management
 ├── route_formatter.py                    # Output formatting for simulation and MTR results
-├── ip_json_wrapper.py                    # IP JSON compatibility wrapper
 ├── reverse_path_tracer.py                # Reverse path tracing functionality
+├── iptables_forward_analyzer.py          # Packet forwarding analysis using iptables rules
 ├── Makefile                              # Build system with dependency checking
 ├── tests/                                # Complete test environment
 │   ├── test_traceroute_simulator.py         # Main test suite (64 cases, 100% pass rate)
@@ -229,7 +236,9 @@ traceroute_simulator/
 │   ├── network_topology.png                # High-resolution network diagram
 │   └── network_topology.pdf                # Vector network diagram
 ├── ansible/                              # Data collection automation
-│   └── get_routing_info.yml                # Enhanced data collection playbook
+│   ├── get_routing_info.yml                # Enhanced data collection playbook
+│   ├── get_iptables_info.sh               # Iptables and network data collection script
+│   └── ip_json_wrapper.py                 # IP JSON compatibility wrapper
 ├── CLAUDE.md                             # Development guidelines
 └── README.md                             # User documentation
 ```
@@ -351,7 +360,36 @@ Expanded testing capabilities with professional validation tools:
 - **Integration testing**: End-to-end validation of data collection and processing workflows
 - **Build system testing**: Validates Makefile targets and dependency checking functionality
 
-## Latest Improvements (June 2025) - MOST RECENT
+## Latest Improvements (December 2025) - MOST RECENT
+
+### Iptables Forward Analysis (Latest)
+Comprehensive packet forwarding analysis using actual iptables configurations:
+- **Iptables Analyzer**: `iptables_forward_analyzer.py` analyzes FORWARD chain rules to determine packet forwarding decisions
+- **Comprehensive Rule Support**: Handles complex iptables rules including source/dest IPs, ports, protocols, and interfaces
+- **Ipset Integration**: Full support for ipset match-set conditions with efficient Python set-based lookups
+- **Multi-format Input**: Supports IP ranges (CIDR), lists (comma-separated), and port ranges for flexible testing
+- **Verbose Analysis**: Three verbosity levels (-v: basic decisions, -vv: detailed rule checks, -vvv: ipset structure)
+- **Exit Code Integration**: Returns 0 for allowed, 1 for denied, 2 for errors - perfect for automation
+- **Real Router Data**: Uses actual iptables configurations collected from live routers via Ansible
+
+### Enhanced Ansible Data Collection (Latest)
+Expanded data collection to include firewall and network security information:
+- **Iptables Collection**: Automated collection of complete iptables configuration from all tables (filter, nat, mangle)
+- **Ipset Collection**: Gathering of all ipset definitions and membership information for match-set rule analysis
+- **Network Information**: Comprehensive collection of interface stats, connection tracking, and netfilter modules
+- **Standardized Collection Script**: `get_iptables_info.sh` provides consistent data format across different Linux distributions
+- **Root Access Handling**: Proper sudo/root access management for complete iptables visibility
+- **Graceful Degradation**: Continues operation even when ipset command is not available on target systems
+- **File Organization**: Clear separation of routing data, iptables rules, and ipset definitions
+
+### File Reorganization and Path Updates (Latest)
+Improved project organization and path management:
+- **IP JSON Wrapper Relocation**: Moved `ip_json_wrapper.py` from project root to `ansible/` directory for better organization
+- **Ansible Integration**: All Ansible-related scripts and utilities now consolidated in `ansible/` directory
+- **Path Updates**: Updated all references and imports to reflect new file locations
+- **Consistent Documentation**: All examples and test commands updated to use correct paths
+
+## Previous Improvements (June 2025)
 
 ### YAML Configuration Support (Latest)
 Complete YAML configuration file support for flexible enterprise deployment:
@@ -467,10 +505,14 @@ Comprehensive testing of new functionality:
 - **Testing**: Always run full test suite (`make test`) after modifications to ensure 100% pass rate is maintained
 
 ### Key Files Added/Modified (December 2025) - MOST RECENT
-- **Router metadata**: `tests/routing_facts/*_metadata.json` (NEW - 10 metadata files defining router properties and classification)
-- **Core simulator**: `traceroute_simulator.py` (UPDATED - metadata support, gateway internet connectivity, auto controller detection)
-- **Network diagram**: `docs/network_topology_diagram.py` (UPDATED - metadata-aware color coding for Linux/non-Linux routers)
-- **Documentation**: `CLAUDE.md` and `README.md` (UPDATED - comprehensive metadata system and gateway internet documentation)
+- **Iptables analyzer**: `iptables_forward_analyzer.py` (NEW - comprehensive packet forwarding analysis with ipset support)
+- **Data collection script**: `ansible/get_iptables_info.sh` (NEW - standardized iptables and network data collection)
+- **IP JSON wrapper**: `ansible/ip_json_wrapper.py` (MOVED - relocated from project root to ansible directory)
+- **Enhanced Ansible playbook**: `ansible/get_routing_info.yml` (UPDATED - added iptables and ipset collection capabilities)
+- **Router metadata**: `tests/routing_facts/*_metadata.json` (EXISTING - 10 metadata files defining router properties and classification)
+- **Core simulator**: `traceroute_simulator.py` (STABLE - metadata support, gateway internet connectivity, auto controller detection)
+- **Network diagram**: `docs/network_topology_diagram.py` (STABLE - metadata-aware color coding for Linux/non-Linux routers)
+- **Documentation**: `CLAUDE.md` and `README.md` (UPDATED - comprehensive iptables analysis and file reorganization documentation)
 
 ### Key Files Added/Modified (2025)
 - **YAML configuration file**: `traceroute_simulator.yaml` (NEW - example configuration file with comprehensive options)

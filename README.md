@@ -8,6 +8,8 @@ A comprehensive network path discovery tool that simulates traceroute behavior u
 - **Router Metadata System**: Comprehensive router classification with Linux/non-Linux differentiation
 - **Gateway Internet Connectivity**: Realistic internet access simulation for gateway routers only
 - **Automatic Controller Detection**: Intelligent Ansible controller IP detection from metadata
+- **Iptables Forward Analysis**: Comprehensive packet forwarding analysis using actual iptables configurations
+- **Ipset Integration**: Full support for ipset match-set conditions with efficient Python set-based lookups
 - **YAML Configuration Support**: Flexible configuration with environment variables and precedence handling
 - **FQDN Resolution**: Automatically resolves source and destination IPs to hostnames when possible
 - **MTR Fallback**: Automatic fallback to real MTR execution when simulation cannot complete paths
@@ -30,6 +32,7 @@ A comprehensive network path discovery tool that simulates traceroute behavior u
 - [Configuration](#configuration)
 - [Router Metadata System](#router-metadata-system)
 - [Gateway Internet Connectivity](#gateway-internet-connectivity)
+- [Iptables Forward Analysis](#iptables-forward-analysis)
 - [Usage](#usage)
 - [Command Line Options](#command-line-options)
 - [MTR Integration](#mtr-integration)
@@ -244,6 +247,53 @@ python3 traceroute_simulator.py --routing-dir tests/routing_facts -s 10.1.10.1 -
 - **hq-gw**: 203.0.113.10 (HQ location)
 - **br-gw**: 198.51.100.10 (Branch location) 
 - **dc-gw**: 192.0.2.10 (Data Center location)
+
+## 🔥 Iptables Forward Analysis
+
+The project includes a comprehensive iptables analysis tool that determines whether packets will be forwarded by specific routers based on their actual firewall configurations.
+
+### Key Features
+
+- **Real Iptables Rules**: Analyzes actual iptables FORWARD chain rules from live routers
+- **Ipset Integration**: Full support for ipset match-set conditions with efficient lookups
+- **Multi-format Input**: Supports IP ranges (CIDR), comma-separated lists, and port ranges
+- **Protocol Support**: Handles tcp, udp, icmp, and all protocols
+- **Verbose Analysis**: Three verbosity levels for detailed rule evaluation
+- **Exit Code Integration**: Returns clear exit codes for automation (0=allowed, 1=denied, 2=error)
+
+### Usage Examples
+
+```bash
+# Basic packet forwarding analysis
+python3 iptables_forward_analyzer.py --router hq-gw --routing-dir tests/routing_facts \
+  -s 10.1.1.1 -d 10.2.1.1 -p tcp
+
+# Analyze specific ports with verbose output
+python3 iptables_forward_analyzer.py --router hq-gw --routing-dir tests/routing_facts \
+  -s 10.1.1.1 -sp 80,443 -d 10.2.1.1 -dp 8080:8090 -p tcp -vv
+
+# Analyze IP ranges and show ipset structure
+python3 iptables_forward_analyzer.py --router br-core --routing-dir tests/routing_facts \
+  -s 10.1.0.0/16 -d 10.2.0.0/16,10.3.0.0/16 -p all -vvv
+```
+
+### Command Line Options
+
+- `-s, --source`: Source IP address (supports CIDR, lists: `10.1.1.1,10.1.1.2` or `10.1.1.0/24`)
+- `-sp, --source-port`: Source port (supports ranges: `80,443` or `8000:8080`)
+- `-d, --dest`: Destination IP address (supports CIDR, lists)
+- `-dp, --dest-port`: Destination port (supports ranges)
+- `-p, --protocol`: Protocol type (`tcp`, `udp`, `icmp`, `all`)
+- `--router`: Router name to analyze (must have iptables data file)
+- `--routing-dir`: Directory containing routing facts and iptables files
+- `-v, -vv, -vvv`: Verbosity levels (basic decisions, detailed rules, ipset structure)
+
+### Integration with Data Collection
+
+The iptables analyzer uses data collected by the enhanced Ansible playbook:
+- `{router}_iptables.txt`: Complete iptables configuration
+- `{router}_ipsets.txt`: Ipset definitions and membership
+- Automatically collected during `make fetch-routing-data`
 
 ## 💻 Usage
 
@@ -489,10 +539,10 @@ The project includes an enhanced Ansible playbook that executes basic `ip` comma
      children:
        linux_routers:
          hosts:
-           router1:
-             ansible_host: 192.168.1.1
-           router2:
-             ansible_host: 192.168.2.1
+           hq-gw:
+             ansible_host: 10.1.1.1
+           br-gw:
+             ansible_host: 10.2.1.1
    ```
 
 2. **Run the data collection playbook**:
@@ -507,17 +557,20 @@ The project includes an enhanced Ansible playbook that executes basic `ip` comma
 3. **Verify collected data**:
    ```bash
    ls my_data/
-   # router1_route.json  router1_rule.json  router2_route.json  router2_rule.json
+   # hq-gw_route.json  hq-gw_rule.json  hq-gw_iptables.txt  hq-gw_ipsets.txt
+   # br-gw_route.json  br-gw_rule.json  br-gw_iptables.txt  br-gw_ipsets.txt
    ```
 
 ### Enhanced Compatibility Features
 
-- **Text-only remote execution**: Executes only basic `ip route show` and `ip rule show` commands on remote hosts
-- **Automatic path discovery**: Searches standard utility paths (`/sbin`, `/usr/sbin`, `/bin`, `/usr/bin`) for `ip` command
-- **Full path execution**: Uses complete path to `ip` command for maximum reliability across Linux distributions
+- **Comprehensive data collection**: Executes `ip route show`, `ip rule show`, `iptables` commands, and `ipset list` on remote hosts
+- **Automatic path discovery**: Searches standard utility paths (`/sbin`, `/usr/sbin`, `/bin`, `/usr/bin`) for commands
+- **Full path execution**: Uses complete path to commands for maximum reliability across Linux distributions
+- **Root access management**: Proper sudo/root access for complete iptables and ipset visibility
 - **Controller-side JSON conversion**: Transfers text output to Ansible controller for JSON transformation
-- **No remote Python dependencies**: Remote hosts only need the standard `ip` command available
-- **IP JSON wrapper on controller**: Uses `ip_json_wrapper.py` on the controller to convert text to JSON
+- **No remote Python dependencies**: Remote hosts only need standard Linux commands available
+- **IP JSON wrapper on controller**: Uses `ansible/ip_json_wrapper.py` on the controller to convert text to JSON
+- **Graceful degradation**: Continues operation even when ipset command is not available
 - **Automatic cleanup**: Removes temporary text files after processing
 - **Detailed logging**: Provides collection statistics and troubleshooting information
 
@@ -538,26 +591,29 @@ ip --json rule list > routing_facts/hostname_rule.json
 
 ### Data Format
 
-The simulator expects JSON files in this format:
+The project supports multiple data types for comprehensive network analysis:
 
 - **Route files** (`*_route.json`): Output from `ip --json route list`
 - **Rule files** (`*_rule.json`): Output from `ip --json rule list`
+- **Metadata files** (`*_metadata.json`): Router classification and properties (optional)
+- **Iptables files** (`*_iptables.txt`): Complete iptables configuration and network information
+- **Ipset files** (`*_ipsets.txt`): Ipset definitions and membership (if available)
 
-File naming convention: `{hostname}_route.json` and `{hostname}_rule.json`
+File naming convention: `{hostname}_{type}.{ext}` (e.g., `hq-gw_route.json`, `hq-gw_iptables.txt`)
 
 ### IP JSON Wrapper for Legacy Systems
 
-The project includes `ip_json_wrapper.py`, a compatibility tool for older Red Hat systems that don't support `ip --json`:
+The project includes `ansible/ip_json_wrapper.py`, a compatibility tool for older Red Hat systems that don't support `ip --json`:
 
 ```bash
 # Use wrapper script on systems without native JSON support
-python3 ip_json_wrapper.py route show
-python3 ip_json_wrapper.py addr show  
-python3 ip_json_wrapper.py link show
-python3 ip_json_wrapper.py rule show
+python3 ansible/ip_json_wrapper.py route show
+python3 ansible/ip_json_wrapper.py addr show  
+python3 ansible/ip_json_wrapper.py link show
+python3 ansible/ip_json_wrapper.py rule show
 
 # Wrapper automatically detects and uses native JSON if available
-python3 ip_json_wrapper.py --json route show  # Passes through to native command
+python3 ansible/ip_json_wrapper.py --json route show  # Passes through to native command
 ```
 
 **Key Features:**

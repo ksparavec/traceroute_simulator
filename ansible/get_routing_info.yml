@@ -41,6 +41,29 @@
       debug:
         msg: "Using ip command at: {{ ip_command_path.stdout }}"
 
+    - name: Find ipset command in standard paths
+      shell: |
+        for path in /sbin/ipset /usr/sbin/ipset /bin/ipset /usr/bin/ipset; do
+          if [ -x "$path" ]; then
+            echo "$path"
+            exit 0
+          fi
+        done
+        echo "ipset command not found in standard paths" >&2
+        exit 1
+      register: ipset_command_path
+      failed_when: false  # Don't fail if ipset is not available
+
+    - name: Display found ipset command path
+      debug:
+        msg: "Using ipset command at: {{ ipset_command_path.stdout }}"
+      when: ipset_command_path.rc == 0
+
+    - name: Display ipset command not found warning
+      debug:
+        msg: "Warning: ipset command not found - match-set rules cannot be fully analyzed"
+      when: ipset_command_path.rc != 0
+
     - name: Get routing tables as text output
       command: "{{ ip_command_path.stdout }} route show"
       register: ip_route_text
@@ -50,6 +73,23 @@
       command: "{{ ip_command_path.stdout }} rule show"
       register: ip_rule_text
       failed_when: ip_rule_text.rc != 0
+
+    - name: Get ipset list as text output
+      command: "{{ ipset_command_path.stdout }} list"
+      become: yes
+      become_method: sudo
+      register: ipset_list_text
+      failed_when: false  # Don't fail if ipset command fails
+      when: ipset_command_path.rc == 0
+
+    - name: Get iptables information for packet forwarding analysis
+      shell: "/bin/bash"
+      args:
+        stdin: "{{ lookup('file', playbook_dir + '/get_iptables_info.sh') }}"
+      become: yes
+      become_method: sudo
+      register: iptables_info
+      failed_when: iptables_info.rc != 0
 
     - name: Save routing text output to temporary file
       copy:
@@ -61,6 +101,19 @@
       copy:
         content: "{{ ip_rule_text.stdout }}"
         dest: "{{ temp_dir }}/{{ inventory_hostname }}_rule.txt"
+      delegate_to: localhost
+
+    - name: Save ipset information to file
+      copy:
+        content: "{{ ipset_list_text.stdout }}"
+        dest: "{{ output_dir }}/{{ inventory_hostname }}_ipsets.txt"
+      delegate_to: localhost
+      when: ipset_command_path.rc == 0 and ipset_list_text.rc == 0
+
+    - name: Save iptables information to file
+      copy:
+        content: "{{ iptables_info.stdout }}"
+        dest: "{{ output_dir }}/{{ inventory_hostname }}_iptables.txt"
       delegate_to: localhost
 
     - name: Convert routing text to JSON using wrapper
@@ -91,6 +144,8 @@
           - "Successfully collected routing data from {{ inventory_hostname }}"
           - "Routing table lines: {{ ip_route_text.stdout_lines | length }}"
           - "Policy rule lines: {{ ip_rule_text.stdout_lines | length }}"
+          - "Iptables information: {{ (iptables_info.stdout | length / 1024) | round(1) }}KB collected"
+          - "Ipset information: {{ 'collected' if (ipset_command_path.rc == 0 and ipset_list_text.rc == 0) else 'not available' }}"
 
     - name: Clean up temporary text files
       file:
@@ -102,14 +157,25 @@
         - rule
 
 # Notes:
-# - This playbook executes only basic 'ip' commands on remote hosts (no Python dependencies)
-# - Automatically searches for 'ip' command in standard paths (/sbin, /usr/sbin, /bin, /usr/bin)
-# - Uses full path to 'ip' command for maximum reliability across different Linux distributions
+# - This playbook executes basic 'ip' commands, iptables, and ipset collection on remote hosts
+# - Automatically searches for 'ip' and 'ipset' commands in standard paths (/sbin, /usr/sbin, /bin, /usr/bin)
+# - Uses full path to commands for maximum reliability across different Linux distributions
+# - Collects comprehensive iptables information for packet forwarding analysis
+# - Collects ipset information for match-set rule analysis (if ipset is available)
+# - Uses /bin/bash explicitly to avoid issues with noexec /tmp filesystems
 # - Text output is transferred to the Ansible controller for JSON conversion
 # - Uses the IP JSON wrapper on the controller to convert text to JSON format
 # - Requires Python 3 to be available only on the Ansible controller, not remote hosts
+# - Requires root/sudo access on remote hosts for iptables and ipset information collection
+# - Gracefully handles systems without ipset command installed
 # - Set up inventory with target routers (can use groups, specific hosts, or patterns)
-# - After the playbook run, all routing and rule information will be available as individual JSON files
+# - After the playbook run, all routing, rule, iptables, and ipset information will be available as files
 #   in the specified output directory on the controller
 # - The wrapper script provides identical JSON output to modern 'ip --json' commands
 # - Temporary text files are automatically cleaned up after processing
+# 
+# Output files per router:
+# - {hostname}_route.json - Routing table in JSON format
+# - {hostname}_rule.json - Policy rules in JSON format  
+# - {hostname}_iptables.txt - Complete iptables configuration and network info
+# - {hostname}_ipsets.txt - Ipset lists and membership information (if available)

@@ -1,0 +1,181 @@
+---
+# Ansible Playbook for collecting traceroute simulator facts from all hosts
+# This playbook uses a unified facts collection approach:
+# 1. Execute single get_facts.sh script on each remote host
+# 2. Transfer text output to Ansible controller
+# 3. Convert to structured JSON format on controller
+# 4. Store single JSON file per host in tsim_facts directory
+
+- name: Collect traceroute simulator facts from all hosts
+  hosts: all
+  gather_facts: no
+  strategy: free  # Allow parallel execution across all hosts
+  serial: 0       # Process all hosts in parallel (no limit)
+  vars:
+    facts_dir: "{{ tsim_facts_dir | default('tsim_facts') }}"
+    temp_dir: "/tmp/tsim_facts_temp"
+    facts_script: "get_facts.sh"
+    processor_script: "process_facts.py"
+    collection_timeout: 300  # 5 minutes timeout for facts collection
+  
+  tasks:
+    - name: Create facts output directory on Ansible controller
+      delegate_to: localhost
+      run_once: true
+      file:
+        path: "{{ facts_dir }}"
+        state: directory
+        mode: '0755'
+
+    - name: Create temporary directory for raw facts on Ansible controller
+      delegate_to: localhost
+      run_once: true
+      file:
+        path: "{{ temp_dir }}"
+        state: directory
+        mode: '0755'
+
+    - name: Display collection start information
+      debug:
+        msg: 
+          - "Starting facts collection for {{ inventory_hostname }}"
+          - "Output directory: {{ facts_dir }}"
+          - "Temporary directory: {{ temp_dir }}"
+          - "Collection timeout: {{ collection_timeout }} seconds"
+
+    - name: Check if unified facts script exists
+      delegate_to: localhost
+      stat:
+        path: "{{ playbook_dir }}/{{ facts_script }}"
+      register: facts_script_stat
+
+    - name: Fail if facts script is missing
+      fail:
+        msg: "Facts collection script {{ facts_script }} not found in {{ playbook_dir }}"
+      when: not facts_script_stat.stat.exists
+
+    - name: Check if facts processor script exists
+      delegate_to: localhost
+      stat:
+        path: "{{ playbook_dir }}/{{ processor_script }}"
+      register: processor_script_stat
+
+    - name: Fail if processor script is missing
+      fail:
+        msg: "Facts processor script {{ processor_script }} not found in {{ playbook_dir }}"
+      when: not processor_script_stat.stat.exists
+
+    - name: Execute unified facts collection script on remote host
+      shell: "/bin/bash"
+      args:
+        stdin: "{{ lookup('file', playbook_dir + '/' + facts_script) }}"
+      become: yes
+      become_method: sudo
+      register: facts_output
+      failed_when: facts_output.rc != 0
+      async: "{{ collection_timeout }}"
+      poll: 10
+
+    - name: Save raw facts output to temporary file
+      copy:
+        content: "{{ facts_output.stdout }}"
+        dest: "{{ temp_dir }}/{{ inventory_hostname }}_raw_facts.txt"
+      delegate_to: localhost
+
+    - name: Display raw facts collection summary
+      debug:
+        msg: 
+          - "Raw facts collected from {{ inventory_hostname }}"
+          - "Facts size: {{ (facts_output.stdout | length / 1024) | round(1) }}KB"
+          - "Collection time: {{ facts_output.delta if facts_output.delta is defined else 'unknown' }}"
+          - "Exit code: {{ facts_output.rc }}"
+
+    - name: Convert raw facts to structured JSON format
+      shell: >
+        cd {{ playbook_dir }} && 
+        python3 {{ processor_script }} 
+        --pretty 
+        {{ temp_dir }}/{{ inventory_hostname }}_raw_facts.txt 
+        {{ facts_dir }}/{{ inventory_hostname }}.json
+      register: json_conversion
+      delegate_to: localhost
+      failed_when: json_conversion.rc != 0
+
+    - name: Display JSON conversion results
+      debug:
+        msg: 
+          - "JSON conversion completed for {{ inventory_hostname }}"
+          - "JSON file: {{ facts_dir }}/{{ inventory_hostname }}.json"
+          - "Conversion output: {{ json_conversion.stdout_lines }}"
+
+    - name: Validate JSON file integrity
+      shell: "python3 -m json.tool {{ facts_dir }}/{{ inventory_hostname }}.json > /dev/null"
+      delegate_to: localhost
+      register: json_validation
+      failed_when: json_validation.rc != 0
+
+    - name: Get final JSON file statistics
+      stat:
+        path: "{{ facts_dir }}/{{ inventory_hostname }}.json"
+      delegate_to: localhost
+      register: json_file_stat
+
+    - name: Display final collection summary
+      debug:
+        msg: 
+          - "Successfully collected and processed facts for {{ inventory_hostname }}"
+          - "Final JSON file size: {{ (json_file_stat.stat.size / 1024) | round(1) }}KB"
+          - "JSON file location: {{ facts_dir }}/{{ inventory_hostname }}.json"
+          - "File is valid JSON: {{ json_validation.rc == 0 }}"
+
+    - name: Clean up temporary raw facts file
+      file:
+        path: "{{ temp_dir }}/{{ inventory_hostname }}_raw_facts.txt"
+        state: absent
+      delegate_to: localhost
+
+  post_tasks:
+    - name: Display overall collection summary
+      debug:
+        msg:
+          - "Traceroute Simulator facts collection completed"
+          - "Total hosts processed: {{ ansible_play_hosts | length }}"
+          - "Facts directory: {{ facts_dir }}"
+          - "Each host has a single JSON file: {hostname}.json"
+      run_once: true
+      delegate_to: localhost
+
+    - name: Clean up temporary directory
+      file:
+        path: "{{ temp_dir }}"
+        state: absent
+      run_once: true
+      delegate_to: localhost
+
+# Usage Examples:
+#
+# Basic usage with default tsim_facts directory:
+#   ansible-playbook -i inventory.ini get_tsim_facts.yml
+#
+# Custom facts directory:
+#   ansible-playbook -i inventory.ini get_tsim_facts.yml -e tsim_facts_dir=custom_facts
+#
+# Limit to specific hosts:
+#   ansible-playbook -i inventory.ini get_tsim_facts.yml --limit "hq-*"
+#
+# Increase verbosity for debugging:
+#   ansible-playbook -i inventory.ini get_tsim_facts.yml -vv
+#
+# Set custom timeout (in seconds):
+#   ansible-playbook -i inventory.ini get_tsim_facts.yml -e collection_timeout=600
+#
+# Notes:
+# - Uses 'free' strategy for maximum parallelism (all hosts process simultaneously)
+# - Each host executes the unified get_facts.sh script once
+# - All raw facts are converted to structured JSON on the Ansible controller
+# - Final output is single JSON file per host in the specified facts directory
+# - Requires sudo/root access on remote hosts for complete iptables/ipset access
+# - Temporary files are automatically cleaned up after processing
+# - JSON files are validated for integrity before completion
+# - Compatible with ansible-parallel-shell for high-performance execution
+# - Supports all standard Ansible inventory formats and host patterns

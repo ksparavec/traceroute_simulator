@@ -12,7 +12,12 @@
   strategy: free  # Allow parallel execution across all hosts
   serial: 0       # Process all hosts in parallel (no limit)
   vars:
-    facts_dir: "{{ tsim_facts_dir | default('tsim_facts') }}"
+    # Directory precedence logic:
+    # 1. Command line: -e tsim_facts_dir=value (highest precedence)
+    # 2. Config file: tsim_facts_dir variable from config (if supported)
+    # 3. Environment variable: TRACEROUTE_SIMULATOR_FACTS
+    # 4. Default: 'tsim_facts' (lowest precedence)
+    facts_dir: "{{ tsim_facts_dir | default(lookup('env', 'TRACEROUTE_SIMULATOR_FACTS') | default('tsim_facts', true), true) }}"
     temp_dir: "/tmp/tsim_facts_temp"
     facts_script: "get_facts.sh"
     processor_script: "process_facts.py"
@@ -40,6 +45,7 @@
         msg: 
           - "Starting facts collection for {{ inventory_hostname }}"
           - "Output directory: {{ facts_dir }}"
+          - "Directory source: {{ 'command line (-e tsim_facts_dir)' if tsim_facts_dir is defined else ('environment variable (TRACEROUTE_SIMULATOR_FACTS)' if lookup('env', 'TRACEROUTE_SIMULATOR_FACTS') else 'default (tsim_facts)') }}"
           - "Temporary directory: {{ temp_dir }}"
           - "Collection timeout: {{ collection_timeout }} seconds"
 
@@ -157,7 +163,11 @@
 # Basic usage with default tsim_facts directory:
 #   ansible-playbook -i inventory.ini get_tsim_facts.yml
 #
-# Custom facts directory:
+# Using environment variable for facts directory:
+#   export TRACEROUTE_SIMULATOR_FACTS=/path/to/facts
+#   ansible-playbook -i inventory.ini get_tsim_facts.yml
+#
+# Custom facts directory via command line (highest precedence):
 #   ansible-playbook -i inventory.ini get_tsim_facts.yml -e tsim_facts_dir=custom_facts
 #
 # Limit to specific hosts:
@@ -168,6 +178,11 @@
 #
 # Set custom timeout (in seconds):
 #   ansible-playbook -i inventory.ini get_tsim_facts.yml -e collection_timeout=600
+#
+# Directory Precedence (highest to lowest):
+# 1. Command line: -e tsim_facts_dir=value
+# 2. Environment variable: TRACEROUTE_SIMULATOR_FACTS
+# 3. Default: tsim_facts
 #
 # Notes:
 # - Uses 'free' strategy for maximum parallelism (all hosts process simultaneously)

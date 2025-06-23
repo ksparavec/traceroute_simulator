@@ -9,12 +9,15 @@ TESTS_DIR := tests
 ROUTING_FACTS_DIR := tests/tsim_facts
 ANSIBLE_DIR := ansible
 
+# Global environment variables
+export PYTHONDONTWRITEBYTECODE := 1
+
 # Python modules required by the project
 REQUIRED_MODULES := json sys argparse ipaddress os glob typing subprocess re difflib matplotlib numpy
 
 # Colors removed for better terminal compatibility
 
-.PHONY: help check-deps test fetch-routing-data clean
+.PHONY: help check-deps test fetch-routing-data clean tsim ifa
 
 # Default target
 help:
@@ -24,6 +27,8 @@ help:
 	@echo "test              - Execute all test scripts with test setup and report results"
 	@echo "fetch-routing-data - Run Ansible playbook to collect routing facts (requires OUTPUT_DIR and INVENTORY_FILE or INVENTORY)"
 	@echo "clean             - Clean up generated files and cache"
+	@echo "tsim              - Run traceroute simulator with command line arguments (e.g., make tsim ARGS='-s 10.1.1.1 -d 10.2.1.1')"
+	@echo "ifa               - Run iptables forward analyzer with command line arguments (e.g., make ifa ARGS='--router hq-gw -s 10.1.1.1 -d 8.8.8.8')"
 	@echo "help              - Show this help message"
 	@echo ""
 	@echo "Usage Examples:"
@@ -32,6 +37,8 @@ help:
 	@echo "  make fetch-routing-data OUTPUT_DIR=tests/routing_facts INVENTORY_FILE=hosts.ini       # Use specific inventory file"
 	@echo "  make fetch-routing-data OUTPUT_DIR=prod INVENTORY=routers              # Use configured inventory group"
 	@echo "  make fetch-routing-data OUTPUT_DIR=temp INVENTORY=specific-host        # Target specific host"
+	@echo "  make tsim ARGS='-s 10.1.1.1 -d 10.2.1.1'                              # Run traceroute simulation"
+	@echo "  make ifa ARGS='--router hq-gw -s 10.1.1.1 -d 8.8.8.8 -p tcp'          # Analyze iptables forwarding"
 	@echo ""
 	@echo "Test Data Collection:"
 	@echo "  # Collect facts and preserve raw data for testing (adds -e test=true to Ansible command)"
@@ -178,15 +185,15 @@ test: check-deps
 	@echo "3. Running Integration Tests"
 	@echo "---------------------------------"
 	@echo "Testing basic routing scenarios..."
-	@TRACEROUTE_SIMULATOR_FACTS=/tmp/traceroute_test_output $(PYTHON) traceroute_simulator.py -s 10.1.1.1 -d 10.2.1.1 > /dev/null && \
+	@TRACEROUTE_SIMULATOR_FACTS=/tmp/traceroute_test_output $(MAKE) tsim ARGS="-s 10.1.1.1 -d 10.2.1.1" > /dev/null && \
 		echo "✓ Inter-location routing test passed" || \
 		echo "✗ Inter-location routing test failed"
 	
-	@TRACEROUTE_SIMULATOR_FACTS=/tmp/traceroute_test_output $(PYTHON) traceroute_simulator.py -s 10.100.1.1 -d 10.100.1.3 > /dev/null && \
+	@TRACEROUTE_SIMULATOR_FACTS=/tmp/traceroute_test_output $(MAKE) tsim ARGS="-s 10.100.1.1 -d 10.100.1.3" > /dev/null && \
 		echo "✓ VPN mesh routing test passed" || \
 		echo "✗ VPN mesh routing test failed"
 	
-	@TRACEROUTE_SIMULATOR_FACTS=/tmp/traceroute_test_output $(PYTHON) traceroute_simulator.py -j -s 10.1.10.1 -d 10.3.20.1 > /dev/null && \
+	@TRACEROUTE_SIMULATOR_FACTS=/tmp/traceroute_test_output $(MAKE) tsim ARGS="-j -s 10.1.10.1 -d 10.3.20.1" > /dev/null && \
 		echo "✓ JSON output test passed" || \
 		echo "✗ JSON output test failed"
 	
@@ -350,7 +357,43 @@ clean:
 	@find . -name "*.pyc" -delete
 	@find . -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true
 	@echo "✓ Cleaned up Python cache files"
+	@if [ -d "/tmp/traceroute_test_output" ]; then \
+		rm -rf /tmp/traceroute_test_output; \
+		echo "✓ Cleaned up test output directory"; \
+	else \
+		echo "✓ Test output directory already clean"; \
+	fi
 	@echo "Cleanup completed!"
+
+# Run traceroute simulator with command line arguments
+# Usage: make tsim ARGS="-s 10.1.1.1 -d 10.2.1.1"
+tsim:
+	@if [ -z "$(ARGS)" ]; then \
+		echo "Usage: make tsim ARGS='<arguments>'"; \
+		echo "Examples:"; \
+		echo "  make tsim ARGS='-s 10.1.1.1 -d 10.2.1.1'"; \
+		echo "  make tsim ARGS='-s 10.1.1.1 -d 10.2.1.1 -j'"; \
+		echo "  make tsim ARGS='-s 10.1.1.1 -d 10.2.1.1 --tsim-facts tests/tsim_facts'"; \
+		echo "  make tsim ARGS='-s 10.1.1.1 -d 10.2.1.1 -v --reverse-trace'"; \
+		exit 1; \
+	fi
+	@echo "Running traceroute simulator with arguments: $(ARGS)"
+	@$(PYTHON) src/core/traceroute_simulator.py $(ARGS)
+
+# Run iptables forward analyzer with command line arguments  
+# Usage: make ifa ARGS="--router hq-gw -s 10.1.1.1 -d 8.8.8.8"
+ifa:
+	@if [ -z "$(ARGS)" ]; then \
+		echo "Usage: make ifa ARGS='<arguments>'"; \
+		echo "Examples:"; \
+		echo "  make ifa ARGS='--router hq-gw -s 10.1.1.1 -d 8.8.8.8'"; \
+		echo "  make ifa ARGS='--router hq-gw -s 10.1.1.1 -d 8.8.8.8 -p tcp'"; \
+		echo "  make ifa ARGS='--router hq-gw -s 10.1.1.1 -d 8.8.8.8 -p tcp -vv'"; \
+		echo "  make ifa ARGS='--router hq-gw -s 10.1.1.0/24 -d 8.8.8.8 -p all'"; \
+		exit 1; \
+	fi
+	@echo "Running iptables forward analyzer with arguments: $(ARGS)"
+	@$(PYTHON) src/analyzers/iptables_forward_analyzer.py $(ARGS)
 
 # Check if we're running in a git repository (for future enhancements)
 .git-check:

@@ -30,8 +30,10 @@ import shutil
 from typing import List, Tuple, Dict, Any
 
 # Test configuration constants
-SIMULATOR_SCRIPT = "../traceroute_simulator.py"  # Path to script under test (relative from tests/ to project root)
-ROUTING_FACTS_DIR = "tsim_facts"              # Directory with routing data (relative to tests/)
+# Calculate absolute path to the simulator script
+CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+SIMULATOR_SCRIPT = os.path.join(os.path.dirname(CURRENT_DIR), "src", "core", "traceroute_simulator.py")
+ROUTING_FACTS_DIR = os.path.join(CURRENT_DIR, "tsim_facts")  # Absolute path to routing data
 
 # Network topology data for the test environment
 # Each location has multiple routers with distinct IP ranges

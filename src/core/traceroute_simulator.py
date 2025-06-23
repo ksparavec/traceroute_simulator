@@ -34,9 +34,9 @@ except ImportError:
 
 # Import MTR execution, route formatting, and reverse path tracing modules
 try:
-    from mtr_executor import MTRExecutor
-    from route_formatter import RouteFormatter
-    from reverse_path_tracer import ReversePathTracer
+    from ..executors.mtr_executor import MTRExecutor
+    from .route_formatter import RouteFormatter
+    from .reverse_path_tracer import ReversePathTracer
     MTR_AVAILABLE = True
     REVERSE_TRACER_AVAILABLE = True
 except ImportError:

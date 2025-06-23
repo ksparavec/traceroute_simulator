@@ -26,8 +26,8 @@ from typing import Dict, List, Optional, Tuple, Any
 
 # Import from existing modules
 try:
-    from mtr_executor import MTRExecutor
-    from route_formatter import RouteFormatter
+    from ..executors.mtr_executor import MTRExecutor
+    from .route_formatter import RouteFormatter
     MTR_AVAILABLE = True
 except ImportError:
     MTR_AVAILABLE = False
@@ -51,26 +51,35 @@ class ReversePathTracer:
         route_formatter: Route formatter for consistent output formatting
     """
     
-    def __init__(self, simulator, ansible_controller_ip: str, verbose: bool = False, verbose_level: int = 1):
+    def __init__(self, simulator, ansible_controller_ip: Optional[str] = None, verbose: bool = False, verbose_level: int = 1):
         """
         Initialize reverse path tracer with simulator reference.
         
         Args:
             simulator: TracerouteSimulator instance for routing operations
-            ansible_controller_ip: IP address of Ansible controller (required)
+            ansible_controller_ip: IP address of Ansible controller (optional, auto-detected if not provided)
             verbose: Enable verbose output for debugging operations
             verbose_level: Verbosity level (1=basic, 2=detailed debugging)
             
         Raises:
-            ValueError: If ansible_controller_ip is not provided
+            RuntimeError: If ansible_controller_ip is not provided and auto-detection fails
         """
-        if not ansible_controller_ip:
-            raise ValueError("Ansible controller IP address is required for reverse path tracing")
-        
         self.simulator = simulator
         self.verbose = verbose
         self.verbose_level = verbose_level
-        self.ansible_controller_ip = ansible_controller_ip
+        
+        # Auto-detect ansible controller IP if not provided
+        if ansible_controller_ip:
+            self.ansible_controller_ip = ansible_controller_ip
+        else:
+            detected_ip = simulator.get_ansible_controller_ip()
+            if not detected_ip:
+                raise RuntimeError("No Ansible controller found in router metadata. "
+                                 "Ensure at least one router has 'ansible_controller': true in its metadata.")
+            self.ansible_controller_ip = detected_ip
+            
+            if self.verbose:
+                print(f"Auto-detected Ansible controller IP: {self.ansible_controller_ip}")
         
         # Initialize MTR executor and route formatter if available
         if MTR_AVAILABLE:

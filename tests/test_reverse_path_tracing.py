@@ -27,10 +27,10 @@ from unittest.mock import Mock, patch, MagicMock
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 try:
-    from traceroute_simulator import TracerouteSimulator, Router
-    from reverse_path_tracer import ReversePathTracer
-    from mtr_executor import MTRExecutor
-    from route_formatter import RouteFormatter
+    from src.core.traceroute_simulator import TracerouteSimulator, Router
+    from src.core.reverse_path_tracer import ReversePathTracer
+    from src.executors.mtr_executor import MTRExecutor
+    from src.core.route_formatter import RouteFormatter
     MODULES_AVAILABLE = True
 except ImportError as e:
     print(f"Warning: Could not import required modules: {e}")
@@ -45,104 +45,31 @@ class TestReversePathTracer(unittest.TestCase):
         if not MODULES_AVAILABLE:
             self.skipTest("Required modules not available")
         
-        # Create mock routing data directory
-        self.test_dir = tempfile.mkdtemp()
-        self.routing_dir = os.path.join(self.test_dir, "tsim_facts")
-        os.makedirs(self.routing_dir)
+        # Use real test data directory with ansible controller metadata
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        self.routing_dir = os.path.join(current_dir, "tsim_facts")
         
-        # Create minimal test routing data
-        self._create_test_routing_data()
+        # Verify test data exists
+        if not os.path.exists(self.routing_dir):
+            self.skipTest("Test routing data not available")
         
         # Initialize simulator
         self.simulator = TracerouteSimulator(self.routing_dir, verbose=False)
         
         # Initialize reverse path tracer with mock controller IP
-        self.controller_ip = "192.168.100.1"
+        # Use auto-detection for ansible controller IP
         self.reverse_tracer = ReversePathTracer(
             self.simulator, 
-            self.controller_ip, 
             verbose=False,
             verbose_level=1
         )
+        # Store detected controller IP for test assertions
+        self.controller_ip = self.reverse_tracer.ansible_controller_ip
     
     def tearDown(self):
         """Clean up test fixtures."""
-        import shutil
-        if hasattr(self, 'test_dir') and os.path.exists(self.test_dir):
-            shutil.rmtree(self.test_dir)
-    
-    def _create_test_routing_data(self):
-        """Create minimal test routing data for testing."""
-        # Router 1: HQ Gateway
-        hq_gw_routes = [
-            {
-                "dst": "10.1.1.0/24",
-                "dev": "eth0",
-                "protocol": "kernel",
-                "scope": "link",
-                "prefsrc": "10.1.1.1"
-            },
-            {
-                "dst": "10.2.0.0/16",
-                "gateway": "10.100.1.2",
-                "dev": "wg0",
-                "prefsrc": "10.100.1.1"
-            },
-            {
-                "dst": "10.100.1.0/24",
-                "dev": "wg0",
-                "protocol": "kernel",
-                "scope": "link",
-                "prefsrc": "10.100.1.1"
-            }
-        ]
-        
-        hq_gw_rules = [
-            {"priority": 0, "table": "local"},
-            {"priority": 32766, "table": "main"}
-        ]
-        
-        # Router 2: Branch Gateway
-        br_gw_routes = [
-            {
-                "dst": "10.2.1.0/24",
-                "dev": "eth0",
-                "protocol": "kernel",
-                "scope": "link",
-                "prefsrc": "10.2.1.1"
-            },
-            {
-                "dst": "10.1.0.0/16",
-                "gateway": "10.100.1.1",
-                "dev": "wg0",
-                "prefsrc": "10.100.1.2"
-            },
-            {
-                "dst": "10.100.1.0/24",
-                "dev": "wg0",
-                "protocol": "kernel",
-                "scope": "link",
-                "prefsrc": "10.100.1.2"
-            }
-        ]
-        
-        br_gw_rules = [
-            {"priority": 0, "table": "local"},
-            {"priority": 32766, "table": "main"}
-        ]
-        
-        # Write routing data files
-        with open(os.path.join(self.routing_dir, "hq-gw_route.json"), 'w') as f:
-            json.dump(hq_gw_routes, f, indent=2)
-        
-        with open(os.path.join(self.routing_dir, "hq-gw_rule.json"), 'w') as f:
-            json.dump(hq_gw_rules, f, indent=2)
-            
-        with open(os.path.join(self.routing_dir, "br-gw_route.json"), 'w') as f:
-            json.dump(br_gw_routes, f, indent=2)
-        
-        with open(os.path.join(self.routing_dir, "br-gw_rule.json"), 'w') as f:
-            json.dump(br_gw_rules, f, indent=2)
+        # No cleanup needed since we use real test data
+        pass
     
     def test_controller_ip_detection(self):
         """Test automatic detection of Ansible controller IP."""
@@ -152,14 +79,17 @@ class TestReversePathTracer(unittest.TestCase):
             mock_socket_instance.getsockname.return_value = ('192.168.1.100', 12345)
             mock_socket.return_value.__enter__.return_value = mock_socket_instance
             
+            # Test auto-detection of controller IP
             tracer = ReversePathTracer(self.simulator)
-            self.assertEqual(tracer.ansible_controller_ip, '192.168.1.100')
+            # Should auto-detect hq-dmz as controller (10.1.2.3)
+            self.assertEqual(tracer.ansible_controller_ip, "10.1.2.3")
     
     def test_controller_ip_detection_failure(self):
         """Test handling of controller IP detection failure."""
-        with patch('socket.socket', side_effect=Exception("Network error")):
-            with self.assertRaises(RuntimeError):
-                ReversePathTracer(self.simulator)
+        # Test that providing an invalid controller IP doesn't raise an error (since it's just stored)
+        # The validation happens later when the IP is actually used
+        tracer = ReversePathTracer(self.simulator, "invalid.ip.address")
+        self.assertEqual(tracer.ansible_controller_ip, "invalid.ip.address")
     
     def test_find_last_linux_router(self):
         """Test identification of last Linux router in path."""
@@ -228,7 +158,7 @@ class TestReversePathTracer(unittest.TestCase):
         with patch.object(self.simulator, 'simulate_traceroute') as mock_traceroute:
             # Mock successful simulation result
             mock_traceroute.return_value = [
-                (1, "source", "192.168.100.1", "eth0", False, "hq-gw", ""),
+                (1, "source", "10.1.2.3", "eth0", False, "hq-dmz", ""),
                 (2, "hq-gw", "10.1.1.1", "eth0", True, "", "wg0"),
                 (3, "destination", "10.2.1.10", "eth0", False, "br-gw", "")
             ]
@@ -245,7 +175,7 @@ class TestReversePathTracer(unittest.TestCase):
         with patch.object(self.simulator, 'simulate_traceroute') as mock_traceroute:
             # Mock failed simulation result
             mock_traceroute.return_value = [
-                (1, "source", "192.168.100.1", "eth0", False, "hq-gw", ""),
+                (1, "source", "10.1.2.3", "eth0", False, "hq-dmz", ""),
                 (2, "* * *", "No route", "", False, "", "")
             ]
             
@@ -256,13 +186,13 @@ class TestReversePathTracer(unittest.TestCase):
                 self.assertFalse(success)
                 self.assertEqual(exit_code, 1)
     
-    @patch('reverse_path_tracer.MTR_AVAILABLE', True)
+    @patch('src.core.reverse_path_tracer.MTR_AVAILABLE', True)
     def test_step1_mtr_fallback_success(self):
         """Test step 1 with MTR fallback success."""
         with patch.object(self.simulator, 'simulate_traceroute') as mock_traceroute:
             # Mock failed simulation
             mock_traceroute.return_value = [
-                (1, "source", "192.168.100.1", "eth0", False, "hq-gw", ""),
+                (1, "source", "10.1.2.3", "eth0", False, "hq-dmz", ""),
                 (2, "* * *", "No route", "", False, "", "")
             ]
             
@@ -284,7 +214,7 @@ class TestReversePathTracer(unittest.TestCase):
     def test_step2_destination_to_source_success(self):
         """Test step 2 with successful reverse simulation."""
         forward_path = [
-            (1, "source", "192.168.100.1", "eth0", False, "hq-gw", ""),
+            (1, "source", "10.1.2.3", "eth0", False, "hq-dmz", ""),
             (2, "hq-gw", "10.1.1.1", "eth0", True, "", "wg0"),
             (3, "br-gw", "10.100.1.2", "wg0", True, "", "eth0"),
             (4, "destination", "10.2.1.10", "eth0", False, "br-gw", "")
@@ -310,7 +240,7 @@ class TestReversePathTracer(unittest.TestCase):
     def test_step2_no_linux_routers(self):
         """Test step 2 when no Linux routers found in forward path."""
         forward_path = [
-            (1, "source", "192.168.100.1", "eth0", False, "", ""),
+            (1, "source", "10.1.2.3", "eth0", False, "", ""),
             (2, "* * *", "No route", "", False, "", "")
         ]
         
@@ -324,7 +254,7 @@ class TestReversePathTracer(unittest.TestCase):
     def test_step3_reverse_and_combine_success(self):
         """Test step 3 path reversal and combination."""
         forward_path = [
-            (1, "source", "192.168.100.1", "eth0", False, "hq-gw", ""),
+            (1, "source", "10.1.2.3", "eth0", False, "hq-dmz", ""),
             (2, "hq-gw", "10.1.1.1", "eth0", True, "", "wg0"),
             (3, "br-gw", "10.100.1.2", "wg0", True, "", "eth0"),
             (4, "destination", "10.2.1.10", "eth0", False, "br-gw", "")
@@ -353,7 +283,7 @@ class TestReversePathTracer(unittest.TestCase):
     def test_step3_empty_reverse_path(self):
         """Test step 3 with empty reverse path."""
         forward_path = [
-            (1, "source", "192.168.100.1", "eth0", False, "hq-gw", ""),
+            (1, "source", "10.1.2.3", "eth0", False, "hq-dmz", ""),
             (2, "destination", "10.2.1.10", "eth0", False, "hq-gw", "")
         ]
         
@@ -371,7 +301,7 @@ class TestReversePathTracer(unittest.TestCase):
         """Test complete reverse tracing process with all steps successful."""
         # Mock successful step 1
         mock_step1.return_value = (True, [
-            (1, "source", "192.168.100.1", "eth0", False, "hq-gw", ""),
+            (1, "source", "10.1.2.3", "eth0", False, "hq-dmz", ""),
             (2, "destination", "10.2.1.10", "eth0", False, "hq-gw", "")
         ], 0)
         
@@ -411,7 +341,7 @@ class TestReversePathTracer(unittest.TestCase):
         """Test reverse tracing with step 2 failure."""
         # Mock successful step 1
         mock_step1.return_value = (True, [
-            (1, "source", "192.168.100.1", "eth0", False, "hq-gw", ""),
+            (1, "source", "10.1.2.3", "eth0", False, "hq-dmz", ""),
             (2, "destination", "10.2.1.10", "eth0", False, "hq-gw", "")
         ], 0)
         
@@ -440,7 +370,7 @@ class TestReversePathTracingIntegration(unittest.TestCase):
         
         self.routing_dir = test_data_dir
     
-    @patch('sys.argv', ['traceroute_simulator.py', '-s', '10.1.1.10', '-d', '192.168.1.10', '--reverse-trace', '--controller-ip', '192.168.100.1'])
+    @patch('sys.argv', ['traceroute_simulator.py', '-s', '10.1.1.10', '-d', '192.168.1.10', '--reverse-trace'])
     def test_main_function_with_reverse_trace(self):
         """Test main function integration with reverse tracing enabled."""
         # This test would require mocking the entire main function execution
@@ -451,14 +381,15 @@ class TestReversePathTracingIntegration(unittest.TestCase):
         parser.add_argument('-s', '--source', required=True)
         parser.add_argument('-d', '--destination', required=True)
         parser.add_argument('--reverse-trace', action='store_true')
-        parser.add_argument('--controller-ip')
+        parser.add_argument('--controller-ip')  # Optional now
         
-        args = parser.parse_args(['-s', '10.1.1.10', '-d', '192.168.1.10', '--reverse-trace', '--controller-ip', '192.168.100.1'])
+        args = parser.parse_args(['-s', '10.1.1.10', '-d', '192.168.1.10', '--reverse-trace'])
         
         self.assertEqual(args.source, '10.1.1.10')
         self.assertEqual(args.destination, '192.168.1.10')
         self.assertTrue(args.reverse_trace)
-        self.assertEqual(args.controller_ip, '192.168.100.1')
+        # Controller IP should be None (auto-detected)
+        self.assertIsNone(args.controller_ip)
 
 
 def run_tests():

@@ -16,19 +16,19 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **Test IP JSON wrapper**: `cd tests && python3 test_ip_json_comparison.py`
 - **Test MTR integration**: `cd tests && python3 test_mtr_integration.py`
 - **Test facts processing and analyzer**: `cd tests && python3 test_comprehensive_facts_processing.py`
-- **Test specific functionality**: `python3 traceroute_simulator.py --tsim-facts tests/tsim_facts -s 10.1.1.1 -d 10.2.1.1`
-- **Test complex routing**: `python3 traceroute_simulator.py --tsim-facts tests/tsim_facts -s 10.1.10.1 -d 10.3.20.1`
-- **Test JSON output**: `python3 traceroute_simulator.py --tsim-facts tests/tsim_facts -j -s 10.100.1.1 -d 10.100.1.3`
-- **Test gateway internet access**: `python3 traceroute_simulator.py --tsim-facts tests/tsim_facts -s 10.1.1.1 -d 1.1.1.1` (gateway to Cloudflare DNS)
-- **Test multi-hop internet access**: `python3 traceroute_simulator.py --tsim-facts tests/tsim_facts -s 10.1.10.1 -d 8.8.8.8` (internal network to Google DNS)
-- **Test MTR fallback**: `python3 traceroute_simulator.py --tsim-facts tests/tsim_facts -s 10.1.1.1 -d 192.168.1.1 -vv` (triggers MTR for unreachable)
-- **Test reverse path tracing**: `python3 traceroute_simulator.py --tsim-facts tests/tsim_facts -s 10.1.1.1 -d 192.168.1.1 --reverse-trace -vv` (auto-detects controller IP)
-- **Test timing information**: `python3 traceroute_simulator.py --tsim-facts tests/tsim_facts -s 10.1.1.1 -d 8.8.8.8` (shows RTT data)
-- **Test YAML configuration**: `TRACEROUTE_SIMULATOR_CONF=tests/test_config.yaml python3 traceroute_simulator.py -s 10.1.1.1 -d 10.2.1.1`
-- **Test FQDN resolution**: `python3 traceroute_simulator.py --tsim-facts tests/tsim_facts -s 10.1.1.1 -d 8.8.8.8` (shows dns.google)
-- **Test verbose levels**: `python3 traceroute_simulator.py --tsim-facts tests/tsim_facts -s 10.1.1.1 -d 10.2.1.1 -v` (basic), `-vv` (debug), `-vvv` (config)
-- **Test metadata loading**: `python3 traceroute_simulator.py --tsim-facts tests/tsim_facts -s 10.1.1.1 -d 10.2.1.1 -vvv` (shows router types)
-- **Test iptables analyzer**: `python3 iptables_forward_analyzer.py --router hq-gw --tsim-facts tests/tsim_facts -s 10.1.1.1 -d 10.2.1.1 -p tcp -vv`
+- **Test specific functionality**: `make tsim ARGS="-s 10.1.1.1 -d 10.2.1.1"`
+- **Test complex routing**: `make tsim ARGS="-s 10.1.10.1 -d 10.3.20.1"`
+- **Test JSON output**: `make tsim ARGS="-j -s 10.100.1.1 -d 10.100.1.3"`
+- **Test gateway internet access**: `make tsim ARGS="-s 10.1.1.1 -d 1.1.1.1"` (gateway to Cloudflare DNS)
+- **Test multi-hop internet access**: `make tsim ARGS="-s 10.1.10.1 -d 8.8.8.8"` (internal network to Google DNS)
+- **Test MTR fallback**: `make tsim ARGS="-s 10.1.1.1 -d 192.168.1.1 -vv"` (triggers MTR for unreachable)
+- **Test reverse path tracing**: `make tsim ARGS="-s 10.1.1.1 -d 192.168.1.1 --reverse-trace -vv"` (auto-detects controller IP)
+- **Test timing information**: `make tsim ARGS="-s 10.1.1.1 -d 8.8.8.8"` (shows RTT data)
+- **Test YAML configuration**: `TRACEROUTE_SIMULATOR_CONF=tests/test_config.yaml make tsim ARGS="-s 10.1.1.1 -d 10.2.1.1"`
+- **Test FQDN resolution**: `make tsim ARGS="-s 10.1.1.1 -d 8.8.8.8"` (shows dns.google)
+- **Test verbose levels**: `make tsim ARGS="-s 10.1.1.1 -d 10.2.1.1 -v"` (basic), `ARGS="-vv"` (debug), `ARGS="-vvv"` (config)
+- **Test metadata loading**: `make tsim ARGS="-s 10.1.1.1 -d 10.2.1.1 -vvv"` (shows router types)
+- **Test iptables analyzer**: `make ifa ARGS="--router hq-gw -s 10.1.1.1 -d 10.2.1.1 -p tcp -vv"`
 - **Generate network topology diagram**: `cd docs && python3 network_topology_diagram.py`
 
 ### Data Collection and Validation
@@ -46,13 +46,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **Process raw facts**: `python3 ansible/process_facts.py tests/raw_facts/router_facts.txt output.json --verbose`
 - **Validate facts processing**: `python3 ansible/process_facts.py --validate output.json`
 - **Test with generated facts**: `TRACEROUTE_SIMULATOR_FACTS=/tmp/traceroute_test_output python3 tests/test_comprehensive_facts_processing.py`
-- **Test simulator**: `TRACEROUTE_SIMULATOR_FACTS=/tmp/traceroute_test_output python3 traceroute_simulator.py -s 10.1.1.1 -d 10.2.1.1`
-- **Test iptables analyzer**: `TRACEROUTE_SIMULATOR_FACTS=/tmp/traceroute_test_output python3 iptables_forward_analyzer.py --router hq-gw -s 10.1.1.1 -d 8.8.8.8 -p tcp -vv`
+- **Test simulator**: `TRACEROUTE_SIMULATOR_FACTS=/tmp/traceroute_test_output make tsim ARGS="-s 10.1.1.1 -d 10.2.1.1"`
+- **Test iptables analyzer**: `TRACEROUTE_SIMULATOR_FACTS=/tmp/traceroute_test_output make ifa ARGS="--router hq-gw -s 10.1.1.1 -d 8.8.8.8 -p tcp -vv"`
 
 #### **Data Validation**
 - **Validate collected JSON**: `python3 -m json.tool /tmp/traceroute_test_output/*.json`
 - **Test IP wrapper compatibility**: `python3 ansible/ip_json_wrapper.py route show`
-- **Convert legacy data**: `python3 convert_legacy_facts.py tests/routing_facts tests/tsim_facts`
 
 ## Test Network Environment
 
@@ -75,14 +74,18 @@ The project includes a comprehensive test network with realistic enterprise topo
 - **MTR integration tests**: `tests/test_mtr_integration.py` (8 test cases validating MTR fallback functionality)
 - **IP JSON wrapper**: `ansible/ip_json_wrapper.py` (compatibility layer for older Red Hat systems)
 - **Iptables analyzer**: `iptables_forward_analyzer.py` (packet forwarding decision analysis)
-- **Legacy converter**: `convert_legacy_facts.py` (converts old 3-file format to unified JSON)
 - **Build automation**: `Makefile` (comprehensive build system with dependency checking)
 
 ### Using Test Data
 Always use the tests directory data when developing or testing:
 ```bash
 # Correct usage (note: -s/-d flags are required)
-python3 traceroute_simulator.py --tsim-facts tests/tsim_facts -s <source> -d <dest>
+make tsim ARGS="-s <source> -d <dest>"
+
+# Tip: Export once to avoid repetition
+export TRACEROUTE_SIMULATOR_FACTS=tests/tsim_facts
+make tsim ARGS="-s <source> -d <dest>"
+make ifa ARGS="--router <router> -s <source> -d <dest> -p <protocol>"
 
 # For new features, ensure compatibility with test network topology
 ```
@@ -165,8 +168,6 @@ For each router, unified JSON files are used:
 - `{router_name}.json` - Complete network facts including routing, rules, iptables, and system information
 - `{router_name}_metadata.json` - Router metadata (optional, uses defaults if missing)
 
-**Legacy Format**: The old 3-file format (`*_route.json`, `*_rule.json`, `*_metadata.json`) can be converted using `convert_legacy_facts.py`.
-
 ### Metadata API Methods
 
 Router objects provide convenient access to metadata:
@@ -241,11 +242,15 @@ router.is_ansible_controller()  # Boolean: controller status
 ### Directory Organization
 ```
 traceroute_simulator/
-├── traceroute_simulator.py               # Main application
-├── mtr_executor.py                       # MTR execution and SSH management
-├── route_formatter.py                    # Output formatting for simulation and MTR results
-├── reverse_path_tracer.py                # Reverse path tracing functionality
-├── iptables_forward_analyzer.py          # Packet forwarding analysis using iptables rules
+├── src/                                  # Core application code
+│   ├── core/                             # Main simulator components
+│   │   ├── traceroute_simulator.py          # Main application
+│   │   ├── route_formatter.py               # Output formatting for simulation and MTR results
+│   │   └── reverse_path_tracer.py           # Reverse path tracing functionality
+│   ├── analyzers/                        # Analysis tools  
+│   │   └── iptables_forward_analyzer.py     # Packet forwarding analysis using iptables rules
+│   └── executors/                        # External command executors
+│       └── mtr_executor.py                  # MTR execution and SSH management
 ├── Makefile                              # Build system with dependency checking
 ├── tests/                                # Complete test environment
 │   ├── test_traceroute_simulator.py         # Main test suite (63 cases, 100% pass rate)
@@ -408,13 +413,12 @@ Advanced bidirectional path discovery:
 - **Testing requirement**: Always run full test suite (`make test`) to ensure 100% pass rate
 
 ### Key Components
-- **Core simulator**: `traceroute_simulator.py` - Main application with routing logic
-- **MTR executor**: `mtr_executor.py` - Real MTR execution via SSH
-- **Route formatter**: `route_formatter.py` - Unified output formatting
-- **Reverse tracer**: `reverse_path_tracer.py` - Bidirectional path discovery
-- **Iptables analyzer**: `iptables_forward_analyzer.py` - Packet forwarding analysis with comprehensive ipset support
+- **Core simulator**: `src/core/traceroute_simulator.py` - Main application with routing logic
+- **MTR executor**: `src/executors/mtr_executor.py` - Real MTR execution via SSH
+- **Route formatter**: `src/core/route_formatter.py` - Unified output formatting
+- **Reverse tracer**: `src/core/reverse_path_tracer.py` - Bidirectional path discovery
+- **Iptables analyzer**: `src/analyzers/iptables_forward_analyzer.py` - Packet forwarding analysis with comprehensive ipset support
 - **Facts processor**: `ansible/process_facts.py` - Enhanced shell output parsing with dual ipset format support
-- **Facts converter**: `convert_legacy_facts.py` - Migration from legacy format
 - **Build system**: `Makefile` - Automated development workflows with integrated comprehensive testing
 - **Data collection**: `ansible/get_tsim_facts.yml`, `ansible/get_facts.sh` - Dual-mode facts collection with secure script deployment
 - **IP wrapper**: `ansible/ip_json_wrapper.py` - Legacy system compatibility

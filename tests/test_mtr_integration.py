@@ -20,10 +20,10 @@ def get_simulator_path():
     """Get the correct path to traceroute_simulator.py relative to current working directory."""
     # Check if we're running from the tests directory
     if os.path.basename(os.getcwd()) == 'tests':
-        return '../traceroute_simulator.py'  # Relative path from tests/ to project root
+        return '../src/core/traceroute_simulator.py'  # Relative path from tests/ to project root
     # Otherwise assume we're running from the project root
     else:
-        return 'traceroute_simulator.py'
+        return 'src/core/traceroute_simulator.py'
 
 def run_test(description, command, expected_success=True):
     """Run a test command and report results."""
@@ -162,9 +162,9 @@ def main():
         # Add parent directory to path for imports
         sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
         
-        from mtr_executor import MTRExecutor
-        from route_formatter import RouteFormatter
-        import traceroute_simulator
+        from src.executors.mtr_executor import MTRExecutor
+        from src.core.route_formatter import RouteFormatter
+        import src.core.traceroute_simulator
         print("✓ PASS: All modules imported successfully")
         tests_passed += 1
     except Exception as e:

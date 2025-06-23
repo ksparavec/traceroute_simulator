@@ -293,7 +293,7 @@ class TestIptablesForwardAnalyzer(unittest.TestCase):
         """Set up test environment for forward analyzer tests."""
         cls.test_output_dir = Path("/tmp/traceroute_test_output")
         cls.raw_facts_dir = PROJECT_ROOT / "tests" / "raw_facts"
-        cls.analyzer_script = PROJECT_ROOT / "iptables_forward_analyzer.py"
+        cls.analyzer_script = PROJECT_ROOT / "src" / "analyzers" / "iptables_forward_analyzer.py"
         
         # Generate JSON files for all routers first
         cls.process_facts_script = PROJECT_ROOT / "ansible" / "process_facts.py"
@@ -729,7 +729,7 @@ class TestIntegrationScenarios(unittest.TestCase):
         cls.test_output_dir = Path("/tmp/traceroute_test_output")
         cls.raw_facts_dir = PROJECT_ROOT / "tests" / "raw_facts"
         cls.process_facts_script = PROJECT_ROOT / "ansible" / "process_facts.py"
-        cls.analyzer_script = PROJECT_ROOT / "iptables_forward_analyzer.py"
+        cls.analyzer_script = PROJECT_ROOT / "src" / "analyzers" / "iptables_forward_analyzer.py"
     
     def test_end_to_end_workflow(self):
         """Test complete end-to-end workflow from raw facts to forward analysis."""

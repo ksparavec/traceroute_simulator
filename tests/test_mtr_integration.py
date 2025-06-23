@@ -64,7 +64,7 @@ def main():
     """Run comprehensive tests for MTR integration."""
     # Get correct paths based on current working directory
     simulator_path = get_simulator_path()
-    routing_dir = "routing_facts" if os.path.basename(os.getcwd()) == 'tests' else "tests/routing_facts"
+    routing_dir = "tsim_facts" if os.path.basename(os.getcwd()) == 'tests' else "tests/tsim_facts"
     
     print("MTR Integration Test Suite")
     print("Testing enhanced traceroute simulator with MTR fallback")
@@ -76,7 +76,7 @@ def main():
     total_tests += 1
     if run_test(
         "Normal simulation - HQ to Branch",
-        f"python3 {simulator_path} --routing-dir {routing_dir} -s 10.1.1.1 -d 10.2.1.1 --no-mtr"
+        f"python3 {simulator_path} --tsim-facts {routing_dir} -s 10.1.1.1 -d 10.2.1.1 --no-mtr"
     ):
         tests_passed += 1
     
@@ -84,7 +84,7 @@ def main():
     total_tests += 1
     if run_test(
         "JSON output format",
-        f"python3 {simulator_path} --routing-dir {routing_dir} -s 10.1.1.1 -d 10.2.1.1 --no-mtr -j"
+        f"python3 {simulator_path} --tsim-facts {routing_dir} -s 10.1.1.1 -d 10.2.1.1 --no-mtr -j"
     ):
         tests_passed += 1
     
@@ -92,7 +92,7 @@ def main():
     total_tests += 1
     if run_test(
         "Complex multi-hop routing",
-        f"python3 {simulator_path} --routing-dir {routing_dir} -s 10.1.10.1 -d 10.3.20.1 --no-mtr"
+        f"python3 {simulator_path} --tsim-facts {routing_dir} -s 10.1.10.1 -d 10.3.20.1 --no-mtr"
     ):
         tests_passed += 1
     
@@ -100,7 +100,7 @@ def main():
     total_tests += 1
     print(f"\n{'='*60}")
     print("TEST: MTR fallback logic test")
-    command = f"python3 {simulator_path} --routing-dir {routing_dir} -s 10.1.1.1 -d 8.8.8.8"
+    command = f"python3 {simulator_path} --tsim-facts {routing_dir} -s 10.1.1.1 -d 8.8.8.8"
     print(f"COMMAND: {command}")
     print('='*60)
     
@@ -130,7 +130,7 @@ def main():
     total_tests += 1
     if run_test(
         "Quiet mode - simulation success",
-        f"python3 {simulator_path} --routing-dir {routing_dir} -s 10.1.1.1 -d 10.2.1.1 --no-mtr -q"
+        f"python3 {simulator_path} --tsim-facts {routing_dir} -s 10.1.1.1 -d 10.2.1.1 --no-mtr -q"
     ):
         tests_passed += 1
     
@@ -146,7 +146,7 @@ def main():
     total_tests += 1
     if run_test(
         "Invalid IP address handling",
-        f"python3 {simulator_path} --routing-dir {routing_dir} -s invalid -d 10.2.1.1 --no-mtr",
+        f"python3 {simulator_path} --tsim-facts {routing_dir} -s invalid -d 10.2.1.1 --no-mtr",
         expected_success=False
     ):
         tests_passed += 1

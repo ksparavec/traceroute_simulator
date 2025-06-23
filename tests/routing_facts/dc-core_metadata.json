@@ -1,8 +1,0 @@
-{
-  "linux": false,
-  "type": "core",
-  "location": "datacenter",
-  "role": "distribution",
-  "vendor": "linux",
-  "manageable": true
-}

@@ -1,0 +1,854 @@
+# Traceroute Simulator Facts Collection
+# Generated on: 2025-06-21 15:27:12
+# Hostname: br-wifi
+# Kernel: 5.15.0-91-generic
+# Collection Script Version: 1.0
+
+# Locating required commands in standard paths
+# Found commands:
+# IP: /sbin/ip
+# IPTABLES: /sbin/iptables
+# IPTABLES-SAVE: /sbin/iptables-save
+# IPSET: /sbin/ipset
+# LSMOD: /bin/lsmod
+# Running as root: 1
+
+=== TSIM_SECTION_START:routing_table ===
+TITLE: IP Routing Table
+COMMAND: /sbin/ip route show
+TIMESTAMP: 2025-06-21 15:27:12
+---
+default via 10.2.2.1 dev eth0 metric 100
+10.2.2.0/24 dev eth0 proto kernel scope link src 10.2.2.2
+10.2.4.0/24 dev eth1 proto kernel scope link src 10.2.4.1
+10.2.0.0/16 via 10.2.2.1 dev eth0 metric 1
+10.1.0.0/16 via 10.2.2.1 dev eth0 metric 1
+10.3.0.0/16 via 10.2.2.1 dev eth0 metric 1
+10.100.1.0/24 via 10.2.2.1 dev eth0 metric 1
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:routing_table ===
+
+=== TSIM_SECTION_START:policy_rules ===
+TITLE: IP Policy Rules
+COMMAND: /sbin/ip rule show
+TIMESTAMP: 2025-06-21 15:27:12
+---
+0:	from all lookup local
+50:	from 10.2.4.0/24 lookup wifi_guest_priority
+32766:	from all lookup main
+32767:	from all lookup default
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:policy_rules ===
+
+=== TSIM_SECTION_START:interfaces ===
+TITLE: Network Interfaces
+COMMAND: /sbin/ip addr show
+TIMESTAMP: 2025-06-21 15:27:12
+---
+1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN group default qlen 1000
+    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+    inet 127.0.0.1/8 scope host lo
+       valid_lft forever preferred_lft forever
+2: eth0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
+    link/ether 52:54:00:24:14:01 brd ff:ff:ff:ff:ff:ff
+    inet 10.2.2.2/24 brd 10.2.2.255 scope global eth0
+       valid_lft forever preferred_lft forever
+3: eth1: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
+    link/ether 52:54:00:24:14:02 brd ff:ff:ff:ff:ff:ff
+    inet 10.2.4.1/24 brd 10.2.4.255 scope global eth1
+       valid_lft forever preferred_lft forever
+4: wlan0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue master br-wifi state UP group default qlen 1000
+    link/ether aa:bb:cc:dd:ee:01 brd ff:ff:ff:ff:ff:ff
+5: wlan1: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue master br-wifi state UP group default qlen 1000
+    link/ether aa:bb:cc:dd:ee:02 brd ff:ff:ff:ff:ff:ff
+6: br-wifi: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP group default qlen 1000
+    link/ether aa:bb:cc:dd:ee:01 brd ff:ff:ff:ff:ff:ff
+    inet 192.168.10.1/24 brd 192.168.10.255 scope global br-wifi
+       valid_lft forever preferred_lft forever
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:interfaces ===
+
+=== TSIM_SECTION_START:interface_stats ===
+TITLE: Interface Statistics
+COMMAND: cat /proc/net/dev
+TIMESTAMP: 2025-06-21 15:27:12
+---
+Inter-|   Receive                                                |  Transmit
+ face |bytes    packets errs drop fifo frame compressed multicast|bytes    packets errs drop fifo colls carrier compressed
+    lo:   34567      345    0    0    0     0          0         0    34567      345    0    0    0     0       0          0
+  eth0: 5678901     5678    0    0    0     0          0         0  4567890     4567    0    0    0     0       0          0
+  eth1: 3456789     3456    0    0    0     0          0         0  2345678     2345    0    0    0     0       0          0
+ wlan0: 2345678     2345    0    0    0     0          0         0  1234567     1234    0    0    0     0       0          0
+ wlan1: 1234567     1234    0    0    0     0          0         0   987654      987    0    0    0     0       0          0
+br-wifi: 3580245   3579    0    0    0     0          0         0  2222221     2221    0    0    0     0       0          0
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:interface_stats ===
+
+=== TSIM_SECTION_START:ip_forwarding ===
+TITLE: IP Forwarding Status
+COMMAND: cat /proc/sys/net/ipv4/ip_forward
+TIMESTAMP: 2025-06-21 15:27:12
+---
+1
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:ip_forwarding ===
+
+=== TSIM_SECTION_START:kernel_version ===
+TITLE: Kernel Version
+COMMAND: uname -r
+TIMESTAMP: 2025-06-21 15:27:12
+---
+5.15.0-91-generic
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:kernel_version ===
+
+=== TSIM_SECTION_START:loaded_modules ===
+TITLE: Loaded Kernel Modules
+COMMAND: /bin/lsmod
+TIMESTAMP: 2025-06-21 15:27:12
+---
+Module                  Size  Used by
+xt_REDIRECT            16384  0
+xt_NETMAP              16384  0
+xt_conntrack           16384  8
+xt_CHECKSUM            16384  0
+xt_CLASSIFY            16384  6
+xt_DSCP                16384  4
+xt_MARK                16384  8
+xt_LOG                 16384  12
+xt_limit               16384  14
+xt_multiport           16384  12
+xt_recent              16384  10
+xt_set                 16384  20
+xt_state               16384  8
+xt_statistic           16384  4
+xt_string              16384  6
+xt_tcpudp              16384  14
+xt_time                16384  10
+xt_u32                 16384  4
+ipt_MASQUERADE         16384  0
+ipt_REJECT             16384  10
+ipt_ULOG               16384  0
+ip_set                 49152  1 xt_set
+ip_set_hash_net        16384  1
+ip_set_hash_ip         16384  1
+ip_set_hash_netport    16384  1
+ip_set_hash_ipport     16384  1
+ip_set_hash_netnet     16384  1
+ip_set_hash_ipportnet  16384  1
+ip_set_hash_ipportproto 16384  1
+ip_set_hash_ipmac      16384  1
+ip_set_list_set        16384  1
+ip_set_bitmap_port     16384  1
+ip_set_bitmap_ip       16384  1
+ip_tables              32768  0
+x_tables               40960  20 xt_REDIRECT,xt_NETMAP,xt_conntrack,xt_CHECKSUM,xt_CLASSIFY,xt_DSCP,xt_MARK,xt_LOG,xt_limit,xt_multiport,xt_recent,xt_set,xt_state,xt_statistic,xt_string,xt_tcpudp,xt_time,xt_u32,ipt_MASQUERADE,ipt_REJECT,ipt_ULOG
+nf_conntrack           139264  6 xt_conntrack,xt_state,ipt_MASQUERADE,nf_nat
+nf_nat                 40960  1 ipt_MASQUERADE
+nf_defrag_ipv4         16384  1 nf_conntrack
+nf_defrag_ipv6         24576  1 nf_conntrack
+bridge                221184  1 br_netfilter
+br_netfilter           28672  0
+cfg80211              884736  0
+mac80211              1019904  0
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:loaded_modules ===
+
+=== TSIM_SECTION_START:conntrack_info ===
+TITLE: Connection Tracking Information
+COMMAND: cat /proc/sys/net/nf_conntrack_max
+TIMESTAMP: 2025-06-21 15:27:12
+---
+131072
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:conntrack_info ===
+
+=== TSIM_SECTION_START:iptables_info ===
+TITLE: Iptables Information
+COMMAND: /sbin/iptables --version
+TIMESTAMP: 2025-06-21 15:27:12
+---
+iptables v1.8.7 (nf_tables)
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:iptables_info ===
+
+=== TSIM_SECTION_START:iptables_save ===
+TITLE: Complete Iptables Configuration
+COMMAND: /sbin/iptables-save
+TIMESTAMP: 2025-06-21 15:27:12
+---
+# Generated by iptables-save v1.8.7 on Fri Jun 21 15:27:12 2025
+*filter
+:INPUT ACCEPT [456:89012]
+:FORWARD DROP [0:0]
+:OUTPUT ACCEPT [345:78901]
+:WIFI_FORWARD - [0:0]
+:WIFI_ACCESS_CONTROL - [0:0]
+:WIFI_DEVICE_MANAGEMENT - [0:0]
+:WIFI_GUEST_ISOLATION - [0:0]
+:WIFI_BANDWIDTH_CONTROL - [0:0]
+:WIFI_SECURITY_SCANNING - [0:0]
+:WIFI_CONTENT_FILTERING - [0:0]
+:WIFI_CAPTIVE_PORTAL - [0:0]
+:WIFI_ROAMING_CONTROL - [0:0]
+:WIFI_QOS_MANAGEMENT - [0:0]
+:WIFI_MESH_CONTROL - [0:0]
+:WIFI_ENTERPRISE_AUTH - [0:0]
+:WIFI_ROGUE_AP_DETECTION - [0:0]
+:WIFI_INTERFERENCE_MITIGATION - [0:0]
+:WIFI_LOAD_BALANCING - [0:0]
+:WIFI_PERFORMANCE_MONITORING - [0:0]
+:WIFI_SECURITY_MONITORING - [0:0]
+:WIFI_CLIENT_ISOLATION - [0:0]
+:WIFI_PARENTAL_CONTROLS - [0:0]
+:WIFI_TIME_RESTRICTIONS - [0:0]
+:WIFI_MAC_FILTERING - [0:0]
+:RATE_LIMIT - [0:0]
+:LOG_AND_DROP - [0:0]
+:ACCEPT_WITH_LOG - [0:0]
+
+# Main FORWARD chain - WiFi access point forwarding logic
+-A FORWARD -i br-wifi -o eth0 -m set --match-set WIFI_CORPORATE_CLIENTS src -j WIFI_ACCESS_CONTROL
+-A FORWARD -i br-wifi -o eth1 -m set --match-set WIFI_GUEST_CLIENTS src -j WIFI_GUEST_ISOLATION
+-A FORWARD -i eth0 -o br-wifi -m set --match-set WIFI_ALLOWED_INBOUND dst -j WIFI_ACCESS_CONTROL
+-A FORWARD -i eth1 -o br-wifi -m set --match-set WIFI_GUEST_INBOUND dst -j WIFI_GUEST_ISOLATION
+-A FORWARD -i br-wifi -o br-wifi -m set --match-set WIFI_CLIENT_TO_CLIENT src,dst -j WIFI_CLIENT_ISOLATION
+-A FORWARD -m state --state RELATED,ESTABLISHED -j ACCEPT
+-A FORWARD -j WIFI_SECURITY_SCANNING
+
+# WIFI_FORWARD - Main WiFi distribution logic
+-A WIFI_FORWARD -m set --match-set WIFI_CRITICAL_SERVICES src,dst -j ACCEPT_WITH_LOG
+-A WIFI_FORWARD -m set --match-set WIFI_HIGH_PRIORITY src,dst,dst -j WIFI_QOS_MANAGEMENT
+-A WIFI_FORWARD -m set --match-set WIFI_ENTERPRISE_USERS src -j WIFI_ENTERPRISE_AUTH
+-A WIFI_FORWARD -m set --match-set WIFI_GUEST_USERS src -j WIFI_GUEST_ISOLATION
+-A WIFI_FORWARD -m set --match-set WIFI_BLOCKED_DEVICES src -j LOG_AND_DROP
+-A WIFI_FORWARD -m hashlimit --hashlimit-above 100/sec --hashlimit-burst 200 --hashlimit-mode srcip --hashlimit-name wifi_flood_protect -j LOG_AND_DROP
+-A WIFI_FORWARD -j WIFI_ACCESS_CONTROL
+
+# WIFI_ACCESS_CONTROL - Wireless access control and authentication
+-A WIFI_ACCESS_CONTROL -m set --match-set WIFI_AUTHENTICATED_DEVICES src -j WIFI_DEVICE_MANAGEMENT
+-A WIFI_ACCESS_CONTROL -m set --match-set WIFI_PENDING_AUTH src -j WIFI_CAPTIVE_PORTAL
+-A WIFI_ACCESS_CONTROL -m set --match-set WIFI_ENTERPRISE_SSID src -j WIFI_ENTERPRISE_AUTH
+-A WIFI_ACCESS_CONTROL -m set --match-set WIFI_GUEST_SSID src -j WIFI_GUEST_ISOLATION
+-A WIFI_ACCESS_CONTROL -m set --match-set WIFI_ADMIN_DEVICES src -j ACCEPT
+-A WIFI_ACCESS_CONTROL -j WIFI_MAC_FILTERING
+
+# WIFI_DEVICE_MANAGEMENT - Device lifecycle and management
+-A WIFI_DEVICE_MANAGEMENT -m set --match-set WIFI_MANAGED_DEVICES src -j WIFI_BANDWIDTH_CONTROL
+-A WIFI_DEVICE_MANAGEMENT -m set --match-set WIFI_BYOD_DEVICES src -j WIFI_SECURITY_SCANNING
+-A WIFI_DEVICE_MANAGEMENT -m set --match-set WIFI_IOT_DEVICES src -j WIFI_CLIENT_ISOLATION
+-A WIFI_DEVICE_MANAGEMENT -m set --match-set WIFI_CORPORATE_DEVICES src -j ACCEPT
+-A WIFI_DEVICE_MANAGEMENT -j WIFI_ROAMING_CONTROL
+
+# WIFI_GUEST_ISOLATION - Guest network isolation and control
+-A WIFI_GUEST_ISOLATION -m set --match-set WIFI_GUEST_ALLOWED_SERVICES dst,dst -j ACCEPT
+-A WIFI_GUEST_ISOLATION -p tcp -m multiport --dports 80,443 -j ACCEPT
+-A WIFI_GUEST_ISOLATION -p udp -m multiport --dports 53,123 -j ACCEPT
+-A WIFI_GUEST_ISOLATION -p icmp --icmp-type 8 -j ACCEPT
+-A WIFI_GUEST_ISOLATION -m set --match-set WIFI_LOCAL_NETWORKS dst -j LOG_AND_DROP
+-A WIFI_GUEST_ISOLATION -m set --match-set WIFI_CORPORATE_NETWORKS dst -j LOG_AND_DROP
+-A WIFI_GUEST_ISOLATION -j WIFI_TIME_RESTRICTIONS
+
+# WIFI_BANDWIDTH_CONTROL - QoS and bandwidth management
+-A WIFI_BANDWIDTH_CONTROL -m set --match-set WIFI_PRIORITY_USERS src -j CLASSIFY --set-class 1:10
+-A WIFI_BANDWIDTH_CONTROL -m set --match-set WIFI_STANDARD_USERS src -j CLASSIFY --set-class 1:20
+-A WIFI_BANDWIDTH_CONTROL -m set --match-set WIFI_LIMITED_USERS src -j CLASSIFY --set-class 1:30
+-A WIFI_BANDWIDTH_CONTROL -m set --match-set WIFI_BULK_TRAFFIC src,dst,dst -j CLASSIFY --set-class 1:40
+-A WIFI_BANDWIDTH_CONTROL -p tcp -m multiport --dports 80,443 -j CLASSIFY --set-class 1:15
+-A WIFI_BANDWIDTH_CONTROL -p udp -m multiport --dports 53,123 -j CLASSIFY --set-class 1:5
+-A WIFI_BANDWIDTH_CONTROL -j ACCEPT
+
+# WIFI_SECURITY_SCANNING - Security scanning and threat detection
+-A WIFI_SECURITY_SCANNING -m set --match-set WIFI_KNOWN_THREATS src -j LOG_AND_DROP
+-A WIFI_SECURITY_SCANNING -m set --match-set WIFI_SUSPICIOUS_BEHAVIOR src -j WIFI_SECURITY_MONITORING
+-A WIFI_SECURITY_SCANNING -m recent --name wifi_scan_detect --set --rsource
+-A WIFI_SECURITY_SCANNING -m recent --name wifi_scan_detect --rcheck --seconds 60 --hitcount 30 --rsource -j LOG_AND_DROP
+-A WIFI_SECURITY_SCANNING -p tcp --tcp-flags SYN,RST SYN,RST -j LOG_AND_DROP
+-A WIFI_SECURITY_SCANNING -p tcp --tcp-flags FIN,SYN,RST,PSH,ACK,URG NONE -j LOG_AND_DROP
+-A WIFI_SECURITY_SCANNING -j WIFI_ROGUE_AP_DETECTION
+
+# WIFI_CONTENT_FILTERING - Content filtering and web protection
+-A WIFI_CONTENT_FILTERING -m set --match-set WIFI_BLOCKED_DOMAINS dst -j LOG_AND_DROP
+-A WIFI_CONTENT_FILTERING -m set --match-set WIFI_BLOCKED_CATEGORIES dst -j LOG_AND_DROP
+-A WIFI_CONTENT_FILTERING -m string --string "malware" --algo bm --icase -j LOG_AND_DROP
+-A WIFI_CONTENT_FILTERING -m string --string "phishing" --algo bm --icase -j LOG_AND_DROP
+-A WIFI_CONTENT_FILTERING -m u32 --u32 "0x0>>22&0x3C@0x0>>24=0x50" -j ACCEPT
+-A WIFI_CONTENT_FILTERING -j ACCEPT
+
+# WIFI_CAPTIVE_PORTAL - Captive portal and guest registration
+-A WIFI_CAPTIVE_PORTAL -m set --match-set WIFI_PORTAL_SERVERS dst -j ACCEPT
+-A WIFI_CAPTIVE_PORTAL -p tcp --dport 80 -j REDIRECT --to-port 8080
+-A WIFI_CAPTIVE_PORTAL -p tcp --dport 443 -j REDIRECT --to-port 8443
+-A WIFI_CAPTIVE_PORTAL -p tcp -m multiport --dports 8080,8443 -j ACCEPT
+-A WIFI_CAPTIVE_PORTAL -p udp --dport 53 -j ACCEPT
+-A WIFI_CAPTIVE_PORTAL -j LOG_AND_DROP
+
+# WIFI_ROAMING_CONTROL - Seamless roaming and handoff
+-A WIFI_ROAMING_CONTROL -m set --match-set WIFI_ROAMING_CLIENTS src -j ACCEPT_WITH_LOG
+-A WIFI_ROAMING_CONTROL -m set --match-set WIFI_FAST_ROAMING src -j ACCEPT
+-A WIFI_ROAMING_CONTROL -m set --match-set WIFI_MESH_NODES src,dst -j WIFI_MESH_CONTROL
+-A WIFI_ROAMING_CONTROL -j ACCEPT
+
+# WIFI_QOS_MANAGEMENT - Quality of Service management
+-A WIFI_QOS_MANAGEMENT -m set --match-set WIFI_VOICE_TRAFFIC src,dst -j DSCP --set-dscp-class EF
+-A WIFI_QOS_MANAGEMENT -m set --match-set WIFI_VIDEO_TRAFFIC src,dst -j DSCP --set-dscp-class AF31
+-A WIFI_QOS_MANAGEMENT -m set --match-set WIFI_DATA_TRAFFIC src,dst -j DSCP --set-dscp-class AF21
+-A WIFI_QOS_MANAGEMENT -m set --match-set WIFI_BACKGROUND_TRAFFIC src,dst -j DSCP --set-dscp-class AF13
+-A WIFI_QOS_MANAGEMENT -p tcp -m multiport --dports 22,3389 -j DSCP --set-dscp-class AF22
+-A WIFI_QOS_MANAGEMENT -p udp -m multiport --dports 53,123 -j DSCP --set-dscp-class CS6
+-A WIFI_QOS_MANAGEMENT -j ACCEPT
+
+# WIFI_MESH_CONTROL - Mesh networking and backhaul
+-A WIFI_MESH_CONTROL -m set --match-set WIFI_MESH_ALLOWED src,dst -j ACCEPT
+-A WIFI_MESH_CONTROL -m set --match-set WIFI_MESH_ENCRYPTED src,dst,dst -j ACCEPT
+-A WIFI_MESH_CONTROL -p tcp -m multiport --dports 1900,4500,500 -j ACCEPT
+-A WIFI_MESH_CONTROL -p udp -m multiport --dports 1900,4500,500 -j ACCEPT
+-A WIFI_MESH_CONTROL -j ACCEPT
+
+# WIFI_ENTERPRISE_AUTH - Enterprise authentication (802.1X)
+-A WIFI_ENTERPRISE_AUTH -m set --match-set WIFI_RADIUS_SERVERS dst -j ACCEPT
+-A WIFI_ENTERPRISE_AUTH -m set --match-set WIFI_LDAP_SERVERS dst,dst -j ACCEPT
+-A WIFI_ENTERPRISE_AUTH -m set --match-set WIFI_CERT_AUTHORITIES dst -j ACCEPT
+-A WIFI_ENTERPRISE_AUTH -p tcp -m multiport --dports 1812,1813,636,389 -j ACCEPT
+-A WIFI_ENTERPRISE_AUTH -p udp -m multiport --dports 1812,1813 -j ACCEPT
+-A WIFI_ENTERPRISE_AUTH -j ACCEPT
+
+# WIFI_ROGUE_AP_DETECTION - Rogue access point detection
+-A WIFI_ROGUE_AP_DETECTION -m set --match-set WIFI_AUTHORIZED_APS src -j ACCEPT
+-A WIFI_ROGUE_AP_DETECTION -m set --match-set WIFI_ROGUE_AP_SIGNATURES src -j LOG_AND_DROP
+-A WIFI_ROGUE_AP_DETECTION -m recent --name wifi_rogue_detect --set --rsource
+-A WIFI_ROGUE_AP_DETECTION -m recent --name wifi_rogue_detect --rcheck --seconds 300 --hitcount 5 --rsource -j LOG --log-prefix "WIFI_ROGUE_AP: "
+-A WIFI_ROGUE_AP_DETECTION -j ACCEPT
+
+# WIFI_INTERFERENCE_MITIGATION - RF interference mitigation
+-A WIFI_INTERFERENCE_MITIGATION -m set --match-set WIFI_INTERFERENCE_SOURCES src -j LOG --log-prefix "WIFI_INTERFERENCE: " --log-level 4
+-A WIFI_INTERFERENCE_MITIGATION -m set --match-set WIFI_CHANNEL_CONFLICTS src -j LOG --log-prefix "WIFI_CHANNEL_CONFLICT: " --log-level 4
+-A WIFI_INTERFERENCE_MITIGATION -j ACCEPT
+
+# WIFI_LOAD_BALANCING - Client load balancing across APs
+-A WIFI_LOAD_BALANCING -m set --match-set WIFI_LB_TARGETS src,dst -m statistic --mode nth --every 2 --packet 0 -j MARK --set-mark 0x1
+-A WIFI_LOAD_BALANCING -m set --match-set WIFI_LB_TARGETS src,dst -m statistic --mode nth --every 2 --packet 1 -j MARK --set-mark 0x2
+-A WIFI_LOAD_BALANCING -m set --match-set WIFI_HIGH_CAPACITY_APS dst -j MARK --set-mark 0x10
+-A WIFI_LOAD_BALANCING -j ACCEPT
+
+# WIFI_PERFORMANCE_MONITORING - Performance monitoring and optimization
+-A WIFI_PERFORMANCE_MONITORING -m set --match-set WIFI_MONITOR_TARGETS src -j LOG --log-prefix "WIFI_PERF: " --log-level 6
+-A WIFI_PERFORMANCE_MONITORING -m conntrack --ctstate NEW -j LOG --log-prefix "WIFI_NEW_CONN: " --log-level 6
+-A WIFI_PERFORMANCE_MONITORING -m limit --limit 50/sec --limit-burst 100 -j LOG --log-prefix "WIFI_RATE: " --log-level 6
+-A WIFI_PERFORMANCE_MONITORING -j ACCEPT
+
+# WIFI_SECURITY_MONITORING - Security event monitoring
+-A WIFI_SECURITY_MONITORING -m set --match-set WIFI_SECURITY_EVENTS src -j LOG --log-prefix "WIFI_SECURITY: " --log-level 4
+-A WIFI_SECURITY_MONITORING -m set --match-set WIFI_FAILED_AUTH src -j LOG --log-prefix "WIFI_AUTH_FAIL: " --log-level 4
+-A WIFI_SECURITY_MONITORING -m recent --name wifi_security_events --set --rsource
+-A WIFI_SECURITY_MONITORING -m recent --name wifi_security_events --rcheck --seconds 600 --hitcount 10 --rsource -j LOG_AND_DROP
+-A WIFI_SECURITY_MONITORING -j ACCEPT
+
+# WIFI_CLIENT_ISOLATION - Client-to-client isolation
+-A WIFI_CLIENT_ISOLATION -m set --match-set WIFI_ISOLATED_CLIENTS src,dst -j LOG_AND_DROP
+-A WIFI_CLIENT_ISOLATION -m set --match-set WIFI_ALLOW_P2P src,dst,dst -j ACCEPT
+-A WIFI_CLIENT_ISOLATION -m set --match-set WIFI_SAME_VLAN src,dst -j ACCEPT
+-A WIFI_CLIENT_ISOLATION -j LOG_AND_DROP
+
+# WIFI_PARENTAL_CONTROLS - Parental control and content filtering
+-A WIFI_PARENTAL_CONTROLS -m set --match-set WIFI_CHILD_DEVICES src -j WIFI_TIME_RESTRICTIONS
+-A WIFI_PARENTAL_CONTROLS -m set --match-set WIFI_ADULT_CONTENT dst -m set --match-set WIFI_CHILD_DEVICES src -j LOG_AND_DROP
+-A WIFI_PARENTAL_CONTROLS -m set --match-set WIFI_EDUCATIONAL_SITES dst -m set --match-set WIFI_CHILD_DEVICES src -j ACCEPT
+-A WIFI_PARENTAL_CONTROLS -j ACCEPT
+
+# WIFI_TIME_RESTRICTIONS - Time-based access control
+-A WIFI_TIME_RESTRICTIONS -m set --match-set WIFI_BUSINESS_HOURS_ONLY src -m time --timestart 09:00 --timestop 17:00 --weekdays Mon,Tue,Wed,Thu,Fri -j ACCEPT
+-A WIFI_TIME_RESTRICTIONS -m set --match-set WIFI_AFTER_HOURS_ALLOWED src -j ACCEPT
+-A WIFI_TIME_RESTRICTIONS -m set --match-set WIFI_WEEKEND_RESTRICTED src -m time --weekdays Sat,Sun -j LOG_AND_DROP
+-A WIFI_TIME_RESTRICTIONS -j ACCEPT
+
+# WIFI_MAC_FILTERING - MAC address filtering and validation
+-A WIFI_MAC_FILTERING -m set --match-set WIFI_AUTHORIZED_MACS src -j ACCEPT
+-A WIFI_MAC_FILTERING -m set --match-set WIFI_BLOCKED_MACS src -j LOG_AND_DROP
+-A WIFI_MAC_FILTERING -m set --match-set WIFI_RANDOMIZED_MACS src -j WIFI_DEVICE_MANAGEMENT
+-A WIFI_MAC_FILTERING -j LOG_AND_DROP
+
+# RATE_LIMIT - Generic rate limiting
+-A RATE_LIMIT -m limit --limit 50/sec --limit-burst 100 -j ACCEPT
+-A RATE_LIMIT -j DROP
+
+# LOG_AND_DROP - Logging and dropping
+-A LOG_AND_DROP -j LOG --log-prefix "WIFI_DROPPED: " --log-level 4
+-A LOG_AND_DROP -j DROP
+
+# ACCEPT_WITH_LOG - Logging and accepting
+-A ACCEPT_WITH_LOG -j LOG --log-prefix "WIFI_ACCEPTED: " --log-level 6
+-A ACCEPT_WITH_LOG -j ACCEPT
+
+COMMIT
+# Completed on Fri Jun 21 15:27:12 2025
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:iptables_save ===
+
+=== TSIM_SECTION_START:ipset_save ===
+TITLE: Complete Ipset Configuration
+COMMAND: /sbin/ipset save
+TIMESTAMP: 2025-06-21 15:27:12
+---
+create WIFI_CORPORATE_CLIENTS hash:ip family inet hashsize 1024 maxelem 65536
+add WIFI_CORPORATE_CLIENTS 192.168.10.10
+add WIFI_CORPORATE_CLIENTS 192.168.10.11
+add WIFI_CORPORATE_CLIENTS 192.168.10.12
+add WIFI_CORPORATE_CLIENTS 192.168.10.13
+add WIFI_CORPORATE_CLIENTS 192.168.10.14
+add WIFI_CORPORATE_CLIENTS 192.168.10.15
+add WIFI_CORPORATE_CLIENTS 192.168.10.16
+add WIFI_CORPORATE_CLIENTS 192.168.10.17
+add WIFI_CORPORATE_CLIENTS 192.168.10.18
+add WIFI_CORPORATE_CLIENTS 192.168.10.19
+add WIFI_CORPORATE_CLIENTS 192.168.10.20
+
+create WIFI_GUEST_CLIENTS hash:ip family inet hashsize 1024 maxelem 65536
+add WIFI_GUEST_CLIENTS 10.2.4.10
+add WIFI_GUEST_CLIENTS 10.2.4.11
+add WIFI_GUEST_CLIENTS 10.2.4.12
+add WIFI_GUEST_CLIENTS 10.2.4.13
+add WIFI_GUEST_CLIENTS 10.2.4.14
+add WIFI_GUEST_CLIENTS 10.2.4.15
+add WIFI_GUEST_CLIENTS 10.2.4.16
+add WIFI_GUEST_CLIENTS 10.2.4.17
+add WIFI_GUEST_CLIENTS 10.2.4.18
+add WIFI_GUEST_CLIENTS 10.2.4.19
+add WIFI_GUEST_CLIENTS 10.2.4.20
+
+create WIFI_ALLOWED_INBOUND hash:ip family inet hashsize 512 maxelem 32768
+add WIFI_ALLOWED_INBOUND 192.168.10.0/24
+add WIFI_ALLOWED_INBOUND 10.2.2.100
+add WIFI_ALLOWED_INBOUND 10.2.2.101
+add WIFI_ALLOWED_INBOUND 10.2.2.102
+
+create WIFI_GUEST_INBOUND hash:ip family inet hashsize 512 maxelem 32768
+add WIFI_GUEST_INBOUND 10.2.4.0/24
+
+create WIFI_CLIENT_TO_CLIENT hash:net,net family inet hashsize 512 maxelem 32768
+add WIFI_CLIENT_TO_CLIENT 192.168.10.0/24,192.168.10.0/24
+add WIFI_CLIENT_TO_CLIENT 10.2.4.0/24,10.2.4.0/24
+
+create WIFI_CRITICAL_SERVICES hash:net,net family inet hashsize 256 maxelem 16384
+add WIFI_CRITICAL_SERVICES 192.168.10.0/24,10.2.2.0/24
+add WIFI_CRITICAL_SERVICES 10.2.4.0/24,8.8.8.8
+add WIFI_CRITICAL_SERVICES 192.168.10.0/24,10.2.1.0/24
+
+create WIFI_HIGH_PRIORITY hash:net,net,port family inet hashsize 256 maxelem 16384
+add WIFI_HIGH_PRIORITY 192.168.10.10,10.2.2.0/24,tcp:443
+add WIFI_HIGH_PRIORITY 192.168.10.11,10.2.2.0/24,tcp:22
+add WIFI_HIGH_PRIORITY 192.168.10.12,10.2.1.0/24,tcp:80
+add WIFI_HIGH_PRIORITY 10.2.4.10,8.8.8.8,udp:53
+
+create WIFI_ENTERPRISE_USERS hash:ip family inet hashsize 512 maxelem 32768
+add WIFI_ENTERPRISE_USERS 192.168.10.10
+add WIFI_ENTERPRISE_USERS 192.168.10.11
+add WIFI_ENTERPRISE_USERS 192.168.10.12
+add WIFI_ENTERPRISE_USERS 192.168.10.13
+add WIFI_ENTERPRISE_USERS 192.168.10.14
+add WIFI_ENTERPRISE_USERS 192.168.10.15
+
+create WIFI_GUEST_USERS hash:ip family inet hashsize 1024 maxelem 65536
+add WIFI_GUEST_USERS 10.2.4.0/24
+
+create WIFI_BLOCKED_DEVICES hash:ip family inet hashsize 256 maxelem 16384
+add WIFI_BLOCKED_DEVICES 192.168.10.200
+add WIFI_BLOCKED_DEVICES 192.168.10.201
+add WIFI_BLOCKED_DEVICES 10.2.4.200
+add WIFI_BLOCKED_DEVICES 10.2.4.201
+
+create WIFI_AUTHENTICATED_DEVICES hash:ip,mac family inet hashsize 1024 maxelem 65536
+add WIFI_AUTHENTICATED_DEVICES 192.168.10.10,aa:bb:cc:dd:ee:10
+add WIFI_AUTHENTICATED_DEVICES 192.168.10.11,aa:bb:cc:dd:ee:11
+add WIFI_AUTHENTICATED_DEVICES 192.168.10.12,aa:bb:cc:dd:ee:12
+add WIFI_AUTHENTICATED_DEVICES 192.168.10.13,aa:bb:cc:dd:ee:13
+add WIFI_AUTHENTICATED_DEVICES 192.168.10.14,aa:bb:cc:dd:ee:14
+add WIFI_AUTHENTICATED_DEVICES 192.168.10.15,aa:bb:cc:dd:ee:15
+
+create WIFI_PENDING_AUTH hash:ip family inet hashsize 256 maxelem 16384
+add WIFI_PENDING_AUTH 192.168.10.100
+add WIFI_PENDING_AUTH 192.168.10.101
+add WIFI_PENDING_AUTH 10.2.4.100
+add WIFI_PENDING_AUTH 10.2.4.101
+
+create WIFI_ENTERPRISE_SSID hash:ip family inet hashsize 512 maxelem 32768
+add WIFI_ENTERPRISE_SSID 192.168.10.0/24
+
+create WIFI_GUEST_SSID hash:ip family inet hashsize 512 maxelem 32768
+add WIFI_GUEST_SSID 10.2.4.0/24
+
+create WIFI_ADMIN_DEVICES hash:ip family inet hashsize 256 maxelem 16384
+add WIFI_ADMIN_DEVICES 192.168.10.2
+add WIFI_ADMIN_DEVICES 192.168.10.3
+add WIFI_ADMIN_DEVICES 10.2.2.10
+add WIFI_ADMIN_DEVICES 10.2.2.11
+
+create WIFI_MANAGED_DEVICES hash:ip family inet hashsize 512 maxelem 32768
+add WIFI_MANAGED_DEVICES 192.168.10.10
+add WIFI_MANAGED_DEVICES 192.168.10.11
+add WIFI_MANAGED_DEVICES 192.168.10.12
+add WIFI_MANAGED_DEVICES 192.168.10.13
+add WIFI_MANAGED_DEVICES 192.168.10.14
+add WIFI_MANAGED_DEVICES 192.168.10.15
+add WIFI_MANAGED_DEVICES 192.168.10.16
+add WIFI_MANAGED_DEVICES 192.168.10.17
+
+create WIFI_BYOD_DEVICES hash:ip family inet hashsize 512 maxelem 32768
+add WIFI_BYOD_DEVICES 192.168.10.50
+add WIFI_BYOD_DEVICES 192.168.10.51
+add WIFI_BYOD_DEVICES 192.168.10.52
+add WIFI_BYOD_DEVICES 192.168.10.53
+add WIFI_BYOD_DEVICES 192.168.10.54
+add WIFI_BYOD_DEVICES 192.168.10.55
+
+create WIFI_IOT_DEVICES hash:ip family inet hashsize 256 maxelem 16384
+add WIFI_IOT_DEVICES 192.168.10.150
+add WIFI_IOT_DEVICES 192.168.10.151
+add WIFI_IOT_DEVICES 192.168.10.152
+add WIFI_IOT_DEVICES 192.168.10.153
+add WIFI_IOT_DEVICES 192.168.10.154
+
+create WIFI_CORPORATE_DEVICES hash:ip family inet hashsize 512 maxelem 32768
+add WIFI_CORPORATE_DEVICES 192.168.10.10
+add WIFI_CORPORATE_DEVICES 192.168.10.11
+add WIFI_CORPORATE_DEVICES 192.168.10.12
+add WIFI_CORPORATE_DEVICES 192.168.10.13
+add WIFI_CORPORATE_DEVICES 192.168.10.14
+add WIFI_CORPORATE_DEVICES 192.168.10.15
+add WIFI_CORPORATE_DEVICES 192.168.10.16
+add WIFI_CORPORATE_DEVICES 192.168.10.17
+add WIFI_CORPORATE_DEVICES 192.168.10.18
+add WIFI_CORPORATE_DEVICES 192.168.10.19
+
+create WIFI_GUEST_ALLOWED_SERVICES hash:ip,port family inet hashsize 256 maxelem 16384
+add WIFI_GUEST_ALLOWED_SERVICES 8.8.8.8,udp:53
+add WIFI_GUEST_ALLOWED_SERVICES 8.8.4.4,udp:53
+add WIFI_GUEST_ALLOWED_SERVICES 1.1.1.1,udp:53
+add WIFI_GUEST_ALLOWED_SERVICES 0.0.0.0/0,tcp:80
+add WIFI_GUEST_ALLOWED_SERVICES 0.0.0.0/0,tcp:443
+
+create WIFI_LOCAL_NETWORKS hash:net family inet hashsize 256 maxelem 16384
+add WIFI_LOCAL_NETWORKS 10.0.0.0/8
+add WIFI_LOCAL_NETWORKS 172.16.0.0/12
+add WIFI_LOCAL_NETWORKS 192.168.0.0/16
+
+create WIFI_CORPORATE_NETWORKS hash:net family inet hashsize 256 maxelem 16384
+add WIFI_CORPORATE_NETWORKS 10.2.1.0/24
+add WIFI_CORPORATE_NETWORKS 10.2.2.0/24
+add WIFI_CORPORATE_NETWORKS 10.2.3.0/24
+add WIFI_CORPORATE_NETWORKS 10.2.5.0/24
+add WIFI_CORPORATE_NETWORKS 10.2.6.0/24
+
+create WIFI_PRIORITY_USERS hash:ip family inet hashsize 256 maxelem 16384
+add WIFI_PRIORITY_USERS 192.168.10.10
+add WIFI_PRIORITY_USERS 192.168.10.11
+add WIFI_PRIORITY_USERS 192.168.10.12
+add WIFI_PRIORITY_USERS 192.168.10.13
+
+create WIFI_STANDARD_USERS hash:ip family inet hashsize 512 maxelem 32768
+add WIFI_STANDARD_USERS 192.168.10.20
+add WIFI_STANDARD_USERS 192.168.10.21
+add WIFI_STANDARD_USERS 192.168.10.22
+add WIFI_STANDARD_USERS 192.168.10.23
+add WIFI_STANDARD_USERS 192.168.10.24
+add WIFI_STANDARD_USERS 192.168.10.25
+add WIFI_STANDARD_USERS 192.168.10.26
+add WIFI_STANDARD_USERS 192.168.10.27
+
+create WIFI_LIMITED_USERS hash:ip family inet hashsize 512 maxelem 32768
+add WIFI_LIMITED_USERS 192.168.10.50
+add WIFI_LIMITED_USERS 192.168.10.51
+add WIFI_LIMITED_USERS 192.168.10.52
+add WIFI_LIMITED_USERS 10.2.4.0/24
+
+create WIFI_BULK_TRAFFIC hash:net,net,port family inet hashsize 256 maxelem 16384
+add WIFI_BULK_TRAFFIC 192.168.10.0/24,0.0.0.0/0,tcp:25
+add WIFI_BULK_TRAFFIC 192.168.10.0/24,0.0.0.0/0,tcp:587
+add WIFI_BULK_TRAFFIC 10.2.4.0/24,0.0.0.0/0,tcp:80
+add WIFI_BULK_TRAFFIC 10.2.4.0/24,0.0.0.0/0,tcp:443
+
+create WIFI_KNOWN_THREATS hash:ip family inet hashsize 256 maxelem 16384
+add WIFI_KNOWN_THREATS 192.168.10.200
+add WIFI_KNOWN_THREATS 192.168.10.201
+add WIFI_KNOWN_THREATS 10.2.4.200
+add WIFI_KNOWN_THREATS 198.51.100.100
+
+create WIFI_SUSPICIOUS_BEHAVIOR hash:ip family inet hashsize 256 maxelem 16384
+add WIFI_SUSPICIOUS_BEHAVIOR 192.168.10.100
+add WIFI_SUSPICIOUS_BEHAVIOR 192.168.10.101
+add WIFI_SUSPICIOUS_BEHAVIOR 10.2.4.100
+add WIFI_SUSPICIOUS_BEHAVIOR 10.2.4.101
+
+create WIFI_BLOCKED_DOMAINS hash:ip family inet hashsize 256 maxelem 16384
+add WIFI_BLOCKED_DOMAINS 198.51.100.50
+add WIFI_BLOCKED_DOMAINS 198.51.100.51
+add WIFI_BLOCKED_DOMAINS 203.0.113.50
+add WIFI_BLOCKED_DOMAINS 203.0.113.51
+
+create WIFI_BLOCKED_CATEGORIES hash:ip family inet hashsize 256 maxelem 16384
+add WIFI_BLOCKED_CATEGORIES 198.51.100.60
+add WIFI_BLOCKED_CATEGORIES 198.51.100.61
+add WIFI_BLOCKED_CATEGORIES 203.0.113.60
+add WIFI_BLOCKED_CATEGORIES 203.0.113.61
+
+create WIFI_PORTAL_SERVERS hash:ip family inet hashsize 256 maxelem 16384
+add WIFI_PORTAL_SERVERS 10.2.2.100
+add WIFI_PORTAL_SERVERS 10.2.2.101
+add WIFI_PORTAL_SERVERS 192.168.10.2
+
+create WIFI_ROAMING_CLIENTS hash:ip family inet hashsize 256 maxelem 16384
+add WIFI_ROAMING_CLIENTS 192.168.10.10
+add WIFI_ROAMING_CLIENTS 192.168.10.11
+add WIFI_ROAMING_CLIENTS 192.168.10.12
+add WIFI_ROAMING_CLIENTS 192.168.10.13
+
+create WIFI_FAST_ROAMING hash:ip family inet hashsize 256 maxelem 16384
+add WIFI_FAST_ROAMING 192.168.10.10
+add WIFI_FAST_ROAMING 192.168.10.11
+add WIFI_FAST_ROAMING 192.168.10.12
+
+create WIFI_MESH_NODES hash:net,net family inet hashsize 256 maxelem 16384
+add WIFI_MESH_NODES 192.168.10.2,192.168.10.3
+add WIFI_MESH_NODES 192.168.10.3,192.168.10.2
+add WIFI_MESH_NODES 10.2.2.1,192.168.10.1
+
+create WIFI_VOICE_TRAFFIC hash:net,net family inet hashsize 256 maxelem 16384
+add WIFI_VOICE_TRAFFIC 192.168.10.0/24,10.2.2.0/24
+add WIFI_VOICE_TRAFFIC 192.168.10.0/24,10.2.1.0/24
+
+create WIFI_VIDEO_TRAFFIC hash:net,net family inet hashsize 256 maxelem 16384
+add WIFI_VIDEO_TRAFFIC 192.168.10.0/24,10.2.2.0/24
+add WIFI_VIDEO_TRAFFIC 192.168.10.0/24,0.0.0.0/0
+
+create WIFI_DATA_TRAFFIC hash:net,net family inet hashsize 256 maxelem 16384
+add WIFI_DATA_TRAFFIC 192.168.10.0/24,10.2.2.0/24
+add WIFI_DATA_TRAFFIC 192.168.10.0/24,10.2.1.0/24
+
+create WIFI_BACKGROUND_TRAFFIC hash:net,net family inet hashsize 256 maxelem 16384
+add WIFI_BACKGROUND_TRAFFIC 10.2.4.0/24,0.0.0.0/0
+add WIFI_BACKGROUND_TRAFFIC 192.168.10.50,0.0.0.0/0
+
+create WIFI_MESH_ALLOWED hash:net,net family inet hashsize 256 maxelem 16384
+add WIFI_MESH_ALLOWED 192.168.10.2,192.168.10.3
+add WIFI_MESH_ALLOWED 192.168.10.3,192.168.10.2
+
+create WIFI_MESH_ENCRYPTED hash:net,net,port family inet hashsize 256 maxelem 16384
+add WIFI_MESH_ENCRYPTED 192.168.10.2,192.168.10.3,udp:4500
+add WIFI_MESH_ENCRYPTED 192.168.10.3,192.168.10.2,udp:500
+
+create WIFI_RADIUS_SERVERS hash:ip family inet hashsize 256 maxelem 16384
+add WIFI_RADIUS_SERVERS 10.2.2.50
+add WIFI_RADIUS_SERVERS 10.2.2.51
+add WIFI_RADIUS_SERVERS 10.2.1.50
+
+create WIFI_LDAP_SERVERS hash:ip,port family inet hashsize 256 maxelem 16384
+add WIFI_LDAP_SERVERS 10.2.2.60,tcp:389
+add WIFI_LDAP_SERVERS 10.2.2.61,tcp:636
+add WIFI_LDAP_SERVERS 10.2.1.60,tcp:389
+
+create WIFI_CERT_AUTHORITIES hash:ip family inet hashsize 256 maxelem 16384
+add WIFI_CERT_AUTHORITIES 10.2.2.70
+add WIFI_CERT_AUTHORITIES 10.2.2.71
+add WIFI_CERT_AUTHORITIES 10.2.1.70
+
+create WIFI_AUTHORIZED_APS hash:ip family inet hashsize 256 maxelem 16384
+add WIFI_AUTHORIZED_APS 192.168.10.1
+add WIFI_AUTHORIZED_APS 192.168.10.2
+add WIFI_AUTHORIZED_APS 192.168.10.3
+add WIFI_AUTHORIZED_APS 10.2.2.1
+
+create WIFI_ROGUE_AP_SIGNATURES hash:ip family inet hashsize 256 maxelem 16384
+add WIFI_ROGUE_AP_SIGNATURES 192.168.1.1
+add WIFI_ROGUE_AP_SIGNATURES 192.168.0.1
+add WIFI_ROGUE_AP_SIGNATURES 10.0.0.1
+
+create WIFI_INTERFERENCE_SOURCES hash:ip family inet hashsize 256 maxelem 16384
+add WIFI_INTERFERENCE_SOURCES 192.168.10.250
+add WIFI_INTERFERENCE_SOURCES 192.168.10.251
+add WIFI_INTERFERENCE_SOURCES 10.2.4.250
+
+create WIFI_CHANNEL_CONFLICTS hash:ip family inet hashsize 256 maxelem 16384
+add WIFI_CHANNEL_CONFLICTS 192.168.10.252
+add WIFI_CHANNEL_CONFLICTS 192.168.10.253
+add WIFI_CHANNEL_CONFLICTS 10.2.4.252
+
+create WIFI_LB_TARGETS hash:net,net family inet hashsize 256 maxelem 16384
+add WIFI_LB_TARGETS 192.168.10.0/24,192.168.10.2
+add WIFI_LB_TARGETS 192.168.10.0/24,192.168.10.3
+add WIFI_LB_TARGETS 10.2.4.0/24,192.168.10.1
+
+create WIFI_HIGH_CAPACITY_APS hash:ip family inet hashsize 256 maxelem 16384
+add WIFI_HIGH_CAPACITY_APS 192.168.10.2
+add WIFI_HIGH_CAPACITY_APS 192.168.10.3
+
+create WIFI_MONITOR_TARGETS hash:ip family inet hashsize 256 maxelem 16384
+add WIFI_MONITOR_TARGETS 192.168.10.10
+add WIFI_MONITOR_TARGETS 192.168.10.11
+add WIFI_MONITOR_TARGETS 192.168.10.12
+add WIFI_MONITOR_TARGETS 10.2.4.10
+
+create WIFI_SECURITY_EVENTS hash:ip family inet hashsize 256 maxelem 16384
+add WIFI_SECURITY_EVENTS 192.168.10.100
+add WIFI_SECURITY_EVENTS 192.168.10.101
+add WIFI_SECURITY_EVENTS 10.2.4.100
+add WIFI_SECURITY_EVENTS 10.2.4.101
+
+create WIFI_FAILED_AUTH hash:ip family inet hashsize 256 maxelem 16384
+add WIFI_FAILED_AUTH 192.168.10.200
+add WIFI_FAILED_AUTH 192.168.10.201
+add WIFI_FAILED_AUTH 10.2.4.200
+add WIFI_FAILED_AUTH 10.2.4.201
+
+create WIFI_ISOLATED_CLIENTS hash:net,net family inet hashsize 256 maxelem 16384
+add WIFI_ISOLATED_CLIENTS 192.168.10.150,192.168.10.0/24
+add WIFI_ISOLATED_CLIENTS 192.168.10.151,192.168.10.0/24
+add WIFI_ISOLATED_CLIENTS 10.2.4.0/24,10.2.4.0/24
+
+create WIFI_ALLOW_P2P hash:net,net,port family inet hashsize 256 maxelem 16384
+add WIFI_ALLOW_P2P 192.168.10.10,192.168.10.11,tcp:22
+add WIFI_ALLOW_P2P 192.168.10.12,192.168.10.13,tcp:443
+
+create WIFI_SAME_VLAN hash:net,net family inet hashsize 256 maxelem 16384
+add WIFI_SAME_VLAN 192.168.10.0/24,192.168.10.0/24
+
+create WIFI_CHILD_DEVICES hash:ip family inet hashsize 256 maxelem 16384
+add WIFI_CHILD_DEVICES 192.168.10.80
+add WIFI_CHILD_DEVICES 192.168.10.81
+add WIFI_CHILD_DEVICES 10.2.4.80
+add WIFI_CHILD_DEVICES 10.2.4.81
+
+create WIFI_ADULT_CONTENT hash:ip family inet hashsize 256 maxelem 16384
+add WIFI_ADULT_CONTENT 198.51.100.80
+add WIFI_ADULT_CONTENT 198.51.100.81
+add WIFI_ADULT_CONTENT 203.0.113.80
+add WIFI_ADULT_CONTENT 203.0.113.81
+
+create WIFI_EDUCATIONAL_SITES hash:ip family inet hashsize 256 maxelem 16384
+add WIFI_EDUCATIONAL_SITES 198.51.100.90
+add WIFI_EDUCATIONAL_SITES 198.51.100.91
+add WIFI_EDUCATIONAL_SITES 203.0.113.90
+add WIFI_EDUCATIONAL_SITES 203.0.113.91
+
+create WIFI_BUSINESS_HOURS_ONLY hash:ip family inet hashsize 256 maxelem 16384
+add WIFI_BUSINESS_HOURS_ONLY 192.168.10.30
+add WIFI_BUSINESS_HOURS_ONLY 192.168.10.31
+add WIFI_BUSINESS_HOURS_ONLY 10.2.4.30
+add WIFI_BUSINESS_HOURS_ONLY 10.2.4.31
+
+create WIFI_AFTER_HOURS_ALLOWED hash:ip family inet hashsize 256 maxelem 16384
+add WIFI_AFTER_HOURS_ALLOWED 192.168.10.10
+add WIFI_AFTER_HOURS_ALLOWED 192.168.10.11
+add WIFI_AFTER_HOURS_ALLOWED 192.168.10.12
+
+create WIFI_WEEKEND_RESTRICTED hash:ip family inet hashsize 256 maxelem 16384
+add WIFI_WEEKEND_RESTRICTED 192.168.10.40
+add WIFI_WEEKEND_RESTRICTED 192.168.10.41
+add WIFI_WEEKEND_RESTRICTED 10.2.4.40
+
+create WIFI_AUTHORIZED_MACS hash:ip,mac family inet hashsize 1024 maxelem 65536
+add WIFI_AUTHORIZED_MACS 192.168.10.10,aa:bb:cc:dd:ee:10
+add WIFI_AUTHORIZED_MACS 192.168.10.11,aa:bb:cc:dd:ee:11
+add WIFI_AUTHORIZED_MACS 192.168.10.12,aa:bb:cc:dd:ee:12
+add WIFI_AUTHORIZED_MACS 192.168.10.13,aa:bb:cc:dd:ee:13
+add WIFI_AUTHORIZED_MACS 192.168.10.14,aa:bb:cc:dd:ee:14
+add WIFI_AUTHORIZED_MACS 192.168.10.15,aa:bb:cc:dd:ee:15
+add WIFI_AUTHORIZED_MACS 192.168.10.16,aa:bb:cc:dd:ee:16
+add WIFI_AUTHORIZED_MACS 192.168.10.17,aa:bb:cc:dd:ee:17
+add WIFI_AUTHORIZED_MACS 192.168.10.18,aa:bb:cc:dd:ee:18
+add WIFI_AUTHORIZED_MACS 192.168.10.19,aa:bb:cc:dd:ee:19
+
+create WIFI_BLOCKED_MACS hash:ip,mac family inet hashsize 256 maxelem 16384
+add WIFI_BLOCKED_MACS 192.168.10.200,aa:bb:cc:dd:ee:ff
+add WIFI_BLOCKED_MACS 192.168.10.201,bb:cc:dd:ee:ff:aa
+add WIFI_BLOCKED_MACS 10.2.4.200,cc:dd:ee:ff:aa:bb
+
+create WIFI_RANDOMIZED_MACS hash:ip,mac family inet hashsize 256 maxelem 16384
+add WIFI_RANDOMIZED_MACS 192.168.10.100,02:00:00:00:00:01
+add WIFI_RANDOMIZED_MACS 192.168.10.101,02:00:00:00:00:02
+add WIFI_RANDOMIZED_MACS 10.2.4.100,02:00:00:00:00:03
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:ipset_save ===
+
+=== TSIM_SECTION_START:ipset_list ===
+TITLE: Ipset List Summary
+COMMAND: /sbin/ipset list -n
+TIMESTAMP: 2025-06-21 15:27:12
+---
+WIFI_CORPORATE_CLIENTS
+WIFI_GUEST_CLIENTS
+WIFI_ALLOWED_INBOUND
+WIFI_GUEST_INBOUND
+WIFI_CLIENT_TO_CLIENT
+WIFI_CRITICAL_SERVICES
+WIFI_HIGH_PRIORITY
+WIFI_ENTERPRISE_USERS
+WIFI_GUEST_USERS
+WIFI_BLOCKED_DEVICES
+WIFI_AUTHENTICATED_DEVICES
+WIFI_PENDING_AUTH
+WIFI_ENTERPRISE_SSID
+WIFI_GUEST_SSID
+WIFI_ADMIN_DEVICES
+WIFI_MANAGED_DEVICES
+WIFI_BYOD_DEVICES
+WIFI_IOT_DEVICES
+WIFI_CORPORATE_DEVICES
+WIFI_GUEST_ALLOWED_SERVICES
+WIFI_LOCAL_NETWORKS
+WIFI_CORPORATE_NETWORKS
+WIFI_PRIORITY_USERS
+WIFI_STANDARD_USERS
+WIFI_LIMITED_USERS
+WIFI_BULK_TRAFFIC
+WIFI_KNOWN_THREATS
+WIFI_SUSPICIOUS_BEHAVIOR
+WIFI_BLOCKED_DOMAINS
+WIFI_BLOCKED_CATEGORIES
+WIFI_PORTAL_SERVERS
+WIFI_ROAMING_CLIENTS
+WIFI_FAST_ROAMING
+WIFI_MESH_NODES
+WIFI_VOICE_TRAFFIC
+WIFI_VIDEO_TRAFFIC
+WIFI_DATA_TRAFFIC
+WIFI_BACKGROUND_TRAFFIC
+WIFI_MESH_ALLOWED
+WIFI_MESH_ENCRYPTED
+WIFI_RADIUS_SERVERS
+WIFI_LDAP_SERVERS
+WIFI_CERT_AUTHORITIES
+WIFI_AUTHORIZED_APS
+WIFI_ROGUE_AP_SIGNATURES
+WIFI_INTERFERENCE_SOURCES
+WIFI_CHANNEL_CONFLICTS
+WIFI_LB_TARGETS
+WIFI_HIGH_CAPACITY_APS
+WIFI_MONITOR_TARGETS
+WIFI_SECURITY_EVENTS
+WIFI_FAILED_AUTH
+WIFI_ISOLATED_CLIENTS
+WIFI_ALLOW_P2P
+WIFI_SAME_VLAN
+WIFI_CHILD_DEVICES
+WIFI_ADULT_CONTENT
+WIFI_EDUCATIONAL_SITES
+WIFI_BUSINESS_HOURS_ONLY
+WIFI_AFTER_HOURS_ALLOWED
+WIFI_WEEKEND_RESTRICTED
+WIFI_AUTHORIZED_MACS
+WIFI_BLOCKED_MACS
+WIFI_RANDOMIZED_MACS
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:ipset_list ===

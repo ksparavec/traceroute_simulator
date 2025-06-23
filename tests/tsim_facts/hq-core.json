@@ -1,0 +1,120 @@
+{
+  "firewall": {
+    "ipset": {
+      "available": false,
+      "lists": []
+    },
+    "iptables": {
+      "available": false,
+      "filter": [],
+      "mangle": [],
+      "nat": [],
+      "raw_config": "# No iptables data in legacy format"
+    }
+  },
+  "metadata": {
+    "collection_timestamp": "2025-06-19 15:20:08",
+    "hostname": "hq-core",
+    "kernel_version": "Unknown (converted from legacy)",
+    "linux": true,
+    "location": "hq",
+    "manageable": true,
+    "processor_version": "1.0",
+    "role": "distribution",
+    "sections_available": [
+      "routing_table",
+      "policy_rules",
+      "metadata"
+    ],
+    "type": "core",
+    "vendor": "linux"
+  },
+  "network": {
+    "interface_stats": {
+      "command": "cat /proc/net/dev",
+      "exit_code": 0,
+      "raw_output": "# Placeholder - no interface stats in legacy format"
+    },
+    "interfaces": {
+      "command": "ip addr show",
+      "exit_code": 0,
+      "raw_output": "# Placeholder - no interface data in legacy format"
+    },
+    "ip_forwarding_enabled": true
+  },
+  "routing": {
+    "rules": [
+      {
+        "priority": 0,
+        "src": "all",
+        "table": "local"
+      },
+      {
+        "priority": 32766,
+        "src": "all",
+        "table": "main"
+      },
+      {
+        "priority": 32767,
+        "src": "all",
+        "table": "default"
+      }
+    ],
+    "tables": [
+      {
+        "dev": "eth0",
+        "dst": "default",
+        "gateway": "10.1.1.1",
+        "metric": 1
+      },
+      {
+        "dev": "eth0",
+        "dst": "10.1.1.0/24",
+        "prefsrc": "10.1.1.2",
+        "protocol": "kernel",
+        "scope": "link"
+      },
+      {
+        "dev": "eth1",
+        "dst": "10.1.2.0/24",
+        "prefsrc": "10.1.2.1",
+        "protocol": "kernel",
+        "scope": "link"
+      },
+      {
+        "dev": "eth1",
+        "dst": "10.1.3.0/24",
+        "gateway": "10.1.2.3",
+        "metric": 1
+      },
+      {
+        "dev": "eth1",
+        "dst": "10.1.10.0/24",
+        "gateway": "10.1.2.4",
+        "metric": 1
+      },
+      {
+        "dev": "eth1",
+        "dst": "10.1.11.0/24",
+        "gateway": "10.1.2.4",
+        "metric": 1
+      },
+      {
+        "dev": "eth0",
+        "dst": "10.2.0.0/16",
+        "gateway": "10.1.1.1",
+        "metric": 10
+      },
+      {
+        "dev": "eth0",
+        "dst": "10.3.0.0/16",
+        "gateway": "10.1.1.1",
+        "metric": 10
+      }
+    ]
+  },
+  "system": {
+    "connection_tracking": "# No connection tracking data in legacy format",
+    "netfilter_modules": []
+  }
+}

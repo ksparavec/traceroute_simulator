@@ -1,0 +1,1148 @@
+# Traceroute Simulator Facts Collection
+# Generated on: 2025-06-21 15:21:17
+# Hostname: dc-core
+# Kernel: 5.15.0-85-generic
+# Collection Script Version: 1.0
+
+# Locating required commands in standard paths
+# Found commands:
+# IP: /sbin/ip
+# IPTABLES: /sbin/iptables
+# IPTABLES-SAVE: /sbin/iptables-save
+# IPSET: /sbin/ipset
+# LSMOD: /bin/lsmod
+# Running as root: 1
+
+=== TSIM_SECTION_START:routing_table ===
+TITLE: IP Routing Table
+COMMAND: /sbin/ip route show
+TIMESTAMP: 2025-06-21 15:21:17
+---
+default via 10.3.1.1 dev eth0 metric 100
+10.3.1.0/24 dev eth0 proto kernel scope link src 10.3.1.2
+10.3.2.0/24 dev eth1 proto kernel scope link src 10.3.2.1
+10.3.10.0/24 dev eth2 proto kernel scope link src 10.3.10.1
+10.3.20.0/24 dev eth3 proto kernel scope link src 10.3.20.1
+10.3.21.0/24 dev eth4 proto kernel scope link src 10.3.21.1
+10.1.0.0/16 via 10.3.1.1 dev eth0 metric 1
+10.2.0.0/16 via 10.3.1.1 dev eth0 metric 1
+10.100.1.0/24 via 10.3.1.1 dev eth0 metric 1
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:routing_table ===
+
+=== TSIM_SECTION_START:policy_rules ===
+TITLE: IP Policy Rules
+COMMAND: /sbin/ip rule show
+TIMESTAMP: 2025-06-21 15:21:17
+---
+0:	from all lookup local
+25:	from 10.3.2.0/24 lookup srv_priority
+35:	from 10.3.10.0/24 lookup app_priority
+45:	from 10.3.20.0/24 lookup prod_priority
+55:	from 10.3.21.0/24 lookup storage_priority
+32766:	from all lookup main
+32767:	from all lookup default
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:policy_rules ===
+
+=== TSIM_SECTION_START:interfaces ===
+TITLE: Network Interfaces
+COMMAND: /sbin/ip addr show
+TIMESTAMP: 2025-06-21 15:21:17
+---
+1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN group default qlen 1000
+    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+    inet 127.0.0.1/8 scope host lo
+       valid_lft forever preferred_lft forever
+2: eth0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
+    link/ether 52:54:00:72:34:01 brd ff:ff:ff:ff:ff:ff
+    inet 10.3.1.2/24 brd 10.3.1.255 scope global eth0
+       valid_lft forever preferred_lft forever
+3: eth1: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
+    link/ether 52:54:00:72:34:02 brd ff:ff:ff:ff:ff:ff
+    inet 10.3.2.1/24 brd 10.3.2.255 scope global eth1
+       valid_lft forever preferred_lft forever
+4: eth2: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
+    link/ether 52:54:00:72:34:03 brd ff:ff:ff:ff:ff:ff
+    inet 10.3.10.1/24 brd 10.3.10.255 scope global eth2
+       valid_lft forever preferred_lft forever
+5: eth3: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
+    link/ether 52:54:00:72:34:04 brd ff:ff:ff:ff:ff:ff
+    inet 10.3.20.1/24 brd 10.3.20.255 scope global eth3
+       valid_lft forever preferred_lft forever
+6: eth4: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
+    link/ether 52:54:00:72:34:05 brd ff:ff:ff:ff:ff:ff
+    inet 10.3.21.1/24 brd 10.3.21.255 scope global eth4
+       valid_lft forever preferred_lft forever
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:interfaces ===
+
+=== TSIM_SECTION_START:interface_stats ===
+TITLE: Interface Statistics
+COMMAND: cat /proc/net/dev
+TIMESTAMP: 2025-06-21 15:21:17
+---
+Inter-|   Receive                                                |  Transmit
+ face |bytes    packets errs drop fifo frame compressed multicast|bytes    packets errs drop fifo colls carrier compressed
+    lo:   54321      543    0    0    0     0          0         0    54321      543    0    0    0     0       0          0
+  eth0:15432109    15432    0    0    0     0          0         0 14321098    14321    0    0    0     0       0          0
+  eth1:13210987    13210    0    0    0     0          0         0 12109876    12109    0    0    0     0       0          0
+  eth2:10987654    10987    0    0    0     0          0         0  9876543     9876    0    0    0     0       0          0
+  eth3: 8765432     8765    0    0    0     0          0         0  7654321     7654    0    0    0     0       0          0
+  eth4: 6543210     6543    0    0    0     0          0         0  5432109     5432    0    0    0     0       0          0
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:interface_stats ===
+
+=== TSIM_SECTION_START:ip_forwarding ===
+TITLE: IP Forwarding Status
+COMMAND: cat /proc/sys/net/ipv4/ip_forward
+TIMESTAMP: 2025-06-21 15:21:17
+---
+1
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:ip_forwarding ===
+
+=== TSIM_SECTION_START:kernel_version ===
+TITLE: Kernel Version
+COMMAND: uname -r
+TIMESTAMP: 2025-06-21 15:21:17
+---
+5.15.0-85-generic
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:kernel_version ===
+
+=== TSIM_SECTION_START:loaded_modules ===
+TITLE: Loaded Kernel Modules
+COMMAND: /bin/lsmod
+TIMESTAMP: 2025-06-21 15:21:17
+---
+Module                  Size  Used by
+xt_REDIRECT            16384  0
+xt_NETMAP              16384  0
+xt_conntrack           16384  12
+xt_CHECKSUM            16384  0
+xt_CLASSIFY            16384  8
+xt_DSCP                16384  6
+xt_MARK                16384  4
+xt_LOG                 16384  10
+xt_limit               16384  16
+xt_multiport           16384  14
+xt_recent              16384  8
+xt_set                 16384  24
+xt_state               16384  8
+xt_statistic           16384  4
+xt_string              16384  8
+xt_tcpudp              16384  18
+xt_time                16384  12
+xt_u32                 16384  6
+ipt_MASQUERADE         16384  0
+ipt_REJECT             16384  12
+ipt_ULOG               16384  0
+ip_set                 49152  1 xt_set
+ip_set_hash_net        16384  1
+ip_set_hash_ip         16384  1
+ip_set_hash_netport    16384  1
+ip_set_hash_ipport     16384  1
+ip_set_hash_netnet     16384  1
+ip_set_hash_ipportnet  16384  1
+ip_set_hash_ipportproto 16384  1
+ip_set_hash_netnetport 16384  1
+ip_set_hash_ipmark     16384  1
+ip_set_list_set        16384  1
+ip_set_bitmap_port     16384  1
+ip_set_bitmap_ip       16384  1
+ip_tables              32768  0
+x_tables               40960  24 xt_REDIRECT,xt_NETMAP,xt_conntrack,xt_CHECKSUM,xt_CLASSIFY,xt_DSCP,xt_MARK,xt_LOG,xt_limit,xt_multiport,xt_recent,xt_set,xt_state,xt_statistic,xt_string,xt_tcpudp,xt_time,xt_u32,ipt_MASQUERADE,ipt_REJECT,ipt_ULOG
+nf_conntrack           139264  8 xt_conntrack,xt_state,ipt_MASQUERADE,nf_nat
+nf_nat                 40960  1 ipt_MASQUERADE
+nf_defrag_ipv4         16384  1 nf_conntrack
+nf_defrag_ipv6         24576  1 nf_conntrack
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:loaded_modules ===
+
+=== TSIM_SECTION_START:conntrack_info ===
+TITLE: Connection Tracking Information
+COMMAND: cat /proc/sys/net/nf_conntrack_max
+TIMESTAMP: 2025-06-21 15:21:17
+---
+524288
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:conntrack_info ===
+
+=== TSIM_SECTION_START:iptables_info ===
+TITLE: Iptables Information
+COMMAND: /sbin/iptables --version
+TIMESTAMP: 2025-06-21 15:21:17
+---
+iptables v1.8.7 (nf_tables)
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:iptables_info ===
+
+=== TSIM_SECTION_START:iptables_save ===
+TITLE: Complete Iptables Configuration
+COMMAND: /sbin/iptables-save
+TIMESTAMP: 2025-06-21 15:21:17
+---
+# Generated by iptables-save v1.8.7 on Fri Jun 21 15:21:17 2025
+*filter
+:INPUT ACCEPT [1234:234567]
+:FORWARD ACCEPT [0:0]
+:OUTPUT ACCEPT [987:198765]
+:DC_CORE_FORWARD - [0:0]
+:DC_TIER_SEGMENTATION - [0:0]
+:DC_SRV_ACCESS - [0:0]
+:DC_APP_ACCESS - [0:0]
+:DC_PROD_ACCESS - [0:0]
+:DC_STORAGE_ACCESS - [0:0]
+:DC_LOAD_BALANCING - [0:0]
+:DC_FAILOVER_CONTROL - [0:0]
+:DC_DISASTER_RECOVERY - [0:0]
+:DC_SECURITY_ZONES - [0:0]
+:DC_COMPLIANCE_AUDIT - [0:0]
+:DC_PERFORMANCE_MONITORING - [0:0]
+:DC_CAPACITY_MANAGEMENT - [0:0]
+:DC_SERVICE_MESH - [0:0]
+:DC_MICROSERVICES - [0:0]
+:DC_CONTAINER_NETWORK - [0:0]
+:DC_DATABASE_ACCESS - [0:0]
+:DC_API_GATEWAY - [0:0]
+:DC_CACHE_CONTROL - [0:0]
+:DC_BACKUP_CONTROL - [0:0]
+:DC_REPLICATION_CONTROL - [0:0]
+:RATE_LIMIT - [0:0]
+:LOG_AND_DROP - [0:0]
+:ACCEPT_WITH_LOG - [0:0]
+
+# Main FORWARD chain - Data center core distribution logic
+-A FORWARD -i eth0 -o eth1 -m set --match-set DC_SRV_ALLOWED src -j DC_SRV_ACCESS
+-A FORWARD -i eth0 -o eth2 -m set --match-set DC_APP_ALLOWED src -j DC_APP_ACCESS
+-A FORWARD -i eth0 -o eth3 -m set --match-set DC_PROD_ALLOWED src -j DC_PROD_ACCESS
+-A FORWARD -i eth0 -o eth4 -m set --match-set DC_STORAGE_ALLOWED src -j DC_STORAGE_ACCESS
+-A FORWARD -i eth1 -o eth0 -m set --match-set DC_SRV_CLIENTS src -j DC_SRV_ACCESS
+-A FORWARD -i eth1 -o eth2 -m set --match-set DC_SRV_TO_APP dst -j DC_SERVICE_MESH
+-A FORWARD -i eth1 -o eth3 -m set --match-set DC_SRV_TO_PROD dst -j DC_PROD_ACCESS
+-A FORWARD -i eth1 -o eth4 -m set --match-set DC_SRV_TO_STORAGE dst -j DC_STORAGE_ACCESS
+-A FORWARD -i eth2 -o eth0 -m set --match-set DC_APP_CLIENTS src -j DC_APP_ACCESS
+-A FORWARD -i eth2 -o eth1 -m set --match-set DC_APP_TO_SRV dst -j DC_SERVICE_MESH
+-A FORWARD -i eth2 -o eth3 -m set --match-set DC_APP_TO_PROD dst -j DC_MICROSERVICES
+-A FORWARD -i eth2 -o eth4 -m set --match-set DC_APP_TO_STORAGE dst -j DC_STORAGE_ACCESS
+-A FORWARD -i eth3 -o eth0 -m set --match-set DC_PROD_CLIENTS src -j DC_PROD_ACCESS
+-A FORWARD -i eth3 -o eth1 -m set --match-set DC_PROD_TO_SRV dst -j DC_SERVICE_MESH
+-A FORWARD -i eth3 -o eth2 -m set --match-set DC_PROD_TO_APP dst -j DC_MICROSERVICES
+-A FORWARD -i eth3 -o eth4 -m set --match-set DC_PROD_TO_STORAGE dst -j DC_BACKUP_CONTROL
+-A FORWARD -i eth4 -o eth0 -m set --match-set DC_STORAGE_CLIENTS src -j DC_STORAGE_ACCESS
+-A FORWARD -i eth4 -o eth1 -m set --match-set DC_STORAGE_TO_SRV dst -j DC_REPLICATION_CONTROL
+-A FORWARD -i eth4 -o eth2 -m set --match-set DC_STORAGE_TO_APP dst -j LOG_AND_DROP
+-A FORWARD -i eth4 -o eth3 -m set --match-set DC_STORAGE_TO_PROD dst -j DC_BACKUP_CONTROL
+-A FORWARD -m state --state RELATED,ESTABLISHED -j ACCEPT
+-A FORWARD -j DC_SECURITY_ZONES
+
+# DC_CORE_FORWARD - Main data center distribution logic
+-A DC_CORE_FORWARD -m set --match-set DC_CRITICAL_SERVICES src,dst -j DC_LOAD_BALANCING
+-A DC_CORE_FORWARD -m set --match-set DC_HIGH_AVAILABILITY src,dst,dst -j DC_FAILOVER_CONTROL
+-A DC_CORE_FORWARD -m set --match-set DC_BUSINESS_CRITICAL src -j ACCEPT_WITH_LOG
+-A DC_CORE_FORWARD -m set --match-set DC_MAINTENANCE_MODE src -j LOG_AND_DROP
+-A DC_CORE_FORWARD -m set --match-set DC_PRIORITY_TRAFFIC src,dst -j DC_PERFORMANCE_MONITORING
+-A DC_CORE_FORWARD -m hashlimit --hashlimit-above 500/sec --hashlimit-burst 1000 --hashlimit-mode srcip --hashlimit-name dc_flood_protect -j LOG_AND_DROP
+-A DC_CORE_FORWARD -j DC_TIER_SEGMENTATION
+
+# DC_TIER_SEGMENTATION - Multi-tier architecture segmentation
+-A DC_TIER_SEGMENTATION -m set --match-set DC_TIER_MATRIX src,dst -j ACCEPT
+-A DC_TIER_SEGMENTATION -m set --match-set DC_TIER_RESTRICTED src,dst -j LOG_AND_DROP
+-A DC_TIER_SEGMENTATION -p tcp -m multiport --dports 80,443,8080,8443 -m set --match-set DC_WEB_TIER dst -j ACCEPT
+-A DC_TIER_SEGMENTATION -p tcp -m multiport --dports 1433,3306,5432,27017 -m set --match-set DC_DB_TIER dst -j DC_DATABASE_ACCESS
+-A DC_TIER_SEGMENTATION -p tcp -m multiport --dports 6379,11211,9042 -m set --match-set DC_CACHE_TIER dst -j DC_CACHE_CONTROL
+-A DC_TIER_SEGMENTATION -j DC_SECURITY_ZONES
+
+# DC_SRV_ACCESS - Server tier access control
+-A DC_SRV_ACCESS -m set --match-set DC_SRV_ADMIN_ALLOWED src,dst -j ACCEPT
+-A DC_SRV_ACCESS -m set --match-set DC_SRV_MONITORING src,dst,dst -j ACCEPT
+-A DC_SRV_ACCESS -m set --match-set DC_SRV_BACKUP_ALLOWED src,dst -j DC_BACKUP_CONTROL
+-A DC_SRV_ACCESS -p tcp -m multiport --dports 22,3389 -m set --match-set DC_ADMIN_HOSTS src -j ACCEPT
+-A DC_SRV_ACCESS -p tcp -m multiport --dports 80,443,8080,8443 -j ACCEPT
+-A DC_SRV_ACCESS -p tcp -m multiport --dports 9100,9200,9300 -m set --match-set DC_MONITORING_ALLOWED src -j ACCEPT
+-A DC_SRV_ACCESS -j DC_COMPLIANCE_AUDIT
+
+# DC_APP_ACCESS - Application tier access control
+-A DC_APP_ACCESS -m set --match-set DC_APP_SERVICES src,dst,dst -j DC_API_GATEWAY
+-A DC_APP_ACCESS -m set --match-set DC_APP_LOAD_BALANCED src,dst -j DC_LOAD_BALANCING
+-A DC_APP_ACCESS -m set --match-set DC_APP_MICROSERVICES src,dst -j DC_MICROSERVICES
+-A DC_APP_ACCESS -p tcp -m multiport --dports 8080,8443,9080,9443 -j ACCEPT
+-A DC_APP_ACCESS -p tcp -m multiport --dports 50051,50052 -j ACCEPT
+-A DC_APP_ACCESS -p tcp -m multiport --dports 4000,5000,6000,7000 -j ACCEPT
+-A DC_APP_ACCESS -j DC_CONTAINER_NETWORK
+
+# DC_PROD_ACCESS - Production tier access control
+-A DC_PROD_ACCESS -m set --match-set DC_PROD_CRITICAL src,dst -j DC_FAILOVER_CONTROL
+-A DC_PROD_ACCESS -m set --match-set DC_PROD_HIGH_AVAILABILITY src,dst,dst -j DC_DISASTER_RECOVERY
+-A DC_PROD_ACCESS -m set --match-set DC_PROD_MONITORING src,dst -j DC_PERFORMANCE_MONITORING
+-A DC_PROD_ACCESS -p tcp -m multiport --dports 80,443 -m set --match-set DC_PROD_WEB_SERVERS dst -j ACCEPT
+-A DC_PROD_ACCESS -p tcp -m multiport --dports 22,3389 -m set --match-set DC_PROD_ADMIN_HOSTS src -j ACCEPT
+-A DC_PROD_ACCESS -p tcp -m multiport --dports 1433,3306,5432 -m set --match-set DC_PROD_DB_CLIENTS src -j DC_DATABASE_ACCESS
+-A DC_PROD_ACCESS -j DC_CAPACITY_MANAGEMENT
+
+# DC_STORAGE_ACCESS - Storage tier access control
+-A DC_STORAGE_ACCESS -m set --match-set DC_STORAGE_CRITICAL src,dst -j ACCEPT_WITH_LOG
+-A DC_STORAGE_ACCESS -m set --match-set DC_STORAGE_BACKUP src,dst,dst -j DC_BACKUP_CONTROL
+-A DC_STORAGE_ACCESS -m set --match-set DC_STORAGE_REPLICATION src,dst -j DC_REPLICATION_CONTROL
+-A DC_STORAGE_ACCESS -p tcp -m multiport --dports 2049,111,445 -j ACCEPT
+-A DC_STORAGE_ACCESS -p tcp -m multiport --dports 3260,8080 -j ACCEPT
+-A DC_STORAGE_ACCESS -p tcp -m multiport --dports 9000,9001 -j ACCEPT
+-A DC_STORAGE_ACCESS -j RATE_LIMIT
+
+# DC_LOAD_BALANCING - Load balancing and distribution
+-A DC_LOAD_BALANCING -m set --match-set DC_LB_TARGETS src,dst -m statistic --mode nth --every 3 --packet 0 -j MARK --set-mark 0x1
+-A DC_LOAD_BALANCING -m set --match-set DC_LB_TARGETS src,dst -m statistic --mode nth --every 3 --packet 1 -j MARK --set-mark 0x2
+-A DC_LOAD_BALANCING -m set --match-set DC_LB_TARGETS src,dst -m statistic --mode nth --every 3 --packet 2 -j MARK --set-mark 0x3
+-A DC_LOAD_BALANCING -m set --match-set DC_LB_WEIGHTED src,dst,dst -m statistic --mode random --probability 0.7 -j MARK --set-mark 0x10
+-A DC_LOAD_BALANCING -m set --match-set DC_LB_PRIORITY src,dst -j MARK --set-mark 0x5
+-A DC_LOAD_BALANCING -j ACCEPT
+
+# DC_FAILOVER_CONTROL - High availability and failover
+-A DC_FAILOVER_CONTROL -m set --match-set DC_PRIMARY_SERVERS dst -m recent --name dc_health_check --set --rsource
+-A DC_FAILOVER_CONTROL -m set --match-set DC_PRIMARY_SERVERS dst -m recent --name dc_health_check --rcheck --seconds 30 --rsource -j ACCEPT
+-A DC_FAILOVER_CONTROL -m set --match-set DC_SECONDARY_SERVERS dst -j ACCEPT
+-A DC_FAILOVER_CONTROL -m set --match-set DC_BACKUP_SERVERS dst -j ACCEPT
+-A DC_FAILOVER_CONTROL -j LOG_AND_DROP
+
+# DC_DISASTER_RECOVERY - Disaster recovery and business continuity
+-A DC_DISASTER_RECOVERY -m set --match-set DC_DR_REPLICATION src,dst,dst -j ACCEPT_WITH_LOG
+-A DC_DISASTER_RECOVERY -m set --match-set DC_DR_BACKUP src,dst -j DC_BACKUP_CONTROL
+-A DC_DISASTER_RECOVERY -m set --match-set DC_DR_PRIORITY src,dst -j DSCP --set-dscp-class EF
+-A DC_DISASTER_RECOVERY -p tcp -m multiport --dports 22,443,3306,5432 -j ACCEPT
+-A DC_DISASTER_RECOVERY -j ACCEPT
+
+# DC_SECURITY_ZONES - Security zone enforcement
+-A DC_SECURITY_ZONES -m set --match-set DC_DMZ_ZONE src,dst -j DC_COMPLIANCE_AUDIT
+-A DC_SECURITY_ZONES -m set --match-set DC_TRUSTED_ZONE src,dst -j ACCEPT
+-A DC_SECURITY_ZONES -m set --match-set DC_RESTRICTED_ZONE src,dst -j LOG_AND_DROP
+-A DC_SECURITY_ZONES -m set --match-set DC_QUARANTINE_ZONE src -j LOG_AND_DROP
+-A DC_SECURITY_ZONES -j ACCEPT
+
+# DC_COMPLIANCE_AUDIT - Compliance and audit logging
+-A DC_COMPLIANCE_AUDIT -m set --match-set DC_AUDIT_REQUIRED src,dst -j LOG --log-prefix "DC_AUDIT: " --log-level 4
+-A DC_COMPLIANCE_AUDIT -m set --match-set DC_PCI_SCOPE src,dst,dst -j LOG --log-prefix "DC_PCI: " --log-level 4
+-A DC_COMPLIANCE_AUDIT -m set --match-set DC_SOX_SCOPE src,dst -j LOG --log-prefix "DC_SOX: " --log-level 4
+-A DC_COMPLIANCE_AUDIT -m set --match-set DC_HIPAA_SCOPE src,dst -j LOG --log-prefix "DC_HIPAA: " --log-level 4
+-A DC_COMPLIANCE_AUDIT -j ACCEPT
+
+# DC_PERFORMANCE_MONITORING - Performance monitoring and metrics
+-A DC_PERFORMANCE_MONITORING -m set --match-set DC_PERFORMANCE_TARGETS src -j LOG --log-prefix "DC_PERF: " --log-level 6
+-A DC_PERFORMANCE_MONITORING -m conntrack --ctstate NEW -j LOG --log-prefix "DC_NEW_CONN: " --log-level 6
+-A DC_PERFORMANCE_MONITORING -m limit --limit 100/sec --limit-burst 200 -j LOG --log-prefix "DC_RATE: " --log-level 6
+-A DC_PERFORMANCE_MONITORING -j ACCEPT
+
+# DC_CAPACITY_MANAGEMENT - Capacity management and resource control
+-A DC_CAPACITY_MANAGEMENT -m set --match-set DC_HIGH_CAPACITY src -j CLASSIFY --set-class 1:10
+-A DC_CAPACITY_MANAGEMENT -m set --match-set DC_MEDIUM_CAPACITY src -j CLASSIFY --set-class 1:20
+-A DC_CAPACITY_MANAGEMENT -m set --match-set DC_LOW_CAPACITY src -j CLASSIFY --set-class 1:30
+-A DC_CAPACITY_MANAGEMENT -m connlimit --connlimit-above 100 --connlimit-mask 24 -j LOG_AND_DROP
+-A DC_CAPACITY_MANAGEMENT -j ACCEPT
+
+# DC_SERVICE_MESH - Service mesh communication
+-A DC_SERVICE_MESH -m set --match-set DC_MESH_SERVICES src,dst,dst -j ACCEPT
+-A DC_SERVICE_MESH -m set --match-set DC_MESH_ENCRYPTED src,dst -j ACCEPT
+-A DC_SERVICE_MESH -p tcp -m multiport --dports 15000,15001,15006 -j ACCEPT
+-A DC_SERVICE_MESH -p tcp -m multiport --dports 8080,8443,9080,9443 -j ACCEPT
+-A DC_SERVICE_MESH -j ACCEPT
+
+# DC_MICROSERVICES - Microservices communication patterns
+-A DC_MICROSERVICES -m set --match-set DC_SERVICE_REGISTRY src,dst -j ACCEPT
+-A DC_MICROSERVICES -m set --match-set DC_CONFIG_SERVER src,dst,dst -j ACCEPT
+-A DC_MICROSERVICES -m set --match-set DC_API_GATEWAY_TARGETS src,dst -j DC_API_GATEWAY
+-A DC_MICROSERVICES -p tcp -m multiport --dports 8761,8888,8080 -j ACCEPT
+-A DC_MICROSERVICES -p tcp -m multiport --dports 50051,50052,50053 -j ACCEPT
+-A DC_MICROSERVICES -j ACCEPT
+
+# DC_CONTAINER_NETWORK - Container orchestration networking
+-A DC_CONTAINER_NETWORK -m set --match-set DC_CONTAINER_PODS src,dst -j ACCEPT
+-A DC_CONTAINER_NETWORK -m set --match-set DC_KUBERNETES_SERVICES src,dst,dst -j ACCEPT
+-A DC_CONTAINER_NETWORK -m set --match-set DC_DOCKER_NETWORKS src,dst -j ACCEPT
+-A DC_CONTAINER_NETWORK -p tcp -m multiport --dports 6443,2379,2380 -j ACCEPT
+-A DC_CONTAINER_NETWORK -p tcp -m multiport --dports 10250,10251,10252 -j ACCEPT
+-A DC_CONTAINER_NETWORK -j ACCEPT
+
+# DC_DATABASE_ACCESS - Database access control and optimization
+-A DC_DATABASE_ACCESS -m set --match-set DC_DB_POOL_ALLOWED src,dst -j ACCEPT
+-A DC_DATABASE_ACCESS -m set --match-set DC_DB_READONLY src,dst,dst -j ACCEPT
+-A DC_DATABASE_ACCESS -m set --match-set DC_DB_READWRITE src,dst -j ACCEPT
+-A DC_DATABASE_ACCESS -m connlimit --connlimit-above 50 --connlimit-mask 32 -j LOG_AND_DROP
+-A DC_DATABASE_ACCESS -p tcp -m multiport --dports 1433,3306,5432,27017 -j ACCEPT
+-A DC_DATABASE_ACCESS -j RATE_LIMIT
+
+# DC_API_GATEWAY - API gateway and routing
+-A DC_API_GATEWAY -m set --match-set DC_API_CONSUMERS src,dst,dst -j ACCEPT
+-A DC_API_GATEWAY -m set --match-set DC_API_RATE_LIMITED src -m limit --limit 100/sec --limit-burst 200 -j ACCEPT
+-A DC_API_GATEWAY -m set --match-set DC_API_RATE_LIMITED src -j LOG_AND_DROP
+-A DC_API_GATEWAY -m set --match-set DC_API_PREMIUM src -j ACCEPT
+-A DC_API_GATEWAY -p tcp -m multiport --dports 80,443,8080,8443 -j ACCEPT
+-A DC_API_GATEWAY -j RATE_LIMIT
+
+# DC_CACHE_CONTROL - Cache tier management
+-A DC_CACHE_CONTROL -m set --match-set DC_CACHE_CLUSTERS src,dst -j ACCEPT
+-A DC_CACHE_CONTROL -m set --match-set DC_CACHE_REPLICATION src,dst,dst -j ACCEPT
+-A DC_CACHE_CONTROL -p tcp -m multiport --dports 6379,11211,9042 -j ACCEPT
+-A DC_CACHE_CONTROL -p tcp -m multiport --dports 7000,7001,9160 -j ACCEPT
+-A DC_CACHE_CONTROL -j ACCEPT
+
+# DC_BACKUP_CONTROL - Backup and recovery operations
+-A DC_BACKUP_CONTROL -m set --match-set DC_BACKUP_SERVERS src,dst -j ACCEPT_WITH_LOG
+-A DC_BACKUP_CONTROL -m set --match-set DC_BACKUP_SCHEDULE src,dst,dst -m time --timestart 02:00 --timestop 06:00 -j ACCEPT
+-A DC_BACKUP_CONTROL -m set --match-set DC_BACKUP_PRIORITY src,dst -j DSCP --set-dscp-class AF31
+-A DC_BACKUP_CONTROL -p tcp -m multiport --dports 22,443,8080 -j ACCEPT
+-A DC_BACKUP_CONTROL -j RATE_LIMIT
+
+# DC_REPLICATION_CONTROL - Data replication management
+-A DC_REPLICATION_CONTROL -m set --match-set DC_REPLICATION_PAIRS src,dst -j ACCEPT_WITH_LOG
+-A DC_REPLICATION_CONTROL -m set --match-set DC_REPLICATION_PRIORITY src,dst,dst -j DSCP --set-dscp-class EF
+-A DC_REPLICATION_CONTROL -m set --match-set DC_ASYNC_REPLICATION src,dst -j CLASSIFY --set-class 1:30
+-A DC_REPLICATION_CONTROL -m set --match-set DC_SYNC_REPLICATION src,dst -j CLASSIFY --set-class 1:10
+-A DC_REPLICATION_CONTROL -j ACCEPT
+
+# RATE_LIMIT - Generic rate limiting
+-A RATE_LIMIT -m limit --limit 200/sec --limit-burst 400 -j ACCEPT
+-A RATE_LIMIT -j DROP
+
+# LOG_AND_DROP - Logging and dropping
+-A LOG_AND_DROP -j LOG --log-prefix "DC_DROPPED: " --log-level 4
+-A LOG_AND_DROP -j DROP
+
+# ACCEPT_WITH_LOG - Logging and accepting
+-A ACCEPT_WITH_LOG -j LOG --log-prefix "DC_ACCEPTED: " --log-level 6
+-A ACCEPT_WITH_LOG -j ACCEPT
+
+COMMIT
+# Completed on Fri Jun 21 15:21:17 2025
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:iptables_save ===
+
+=== TSIM_SECTION_START:ipset_save ===
+TITLE: Complete Ipset Configuration
+COMMAND: /sbin/ipset save
+TIMESTAMP: 2025-06-21 15:21:17
+---
+create DC_SRV_ALLOWED hash:ip family inet hashsize 1024 maxelem 65536
+add DC_SRV_ALLOWED 10.3.2.0/24
+add DC_SRV_ALLOWED 10.3.1.10
+add DC_SRV_ALLOWED 10.3.1.11
+add DC_SRV_ALLOWED 10.3.1.12
+
+create DC_APP_ALLOWED hash:ip family inet hashsize 1024 maxelem 65536
+add DC_APP_ALLOWED 10.3.10.0/24
+add DC_APP_ALLOWED 10.3.1.20
+add DC_APP_ALLOWED 10.3.1.21
+add DC_APP_ALLOWED 10.3.1.22
+
+create DC_PROD_ALLOWED hash:ip family inet hashsize 1024 maxelem 65536
+add DC_PROD_ALLOWED 10.3.20.0/24
+add DC_PROD_ALLOWED 10.3.1.30
+add DC_PROD_ALLOWED 10.3.1.31
+add DC_PROD_ALLOWED 10.3.1.32
+
+create DC_STORAGE_ALLOWED hash:ip family inet hashsize 1024 maxelem 65536
+add DC_STORAGE_ALLOWED 10.3.21.0/24
+add DC_STORAGE_ALLOWED 10.3.1.40
+add DC_STORAGE_ALLOWED 10.3.1.41
+add DC_STORAGE_ALLOWED 10.3.1.42
+
+create DC_SRV_CLIENTS hash:ip family inet hashsize 1024 maxelem 65536
+add DC_SRV_CLIENTS 10.3.2.10
+add DC_SRV_CLIENTS 10.3.2.11
+add DC_SRV_CLIENTS 10.3.2.12
+add DC_SRV_CLIENTS 10.3.2.13
+add DC_SRV_CLIENTS 10.3.2.14
+add DC_SRV_CLIENTS 10.3.2.15
+add DC_SRV_CLIENTS 10.3.2.16
+add DC_SRV_CLIENTS 10.3.2.17
+add DC_SRV_CLIENTS 10.3.2.18
+add DC_SRV_CLIENTS 10.3.2.19
+add DC_SRV_CLIENTS 10.3.2.20
+
+create DC_SRV_TO_APP hash:ip family inet hashsize 512 maxelem 32768
+add DC_SRV_TO_APP 10.3.10.0/24
+
+create DC_SRV_TO_PROD hash:ip family inet hashsize 512 maxelem 32768
+add DC_SRV_TO_PROD 10.3.20.0/24
+
+create DC_SRV_TO_STORAGE hash:ip family inet hashsize 512 maxelem 32768
+add DC_SRV_TO_STORAGE 10.3.21.0/24
+
+create DC_APP_CLIENTS hash:ip family inet hashsize 1024 maxelem 65536
+add DC_APP_CLIENTS 10.3.10.10
+add DC_APP_CLIENTS 10.3.10.11
+add DC_APP_CLIENTS 10.3.10.12
+add DC_APP_CLIENTS 10.3.10.13
+add DC_APP_CLIENTS 10.3.10.14
+add DC_APP_CLIENTS 10.3.10.15
+add DC_APP_CLIENTS 10.3.10.16
+add DC_APP_CLIENTS 10.3.10.17
+add DC_APP_CLIENTS 10.3.10.18
+add DC_APP_CLIENTS 10.3.10.19
+add DC_APP_CLIENTS 10.3.10.20
+
+create DC_APP_TO_SRV hash:ip family inet hashsize 512 maxelem 32768
+add DC_APP_TO_SRV 10.3.2.0/24
+
+create DC_APP_TO_PROD hash:ip family inet hashsize 512 maxelem 32768
+add DC_APP_TO_PROD 10.3.20.0/24
+
+create DC_APP_TO_STORAGE hash:ip family inet hashsize 512 maxelem 32768
+add DC_APP_TO_STORAGE 10.3.21.0/24
+
+create DC_PROD_CLIENTS hash:ip family inet hashsize 1024 maxelem 65536
+add DC_PROD_CLIENTS 10.3.20.10
+add DC_PROD_CLIENTS 10.3.20.11
+add DC_PROD_CLIENTS 10.3.20.12
+add DC_PROD_CLIENTS 10.3.20.13
+add DC_PROD_CLIENTS 10.3.20.14
+add DC_PROD_CLIENTS 10.3.20.15
+add DC_PROD_CLIENTS 10.3.20.16
+add DC_PROD_CLIENTS 10.3.20.17
+add DC_PROD_CLIENTS 10.3.20.18
+add DC_PROD_CLIENTS 10.3.20.19
+add DC_PROD_CLIENTS 10.3.20.20
+
+create DC_PROD_TO_SRV hash:ip family inet hashsize 512 maxelem 32768
+add DC_PROD_TO_SRV 10.3.2.0/24
+
+create DC_PROD_TO_APP hash:ip family inet hashsize 512 maxelem 32768
+add DC_PROD_TO_APP 10.3.10.0/24
+
+create DC_PROD_TO_STORAGE hash:ip family inet hashsize 512 maxelem 32768
+add DC_PROD_TO_STORAGE 10.3.21.0/24
+
+create DC_STORAGE_CLIENTS hash:ip family inet hashsize 1024 maxelem 65536
+add DC_STORAGE_CLIENTS 10.3.21.10
+add DC_STORAGE_CLIENTS 10.3.21.11
+add DC_STORAGE_CLIENTS 10.3.21.12
+add DC_STORAGE_CLIENTS 10.3.21.13
+add DC_STORAGE_CLIENTS 10.3.21.14
+add DC_STORAGE_CLIENTS 10.3.21.15
+add DC_STORAGE_CLIENTS 10.3.21.16
+add DC_STORAGE_CLIENTS 10.3.21.17
+add DC_STORAGE_CLIENTS 10.3.21.18
+add DC_STORAGE_CLIENTS 10.3.21.19
+add DC_STORAGE_CLIENTS 10.3.21.20
+
+create DC_STORAGE_TO_SRV hash:ip family inet hashsize 512 maxelem 32768
+add DC_STORAGE_TO_SRV 10.3.2.0/24
+
+create DC_STORAGE_TO_APP hash:ip family inet hashsize 512 maxelem 32768
+add DC_STORAGE_TO_APP 10.3.10.0/24
+
+create DC_STORAGE_TO_PROD hash:ip family inet hashsize 512 maxelem 32768
+add DC_STORAGE_TO_PROD 10.3.20.0/24
+
+create DC_CRITICAL_SERVICES hash:net,net family inet hashsize 1024 maxelem 65536
+add DC_CRITICAL_SERVICES 10.3.2.0/24,10.3.20.0/24
+add DC_CRITICAL_SERVICES 10.3.20.0/24,10.3.2.0/24
+add DC_CRITICAL_SERVICES 10.3.10.0/24,10.3.21.0/24
+add DC_CRITICAL_SERVICES 10.3.21.0/24,10.3.10.0/24
+add DC_CRITICAL_SERVICES 10.3.2.0/24,10.3.21.0/24
+
+create DC_HIGH_AVAILABILITY hash:net,net,port family inet hashsize 1024 maxelem 65536
+add DC_HIGH_AVAILABILITY 10.3.2.10,10.3.20.0/24,tcp:80
+add DC_HIGH_AVAILABILITY 10.3.2.10,10.3.20.0/24,tcp:443
+add DC_HIGH_AVAILABILITY 10.3.2.11,10.3.20.0/24,tcp:3306
+add DC_HIGH_AVAILABILITY 10.3.2.12,10.3.20.0/24,tcp:5432
+add DC_HIGH_AVAILABILITY 10.3.10.10,10.3.21.0/24,tcp:8080
+add DC_HIGH_AVAILABILITY 10.3.10.11,10.3.21.0/24,tcp:9000
+add DC_HIGH_AVAILABILITY 10.3.20.10,10.3.21.0/24,tcp:2049
+add DC_HIGH_AVAILABILITY 10.3.20.11,10.3.21.0/24,tcp:3260
+
+create DC_BUSINESS_CRITICAL hash:ip family inet hashsize 512 maxelem 32768
+add DC_BUSINESS_CRITICAL 10.3.2.10
+add DC_BUSINESS_CRITICAL 10.3.2.11
+add DC_BUSINESS_CRITICAL 10.3.2.12
+add DC_BUSINESS_CRITICAL 10.3.20.10
+add DC_BUSINESS_CRITICAL 10.3.20.11
+add DC_BUSINESS_CRITICAL 10.3.20.12
+add DC_BUSINESS_CRITICAL 10.3.21.10
+add DC_BUSINESS_CRITICAL 10.3.21.11
+
+create DC_MAINTENANCE_MODE hash:ip family inet hashsize 256 maxelem 16384
+add DC_MAINTENANCE_MODE 10.3.2.100
+add DC_MAINTENANCE_MODE 10.3.10.100
+add DC_MAINTENANCE_MODE 10.3.20.100
+add DC_MAINTENANCE_MODE 10.3.21.100
+
+create DC_PRIORITY_TRAFFIC hash:net,net family inet hashsize 1024 maxelem 65536
+add DC_PRIORITY_TRAFFIC 10.3.2.0/24,10.3.20.0/24
+add DC_PRIORITY_TRAFFIC 10.3.20.0/24,10.3.2.0/24
+add DC_PRIORITY_TRAFFIC 10.3.10.0/24,10.3.21.0/24
+add DC_PRIORITY_TRAFFIC 10.3.21.0/24,10.3.10.0/24
+add DC_PRIORITY_TRAFFIC 10.3.2.0/24,10.1.0.0/16
+add DC_PRIORITY_TRAFFIC 10.3.2.0/24,10.2.0.0/16
+add DC_PRIORITY_TRAFFIC 10.3.20.0/24,10.1.0.0/16
+add DC_PRIORITY_TRAFFIC 10.3.20.0/24,10.2.0.0/16
+
+create DC_TIER_MATRIX hash:net,net family inet hashsize 1024 maxelem 65536
+add DC_TIER_MATRIX 10.3.2.0/24,10.3.10.0/24
+add DC_TIER_MATRIX 10.3.10.0/24,10.3.2.0/24
+add DC_TIER_MATRIX 10.3.10.0/24,10.3.20.0/24
+add DC_TIER_MATRIX 10.3.20.0/24,10.3.10.0/24
+add DC_TIER_MATRIX 10.3.20.0/24,10.3.21.0/24
+add DC_TIER_MATRIX 10.3.21.0/24,10.3.20.0/24
+add DC_TIER_MATRIX 10.3.2.0/24,10.3.21.0/24
+add DC_TIER_MATRIX 10.3.21.0/24,10.3.2.0/24
+add DC_TIER_MATRIX 10.3.2.0/24,10.1.0.0/16
+add DC_TIER_MATRIX 10.3.10.0/24,10.1.0.0/16
+add DC_TIER_MATRIX 10.3.20.0/24,10.1.0.0/16
+add DC_TIER_MATRIX 10.3.2.0/24,10.2.0.0/16
+add DC_TIER_MATRIX 10.3.10.0/24,10.2.0.0/16
+add DC_TIER_MATRIX 10.3.20.0/24,10.2.0.0/16
+
+create DC_TIER_RESTRICTED hash:net,net family inet hashsize 512 maxelem 32768
+add DC_TIER_RESTRICTED 10.3.21.0/24,10.3.10.0/24
+add DC_TIER_RESTRICTED 10.3.10.0/24,10.3.21.0/24
+add DC_TIER_RESTRICTED 10.3.1.0/24,10.3.2.0/24
+add DC_TIER_RESTRICTED 10.3.1.0/24,10.3.10.0/24
+add DC_TIER_RESTRICTED 10.3.1.0/24,10.3.20.0/24
+add DC_TIER_RESTRICTED 10.3.1.0/24,10.3.21.0/24
+
+create DC_WEB_TIER hash:ip family inet hashsize 512 maxelem 32768
+add DC_WEB_TIER 10.3.2.10
+add DC_WEB_TIER 10.3.2.11
+add DC_WEB_TIER 10.3.2.12
+add DC_WEB_TIER 10.3.10.10
+add DC_WEB_TIER 10.3.10.11
+add DC_WEB_TIER 10.3.20.10
+add DC_WEB_TIER 10.3.20.11
+
+create DC_DB_TIER hash:ip family inet hashsize 512 maxelem 32768
+add DC_DB_TIER 10.3.2.20
+add DC_DB_TIER 10.3.2.21
+add DC_DB_TIER 10.3.2.22
+add DC_DB_TIER 10.3.20.20
+add DC_DB_TIER 10.3.20.21
+add DC_DB_TIER 10.3.20.22
+
+create DC_CACHE_TIER hash:ip family inet hashsize 512 maxelem 32768
+add DC_CACHE_TIER 10.3.2.30
+add DC_CACHE_TIER 10.3.2.31
+add DC_CACHE_TIER 10.3.10.30
+add DC_CACHE_TIER 10.3.10.31
+add DC_CACHE_TIER 10.3.20.30
+add DC_CACHE_TIER 10.3.20.31
+
+create DC_SRV_ADMIN_ALLOWED hash:net,net family inet hashsize 512 maxelem 32768
+add DC_SRV_ADMIN_ALLOWED 10.3.1.10,10.3.2.0/24
+add DC_SRV_ADMIN_ALLOWED 10.3.1.11,10.3.2.0/24
+add DC_SRV_ADMIN_ALLOWED 10.1.2.3,10.3.2.0/24
+add DC_SRV_ADMIN_ALLOWED 10.2.1.10,10.3.2.0/24
+
+create DC_SRV_MONITORING hash:net,net,port family inet hashsize 512 maxelem 32768
+add DC_SRV_MONITORING 10.3.2.0/24,10.3.1.100,tcp:161
+add DC_SRV_MONITORING 10.3.2.0/24,10.3.1.100,udp:161
+add DC_SRV_MONITORING 10.3.2.0/24,10.3.1.101,tcp:9100
+add DC_SRV_MONITORING 10.3.2.0/24,10.3.1.101,tcp:3000
+add DC_SRV_MONITORING 10.3.2.0/24,10.3.1.102,tcp:8086
+add DC_SRV_MONITORING 10.3.2.0/24,10.3.1.102,tcp:9090
+
+create DC_SRV_BACKUP_ALLOWED hash:net,net family inet hashsize 512 maxelem 32768
+add DC_SRV_BACKUP_ALLOWED 10.3.21.50,10.3.2.0/24
+add DC_SRV_BACKUP_ALLOWED 10.3.21.51,10.3.2.0/24
+add DC_SRV_BACKUP_ALLOWED 10.3.21.52,10.3.2.0/24
+add DC_SRV_BACKUP_ALLOWED 10.3.1.50,10.3.2.0/24
+
+create DC_ADMIN_HOSTS hash:ip family inet hashsize 256 maxelem 16384
+add DC_ADMIN_HOSTS 10.3.1.10
+add DC_ADMIN_HOSTS 10.3.1.11
+add DC_ADMIN_HOSTS 10.1.2.3
+add DC_ADMIN_HOSTS 10.2.1.10
+
+create DC_MONITORING_ALLOWED hash:ip family inet hashsize 256 maxelem 16384
+add DC_MONITORING_ALLOWED 10.3.1.100
+add DC_MONITORING_ALLOWED 10.3.1.101
+add DC_MONITORING_ALLOWED 10.3.1.102
+add DC_MONITORING_ALLOWED 10.1.2.3
+
+create DC_APP_SERVICES hash:net,net,port family inet hashsize 1024 maxelem 65536
+add DC_APP_SERVICES 10.3.10.10,10.3.2.0/24,tcp:8080
+add DC_APP_SERVICES 10.3.10.10,10.3.2.0/24,tcp:8443
+add DC_APP_SERVICES 10.3.10.11,10.3.2.0/24,tcp:9080
+add DC_APP_SERVICES 10.3.10.11,10.3.2.0/24,tcp:9443
+add DC_APP_SERVICES 10.3.10.12,10.3.20.0/24,tcp:4000
+add DC_APP_SERVICES 10.3.10.13,10.3.20.0/24,tcp:5000
+add DC_APP_SERVICES 10.3.10.14,10.3.21.0/24,tcp:6000
+add DC_APP_SERVICES 10.3.10.15,10.3.21.0/24,tcp:7000
+
+create DC_APP_LOAD_BALANCED hash:net,net family inet hashsize 512 maxelem 32768
+add DC_APP_LOAD_BALANCED 10.3.10.10,10.3.2.0/24
+add DC_APP_LOAD_BALANCED 10.3.10.11,10.3.2.0/24
+add DC_APP_LOAD_BALANCED 10.3.10.12,10.3.2.0/24
+add DC_APP_LOAD_BALANCED 10.3.10.13,10.3.20.0/24
+add DC_APP_LOAD_BALANCED 10.3.10.14,10.3.20.0/24
+add DC_APP_LOAD_BALANCED 10.3.10.15,10.3.20.0/24
+
+create DC_APP_MICROSERVICES hash:net,net family inet hashsize 512 maxelem 32768
+add DC_APP_MICROSERVICES 10.3.10.0/24,10.3.2.0/24
+add DC_APP_MICROSERVICES 10.3.10.0/24,10.3.20.0/24
+add DC_APP_MICROSERVICES 10.3.10.0/24,10.3.21.0/24
+add DC_APP_MICROSERVICES 10.3.2.0/24,10.3.10.0/24
+add DC_APP_MICROSERVICES 10.3.20.0/24,10.3.10.0/24
+
+create DC_PROD_CRITICAL hash:net,net family inet hashsize 512 maxelem 32768
+add DC_PROD_CRITICAL 10.3.20.10,10.3.2.0/24
+add DC_PROD_CRITICAL 10.3.20.11,10.3.2.0/24
+add DC_PROD_CRITICAL 10.3.20.12,10.3.10.0/24
+add DC_PROD_CRITICAL 10.3.20.13,10.3.10.0/24
+add DC_PROD_CRITICAL 10.3.20.14,10.3.21.0/24
+add DC_PROD_CRITICAL 10.3.20.15,10.3.21.0/24
+
+create DC_PROD_HIGH_AVAILABILITY hash:net,net,port family inet hashsize 512 maxelem 32768
+add DC_PROD_HIGH_AVAILABILITY 10.3.20.10,10.3.2.0/24,tcp:80
+add DC_PROD_HIGH_AVAILABILITY 10.3.20.10,10.3.2.0/24,tcp:443
+add DC_PROD_HIGH_AVAILABILITY 10.3.20.11,10.3.2.0/24,tcp:80
+add DC_PROD_HIGH_AVAILABILITY 10.3.20.11,10.3.2.0/24,tcp:443
+add DC_PROD_HIGH_AVAILABILITY 10.3.20.12,10.3.10.0/24,tcp:8080
+add DC_PROD_HIGH_AVAILABILITY 10.3.20.13,10.3.10.0/24,tcp:8443
+add DC_PROD_HIGH_AVAILABILITY 10.3.20.14,10.3.21.0/24,tcp:3306
+add DC_PROD_HIGH_AVAILABILITY 10.3.20.15,10.3.21.0/24,tcp:5432
+
+create DC_PROD_MONITORING hash:net,net family inet hashsize 512 maxelem 32768
+add DC_PROD_MONITORING 10.3.20.0/24,10.3.1.100
+add DC_PROD_MONITORING 10.3.20.0/24,10.3.1.101
+add DC_PROD_MONITORING 10.3.20.0/24,10.3.1.102
+add DC_PROD_MONITORING 10.3.20.0/24,10.1.2.3
+
+create DC_PROD_WEB_SERVERS hash:ip family inet hashsize 256 maxelem 16384
+add DC_PROD_WEB_SERVERS 10.3.20.10
+add DC_PROD_WEB_SERVERS 10.3.20.11
+add DC_PROD_WEB_SERVERS 10.3.20.12
+add DC_PROD_WEB_SERVERS 10.3.20.13
+
+create DC_PROD_ADMIN_HOSTS hash:ip family inet hashsize 256 maxelem 16384
+add DC_PROD_ADMIN_HOSTS 10.3.1.10
+add DC_PROD_ADMIN_HOSTS 10.3.1.11
+add DC_PROD_ADMIN_HOSTS 10.1.2.3
+add DC_PROD_ADMIN_HOSTS 10.2.1.10
+
+create DC_PROD_DB_CLIENTS hash:ip family inet hashsize 512 maxelem 32768
+add DC_PROD_DB_CLIENTS 10.3.10.10
+add DC_PROD_DB_CLIENTS 10.3.10.11
+add DC_PROD_DB_CLIENTS 10.3.10.12
+add DC_PROD_DB_CLIENTS 10.3.2.10
+add DC_PROD_DB_CLIENTS 10.3.2.11
+add DC_PROD_DB_CLIENTS 10.3.2.12
+
+create DC_STORAGE_CRITICAL hash:net,net family inet hashsize 512 maxelem 32768
+add DC_STORAGE_CRITICAL 10.3.21.10,10.3.20.0/24
+add DC_STORAGE_CRITICAL 10.3.21.11,10.3.20.0/24
+add DC_STORAGE_CRITICAL 10.3.21.12,10.3.2.0/24
+add DC_STORAGE_CRITICAL 10.3.21.13,10.3.2.0/24
+add DC_STORAGE_CRITICAL 10.3.21.14,10.3.10.0/24
+add DC_STORAGE_CRITICAL 10.3.21.15,10.3.10.0/24
+
+create DC_STORAGE_BACKUP hash:net,net,port family inet hashsize 512 maxelem 32768
+add DC_STORAGE_BACKUP 10.3.21.50,10.3.20.0/24,tcp:22
+add DC_STORAGE_BACKUP 10.3.21.51,10.3.20.0/24,tcp:443
+add DC_STORAGE_BACKUP 10.3.21.52,10.3.2.0/24,tcp:22
+add DC_STORAGE_BACKUP 10.3.21.53,10.3.2.0/24,tcp:443
+add DC_STORAGE_BACKUP 10.3.21.54,10.3.10.0/24,tcp:8080
+add DC_STORAGE_BACKUP 10.3.21.55,10.3.10.0/24,tcp:9000
+
+create DC_STORAGE_REPLICATION hash:net,net family inet hashsize 512 maxelem 32768
+add DC_STORAGE_REPLICATION 10.3.21.10,10.3.21.11
+add DC_STORAGE_REPLICATION 10.3.21.11,10.3.21.10
+add DC_STORAGE_REPLICATION 10.3.21.12,10.3.21.13
+add DC_STORAGE_REPLICATION 10.3.21.13,10.3.21.12
+add DC_STORAGE_REPLICATION 10.3.21.14,10.3.21.15
+add DC_STORAGE_REPLICATION 10.3.21.15,10.3.21.14
+
+create DC_LB_TARGETS hash:net,net family inet hashsize 512 maxelem 32768
+add DC_LB_TARGETS 10.3.2.0/24,10.3.10.10
+add DC_LB_TARGETS 10.3.2.0/24,10.3.10.11
+add DC_LB_TARGETS 10.3.2.0/24,10.3.10.12
+add DC_LB_TARGETS 10.3.10.0/24,10.3.20.10
+add DC_LB_TARGETS 10.3.10.0/24,10.3.20.11
+add DC_LB_TARGETS 10.3.10.0/24,10.3.20.12
+
+create DC_LB_WEIGHTED hash:net,net,port family inet hashsize 512 maxelem 32768
+add DC_LB_WEIGHTED 10.3.2.0/24,10.3.10.10,tcp:8080
+add DC_LB_WEIGHTED 10.3.2.0/24,10.3.10.11,tcp:8080
+add DC_LB_WEIGHTED 10.3.2.0/24,10.3.10.12,tcp:8080
+add DC_LB_WEIGHTED 10.3.10.0/24,10.3.20.10,tcp:80
+add DC_LB_WEIGHTED 10.3.10.0/24,10.3.20.11,tcp:80
+add DC_LB_WEIGHTED 10.3.10.0/24,10.3.20.12,tcp:80
+
+create DC_LB_PRIORITY hash:net,net family inet hashsize 256 maxelem 16384
+add DC_LB_PRIORITY 10.3.2.0/24,10.3.10.10
+add DC_LB_PRIORITY 10.3.10.0/24,10.3.20.10
+add DC_LB_PRIORITY 10.3.20.0/24,10.3.21.10
+
+create DC_PRIMARY_SERVERS hash:ip family inet hashsize 256 maxelem 16384
+add DC_PRIMARY_SERVERS 10.3.2.10
+add DC_PRIMARY_SERVERS 10.3.10.10
+add DC_PRIMARY_SERVERS 10.3.20.10
+add DC_PRIMARY_SERVERS 10.3.21.10
+
+create DC_SECONDARY_SERVERS hash:ip family inet hashsize 256 maxelem 16384
+add DC_SECONDARY_SERVERS 10.3.2.11
+add DC_SECONDARY_SERVERS 10.3.10.11
+add DC_SECONDARY_SERVERS 10.3.20.11
+add DC_SECONDARY_SERVERS 10.3.21.11
+
+create DC_BACKUP_SERVERS hash:ip family inet hashsize 256 maxelem 16384
+add DC_BACKUP_SERVERS 10.3.2.12
+add DC_BACKUP_SERVERS 10.3.10.12
+add DC_BACKUP_SERVERS 10.3.20.12
+add DC_BACKUP_SERVERS 10.3.21.12
+
+create DC_DR_REPLICATION hash:net,net,port family inet hashsize 512 maxelem 32768
+add DC_DR_REPLICATION 10.3.2.10,10.2.5.0/24,tcp:3306
+add DC_DR_REPLICATION 10.3.2.11,10.2.5.0/24,tcp:5432
+add DC_DR_REPLICATION 10.3.20.10,10.1.3.0/24,tcp:80
+add DC_DR_REPLICATION 10.3.20.11,10.1.3.0/24,tcp:443
+add DC_DR_REPLICATION 10.3.21.10,10.1.10.0/24,tcp:2049
+add DC_DR_REPLICATION 10.3.21.11,10.2.6.0/24,tcp:3260
+
+create DC_DR_BACKUP hash:net,net family inet hashsize 256 maxelem 16384
+add DC_DR_BACKUP 10.3.2.0/24,10.2.5.0/24
+add DC_DR_BACKUP 10.3.10.0/24,10.1.10.0/24
+add DC_DR_BACKUP 10.3.20.0/24,10.1.3.0/24
+add DC_DR_BACKUP 10.3.21.0/24,10.2.6.0/24
+
+create DC_DR_PRIORITY hash:net,net family inet hashsize 256 maxelem 16384
+add DC_DR_PRIORITY 10.3.2.0/24,10.2.5.0/24
+add DC_DR_PRIORITY 10.3.20.0/24,10.1.3.0/24
+add DC_DR_PRIORITY 10.3.21.0/24,10.1.10.0/24
+
+create DC_DMZ_ZONE hash:net,net family inet hashsize 256 maxelem 16384
+add DC_DMZ_ZONE 10.3.1.0/24,10.3.2.0/24
+add DC_DMZ_ZONE 10.3.1.0/24,10.3.10.0/24
+add DC_DMZ_ZONE 10.3.1.0/24,10.3.20.0/24
+add DC_DMZ_ZONE 10.3.1.0/24,10.3.21.0/24
+
+create DC_TRUSTED_ZONE hash:net,net family inet hashsize 512 maxelem 32768
+add DC_TRUSTED_ZONE 10.3.2.0/24,10.3.10.0/24
+add DC_TRUSTED_ZONE 10.3.10.0/24,10.3.2.0/24
+add DC_TRUSTED_ZONE 10.3.20.0/24,10.3.21.0/24
+add DC_TRUSTED_ZONE 10.3.21.0/24,10.3.20.0/24
+add DC_TRUSTED_ZONE 10.3.2.0/24,10.3.20.0/24
+add DC_TRUSTED_ZONE 10.3.20.0/24,10.3.2.0/24
+
+create DC_RESTRICTED_ZONE hash:net,net family inet hashsize 256 maxelem 16384
+add DC_RESTRICTED_ZONE 10.3.21.0/24,10.3.10.0/24
+add DC_RESTRICTED_ZONE 10.3.10.0/24,10.3.21.0/24
+add DC_RESTRICTED_ZONE 10.3.1.0/24,10.3.2.0/24
+add DC_RESTRICTED_ZONE 10.3.1.0/24,10.3.10.0/24
+
+create DC_QUARANTINE_ZONE hash:ip family inet hashsize 256 maxelem 16384
+add DC_QUARANTINE_ZONE 10.3.1.200
+add DC_QUARANTINE_ZONE 10.3.2.200
+add DC_QUARANTINE_ZONE 10.3.10.200
+add DC_QUARANTINE_ZONE 10.3.20.200
+add DC_QUARANTINE_ZONE 10.3.21.200
+
+create DC_AUDIT_REQUIRED hash:net,net family inet hashsize 512 maxelem 32768
+add DC_AUDIT_REQUIRED 10.3.2.0/24,10.3.20.0/24
+add DC_AUDIT_REQUIRED 10.3.20.0/24,10.3.2.0/24
+add DC_AUDIT_REQUIRED 10.3.10.0/24,10.3.21.0/24
+add DC_AUDIT_REQUIRED 10.3.21.0/24,10.3.10.0/24
+add DC_AUDIT_REQUIRED 10.3.2.0/24,10.1.0.0/16
+add DC_AUDIT_REQUIRED 10.3.20.0/24,10.2.0.0/16
+
+create DC_PCI_SCOPE hash:net,net,port family inet hashsize 256 maxelem 16384
+add DC_PCI_SCOPE 10.3.2.0/24,10.3.20.0/24,tcp:443
+add DC_PCI_SCOPE 10.3.20.0/24,10.3.2.0/24,tcp:1433
+add DC_PCI_SCOPE 10.3.20.0/24,10.3.2.0/24,tcp:3306
+add DC_PCI_SCOPE 10.3.10.0/24,10.3.20.0/24,tcp:8443
+
+create DC_SOX_SCOPE hash:net,net family inet hashsize 256 maxelem 16384
+add DC_SOX_SCOPE 10.3.2.0/24,10.3.20.0/24
+add DC_SOX_SCOPE 10.3.20.0/24,10.3.21.0/24
+add DC_SOX_SCOPE 10.3.10.0/24,10.3.2.0/24
+
+create DC_HIPAA_SCOPE hash:net,net family inet hashsize 256 maxelem 16384
+add DC_HIPAA_SCOPE 10.3.2.20,10.3.20.0/24
+add DC_HIPAA_SCOPE 10.3.2.21,10.3.20.0/24
+add DC_HIPAA_SCOPE 10.3.20.20,10.3.21.0/24
+add DC_HIPAA_SCOPE 10.3.20.21,10.3.21.0/24
+
+create DC_PERFORMANCE_TARGETS hash:ip family inet hashsize 256 maxelem 16384
+add DC_PERFORMANCE_TARGETS 10.3.2.10
+add DC_PERFORMANCE_TARGETS 10.3.2.11
+add DC_PERFORMANCE_TARGETS 10.3.10.10
+add DC_PERFORMANCE_TARGETS 10.3.10.11
+add DC_PERFORMANCE_TARGETS 10.3.20.10
+add DC_PERFORMANCE_TARGETS 10.3.20.11
+add DC_PERFORMANCE_TARGETS 10.3.21.10
+add DC_PERFORMANCE_TARGETS 10.3.21.11
+
+create DC_HIGH_CAPACITY hash:ip family inet hashsize 256 maxelem 16384
+add DC_HIGH_CAPACITY 10.3.2.10
+add DC_HIGH_CAPACITY 10.3.2.11
+add DC_HIGH_CAPACITY 10.3.20.10
+add DC_HIGH_CAPACITY 10.3.20.11
+add DC_HIGH_CAPACITY 10.3.21.10
+add DC_HIGH_CAPACITY 10.3.21.11
+
+create DC_MEDIUM_CAPACITY hash:ip family inet hashsize 512 maxelem 32768
+add DC_MEDIUM_CAPACITY 10.3.2.12
+add DC_MEDIUM_CAPACITY 10.3.2.13
+add DC_MEDIUM_CAPACITY 10.3.10.10
+add DC_MEDIUM_CAPACITY 10.3.10.11
+add DC_MEDIUM_CAPACITY 10.3.20.12
+add DC_MEDIUM_CAPACITY 10.3.20.13
+
+create DC_LOW_CAPACITY hash:ip family inet hashsize 512 maxelem 32768
+add DC_LOW_CAPACITY 10.3.2.20
+add DC_LOW_CAPACITY 10.3.10.20
+add DC_LOW_CAPACITY 10.3.20.20
+add DC_LOW_CAPACITY 10.3.21.20
+add DC_LOW_CAPACITY 10.3.1.0/24
+
+create DC_MESH_SERVICES hash:net,net,port family inet hashsize 512 maxelem 32768
+add DC_MESH_SERVICES 10.3.10.0/24,10.3.2.0/24,tcp:15000
+add DC_MESH_SERVICES 10.3.10.0/24,10.3.2.0/24,tcp:15001
+add DC_MESH_SERVICES 10.3.10.0/24,10.3.20.0/24,tcp:15006
+add DC_MESH_SERVICES 10.3.2.0/24,10.3.10.0/24,tcp:15000
+add DC_MESH_SERVICES 10.3.2.0/24,10.3.20.0/24,tcp:15001
+add DC_MESH_SERVICES 10.3.20.0/24,10.3.10.0/24,tcp:15006
+
+create DC_MESH_ENCRYPTED hash:net,net family inet hashsize 256 maxelem 16384
+add DC_MESH_ENCRYPTED 10.3.10.0/24,10.3.2.0/24
+add DC_MESH_ENCRYPTED 10.3.2.0/24,10.3.10.0/24
+add DC_MESH_ENCRYPTED 10.3.10.0/24,10.3.20.0/24
+add DC_MESH_ENCRYPTED 10.3.20.0/24,10.3.10.0/24
+
+create DC_SERVICE_REGISTRY hash:net,net family inet hashsize 256 maxelem 16384
+add DC_SERVICE_REGISTRY 10.3.10.0/24,10.3.1.100
+add DC_SERVICE_REGISTRY 10.3.2.0/24,10.3.1.100
+add DC_SERVICE_REGISTRY 10.3.20.0/24,10.3.1.100
+
+create DC_CONFIG_SERVER hash:net,net,port family inet hashsize 256 maxelem 16384
+add DC_CONFIG_SERVER 10.3.10.0/24,10.3.1.101,tcp:8888
+add DC_CONFIG_SERVER 10.3.2.0/24,10.3.1.101,tcp:8888
+add DC_CONFIG_SERVER 10.3.20.0/24,10.3.1.101,tcp:8888
+
+create DC_API_GATEWAY_TARGETS hash:net,net family inet hashsize 256 maxelem 16384
+add DC_API_GATEWAY_TARGETS 10.3.2.0/24,10.3.1.110
+add DC_API_GATEWAY_TARGETS 10.3.10.0/24,10.3.1.110
+add DC_API_GATEWAY_TARGETS 10.3.20.0/24,10.3.1.110
+
+create DC_CONTAINER_PODS hash:net,net family inet hashsize 512 maxelem 32768
+add DC_CONTAINER_PODS 10.3.10.0/24,10.3.2.0/24
+add DC_CONTAINER_PODS 10.3.2.0/24,10.3.10.0/24
+add DC_CONTAINER_PODS 10.3.10.0/24,10.3.20.0/24
+add DC_CONTAINER_PODS 10.3.20.0/24,10.3.10.0/24
+add DC_CONTAINER_PODS 10.3.10.0/24,10.3.21.0/24
+add DC_CONTAINER_PODS 10.3.21.0/24,10.3.10.0/24
+
+create DC_KUBERNETES_SERVICES hash:net,net,port family inet hashsize 256 maxelem 16384
+add DC_KUBERNETES_SERVICES 10.3.10.0/24,10.3.1.200,tcp:6443
+add DC_KUBERNETES_SERVICES 10.3.10.0/24,10.3.1.201,tcp:2379
+add DC_KUBERNETES_SERVICES 10.3.10.0/24,10.3.1.202,tcp:10250
+
+create DC_DOCKER_NETWORKS hash:net,net family inet hashsize 256 maxelem 16384
+add DC_DOCKER_NETWORKS 172.17.0.0/16,10.3.10.0/24
+add DC_DOCKER_NETWORKS 172.18.0.0/16,10.3.2.0/24
+add DC_DOCKER_NETWORKS 172.19.0.0/16,10.3.20.0/24
+
+create DC_DB_POOL_ALLOWED hash:net,net family inet hashsize 512 maxelem 32768
+add DC_DB_POOL_ALLOWED 10.3.10.0/24,10.3.2.20
+add DC_DB_POOL_ALLOWED 10.3.10.0/24,10.3.2.21
+add DC_DB_POOL_ALLOWED 10.3.20.0/24,10.3.2.20
+add DC_DB_POOL_ALLOWED 10.3.20.0/24,10.3.2.21
+add DC_DB_POOL_ALLOWED 10.3.2.0/24,10.3.20.20
+add DC_DB_POOL_ALLOWED 10.3.2.0/24,10.3.20.21
+
+create DC_DB_READONLY hash:net,net,port family inet hashsize 256 maxelem 16384
+add DC_DB_READONLY 10.3.10.0/24,10.3.2.20,tcp:3306
+add DC_DB_READONLY 10.3.10.0/24,10.3.2.21,tcp:5432
+add DC_DB_READONLY 10.3.20.0/24,10.3.2.20,tcp:3306
+add DC_DB_READONLY 10.3.20.0/24,10.3.2.21,tcp:5432
+
+create DC_DB_READWRITE hash:net,net family inet hashsize 256 maxelem 16384
+add DC_DB_READWRITE 10.3.2.10,10.3.2.20
+add DC_DB_READWRITE 10.3.2.11,10.3.2.21
+add DC_DB_READWRITE 10.3.20.10,10.3.20.20
+add DC_DB_READWRITE 10.3.20.11,10.3.20.21
+
+create DC_API_CONSUMERS hash:net,net,port family inet hashsize 512 maxelem 32768
+add DC_API_CONSUMERS 10.3.2.0/24,10.3.1.110,tcp:80
+add DC_API_CONSUMERS 10.3.2.0/24,10.3.1.110,tcp:443
+add DC_API_CONSUMERS 10.3.10.0/24,10.3.1.110,tcp:8080
+add DC_API_CONSUMERS 10.3.10.0/24,10.3.1.110,tcp:8443
+add DC_API_CONSUMERS 10.3.20.0/24,10.3.1.110,tcp:80
+add DC_API_CONSUMERS 10.3.20.0/24,10.3.1.110,tcp:443
+
+create DC_API_RATE_LIMITED hash:ip family inet hashsize 512 maxelem 32768
+add DC_API_RATE_LIMITED 10.3.2.100
+add DC_API_RATE_LIMITED 10.3.10.100
+add DC_API_RATE_LIMITED 10.3.20.100
+add DC_API_RATE_LIMITED 10.3.21.100
+add DC_API_RATE_LIMITED 10.3.1.100
+
+create DC_API_PREMIUM hash:ip family inet hashsize 256 maxelem 16384
+add DC_API_PREMIUM 10.3.2.10
+add DC_API_PREMIUM 10.3.2.11
+add DC_API_PREMIUM 10.3.10.10
+add DC_API_PREMIUM 10.3.10.11
+add DC_API_PREMIUM 10.3.20.10
+add DC_API_PREMIUM 10.3.20.11
+
+create DC_CACHE_CLUSTERS hash:net,net family inet hashsize 256 maxelem 16384
+add DC_CACHE_CLUSTERS 10.3.2.30,10.3.2.31
+add DC_CACHE_CLUSTERS 10.3.10.30,10.3.10.31
+add DC_CACHE_CLUSTERS 10.3.20.30,10.3.20.31
+
+create DC_CACHE_REPLICATION hash:net,net,port family inet hashsize 256 maxelem 16384
+add DC_CACHE_REPLICATION 10.3.2.30,10.3.2.31,tcp:6379
+add DC_CACHE_REPLICATION 10.3.10.30,10.3.10.31,tcp:11211
+add DC_CACHE_REPLICATION 10.3.20.30,10.3.20.31,tcp:9042
+
+create DC_BACKUP_SERVERS hash:net,net family inet hashsize 256 maxelem 16384
+add DC_BACKUP_SERVERS 10.3.21.50,10.3.2.0/24
+add DC_BACKUP_SERVERS 10.3.21.51,10.3.10.0/24
+add DC_BACKUP_SERVERS 10.3.21.52,10.3.20.0/24
+add DC_BACKUP_SERVERS 10.3.21.53,10.3.21.0/24
+
+create DC_BACKUP_SCHEDULE hash:net,net,port family inet hashsize 256 maxelem 16384
+add DC_BACKUP_SCHEDULE 10.3.21.50,10.3.2.0/24,tcp:22
+add DC_BACKUP_SCHEDULE 10.3.21.51,10.3.10.0/24,tcp:443
+add DC_BACKUP_SCHEDULE 10.3.21.52,10.3.20.0/24,tcp:8080
+add DC_BACKUP_SCHEDULE 10.3.21.53,10.3.21.0/24,tcp:22
+
+create DC_BACKUP_PRIORITY hash:net,net family inet hashsize 256 maxelem 16384
+add DC_BACKUP_PRIORITY 10.3.21.50,10.3.2.0/24
+add DC_BACKUP_PRIORITY 10.3.21.51,10.3.20.0/24
+add DC_BACKUP_PRIORITY 10.3.21.52,10.3.21.0/24
+
+create DC_REPLICATION_PAIRS hash:net,net family inet hashsize 256 maxelem 16384
+add DC_REPLICATION_PAIRS 10.3.2.10,10.3.2.11
+add DC_REPLICATION_PAIRS 10.3.10.10,10.3.10.11
+add DC_REPLICATION_PAIRS 10.3.20.10,10.3.20.11
+add DC_REPLICATION_PAIRS 10.3.21.10,10.3.21.11
+
+create DC_REPLICATION_PRIORITY hash:net,net,port family inet hashsize 256 maxelem 16384
+add DC_REPLICATION_PRIORITY 10.3.2.10,10.3.2.11,tcp:3306
+add DC_REPLICATION_PRIORITY 10.3.10.10,10.3.10.11,tcp:5432
+add DC_REPLICATION_PRIORITY 10.3.20.10,10.3.20.11,tcp:80
+add DC_REPLICATION_PRIORITY 10.3.21.10,10.3.21.11,tcp:2049
+
+create DC_ASYNC_REPLICATION hash:net,net family inet hashsize 256 maxelem 16384
+add DC_ASYNC_REPLICATION 10.3.2.12,10.3.2.13
+add DC_ASYNC_REPLICATION 10.3.10.12,10.3.10.13
+add DC_ASYNC_REPLICATION 10.3.20.12,10.3.20.13
+add DC_ASYNC_REPLICATION 10.3.21.12,10.3.21.13
+
+create DC_SYNC_REPLICATION hash:net,net family inet hashsize 256 maxelem 16384
+add DC_SYNC_REPLICATION 10.3.2.10,10.3.2.11
+add DC_SYNC_REPLICATION 10.3.10.10,10.3.10.11
+add DC_SYNC_REPLICATION 10.3.20.10,10.3.20.11
+add DC_SYNC_REPLICATION 10.3.21.10,10.3.21.11
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:ipset_save ===
+
+=== TSIM_SECTION_START:ipset_list ===
+TITLE: Ipset List Summary
+COMMAND: /sbin/ipset list -n
+TIMESTAMP: 2025-06-21 15:21:17
+---
+DC_SRV_ALLOWED
+DC_APP_ALLOWED
+DC_PROD_ALLOWED
+DC_STORAGE_ALLOWED
+DC_SRV_CLIENTS
+DC_SRV_TO_APP
+DC_SRV_TO_PROD
+DC_SRV_TO_STORAGE
+DC_APP_CLIENTS
+DC_APP_TO_SRV
+DC_APP_TO_PROD
+DC_APP_TO_STORAGE
+DC_PROD_CLIENTS
+DC_PROD_TO_SRV
+DC_PROD_TO_APP
+DC_PROD_TO_STORAGE
+DC_STORAGE_CLIENTS
+DC_STORAGE_TO_SRV
+DC_STORAGE_TO_APP
+DC_STORAGE_TO_PROD
+DC_CRITICAL_SERVICES
+DC_HIGH_AVAILABILITY
+DC_BUSINESS_CRITICAL
+DC_MAINTENANCE_MODE
+DC_PRIORITY_TRAFFIC
+DC_TIER_MATRIX
+DC_TIER_RESTRICTED
+DC_WEB_TIER
+DC_DB_TIER
+DC_CACHE_TIER
+DC_SRV_ADMIN_ALLOWED
+DC_SRV_MONITORING
+DC_SRV_BACKUP_ALLOWED
+DC_ADMIN_HOSTS
+DC_MONITORING_ALLOWED
+DC_APP_SERVICES
+DC_APP_LOAD_BALANCED
+DC_APP_MICROSERVICES
+DC_PROD_CRITICAL
+DC_PROD_HIGH_AVAILABILITY
+DC_PROD_MONITORING
+DC_PROD_WEB_SERVERS
+DC_PROD_ADMIN_HOSTS
+DC_PROD_DB_CLIENTS
+DC_STORAGE_CRITICAL
+DC_STORAGE_BACKUP
+DC_STORAGE_REPLICATION
+DC_LB_TARGETS
+DC_LB_WEIGHTED
+DC_LB_PRIORITY
+DC_PRIMARY_SERVERS
+DC_SECONDARY_SERVERS
+DC_BACKUP_SERVERS
+DC_DR_REPLICATION
+DC_DR_BACKUP
+DC_DR_PRIORITY
+DC_DMZ_ZONE
+DC_TRUSTED_ZONE
+DC_RESTRICTED_ZONE
+DC_QUARANTINE_ZONE
+DC_AUDIT_REQUIRED
+DC_PCI_SCOPE
+DC_SOX_SCOPE
+DC_HIPAA_SCOPE
+DC_PERFORMANCE_TARGETS
+DC_HIGH_CAPACITY
+DC_MEDIUM_CAPACITY
+DC_LOW_CAPACITY
+DC_MESH_SERVICES
+DC_MESH_ENCRYPTED
+DC_SERVICE_REGISTRY
+DC_CONFIG_SERVER
+DC_API_GATEWAY_TARGETS
+DC_CONTAINER_PODS
+DC_KUBERNETES_SERVICES
+DC_DOCKER_NETWORKS
+DC_DB_POOL_ALLOWED
+DC_DB_READONLY
+DC_DB_READWRITE
+DC_API_CONSUMERS
+DC_API_RATE_LIMITED
+DC_API_PREMIUM
+DC_CACHE_CLUSTERS
+DC_CACHE_REPLICATION
+DC_BACKUP_SERVERS
+DC_BACKUP_SCHEDULE
+DC_BACKUP_PRIORITY
+DC_REPLICATION_PAIRS
+DC_REPLICATION_PRIORITY
+DC_ASYNC_REPLICATION
+DC_SYNC_REPLICATION
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:ipset_list ===

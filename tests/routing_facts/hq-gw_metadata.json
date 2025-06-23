@@ -1,8 +1,0 @@
-{
-  "linux": false,
-  "type": "gateway",
-  "location": "hq",
-  "role": "gateway",
-  "vendor": "linux",
-  "manageable": true
-}

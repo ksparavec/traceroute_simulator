@@ -1,0 +1,734 @@
+# Traceroute Simulator Facts Collection
+# Generated on: 2025-06-21 14:35:22
+# Hostname: br-gw
+# Kernel: 5.4.0-162-generic
+# Collection Script Version: 1.0
+
+# Locating required commands in standard paths
+# Found commands:
+# IP: /sbin/ip
+# IPTABLES: /sbin/iptables
+# IPTABLES-SAVE: /sbin/iptables-save
+# IPSET: /sbin/ipset
+# LSMOD: /bin/lsmod
+# Running as root: 1
+
+=== TSIM_SECTION_START:routing_table ===
+TITLE: IP Routing Table
+COMMAND: /sbin/ip route show
+TIMESTAMP: 2025-06-21 14:35:22
+---
+default via 198.51.100.1 dev eth0 metric 100
+10.1.0.0/16 dev wg0 scope link src 10.100.1.2
+10.2.1.0/24 dev eth1 proto kernel scope link src 10.2.1.1
+10.2.2.0/24 via 10.2.1.2 dev eth1 metric 1
+10.2.5.0/24 via 10.2.1.2 dev eth1 metric 1
+10.2.6.0/24 via 10.2.1.2 dev eth1 metric 1
+10.3.0.0/16 dev wg0 scope link src 10.100.1.2
+10.100.1.0/24 dev wg0 proto kernel scope link src 10.100.1.2
+198.51.100.0/24 dev eth0 proto kernel scope link src 198.51.100.10
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:routing_table ===
+
+=== TSIM_SECTION_START:policy_rules ===
+TITLE: IP Policy Rules
+COMMAND: /sbin/ip rule show
+TIMESTAMP: 2025-06-21 14:35:22
+---
+0:	from all lookup local
+100:	from 10.2.5.0/24 lookup wifi_priority
+200:	from 10.2.6.0/24 lookup guest_wifi
+32766:	from all lookup main
+32767:	from all lookup default
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:policy_rules ===
+
+=== TSIM_SECTION_START:interfaces ===
+TITLE: Network Interfaces
+COMMAND: /sbin/ip addr show
+TIMESTAMP: 2025-06-21 14:35:22
+---
+1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN group default qlen 1000
+    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+    inet 127.0.0.1/8 scope host lo
+       valid_lft forever preferred_lft forever
+2: eth0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
+    link/ether 52:54:00:22:34:01 brd ff:ff:ff:ff:ff:ff
+    inet 198.51.100.10/24 brd 198.51.100.255 scope global eth0
+       valid_lft forever preferred_lft forever
+3: eth1: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
+    link/ether 52:54:00:22:34:02 brd ff:ff:ff:ff:ff:ff
+    inet 10.2.1.1/24 brd 10.2.1.255 scope global eth1
+       valid_lft forever preferred_lft forever
+4: wg0: <POINTOPOINT,NOARP,UP,LOWER_UP> mtu 1420 qdisc noqueue state UNKNOWN group default qlen 1000
+    link/none
+    inet 10.100.1.2/24 scope global wg0
+       valid_lft forever preferred_lft forever
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:interfaces ===
+
+=== TSIM_SECTION_START:interface_stats ===
+TITLE: Interface Statistics
+COMMAND: cat /proc/net/dev
+TIMESTAMP: 2025-06-21 14:35:22
+---
+Inter-|   Receive                                                |  Transmit
+ face |bytes    packets errs drop fifo frame compressed multicast|bytes    packets errs drop fifo colls carrier compressed
+    lo:   45678      321    0    0    0     0          0         0    45678      321    0    0    0     0       0          0
+  eth0: 7654321     9876    0    0    0     0          0         0  6543210     8765    0    0    0     0       0          0
+  eth1: 3456789     4567    0    0    0     0          0         0  2345678     3456    0    0    0     0       0          0
+   wg0:  987654     1111    0    0    0     0          0         0  1876543     2222    0    0    0     0       0          0
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:interface_stats ===
+
+=== TSIM_SECTION_START:ip_forwarding ===
+TITLE: IP Forwarding Status
+COMMAND: cat /proc/sys/net/ipv4/ip_forward
+TIMESTAMP: 2025-06-21 14:35:22
+---
+1
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:ip_forwarding ===
+
+=== TSIM_SECTION_START:kernel_version ===
+TITLE: Kernel Version
+COMMAND: uname -r
+TIMESTAMP: 2025-06-21 14:35:22
+---
+5.4.0-162-generic
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:kernel_version ===
+
+=== TSIM_SECTION_START:hostname ===
+TITLE: System Hostname
+COMMAND: hostname
+TIMESTAMP: 2025-06-21 14:35:22
+---
+br-gw
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:hostname ===
+
+=== TSIM_SECTION_START:iptables_filter ===
+TITLE: Iptables Filter Table
+COMMAND: /sbin/iptables -t filter -L -n -v --line-numbers
+TIMESTAMP: 2025-06-21 14:35:22
+---
+Chain INPUT (policy DROP 0 packets, 0 bytes)
+num   pkts bytes target     prot opt in     out     source               destination         
+1      234  23456 ACCEPT     all  --  lo     *       0.0.0.0/0            0.0.0.0/0           
+2      456  45678 ACCEPT     all  --  *      *       0.0.0.0/0            0.0.0.0/0            ctstate RELATED,ESTABLISHED
+3      123  12345 BR_MGMT_INPUT  all  --  *      *       0.0.0.0/0            10.2.1.1            
+4      789  78901 ACCEPT     icmp --  *      *       0.0.0.0/0            0.0.0.0/0            icmp-type 8 limit: avg 10/sec burst 5
+5       67   6789 ACCEPT     tcp  --  *      *       0.0.0.0/0            0.0.0.0/0            tcp dpt:22 ctstate NEW,ESTABLISHED
+6       34   3456 ACCEPT     udp  --  wg0    *       0.0.0.0/0            0.0.0.0/0            udp dpt:51820
+7       12   1234 ACCEPT     tcp  --  eth1   *       10.2.0.0/16          0.0.0.0/0            tcp dpt:80 ctstate NEW,ESTABLISHED
+8       89   8901 LOG        all  --  *      *       0.0.0.0/0            0.0.0.0/0            limit: avg 5/min burst 10 LOG flags 0 level 4 prefix "BR-INPUT-DROP: "
+9        5    567 DROP       all  --  *      *       0.0.0.0/0            0.0.0.0/0           
+
+Chain FORWARD (policy ACCEPT 0 packets, 0 bytes)
+num   pkts bytes target     prot opt in     out     source               destination         
+1     1234 123456 BR_SECURITY_FORWARD  all  --  *      *       0.0.0.0/0            0.0.0.0/0           
+2      987  98765 BR_LAN_TO_INET  all  --  eth1   eth0    10.2.0.0/16          0.0.0.0/0           
+3      654  65432 BR_VPN_FORWARD  all  --  wg0    *       10.100.1.0/24        0.0.0.0/0           
+4      432  43210 BR_WIFI_CONTROL  all  --  *      *       0.0.0.0/0            0.0.0.0/0            match-set BR_WIFI_NETS src
+5      321  32109 ACCEPT     all  --  *      eth1    0.0.0.0/0            10.2.0.0/16          ctstate RELATED,ESTABLISHED
+6      210  21098 LOG        all  --  *      *       0.0.0.0/0            0.0.0.0/0            limit: avg 10/min burst 5 LOG flags 0 level 6 prefix "BR-FORWARD: "
+
+Chain OUTPUT (policy ACCEPT 0 packets, 0 bytes)
+num   pkts bytes target     prot opt in     out     source               destination         
+1      543  54321 ACCEPT     all  --  *      lo      0.0.0.0/0            0.0.0.0/0           
+2      321  32109 ACCEPT     all  --  *      *       0.0.0.0/0            0.0.0.0/0            ctstate RELATED,ESTABLISHED
+3      109  10987 ACCEPT     icmp --  *      *       0.0.0.0/0            0.0.0.0/0           
+4       87   8765 ACCEPT     tcp  --  *      *       0.0.0.0/0            0.0.0.0/0            tcp spt:22
+5       54   5432 ACCEPT     udp  --  *      wg0     0.0.0.0/0            0.0.0.0/0            udp spt:51820
+
+Chain BR_MGMT_INPUT (1 references)
+num   pkts bytes target     prot opt in     out     source               destination         
+1      456  45678 ACCEPT     tcp  --  *      *       10.2.1.0/24          0.0.0.0/0            multiport dports 22,80,443 ctstate NEW,ESTABLISHED
+2      234  23456 ACCEPT     tcp  --  *      *       10.2.2.0/24          0.0.0.0/0            multiport dports 22,443 ctstate NEW,ESTABLISHED
+3      123  12345 ACCEPT     udp  --  *      *       10.2.0.0/16          0.0.0.0/0            multiport dports 161,514,123 ctstate NEW,ESTABLISHED
+4       67   6789 DROP       tcp  --  *      *       10.2.5.0/24          0.0.0.0/0            tcp dpt:22
+5       34   3456 RETURN     all  --  *      *       0.0.0.0/0            0.0.0.0/0           
+
+Chain BR_SECURITY_FORWARD (1 references)
+num   pkts bytes target     prot opt in     out     source               destination         
+1      789  78901 DROP       all  --  *      *       0.0.0.0/0            0.0.0.0/0            match-set BR_BLACKLIST src
+2      456  45678 DROP       all  --  *      *       0.0.0.0/0            0.0.0.0/0            match-set BR_BLACKLIST dst
+3      234  23456 REJECT     tcp  --  *      *       0.0.0.0/0            0.0.0.0/0            match-set BR_MALWARE_PORTS dst,port reject-with icmp-port-unreachable
+4      123  12345 TARPIT     tcp  --  *      *       0.0.0.0/0            0.0.0.0/0            multiport dports 135,139,445,1433,3389 recent: SET name: ATTACKERS side: source
+5       67   6789 DROP       all  --  *      *       0.0.0.0/0            0.0.0.0/0            recent: CHECK seconds: 300 hit_count: 5 name: ATTACKERS side: source
+6       34   3456 RETURN     all  --  *      *       0.0.0.0/0            0.0.0.0/0           
+
+Chain BR_LAN_TO_INET (1 references)
+num   pkts bytes target     prot opt in     out     source               destination         
+1      987  98765 ACCEPT     tcp  --  *      *       0.0.0.0/0            0.0.0.0/0            match-set BR_WEB_ALLOWED src multiport dports 80,443,8080
+2      654  65432 ACCEPT     udp  --  *      *       10.2.1.0/24          0.0.0.0/0            udp dpt:53
+3      432  43210 ACCEPT     tcp  --  *      *       10.2.1.0/24          0.0.0.0/0            multiport dports 25,587,993,995,110,143
+4      321  32109 BR_WIFI_INET_RULES  all  --  *      *       0.0.0.0/0            0.0.0.0/0            match-set BR_WIFI_NETS src
+5      210  21098 DROP       tcp  --  *      *       0.0.0.0/0            0.0.0.0/0            multiport dports 21,23,135,139,445,1433,3389
+6      109  10987 ACCEPT     icmp --  *      *       10.2.0.0/16          0.0.0.0/0            icmp-type 8
+7       87   8765 LOG        all  --  *      *       10.2.0.0/16          0.0.0.0/0            limit: avg 15/min burst 8 LOG flags 0 level 6 prefix "BR-INET: "
+8       54   5432 RETURN     all  --  *      *       0.0.0.0/0            0.0.0.0/0           
+
+Chain BR_VPN_FORWARD (1 references)
+num   pkts bytes target     prot opt in     out     source               destination         
+1      543  54321 ACCEPT     all  --  *      *       10.100.1.2/32        0.0.0.0/0            match-set BR_VPN_DESTINATIONS dst,port
+2      321  32109 ACCEPT     tcp  --  *      *       10.100.1.1/32        10.2.0.0/16          multiport dports 22,80,443
+3      210  21098 ACCEPT     tcp  --  *      *       10.100.1.3/32        10.2.0.0/16          multiport dports 22,80,443
+4      109  10987 DROP       tcp  --  *      *       10.100.1.0/24        10.2.5.0/24          tcp dpt:22
+5       87   8765 ACCEPT     udp  --  *      *       10.100.1.0/24        10.2.0.0/16          multiport dports 53,123
+6       54   5432 LOG        all  --  *      *       10.100.1.0/24        0.0.0.0/0            limit: avg 8/min burst 4 LOG flags 0 level 6 prefix "BR-VPN: "
+7       32   3210 RETURN     all  --  *      *       0.0.0.0/0            0.0.0.0/0           
+
+Chain BR_WIFI_CONTROL (1 references)
+num   pkts bytes target     prot opt in     out     source               destination         
+1      456  45678 BR_GUEST_RESTRICTIONS  all  --  *      *       10.2.6.0/24          0.0.0.0/0           
+2      234  23456 ACCEPT     all  --  *      *       10.2.5.0/24          10.2.1.0/24         
+3      123  12345 ACCEPT     tcp  --  *      *       10.2.5.0/24          10.2.2.0/24          multiport dports 80,443,22
+4       67   6789 DROP       all  --  *      *       10.2.5.0/24          10.2.6.0/24         
+5       34   3456 DROP       all  --  *      *       10.2.6.0/24          10.2.5.0/24         
+6       21   2109 RETURN     all  --  *      *       0.0.0.0/0            0.0.0.0/0           
+
+Chain BR_WIFI_INET_RULES (1 references)
+num   pkts bytes target     prot opt in     out     source               destination         
+1      345  34567 ACCEPT     tcp  --  *      *       10.2.5.0/24          0.0.0.0/0            multiport dports 80,443,993,995
+2      234  23456 BR_GUEST_TIME_LIMITS  all  --  *      *       10.2.6.0/24          0.0.0.0/0           
+3      123  12345 DROP       tcp  --  *      *       10.2.6.0/24          0.0.0.0/0            multiport dports 22,23,25,135,139,445
+4       67   6789 ACCEPT     udp  --  *      *       10.2.5.0/24          0.0.0.0/0            udp dpt:53
+5       34   3456 ACCEPT     udp  --  *      *       10.2.6.0/24          0.0.0.0/0            udp dpt:53
+6       21   2109 RETURN     all  --  *      *       0.0.0.0/0            0.0.0.0/0           
+
+Chain BR_GUEST_RESTRICTIONS (1 references)
+num   pkts bytes target     prot opt in     out     source               destination         
+1      123  12345 DROP       all  --  *      *       0.0.0.0/0            10.2.1.0/24         
+2       87   8765 DROP       all  --  *      *       0.0.0.0/0            10.2.2.0/24         
+3       54   5432 DROP       tcp  --  *      *       0.0.0.0/0            0.0.0.0/0            multiport dports 22,23,135,139,445,1433,3389
+4       32   3210 ACCEPT     tcp  --  *      *       0.0.0.0/0            0.0.0.0/0            multiport dports 80,443
+5       21   2109 ACCEPT     udp  --  *      *       0.0.0.0/0            0.0.0.0/0            udp dpt:53
+6       10   1098 RETURN     all  --  *      *       0.0.0.0/0            0.0.0.0/0           
+
+Chain BR_GUEST_TIME_LIMITS (1 references)
+num   pkts bytes target     prot opt in     out     source               destination         
+1       98   9876 ACCEPT     tcp  --  *      *       0.0.0.0/0            0.0.0.0/0            multiport dports 80,443 time --timestart 09:00 --timestop 22:00 --weekdays Mon,Tue,Wed,Thu,Fri
+2       54   5432 ACCEPT     tcp  --  *      *       0.0.0.0/0            0.0.0.0/0            multiport dports 80,443 time --timestart 10:00 --timestop 20:00 --weekdays Sat,Sun
+3       32   3210 DROP       tcp  --  *      *       0.0.0.0/0            0.0.0.0/0            multiport dports 80,443
+4       21   2109 ACCEPT     udp  --  *      *       0.0.0.0/0            0.0.0.0/0            udp dpt:53
+5       10   1098 RETURN     all  --  *      *       0.0.0.0/0            0.0.0.0/0           
+
+Chain TARPIT (1 references)
+num   pkts bytes target     prot opt in     out     source               destination         
+1       12   1234 LOG        tcp  --  *      *       0.0.0.0/0            0.0.0.0/0            LOG flags 0 level 4 prefix "TARPIT-ATTACK: "
+2        8    876 REJECT     tcp  --  *      *       0.0.0.0/0            0.0.0.0/0            reject-with tcp-reset
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:iptables_filter ===
+
+=== TSIM_SECTION_START:iptables_nat ===
+TITLE: Iptables NAT Table
+COMMAND: /sbin/iptables -t nat -L -n -v --line-numbers
+TIMESTAMP: 2025-06-21 14:35:22
+---
+Chain PREROUTING (policy ACCEPT 0 packets, 0 bytes)
+num   pkts bytes target     prot opt in     out     source               destination         
+1      234  23456 DNAT       tcp  --  eth0   *       0.0.0.0/0            198.51.100.10        tcp dpt:80 to:10.2.1.100:80
+2      123  12345 DNAT       tcp  --  eth0   *       0.0.0.0/0            198.51.100.10        tcp dpt:443 to:10.2.1.100:443
+3       67   6789 DNAT       tcp  --  eth0   *       0.0.0.0/0            198.51.100.10        tcp dpt:8080 to:10.2.2.50:8080
+4       34   3456 BR_PORT_FORWARDS  tcp  --  eth0   *       0.0.0.0/0            198.51.100.10       
+
+Chain INPUT (policy ACCEPT 0 packets, 0 bytes)
+num   pkts bytes target     prot opt in     out     source               destination         
+
+Chain OUTPUT (policy ACCEPT 0 packets, 0 bytes)
+num   pkts bytes target     prot opt in     out     source               destination         
+
+Chain POSTROUTING (policy ACCEPT 0 packets, 0 bytes)
+num   pkts bytes target     prot opt in     out     source               destination         
+1     2345 234567 SNAT       all  --  *      eth0    10.2.0.0/16          0.0.0.0/0            to:198.51.100.10
+2     1234 123456 MASQUERADE  all  --  *      wg0     10.100.1.2/32        0.0.0.0/0           
+3      789  78901 BR_DYNAMIC_NAT  all  --  *      eth0    10.2.6.0/24          0.0.0.0/0           
+
+Chain BR_PORT_FORWARDS (1 references)
+num   pkts bytes target     prot opt in     out     source               destination         
+1       45   4567 DNAT       tcp  --  *      *       0.0.0.0/0            0.0.0.0/0            tcp dpt:2222 to:10.2.1.5:22
+2       23   2345 DNAT       tcp  --  *      *       0.0.0.0/0            0.0.0.0/0            tcp dpt:8443 to:10.2.2.10:443
+3       12   1234 DNAT       udp  --  *      *       0.0.0.0/0            0.0.0.0/0            udp dpt:1194 to:10.2.1.200:1194
+4        6    678 RETURN     all  --  *      *       0.0.0.0/0            0.0.0.0/0           
+
+Chain BR_DYNAMIC_NAT (1 references)
+num   pkts bytes target     prot opt in     out     source               destination         
+1      345  34567 SNAT       tcp  --  *      *       0.0.0.0/0            0.0.0.0/0            to:198.51.100.10:10000-20000
+2      234  23456 SNAT       udp  --  *      *       0.0.0.0/0            0.0.0.0/0            to:198.51.100.10:20001-30000
+3      123  12345 SNAT       icmp --  *      *       0.0.0.0/0            0.0.0.0/0            to:198.51.100.10
+4       67   6789 RETURN     all  --  *      *       0.0.0.0/0            0.0.0.0/0           
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:iptables_nat ===
+
+=== TSIM_SECTION_START:iptables_mangle ===
+TITLE: Iptables Mangle Table
+COMMAND: /sbin/iptables -t mangle -L -n -v --line-numbers
+TIMESTAMP: 2025-06-21 14:35:22
+---
+Chain PREROUTING (policy ACCEPT 0 packets, 0 bytes)
+num   pkts bytes target     prot opt in     out     source               destination         
+1     1234 123456 MARK       all  --  eth1   *       10.2.5.0/24          0.0.0.0/0            MARK set 0x5
+2      789  78901 MARK       all  --  eth1   *       10.2.6.0/24          0.0.0.0/0            MARK set 0x6
+3      456  45678 BR_QOS_CLASSIFY  all  --  *      *       0.0.0.0/0            0.0.0.0/0           
+4      234  23456 DSCP       tcp  --  wg0    *       10.100.1.0/24        0.0.0.0/0            multiport dports 22,443 DSCP set 0x2e
+
+Chain INPUT (policy ACCEPT 0 packets, 0 bytes)
+num   pkts bytes target     prot opt in     out     source               destination         
+
+Chain FORWARD (policy ACCEPT 0 packets, 0 bytes)
+num   pkts bytes target     prot opt in     out     source               destination         
+1     2345 234567 BR_QOS_FORWARD  all  --  *      *       0.0.0.0/0            0.0.0.0/0           
+2     1234 123456 DSCP       tcp  --  *      eth0    0.0.0.0/0            0.0.0.0/0            multiport dports 80,443 DSCP set 0x00
+3      789  78901 TOS        all  --  eth1   eth0    10.2.1.0/24          0.0.0.0/0            TOS set 0x08
+
+Chain OUTPUT (policy ACCEPT 0 packets, 0 bytes)
+num   pkts bytes target     prot opt in     out     source               destination         
+
+Chain POSTROUTING (policy ACCEPT 0 packets, 0 bytes)
+num   pkts bytes target     prot opt in     out     source               destination         
+1     3456 345678 CLASSIFY   all  --  *      eth0    0.0.0.0/0            0.0.0.0/0            CLASSIFY set 1:10
+2     2345 234567 CLASSIFY   all  --  *      wg0     10.100.1.0/24        0.0.0.0/0            CLASSIFY set 1:20
+
+Chain BR_QOS_CLASSIFY (1 references)
+num   pkts bytes target     prot opt in     out     source               destination         
+1      567  56789 MARK       tcp  --  *      *       0.0.0.0/0            0.0.0.0/0            multiport dports 22,443 MARK set 0x10
+2      345  34567 MARK       tcp  --  *      *       0.0.0.0/0            0.0.0.0/0            multiport dports 80,8080 MARK set 0x20
+3      234  23456 MARK       udp  --  *      *       0.0.0.0/0            0.0.0.0/0            udp dpt:53 MARK set 0x30
+4      123  12345 MARK       icmp --  *      *       0.0.0.0/0            0.0.0.0/0            MARK set 0x40
+5       67   6789 RETURN     all  --  *      *       0.0.0.0/0            0.0.0.0/0           
+
+Chain BR_QOS_FORWARD (1 references)
+num   pkts bytes target     prot opt in     out     source               destination         
+1      789  78901 MARK       all  --  *      *       0.0.0.0/0            0.0.0.0/0            match-set BR_HIGH_PRIORITY src MARK set 0x100
+2      456  45678 DSCP       all  --  *      *       10.2.5.0/24          0.0.0.0/0            DSCP set 0x2e
+3      234  23456 DSCP       all  --  *      *       10.2.6.0/24          0.0.0.0/0            DSCP set 0x00
+4      123  12345 TOS        all  --  *      eth0    10.2.1.0/24          0.0.0.0/0            TOS set 0x10
+5       67   6789 RETURN     all  --  *      *       0.0.0.0/0            0.0.0.0/0           
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:iptables_mangle ===
+
+=== TSIM_SECTION_START:iptables_save ===
+TITLE: Complete Iptables Configuration
+COMMAND: /sbin/iptables-save
+TIMESTAMP: 2025-06-21 14:35:22
+---
+# Generated by iptables-save v1.8.4 on Fri Jun 21 14:35:22 2025
+*filter
+:INPUT DROP [0:0]
+:FORWARD ACCEPT [0:0]
+:OUTPUT ACCEPT [0:0]
+:BR_MGMT_INPUT - [0:0]
+:BR_SECURITY_FORWARD - [0:0]
+:BR_LAN_TO_INET - [0:0]
+:BR_VPN_FORWARD - [0:0]
+:BR_WIFI_CONTROL - [0:0]
+:BR_WIFI_INET_RULES - [0:0]
+:BR_GUEST_RESTRICTIONS - [0:0]
+:BR_GUEST_TIME_LIMITS - [0:0]
+:TARPIT - [0:0]
+-A INPUT -i lo -j ACCEPT
+-A INPUT -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
+-A INPUT -d 10.2.1.1/32 -j BR_MGMT_INPUT
+-A INPUT -p icmp -m icmp --icmp-type 8 -m limit --limit 10/sec --limit-burst 5 -j ACCEPT
+-A INPUT -p tcp -m tcp --dport 22 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
+-A INPUT -i wg0 -p udp -m udp --dport 51820 -j ACCEPT
+-A INPUT -s 10.2.0.0/16 -i eth1 -p tcp -m tcp --dport 80 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
+-A INPUT -m limit --limit 5/min --limit-burst 10 -j LOG --log-prefix "BR-INPUT-DROP: "
+-A INPUT -j DROP
+-A FORWARD -j BR_SECURITY_FORWARD
+-A FORWARD -s 10.2.0.0/16 -i eth1 -o eth0 -j BR_LAN_TO_INET
+-A FORWARD -s 10.100.1.0/24 -i wg0 -j BR_VPN_FORWARD
+-A FORWARD -m set --match-set BR_WIFI_NETS src -j BR_WIFI_CONTROL
+-A FORWARD -d 10.2.0.0/16 -o eth1 -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
+-A FORWARD -m limit --limit 10/min --limit-burst 5 -j LOG --log-prefix "BR-FORWARD: " --log-level 6
+-A OUTPUT -o lo -j ACCEPT
+-A OUTPUT -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
+-A OUTPUT -p icmp -j ACCEPT
+-A OUTPUT -p tcp -m tcp --sport 22 -j ACCEPT
+-A OUTPUT -o wg0 -p udp -m udp --sport 51820 -j ACCEPT
+-A BR_MGMT_INPUT -s 10.2.1.0/24 -p tcp -m multiport --dports 22,80,443 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
+-A BR_MGMT_INPUT -s 10.2.2.0/24 -p tcp -m multiport --dports 22,443 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
+-A BR_MGMT_INPUT -s 10.2.0.0/16 -p udp -m multiport --dports 161,514,123 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
+-A BR_MGMT_INPUT -s 10.2.5.0/24 -p tcp -m tcp --dport 22 -j DROP
+-A BR_MGMT_INPUT -j RETURN
+-A BR_SECURITY_FORWARD -m set --match-set BR_BLACKLIST src -j DROP
+-A BR_SECURITY_FORWARD -m set --match-set BR_BLACKLIST dst -j DROP
+-A BR_SECURITY_FORWARD -m set --match-set BR_MALWARE_PORTS dst,port -p tcp -j REJECT --reject-with icmp-port-unreachable
+-A BR_SECURITY_FORWARD -p tcp -m multiport --dports 135,139,445,1433,3389 -m recent --set --name ATTACKERS --rsource -j TARPIT
+-A BR_SECURITY_FORWARD -m recent --check --seconds 300 --hitcount 5 --name ATTACKERS --rsource -j DROP
+-A BR_SECURITY_FORWARD -j RETURN
+-A BR_LAN_TO_INET -m set --match-set BR_WEB_ALLOWED src -p tcp -m multiport --dports 80,443,8080 -j ACCEPT
+-A BR_LAN_TO_INET -s 10.2.1.0/24 -p udp -m udp --dport 53 -j ACCEPT
+-A BR_LAN_TO_INET -s 10.2.1.0/24 -p tcp -m multiport --dports 25,587,993,995,110,143 -j ACCEPT
+-A BR_LAN_TO_INET -m set --match-set BR_WIFI_NETS src -j BR_WIFI_INET_RULES
+-A BR_LAN_TO_INET -p tcp -m multiport --dports 21,23,135,139,445,1433,3389 -j DROP
+-A BR_LAN_TO_INET -s 10.2.0.0/16 -p icmp -m icmp --icmp-type 8 -j ACCEPT
+-A BR_LAN_TO_INET -s 10.2.0.0/16 -m limit --limit 15/min --limit-burst 8 -j LOG --log-prefix "BR-INET: " --log-level 6
+-A BR_LAN_TO_INET -j RETURN
+-A BR_VPN_FORWARD -s 10.100.1.2/32 -m set --match-set BR_VPN_DESTINATIONS dst,port -j ACCEPT
+-A BR_VPN_FORWARD -s 10.100.1.1/32 -d 10.2.0.0/16 -p tcp -m multiport --dports 22,80,443 -j ACCEPT
+-A BR_VPN_FORWARD -s 10.100.1.3/32 -d 10.2.0.0/16 -p tcp -m multiport --dports 22,80,443 -j ACCEPT
+-A BR_VPN_FORWARD -s 10.100.1.0/24 -d 10.2.5.0/24 -p tcp -m tcp --dport 22 -j DROP
+-A BR_VPN_FORWARD -s 10.100.1.0/24 -d 10.2.0.0/16 -p udp -m multiport --dports 53,123 -j ACCEPT
+-A BR_VPN_FORWARD -s 10.100.1.0/24 -m limit --limit 8/min --limit-burst 4 -j LOG --log-prefix "BR-VPN: " --log-level 6
+-A BR_VPN_FORWARD -j RETURN
+-A BR_WIFI_CONTROL -s 10.2.6.0/24 -j BR_GUEST_RESTRICTIONS
+-A BR_WIFI_CONTROL -s 10.2.5.0/24 -d 10.2.1.0/24 -j ACCEPT
+-A BR_WIFI_CONTROL -s 10.2.5.0/24 -d 10.2.2.0/24 -p tcp -m multiport --dports 80,443,22 -j ACCEPT
+-A BR_WIFI_CONTROL -s 10.2.5.0/24 -d 10.2.6.0/24 -j DROP
+-A BR_WIFI_CONTROL -s 10.2.6.0/24 -d 10.2.5.0/24 -j DROP
+-A BR_WIFI_CONTROL -j RETURN
+-A BR_WIFI_INET_RULES -s 10.2.5.0/24 -p tcp -m multiport --dports 80,443,993,995 -j ACCEPT
+-A BR_WIFI_INET_RULES -s 10.2.6.0/24 -j BR_GUEST_TIME_LIMITS
+-A BR_WIFI_INET_RULES -s 10.2.6.0/24 -p tcp -m multiport --dports 22,23,25,135,139,445 -j DROP
+-A BR_WIFI_INET_RULES -s 10.2.5.0/24 -p udp -m udp --dport 53 -j ACCEPT
+-A BR_WIFI_INET_RULES -s 10.2.6.0/24 -p udp -m udp --dport 53 -j ACCEPT
+-A BR_WIFI_INET_RULES -j RETURN
+-A BR_GUEST_RESTRICTIONS -d 10.2.1.0/24 -j DROP
+-A BR_GUEST_RESTRICTIONS -d 10.2.2.0/24 -j DROP
+-A BR_GUEST_RESTRICTIONS -p tcp -m multiport --dports 22,23,135,139,445,1433,3389 -j DROP
+-A BR_GUEST_RESTRICTIONS -p tcp -m multiport --dports 80,443 -j ACCEPT
+-A BR_GUEST_RESTRICTIONS -p udp -m udp --dport 53 -j ACCEPT
+-A BR_GUEST_RESTRICTIONS -j RETURN
+-A BR_GUEST_TIME_LIMITS -p tcp -m multiport --dports 80,443 -m time --timestart 09:00 --timestop 22:00 --weekdays Mon,Tue,Wed,Thu,Fri -j ACCEPT
+-A BR_GUEST_TIME_LIMITS -p tcp -m multiport --dports 80,443 -m time --timestart 10:00 --timestop 20:00 --weekdays Sat,Sun -j ACCEPT
+-A BR_GUEST_TIME_LIMITS -p tcp -m multiport --dports 80,443 -j DROP
+-A BR_GUEST_TIME_LIMITS -p udp -m udp --dport 53 -j ACCEPT
+-A BR_GUEST_TIME_LIMITS -j RETURN
+-A TARPIT -p tcp -j LOG --log-prefix "TARPIT-ATTACK: "
+-A TARPIT -p tcp -j REJECT --reject-with tcp-reset
+COMMIT
+# Completed on Fri Jun 21 14:35:22 2025
+# Generated by iptables-save v1.8.4 on Fri Jun 21 14:35:22 2025
+*nat
+:PREROUTING ACCEPT [0:0]
+:INPUT ACCEPT [0:0]
+:OUTPUT ACCEPT [0:0]
+:POSTROUTING ACCEPT [0:0]
+:BR_PORT_FORWARDS - [0:0]
+:BR_DYNAMIC_NAT - [0:0]
+-A PREROUTING -i eth0 -d 198.51.100.10/32 -p tcp -m tcp --dport 80 -j DNAT --to-destination 10.2.1.100:80
+-A PREROUTING -i eth0 -d 198.51.100.10/32 -p tcp -m tcp --dport 443 -j DNAT --to-destination 10.2.1.100:443
+-A PREROUTING -i eth0 -d 198.51.100.10/32 -p tcp -m tcp --dport 8080 -j DNAT --to-destination 10.2.2.50:8080
+-A PREROUTING -i eth0 -d 198.51.100.10/32 -p tcp -j BR_PORT_FORWARDS
+-A POSTROUTING -s 10.2.0.0/16 -o eth0 -j SNAT --to-source 198.51.100.10
+-A POSTROUTING -s 10.100.1.2/32 -o wg0 -j MASQUERADE
+-A POSTROUTING -s 10.2.6.0/24 -o eth0 -j BR_DYNAMIC_NAT
+-A BR_PORT_FORWARDS -p tcp -m tcp --dport 2222 -j DNAT --to-destination 10.2.1.5:22
+-A BR_PORT_FORWARDS -p tcp -m tcp --dport 8443 -j DNAT --to-destination 10.2.2.10:443
+-A BR_PORT_FORWARDS -p udp -m udp --dport 1194 -j DNAT --to-destination 10.2.1.200:1194
+-A BR_PORT_FORWARDS -j RETURN
+-A BR_DYNAMIC_NAT -p tcp -j SNAT --to-source 198.51.100.10:10000-20000
+-A BR_DYNAMIC_NAT -p udp -j SNAT --to-source 198.51.100.10:20001-30000
+-A BR_DYNAMIC_NAT -p icmp -j SNAT --to-source 198.51.100.10
+-A BR_DYNAMIC_NAT -j RETURN
+COMMIT
+# Completed on Fri Jun 21 14:35:22 2025
+# Generated by iptables-save v1.8.4 on Fri Jun 21 14:35:22 2025
+*mangle
+:PREROUTING ACCEPT [0:0]
+:INPUT ACCEPT [0:0]
+:FORWARD ACCEPT [0:0]
+:OUTPUT ACCEPT [0:0]
+:POSTROUTING ACCEPT [0:0]
+:BR_QOS_CLASSIFY - [0:0]
+:BR_QOS_FORWARD - [0:0]
+-A PREROUTING -s 10.2.5.0/24 -i eth1 -j MARK --set-xmark 0x5/0xffffffff
+-A PREROUTING -s 10.2.6.0/24 -i eth1 -j MARK --set-xmark 0x6/0xffffffff
+-A PREROUTING -j BR_QOS_CLASSIFY
+-A PREROUTING -s 10.100.1.0/24 -i wg0 -p tcp -m multiport --dports 22,443 -j DSCP --set-dscp 0x2e
+-A FORWARD -j BR_QOS_FORWARD
+-A FORWARD -o eth0 -p tcp -m multiport --dports 80,443 -j DSCP --set-dscp 0x00
+-A FORWARD -s 10.2.1.0/24 -i eth1 -o eth0 -j TOS --set-tos 0x08
+-A POSTROUTING -o eth0 -j CLASSIFY --set-class 1:10
+-A POSTROUTING -s 10.100.1.0/24 -o wg0 -j CLASSIFY --set-class 1:20
+-A BR_QOS_CLASSIFY -p tcp -m multiport --dports 22,443 -j MARK --set-xmark 0x10/0xffffffff
+-A BR_QOS_CLASSIFY -p tcp -m multiport --dports 80,8080 -j MARK --set-xmark 0x20/0xffffffff
+-A BR_QOS_CLASSIFY -p udp -m udp --dport 53 -j MARK --set-xmark 0x30/0xffffffff
+-A BR_QOS_CLASSIFY -p icmp -j MARK --set-xmark 0x40/0xffffffff
+-A BR_QOS_CLASSIFY -j RETURN
+-A BR_QOS_FORWARD -m set --match-set BR_HIGH_PRIORITY src -j MARK --set-xmark 0x100/0xffffffff
+-A BR_QOS_FORWARD -s 10.2.5.0/24 -j DSCP --set-dscp 0x2e
+-A BR_QOS_FORWARD -s 10.2.6.0/24 -j DSCP --set-dscp 0x00
+-A BR_QOS_FORWARD -s 10.2.1.0/24 -o eth0 -j TOS --set-tos 0x10
+-A BR_QOS_FORWARD -j RETURN
+COMMIT
+# Completed on Fri Jun 21 14:35:22 2025
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:iptables_save ===
+
+=== TSIM_SECTION_START:ipset_list ===
+TITLE: Ipset Lists and Membership
+COMMAND: /sbin/ipset list
+TIMESTAMP: 2025-06-21 14:35:22
+---
+Name: BR_WIFI_NETS
+Type: hash:net
+Revision: 6
+Header: family inet hashsize 1024 maxelem 65536
+Size in memory: 488
+References: 3
+Number of entries: 2
+Members:
+10.2.5.0/24
+10.2.6.0/24
+
+Name: BR_BLACKLIST
+Type: hash:net
+Revision: 6
+Header: family inet hashsize 1024 maxelem 65536
+Size in memory: 552
+References: 2
+Number of entries: 7
+Members:
+0.0.0.0/8
+127.0.0.0/8
+169.254.0.0/16
+172.16.0.0/12
+192.0.2.0/24
+192.168.0.0/16
+224.0.0.0/4
+
+Name: BR_MALWARE_PORTS
+Type: hash:ip,port
+Revision: 5
+Header: family inet hashsize 1024 maxelem 65536
+Size in memory: 680
+References: 1
+Number of entries: 15
+Members:
+0.0.0.0/0,tcp:135
+0.0.0.0/0,tcp:139
+0.0.0.0/0,tcp:445
+0.0.0.0/0,tcp:1433
+0.0.0.0/0,tcp:1434
+0.0.0.0/0,tcp:3389
+0.0.0.0/0,tcp:5900
+0.0.0.0/0,tcp:5985
+0.0.0.0/0,tcp:5986
+0.0.0.0/0,udp:135
+0.0.0.0/0,udp:137
+0.0.0.0/0,udp:138
+0.0.0.0/0,udp:445
+0.0.0.0/0,udp:1434
+0.0.0.0/0,udp:69
+
+Name: BR_WEB_ALLOWED
+Type: hash:net
+Revision: 6
+Header: family inet hashsize 1024 maxelem 65536
+Size in memory: 456
+References: 1
+Number of entries: 4
+Members:
+10.2.1.0/24
+10.2.2.0/24
+10.2.5.0/24
+10.2.6.0/24
+
+Name: BR_VPN_DESTINATIONS
+Type: hash:net,port
+Revision: 0
+Header: family inet hashsize 1024 maxelem 65536
+Size in memory: 712
+References: 1
+Number of entries: 10
+Members:
+10.2.1.0/24,tcp:22
+10.2.1.0/24,tcp:80
+10.2.1.0/24,tcp:443
+10.2.2.0/24,tcp:22
+10.2.2.0/24,tcp:80
+10.2.2.0/24,tcp:443
+10.2.5.0/24,tcp:80
+10.2.5.0/24,tcp:443
+10.2.6.0/24,tcp:80
+10.2.6.0/24,tcp:443
+
+Name: BR_HIGH_PRIORITY
+Type: hash:ip
+Revision: 4
+Header: family inet hashsize 1024 maxelem 65536
+Size in memory: 328
+References: 1
+Number of entries: 10
+Members:
+10.2.1.5
+10.2.1.10
+10.2.1.100
+10.2.1.200
+10.2.2.10
+10.2.2.50
+10.2.5.10
+10.2.5.20
+10.2.6.10
+10.2.6.20
+
+Name: BR_GUEST_BANDWIDTH
+Type: hash:ip,mark
+Revision: 2
+Header: family inet hashsize 1024 maxelem 65536
+Size in memory: 456
+References: 0
+Number of entries: 6
+Members:
+10.2.6.10,0x1000
+10.2.6.20,0x1000
+10.2.6.30,0x2000
+10.2.6.40,0x2000
+10.2.6.50,0x500
+10.2.6.60,0x500
+
+Name: BR_TIME_ACCESS
+Type: hash:net,iface
+Revision: 1
+Header: family inet hashsize 1024 maxelem 65536
+Size in memory: 520
+References: 0
+Number of entries: 4
+Members:
+10.2.5.0/24,eth1
+10.2.6.0/24,eth1
+10.2.1.0/24,eth1
+10.2.2.0/24,eth1
+
+Name: BR_PORT_KNOCK
+Type: list:set
+Revision: 3
+Header: size 8
+Size in memory: 200
+References: 0
+Number of entries: 3
+Members:
+BR_KNOCK_STAGE1
+BR_KNOCK_STAGE2
+BR_KNOCK_STAGE3
+
+Name: BR_KNOCK_STAGE1
+Type: bitmap:port
+Revision: 3
+Header: range 0-65535
+Size in memory: 8264
+References: 1
+Number of entries: 3
+Members:
+1234
+5678
+9012
+
+Name: BR_KNOCK_STAGE2
+Type: bitmap:port
+Revision: 3
+Header: range 0-65535
+Size in memory: 8264
+References: 1
+Number of entries: 3
+Members:
+2345
+6789
+1357
+
+Name: BR_KNOCK_STAGE3
+Type: bitmap:port
+Revision: 3
+Header: range 0-65535
+Size in memory: 8264
+References: 1
+Number of entries: 2
+Members:
+22
+443
+
+Name: BR_RATE_LIMITS
+Type: hash:ip,port,net
+Revision: 1
+Header: family inet hashsize 1024 maxelem 65536
+Size in memory: 744
+References: 0
+Number of entries: 8
+Members:
+10.2.6.0/24,tcp:80,0.0.0.0/0
+10.2.6.0/24,tcp:443,0.0.0.0/0
+10.2.5.0/24,tcp:80,8.8.8.8/32
+10.2.5.0/24,tcp:443,8.8.8.8/32
+10.2.5.0/24,tcp:80,1.1.1.1/32
+10.2.5.0/24,tcp:443,1.1.1.1/32
+10.2.1.0/24,tcp:25,0.0.0.0/0
+10.2.2.0/24,tcp:22,10.2.1.0/24
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:ipset_list ===
+
+=== TSIM_SECTION_START:conntrack ===
+TITLE: Connection Tracking Entries (first 10)
+COMMAND: head -10 /proc/net/nf_conntrack
+TIMESTAMP: 2025-06-21 14:35:22
+---
+ipv4     2 tcp      6 431995 ESTABLISHED src=10.2.1.5 dst=198.51.100.10 sport=45612 dport=80 src=198.51.100.10 dst=10.2.1.5 sport=80 dport=45612 [ASSURED] mark=20 use=1
+ipv4     2 tcp      6 86395 TIME_WAIT src=10.2.5.10 dst=8.8.8.8 sport=56789 dport=443 src=8.8.8.8 dst=198.51.100.10 sport=443 dport=56789 [ASSURED] mark=20 use=1
+ipv4     2 udp     17 29 src=10.2.6.20 dst=8.8.8.8 sport=67890 dport=53 src=8.8.8.8 dst=198.51.100.10 sport=53 dport=67890 mark=30 use=1
+ipv4     2 tcp      6 431994 ESTABLISHED src=10.100.1.1 dst=10.2.1.100 sport=78901 dport=80 src=10.2.1.100 dst=10.100.1.1 sport=80 dport=78901 [ASSURED] mark=10 use=1
+ipv4     2 icmp     1 29 src=10.2.5.30 dst=1.1.1.1 type=8 code=0 id=89012 src=1.1.1.1 dst=198.51.100.10 type=0 code=0 id=89012 mark=40 use=1
+ipv4     2 tcp      6 431993 ESTABLISHED src=10.2.2.10 dst=10.2.1.5 sport=90123 dport=22 src=10.2.1.5 dst=10.2.2.10 sport=22 dport=90123 [ASSURED] mark=10 use=1
+ipv4     2 udp     17 51820 src=203.0.113.10 dst=198.51.100.10 sport=51820 dport=51820 src=198.51.100.10 dst=203.0.113.10 sport=51820 dport=51820 use=1
+ipv4     2 tcp      6 431992 ESTABLISHED src=10.2.6.40 dst=198.51.100.10 sport=12345 dport=443 src=198.51.100.10 dst=10.2.6.40 sport=443 dport=12345 [ASSURED] mark=6 use=1
+ipv4     2 udp     17 28 src=10.2.1.15 dst=8.8.8.8 sport=23456 dport=53 src=8.8.8.8 dst=198.51.100.10 sport=53 dport=23456 mark=30 use=1
+ipv4     2 tcp      6 431991 ESTABLISHED src=10.2.5.25 dst=10.2.2.50 sport=34567 dport=8080 src=10.2.2.50 dst=10.2.5.25 sport=8080 dport=34567 [ASSURED] mark=5 use=1
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:conntrack ===
+
+=== TSIM_SECTION_START:netfilter_modules ===
+TITLE: Loaded Netfilter Modules
+COMMAND: /bin/lsmod | /bin/grep -E '(iptable|netfilter|conntrack|nf_)'
+TIMESTAMP: 2025-06-21 14:35:22
+---
+nf_conntrack_netlink    49152  0
+nf_conntrack           139264  1 nf_conntrack_netlink
+nf_defrag_ipv4         16384  1 nf_conntrack
+libcrc32c              16384  1 nf_conntrack
+iptable_mangle         16384  1
+iptable_nat            16384  1
+iptable_filter         16384  1
+ip_tables              32768  3 iptable_filter,iptable_mangle,iptable_nat
+nf_nat                 45056  1 iptable_nat
+nf_log_syslog          20480  1
+nf_log_common          16384  1 nf_log_syslog
+xt_multiport           20480  18
+xt_conntrack           16384  12
+xt_mark                16384  5
+xt_MARK                16384  5
+xt_set                 16384  8
+xt_DSCP                16384  4
+xt_TOS                 16384  2
+xt_LOG                 16384  4
+xt_limit               16384  6
+xt_tcpudp              20480  25
+xt_SNAT                20480  4
+xt_DNAT                20480  6
+xt_MASQUERADE          20480  1
+xt_REJECT              16384  2
+xt_recent              20480  2
+xt_time                16384  2
+xt_CLASSIFY            16384  2
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:netfilter_modules ===
+
+=== TSIM_FACTS_COLLECTION_COMPLETE ===
+TIMESTAMP: 2025-06-21 14:35:22
+HOSTNAME: br-gw
+SECTIONS_COLLECTED: routing_table,policy_rules,interfaces,interface_stats,ip_forwarding,kernel_version,hostname,iptables_*,ipset_*,conntrack,netfilter_modules

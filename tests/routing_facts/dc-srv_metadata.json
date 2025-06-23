@@ -1,8 +1,0 @@
-{
-  "linux": false,
-  "type": "access",
-  "location": "datacenter",
-  "role": "server",
-  "vendor": "linux",
-  "manageable": true
-}

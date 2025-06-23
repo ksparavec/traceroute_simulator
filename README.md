@@ -76,6 +76,9 @@ A comprehensive network path discovery tool that simulates traceroute behavior u
    # Install matplotlib for network visualization
    pip3 install matplotlib
    
+   # Install PyYAML for configuration file support (optional)
+   pip3 install PyYAML
+   
    # Verify Python version
    python3 --version  # Ensure Python 3.7+
    ```
@@ -86,13 +89,13 @@ A comprehensive network path discovery tool that simulates traceroute behavior u
 1. **Use the provided test network** (see [Network Topology](#network-topology) for details):
    ```bash
    # Complex test network with 10 routers across 3 locations
-   ls tests/routing_facts/
-   # hq-gw_route.json  hq-core_route.json  br-gw_route.json  dc-gw_route.json  ... (20 files total)
+   ls tests/tsim_facts/
+   # hq-gw.json  hq-core.json  br-gw.json  dc-gw.json  ... (10 unified JSON files)
    ```
 
 2. **Run a basic traceroute simulation**:
    ```bash
-   python3 traceroute_simulator.py --routing-dir tests/routing_facts -s 10.1.1.1 -d 10.2.1.1
+   python3 traceroute_simulator.py --tsim-facts tests/tsim_facts -s 10.1.1.1 -d 10.2.1.1
    ```
 
 3. **View results**:
@@ -119,7 +122,7 @@ Create a `traceroute_simulator.yaml` file with your preferred settings:
 
 ```yaml
 # Network and routing configuration
-routing_dir: "routing_facts"                    # Directory containing routing facts
+tsim_facts: "tsim_facts"                        # Directory containing unified facts files
 
 # Output configuration  
 verbose: false                                  # Enable verbose output (-v flag)
@@ -139,7 +142,7 @@ controller_ip: null                            # Ansible controller IP (auto-det
 
 **Production Environment:**
 ```yaml
-routing_dir: "/etc/traceroute-simulator/routing_facts"
+tsim_facts: "/etc/traceroute-simulator/tsim_facts"
 enable_mtr_fallback: true
 enable_reverse_trace: true
 verbose: false
@@ -148,7 +151,7 @@ controller_ip: "192.168.1.100"
 
 **Development/Testing:**
 ```yaml
-routing_dir: "tests/routing_facts"
+tsim_facts: "tests/tsim_facts"
 enable_mtr_fallback: false  # Simulation only
 verbose: true
 verbose_level: 2
@@ -164,8 +167,8 @@ Configuration values are resolved in this order (highest to lowest):
 
 ```bash
 # Example: Override config file settings via command line
-TRACEROUTE_SIMULATOR_CONF=production.yaml python3 traceroute_simulator.py -s 10.1.1.1 -d 10.2.1.1 -v
-# Uses production.yaml settings but enables verbose mode
+TRACEROUTE_SIMULATOR_CONF=production.yaml python3 traceroute_simulator.py --tsim-facts custom_facts -s 10.1.1.1 -d 10.2.1.1 -v
+# Uses production.yaml settings but overrides facts directory and enables verbose mode
 ```
 
 ## 🏷️ Router Metadata System
@@ -204,6 +207,8 @@ Each router can have an optional `*_metadata.json` file alongside its routing da
 2. **Gateway Internet Access**: Only gateway routers (`type: "gateway"`) can reach public IPs
 3. **Auto Controller Detection**: Router with `ansible_controller: true` provides controller IP
 4. **Network Visualization**: Diagrams color-coded by router type
+5. **Iptables Analysis**: Packet forwarding decisions based on actual firewall rules
+6. **Unified Facts Collection**: Single JSON file per router with all routing, metadata, and firewall data
 
 ### Default Values
 
@@ -228,11 +233,11 @@ Gateway routers with `type: "gateway"` can reach public internet IP addresses, p
 
 ```bash
 # Gateway router direct internet access
-python3 traceroute_simulator.py --routing-dir tests/routing_facts -s 10.1.1.1 -d 1.1.1.1
+python3 traceroute_simulator.py --tsim-facts tests/tsim_facts -s 10.1.1.1 -d 1.1.1.1
 # Output: hq-gw (10.1.1.1) → one.one.one.one (1.1.1.1)
 
 # Multi-hop internet access from internal network
-python3 traceroute_simulator.py --routing-dir tests/routing_facts -s 10.1.10.1 -d 8.8.8.8
+python3 traceroute_simulator.py --tsim-facts tests/tsim_facts -s 10.1.10.1 -d 8.8.8.8
 # Output: hq-lab → hq-core → hq-gw → dns.google (8.8.8.8)
 ```
 
@@ -265,15 +270,15 @@ The project includes a comprehensive iptables analysis tool that determines whet
 
 ```bash
 # Basic packet forwarding analysis
-python3 iptables_forward_analyzer.py --router hq-gw --routing-dir tests/routing_facts \
+python3 iptables_forward_analyzer.py --router hq-gw --tsim-facts tests/tsim_facts \
   -s 10.1.1.1 -d 10.2.1.1 -p tcp
 
 # Analyze specific ports with verbose output
-python3 iptables_forward_analyzer.py --router hq-gw --routing-dir tests/routing_facts \
+python3 iptables_forward_analyzer.py --router hq-gw --tsim-facts tests/tsim_facts \
   -s 10.1.1.1 -sp 80,443 -d 10.2.1.1 -dp 8080:8090 -p tcp -vv
 
 # Analyze IP ranges and show ipset structure
-python3 iptables_forward_analyzer.py --router br-core --routing-dir tests/routing_facts \
+python3 iptables_forward_analyzer.py --router br-core --tsim-facts tests/tsim_facts \
   -s 10.1.0.0/16 -d 10.2.0.0/16,10.3.0.0/16 -p all -vvv
 ```
 
@@ -284,15 +289,15 @@ python3 iptables_forward_analyzer.py --router br-core --routing-dir tests/routin
 - `-d, --dest`: Destination IP address (supports CIDR, lists)
 - `-dp, --dest-port`: Destination port (supports ranges)
 - `-p, --protocol`: Protocol type (`tcp`, `udp`, `icmp`, `all`)
-- `--router`: Router name to analyze (must have iptables data file)
-- `--routing-dir`: Directory containing routing facts and iptables files
+- `--router`: Router name to analyze (must have unified facts file)
+- `--tsim-facts`: Directory containing unified facts files with iptables and ipset data
 - `-v, -vv, -vvv`: Verbosity levels (basic decisions, detailed rules, ipset structure)
 
 ### Integration with Data Collection
 
-The iptables analyzer uses data collected by the enhanced Ansible playbook:
-- `{router}_iptables.txt`: Complete iptables configuration
-- `{router}_ipsets.txt`: Ipset definitions and membership
+The iptables analyzer uses data from unified facts files collected by the enhanced Ansible playbook:
+- `{router}.json`: Complete unified facts including iptables configuration and ipset data
+- Structured firewall data with comprehensive rule parsing
 - Automatically collected during `make fetch-routing-data`
 
 ## 💻 Usage
@@ -300,32 +305,32 @@ The iptables analyzer uses data collected by the enhanced Ansible playbook:
 ### Basic Syntax
 
 ```bash
-python3 traceroute_simulator.py [OPTIONS] -s SOURCE_IP -d DESTINATION_IP
+python3 traceroute_simulator.py [OPTIONS] --tsim-facts FACTS_DIR -s SOURCE_IP -d DESTINATION_IP
 ```
 
 ### Simple Examples
 
 ```bash
 # Basic traceroute between router interfaces (HQ to Branch)
-python3 traceroute_simulator.py --routing-dir tests/routing_facts -s 10.1.1.1 -d 10.2.1.1
+python3 traceroute_simulator.py --tsim-facts tests/tsim_facts -s 10.1.1.1 -d 10.2.1.1
 
 # Gateway internet access (gateway to Cloudflare DNS)
-python3 traceroute_simulator.py --routing-dir tests/routing_facts -s 10.1.1.1 -d 1.1.1.1
+python3 traceroute_simulator.py --tsim-facts tests/tsim_facts -s 10.1.1.1 -d 1.1.1.1
 
 # Multi-hop internet access (internal network to Google DNS)
-python3 traceroute_simulator.py --routing-dir tests/routing_facts -s 10.1.10.1 -d 8.8.8.8
+python3 traceroute_simulator.py --tsim-facts tests/tsim_facts -s 10.1.10.1 -d 8.8.8.8
 
 # JSON output for programmatic processing (WireGuard tunnel)
-python3 traceroute_simulator.py --routing-dir tests/routing_facts -j -s 10.100.1.1 -d 10.100.1.3
+python3 traceroute_simulator.py --tsim-facts tests/tsim_facts -j -s 10.100.1.1 -d 10.100.1.3
 
 # Verbose output with metadata loading (shows router types)
-python3 traceroute_simulator.py --routing-dir tests/routing_facts -vvv -s 10.1.1.1 -d 10.2.1.1
+python3 traceroute_simulator.py --tsim-facts tests/tsim_facts -vvv -s 10.1.1.1 -d 10.2.1.1
 
 # Reverse path tracing with auto-detected controller IP
-python3 traceroute_simulator.py --routing-dir tests/routing_facts --reverse-trace -s 10.1.1.1 -d 192.168.1.1
+python3 traceroute_simulator.py --tsim-facts tests/tsim_facts --reverse-trace -s 10.1.1.1 -d 192.168.1.1
 
 # Quiet mode for scripts (check exit code)
-python3 traceroute_simulator.py --routing-dir tests/routing_facts -q -s 10.1.1.1 -d 10.2.1.1
+python3 traceroute_simulator.py --tsim-facts tests/tsim_facts -q -s 10.1.1.1 -d 10.2.1.1
 echo "Exit code: $?"
 ```
 
@@ -339,7 +344,7 @@ echo "Exit code: $?"
 | `-v` | `--verbose` | Enable verbose output (-v basic, -vv detailed debugging) |
 | `-q` | `--quiet` | Quiet mode - no output, use exit codes only |
 | `-j` | `--json` | Output results in JSON format |
-| | `--routing-dir DIR` | Custom directory containing routing facts (default: `routing_facts`) |
+| | `--tsim-facts DIR` | Directory containing unified facts files (default: `tsim_facts`) |
 | | `--no-mtr` | Disable MTR fallback (simulation only) |
 | | `--reverse-trace` | Enable reverse path tracing when forward simulation fails |
 | | `--controller-ip IP` | Ansible controller IP address (auto-detected if not specified) |
@@ -351,7 +356,7 @@ echo "Exit code: $?"
   - `-vv`: Detailed debugging including simulation output and MTR command details
 - **Quiet Mode (`-q`)**: Suppresses all output, useful for automation scripts that check exit codes
 - **JSON Mode (`-j`)**: Outputs structured data suitable for parsing by other tools
-- **Custom Directory**: Allows using different sets of routing data for testing or multiple environments (default: `routing_facts`)
+- **Custom Directory**: Allows using different sets of unified facts for testing or multiple environments (default: `tsim_facts`)
 - **MTR Fallback (`--no-mtr`)**: Disable automatic MTR fallback for simulation-only mode
 - **Reverse Path Tracing (`--reverse-trace`)**: Enable three-step reverse path discovery when forward simulation fails
 - **Controller IP (`--controller-ip`)**: Specify Ansible controller IP for reverse tracing (auto-detected using default route if not provided)
@@ -458,13 +463,13 @@ Reverse path tracing implements a sophisticated three-step approach:
 
 ```bash
 # Enable reverse path tracing with auto-detected controller IP
-python3 traceroute_simulator.py -s 10.1.1.1 -d 192.168.1.1 --reverse-trace
+python3 traceroute_simulator.py --tsim-facts tests/tsim_facts -s 10.1.1.1 -d 192.168.1.1 --reverse-trace
 
 # Specify custom controller IP for reverse tracing
-python3 traceroute_simulator.py -s 10.1.1.1 -d 192.168.1.1 --reverse-trace --controller-ip 192.168.100.1
+python3 traceroute_simulator.py --tsim-facts tests/tsim_facts -s 10.1.1.1 -d 192.168.1.1 --reverse-trace --controller-ip 192.168.100.1
 
 # Verbose mode shows all three steps in detail
-python3 traceroute_simulator.py -s 10.1.1.1 -d 192.168.1.1 --reverse-trace -vv
+python3 traceroute_simulator.py --tsim-facts tests/tsim_facts -s 10.1.1.1 -d 192.168.1.1 --reverse-trace -vv
 ```
 
 ### Requirements
@@ -548,17 +553,16 @@ The project includes an enhanced Ansible playbook that executes basic `ip` comma
 2. **Run the data collection playbook**:
    ```bash
    # Using inventory file
-   ansible-playbook -i hosts.yml get_routing_info.yml -e "output_dir=my_data"
+   ansible-playbook -i hosts.yml ansible/get_tsim_facts.yml -e "tsim_facts_dir=my_data"
    
    # Using configured inventory with group targeting
-   ansible-playbook get_routing_info.yml --limit routers -e "output_dir=my_data"
+   ansible-playbook ansible/get_tsim_facts.yml --limit routers -e "tsim_facts_dir=my_data"
    ```
 
 3. **Verify collected data**:
    ```bash
    ls my_data/
-   # hq-gw_route.json  hq-gw_rule.json  hq-gw_iptables.txt  hq-gw_ipsets.txt
-   # br-gw_route.json  br-gw_rule.json  br-gw_iptables.txt  br-gw_ipsets.txt
+   # hq-gw.json  br-gw.json  dc-gw.json  ... (unified JSON files)
    ```
 
 ### Enhanced Compatibility Features
@@ -580,26 +584,25 @@ For single routers or custom setups:
 
 ```bash
 # Create output directory
-mkdir -p routing_facts
+mkdir -p tsim_facts
 
-# Collect routing table
-ip --json route list > routing_facts/hostname_route.json
+# Run unified facts collection script
+sudo bash ansible/get_facts.sh > tsim_facts/hostname_raw_facts.txt
 
-# Collect policy rules
-ip --json rule list > routing_facts/hostname_rule.json
+# Convert to structured JSON
+python3 ansible/process_facts.py tsim_facts/hostname_raw_facts.txt tsim_facts/hostname.json
 ```
 
 ### Data Format
 
-The project supports multiple data types for comprehensive network analysis:
+The project uses a unified JSON format for comprehensive network analysis:
 
-- **Route files** (`*_route.json`): Output from `ip --json route list`
-- **Rule files** (`*_rule.json`): Output from `ip --json rule list`
+- **Unified JSON files** (`*.json`): Complete network facts including routing, rules, iptables, and system information
 - **Metadata files** (`*_metadata.json`): Router classification and properties (optional)
-- **Iptables files** (`*_iptables.txt`): Complete iptables configuration and network information
-- **Ipset files** (`*_ipsets.txt`): Ipset definitions and membership (if available)
 
-File naming convention: `{hostname}_{type}.{ext}` (e.g., `hq-gw_route.json`, `hq-gw_iptables.txt`)
+File naming convention: `{hostname}.json` (e.g., `hq-gw.json`, `br-gw.json`)
+
+**Legacy Data Conversion**: The project includes `convert_legacy_facts.py` to migrate from the old 3-file format (`*_route.json`, `*_rule.json`, `*_metadata.json`) to the new unified format.
 
 ### IP JSON Wrapper for Legacy Systems
 
@@ -660,7 +663,7 @@ The project includes a professional network topology visualization system that g
 
 ```bash
 # Generate network topology diagram
-cd testing
+cd docs
 python3 network_topology_diagram.py
 
 # Generated files:
@@ -794,7 +797,7 @@ The simulator uses standard exit codes for automation and error handling:
 
 ```bash
 #!/bin/bash
-python3 traceroute_simulator.py --routing-dir routing_facts -q -s "$1" -d "$2"
+python3 traceroute_simulator.py --tsim-facts tsim_facts -q -s "$1" -d "$2"
 case $? in
     0) echo "Route found" ;;
     1) echo "No path available" ;;
@@ -825,13 +828,13 @@ make clean
 
 **Main Traceroute Simulator Tests (64 test cases)**:
 ```bash
-cd testing
+cd tests
 python3 test_traceroute_simulator.py
 ```
 
 **IP JSON Wrapper Validation (7 test cases)**:
 ```bash
-cd testing  
+cd tests  
 python3 test_ip_json_comparison.py
 ```
 
@@ -839,7 +842,7 @@ python3 test_ip_json_comparison.py
 
 ```bash
 # Run comprehensive test suite
-cd testing
+cd tests
 python3 test_traceroute_simulator.py
 
 # Expected output
@@ -857,7 +860,7 @@ NETWORK TOPOLOGY:
 
 **MTR Integration Tests (8 test cases)**:
 ```bash
-cd testing  
+cd tests  
 python3 test_mtr_integration.py
 ```
 
@@ -926,11 +929,11 @@ make fetch-routing-data OUTPUT_DIR=temp INVENTORY=router-01
 
 ```bash
 # Intra-location routing (HQ internal)
-python3 traceroute_simulator.py --routing-dir tests/routing_facts -s 10.1.1.1 -d 10.1.2.1
+python3 traceroute_simulator.py --tsim-facts tests/tsim_facts -s 10.1.1.1 -d 10.1.2.1
 # Output: HQ gateway to core router
 
 # Inter-location routing (HQ to Branch)
-python3 traceroute_simulator.py --routing-dir tests/routing_facts -s 10.1.1.1 -d 10.2.1.1
+python3 traceroute_simulator.py --tsim-facts tests/tsim_facts -s 10.1.1.1 -d 10.2.1.1
 # Output: Cross-site via WireGuard tunnel
 ```
 
@@ -938,11 +941,11 @@ python3 traceroute_simulator.py --routing-dir tests/routing_facts -s 10.1.1.1 -d
 
 ```bash
 # From HQ lab network to DC server network
-python3 traceroute_simulator.py --routing-dir tests/routing_facts -s 10.1.10.100 -d 10.3.20.200
+python3 traceroute_simulator.py --tsim-facts tests/tsim_facts -s 10.1.10.100 -d 10.3.20.200
 # Output: Complex multi-hop path through multiple locations
 
 # Branch WiFi to Data Center servers  
-python3 traceroute_simulator.py --routing-dir tests/routing_facts -s 10.2.5.50 -d 10.3.21.100
+python3 traceroute_simulator.py --tsim-facts tests/tsim_facts -s 10.2.5.50 -d 10.3.21.100
 # Output: Cross-location routing via distribution layers
 ```
 
@@ -950,14 +953,14 @@ python3 traceroute_simulator.py --routing-dir tests/routing_facts -s 10.2.5.50 -
 
 ```bash
 # Check connectivity in script
-if python3 traceroute_simulator.py --routing-dir tests/routing_facts -q -s 10.1.1.1 -d 10.3.1.1; then
+if python3 traceroute_simulator.py --tsim-facts tests/tsim_facts -q -s 10.1.1.1 -d 10.3.1.1; then
     echo "HQ to DC route available"
 else
     echo "No route found"
 fi
 
 # JSON processing with jq
-python3 traceroute_simulator.py --routing-dir tests/routing_facts -j -s 10.1.10.1 -d 10.3.20.1 | \
+python3 traceroute_simulator.py --tsim-facts tests/tsim_facts -j -s 10.1.10.1 -d 10.3.20.1 | \
     jq '.traceroute_path[].router_name'
 ```
 
@@ -965,15 +968,15 @@ python3 traceroute_simulator.py --routing-dir tests/routing_facts -j -s 10.1.10.
 
 ```bash
 # WireGuard tunnel mesh routing
-python3 traceroute_simulator.py --routing-dir tests/routing_facts -s 10.100.1.1 -d 10.100.1.3
+python3 traceroute_simulator.py --tsim-facts tests/tsim_facts -s 10.100.1.1 -d 10.100.1.3
 # Output: Direct VPN tunnel communication
 
 # Multi-hop cross-location routing
-python3 traceroute_simulator.py --routing-dir tests/routing_facts -v -s 10.1.11.1 -d 10.2.6.1  
+python3 traceroute_simulator.py --tsim-facts tests/tsim_facts -v -s 10.1.11.1 -d 10.2.6.1  
 # Output: HQ lab to Branch WiFi with detailed hop information
 
 # Maximum complexity: End-to-end across all 3 locations
-python3 traceroute_simulator.py --routing-dir tests/routing_facts -s 10.1.11.100 -d 10.3.21.200
+python3 traceroute_simulator.py --tsim-facts tests/tsim_facts -s 10.1.11.100 -d 10.3.21.200
 # Output: Lab host → HQ → Branch → DC → Server host
 ```
 
@@ -981,15 +984,15 @@ python3 traceroute_simulator.py --routing-dir tests/routing_facts -s 10.1.11.100
 
 ```bash
 # Basic reverse path tracing to external destination with timing
-python3 traceroute_simulator.py --routing-dir tests/routing_facts -s 10.1.1.1 -d 8.8.8.8 --reverse-trace
+python3 traceroute_simulator.py --tsim-facts tests/tsim_facts -s 10.1.1.1 -d 8.8.8.8 --reverse-trace
 # Output: Three-step bidirectional path discovery with RTT data
 
 # MTR fallback with timing information  
-python3 traceroute_simulator.py --routing-dir tests/routing_facts -s 10.1.1.1 -d 8.8.8.8
+python3 traceroute_simulator.py --tsim-facts tests/tsim_facts -s 10.1.1.1 -d 8.8.8.8
 # Output: Forward tracing with mtr tool and timing data
 
 # Detailed reverse tracing with full debugging
-python3 traceroute_simulator.py --routing-dir tests/routing_facts -s 10.1.1.1 -d 203.0.113.1 --reverse-trace -vv
+python3 traceroute_simulator.py --tsim-facts tests/tsim_facts -s 10.1.1.1 -d 203.0.113.1 --reverse-trace -vv
 # Output: Step-by-step reverse path tracing process with detailed MTR command output
 ```
 
@@ -1090,7 +1093,7 @@ traceroute_simulator/
 │   ├── network_topology.png     # High-resolution network diagram
 │   └── network_topology.pdf     # Vector network diagram
 ├── ansible/                     # Data collection automation
-│   └── get_routing_info.yml     # Ansible data collection playbook
+│   └── get_tsim_facts.yml       # Unified facts collection playbook
 ├── CLAUDE.md                    # Development guidelines
 └── README.md                    # This documentation
 ```

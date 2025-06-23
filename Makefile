@@ -6,7 +6,7 @@ PYTHON := python3
 PIP := pip3
 ANSIBLE := ansible-playbook
 TESTS_DIR := tests
-ROUTING_FACTS_DIR := tests/routing_facts
+ROUTING_FACTS_DIR := tests/tsim_facts
 ANSIBLE_DIR := ansible
 
 # Python modules required by the project
@@ -32,6 +32,10 @@ help:
 	@echo "  make fetch-routing-data OUTPUT_DIR=tests/routing_facts INVENTORY_FILE=hosts.ini       # Use specific inventory file"
 	@echo "  make fetch-routing-data OUTPUT_DIR=prod INVENTORY=routers              # Use configured inventory group"
 	@echo "  make fetch-routing-data OUTPUT_DIR=temp INVENTORY=specific-host        # Target specific host"
+	@echo ""
+	@echo "Test Data Collection:"
+	@echo "  # Collect facts and preserve raw data for testing (adds -e test=true to Ansible command)"
+	@echo "  make fetch-routing-data OUTPUT_DIR=tests/tsim_facts INVENTORY_FILE=hosts.ini TEST_MODE=true"
 
 # Check for existence of all required Python modules
 check-deps:
@@ -99,24 +103,38 @@ test: check-deps
 		exit 1; \
 	fi
 	
-	@if [ ! -d "$(ROUTING_FACTS_DIR)" ]; then \
-		echo "Error: Routing facts directory '$(ROUTING_FACTS_DIR)' not found"; \
-		echo "Hint: Run 'make fetch-routing-data' to collect routing information"; \
-		exit 1; \
+	# Clean previous test output
+	@echo "Cleaning previous test output..."
+	@rm -rf /tmp/traceroute_test_output
+	@mkdir -p /tmp/traceroute_test_output
+	
+	# Generate fresh test facts from raw data
+	@echo "Generating fresh test facts from raw data..."
+	@if [ -d "$(TESTS_DIR)/raw_facts" ] && [ "$$(ls -A $(TESTS_DIR)/raw_facts 2>/dev/null | wc -l)" -gt 0 ]; then \
+		$(ANSIBLE) $(ANSIBLE_DIR)/get_tsim_facts.yml -i "$(TESTS_DIR)/inventory.yml" -v -e "test=true" || { \
+			echo "Failed to generate test facts from raw data"; \
+			exit 1; \
+		}; \
+	else \
+		echo "Warning: No raw facts found in $(TESTS_DIR)/raw_facts, using existing test facts"; \
+		cp -r $(ROUTING_FACTS_DIR)/* /tmp/traceroute_test_output/ 2>/dev/null || { \
+			echo "Error: No test facts available"; \
+			echo "Hint: Run 'make fetch-routing-data TEST_MODE=true' to generate test data"; \
+			exit 1; \
+		}; \
 	fi
 	
-	# Count available routing facts
-	@route_files=$$(find $(ROUTING_FACTS_DIR) -name "*_route.json" | wc -l); \
-	rule_files=$$(find $(ROUTING_FACTS_DIR) -name "*_rule.json" | wc -l); \
+	# Count available test facts
+	@test_files=$$(find /tmp/traceroute_test_output -name "*.json" | wc -l); \
 	echo "Test Environment Status:"; \
-	echo "  Routing files: $$route_files"; \
-	echo "  Rule files: $$rule_files"; \
+	echo "  Test facts directory: /tmp/traceroute_test_output"; \
+	echo "  JSON files: $$test_files"; \
 	echo ""
 	
 	# Run main test suite
 	@echo "1. Running Main Traceroute Simulator Tests"
 	@echo "-----------------------------------------------"
-	@cd $(TESTS_DIR) && TRACEROUTE_SIMULATOR_CONF=test_config.yaml $(PYTHON) test_traceroute_simulator.py || { \
+	@cd $(TESTS_DIR) && TRACEROUTE_SIMULATOR_FACTS=/tmp/traceroute_test_output TRACEROUTE_SIMULATOR_CONF=test_config.yaml $(PYTHON) test_traceroute_simulator.py || { \
 		echo "Main test suite failed!"; \
 		exit 1; \
 	}
@@ -127,7 +145,7 @@ test: check-deps
 	@if [ -f "$(TESTS_DIR)/test_ip_json_comparison.py" ]; then \
 		echo "2. Running IP JSON Wrapper Comparison Tests"; \
 		echo "--------------------------------------------------"; \
-		cd $(TESTS_DIR) && TRACEROUTE_SIMULATOR_CONF=test_config.yaml $(PYTHON) test_ip_json_comparison.py || { \
+		cd $(TESTS_DIR) && TRACEROUTE_SIMULATOR_FACTS=/tmp/traceroute_test_output TRACEROUTE_SIMULATOR_CONF=test_config.yaml $(PYTHON) test_ip_json_comparison.py || { \
 			echo "Warning: IP JSON wrapper tests failed (may not be critical)"; \
 		}; \
 		echo "✓ IP JSON wrapper tests completed"; \
@@ -138,10 +156,21 @@ test: check-deps
 	@if [ -f "$(TESTS_DIR)/test_mtr_integration.py" ]; then \
 		echo "2.5. Running MTR Integration Tests"; \
 		echo "-------------------------------------"; \
-		cd $(TESTS_DIR) && TRACEROUTE_SIMULATOR_CONF=test_config.yaml $(PYTHON) test_mtr_integration.py || { \
+		cd $(TESTS_DIR) && TRACEROUTE_SIMULATOR_FACTS=/tmp/traceroute_test_output TRACEROUTE_SIMULATOR_CONF=test_config.yaml $(PYTHON) test_mtr_integration.py || { \
 			echo "Warning: MTR integration tests failed (may not be critical)"; \
 		}; \
 		echo "✓ MTR integration tests completed"; \
+		echo ""; \
+	fi
+	
+	# Run comprehensive facts processing tests if available
+	@if [ -f "$(TESTS_DIR)/test_comprehensive_facts_processing.py" ]; then \
+		echo "2.8. Running Comprehensive Facts Processing Tests"; \
+		echo "-----------------------------------------------------"; \
+		cd $(TESTS_DIR) && TRACEROUTE_SIMULATOR_FACTS=/tmp/traceroute_test_output TRACEROUTE_SIMULATOR_CONF=test_config.yaml $(PYTHON) test_comprehensive_facts_processing.py || { \
+			echo "Warning: Comprehensive facts processing tests failed (may not be critical)"; \
+		}; \
+		echo "✓ Comprehensive facts processing tests completed"; \
 		echo ""; \
 	fi
 	
@@ -149,15 +178,15 @@ test: check-deps
 	@echo "3. Running Integration Tests"
 	@echo "---------------------------------"
 	@echo "Testing basic routing scenarios..."
-	@$(PYTHON) traceroute_simulator.py --routing-dir $(ROUTING_FACTS_DIR) -s 10.1.1.1 -d 10.2.1.1 > /dev/null && \
+	@TRACEROUTE_SIMULATOR_FACTS=/tmp/traceroute_test_output $(PYTHON) traceroute_simulator.py -s 10.1.1.1 -d 10.2.1.1 > /dev/null && \
 		echo "✓ Inter-location routing test passed" || \
 		echo "✗ Inter-location routing test failed"
 	
-	@$(PYTHON) traceroute_simulator.py --routing-dir $(ROUTING_FACTS_DIR) -s 10.100.1.1 -d 10.100.1.3 > /dev/null && \
+	@TRACEROUTE_SIMULATOR_FACTS=/tmp/traceroute_test_output $(PYTHON) traceroute_simulator.py -s 10.100.1.1 -d 10.100.1.3 > /dev/null && \
 		echo "✓ VPN mesh routing test passed" || \
 		echo "✗ VPN mesh routing test failed"
 	
-	@$(PYTHON) traceroute_simulator.py --routing-dir $(ROUTING_FACTS_DIR) -j -s 10.1.10.1 -d 10.3.20.1 > /dev/null && \
+	@TRACEROUTE_SIMULATOR_FACTS=/tmp/traceroute_test_output $(PYTHON) traceroute_simulator.py -j -s 10.1.10.1 -d 10.3.20.1 > /dev/null && \
 		echo "✓ JSON output test passed" || \
 		echo "✗ JSON output test failed"
 	
@@ -173,7 +202,7 @@ test: check-deps
 #
 # Usage: make fetch-routing-data OUTPUT_DIR=directory_name [INVENTORY_FILE=file OR INVENTORY=group/host]
 fetch-routing-data:
-	@echo "Fetching Routing Data from Network Routers"
+	@echo "Fetching Traceroute Simulator Facts from Network Routers"
 	@echo "=============================================="
 	@echo ""
 	
@@ -232,8 +261,8 @@ fetch-routing-data:
 	fi
 	
 	# Check if playbook exists
-	@if [ ! -f "$(ANSIBLE_DIR)/get_routing_info.yml" ]; then \
-		echo "Error: Ansible playbook '$(ANSIBLE_DIR)/get_routing_info.yml' not found"; \
+	@if [ ! -f "$(ANSIBLE_DIR)/get_tsim_facts.yml" ]; then \
+		echo "Error: Ansible playbook '$(ANSIBLE_DIR)/get_tsim_facts.yml' not found"; \
 		exit 1; \
 	fi
 	
@@ -246,7 +275,7 @@ fetch-routing-data:
 	
 	# Validate playbook syntax
 	@echo "Validating Ansible playbook syntax..."
-	@$(ANSIBLE) $(ANSIBLE_DIR)/get_routing_info.yml --syntax-check || { \
+	@$(ANSIBLE) $(ANSIBLE_DIR)/get_tsim_facts.yml --syntax-check || { \
 		echo "Playbook syntax validation failed!"; \
 		exit 1; \
 	}
@@ -261,15 +290,28 @@ fetch-routing-data:
 	fi
 	
 	# Run the playbook with user-specified output directory and inventory
-	@echo "Executing Ansible playbook to collect routing information..."
-	@if [ -n "$(INVENTORY_FILE)" ]; then \
-		$(ANSIBLE) $(ANSIBLE_DIR)/get_routing_info.yml -i "$(INVENTORY_FILE)" -v -e "output_dir=$(TARGET_DIR)" || { \
+	@echo "Executing Ansible playbook to collect traceroute simulator facts..."
+	$(eval TEST_FLAG := $(if $(TEST_MODE),-e "test=true",))
+	$(eval TEST_INVENTORY := $(if $(TEST_MODE),$(TESTS_DIR)/inventory.yml,))
+	@if [ -n "$(TEST_MODE)" ]; then \
+		echo "Test mode enabled: Converting raw facts from tests/raw_facts/"; \
+		echo "Using test inventory: $(TESTS_DIR)/inventory.yml"; \
+		echo "Output directory: /tmp/traceroute_test_output"; \
+	fi
+	@if [ -n "$(TEST_MODE)" ]; then \
+		$(ANSIBLE) $(ANSIBLE_DIR)/get_tsim_facts.yml -i "$(TESTS_DIR)/inventory.yml" -v $(TEST_FLAG) || { \
+			echo "Ansible playbook execution failed in test mode!"; \
+			echo "Check that tests/raw_facts/ contains the necessary router facts files"; \
+			exit 1; \
+		}; \
+	elif [ -n "$(INVENTORY_FILE)" ]; then \
+		$(ANSIBLE) $(ANSIBLE_DIR)/get_tsim_facts.yml -i "$(INVENTORY_FILE)" -v -e "tsim_facts_dir=$(TARGET_DIR)" || { \
 			echo "Ansible playbook execution failed!"; \
 			echo "Check your inventory file and network connectivity"; \
 			exit 1; \
 		}; \
 	else \
-		$(ANSIBLE) $(ANSIBLE_DIR)/get_routing_info.yml --limit "$(INVENTORY)" -v -e "output_dir=$(TARGET_DIR)" || { \
+		$(ANSIBLE) $(ANSIBLE_DIR)/get_tsim_facts.yml --limit "$(INVENTORY)" -v -e "tsim_facts_dir=$(TARGET_DIR)" || { \
 			echo "Ansible playbook execution failed!"; \
 			echo "Check your inventory configuration and network connectivity"; \
 			echo "Ensure the group/host '$(INVENTORY)' exists in your configured inventory"; \
@@ -279,18 +321,20 @@ fetch-routing-data:
 	
 	# Verify collected data
 	@if [ -d "$(TARGET_DIR)" ]; then \
-		route_files=$$(find $(TARGET_DIR) -name "*_route.json" | wc -l); \
-		rule_files=$$(find $(TARGET_DIR) -name "*_rule.json" | wc -l); \
+		json_files=$$(find $(TARGET_DIR) -name "*.json" | wc -l); \
 		echo ""; \
-		echo "Routing data collection completed!"; \
-		echo "  Route files collected: $$route_files"; \
-		echo "  Rule files collected: $$rule_files"; \
+		echo "Traceroute simulator facts collection completed!"; \
+		echo "  JSON files collected: $$json_files"; \
 		echo "  Data location: $(TARGET_DIR)"; \
-		if [ $$route_files -eq 0 ] || [ $$rule_files -eq 0 ]; then \
-			echo "Warning: Some files may be missing. Check Ansible output above."; \
+		if [ -n "$(TEST_MODE)" ]; then \
+			echo "  Test mode: Raw facts preserved in tests/raw_facts/"; \
+			echo "  Run tests: cd tests && python3 test_comprehensive_facts_processing.py"; \
+		fi; \
+		if [ $$json_files -eq 0 ]; then \
+			echo "Warning: No JSON files collected. Check Ansible output above."; \
 		fi; \
 	else \
-		echo "No routing facts were collected!"; \
+		echo "No facts were collected!"; \
 		exit 1; \
 	fi
 

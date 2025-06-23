@@ -1,0 +1,984 @@
+# Traceroute Simulator Facts Collection
+# Generated on: 2025-06-21 15:18:34
+# Hostname: br-core
+# Kernel: 5.15.0-78-generic
+# Collection Script Version: 1.0
+
+# Locating required commands in standard paths
+# Found commands:
+# IP: /sbin/ip
+# IPTABLES: /sbin/iptables
+# IPTABLES-SAVE: /sbin/iptables-save
+# IPSET: /sbin/ipset
+# LSMOD: /bin/lsmod
+# Running as root: 1
+
+=== TSIM_SECTION_START:routing_table ===
+TITLE: IP Routing Table
+COMMAND: /sbin/ip route show
+TIMESTAMP: 2025-06-21 15:18:34
+---
+default via 10.2.1.1 dev eth0 metric 100
+10.2.1.0/24 dev eth0 proto kernel scope link src 10.2.1.2
+10.2.2.0/24 dev eth1 proto kernel scope link src 10.2.2.1
+10.2.3.0/24 dev eth2 proto kernel scope link src 10.2.3.1
+10.2.5.0/24 dev eth3 proto kernel scope link src 10.2.5.1
+10.2.6.0/24 dev eth4 proto kernel scope link src 10.2.6.1
+10.1.0.0/16 via 10.2.1.1 dev eth0 metric 1
+10.3.0.0/16 via 10.2.1.1 dev eth0 metric 1
+10.100.1.0/24 via 10.2.1.1 dev eth0 metric 1
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:routing_table ===
+
+=== TSIM_SECTION_START:policy_rules ===
+TITLE: IP Policy Rules
+COMMAND: /sbin/ip rule show
+TIMESTAMP: 2025-06-21 15:18:34
+---
+0:	from all lookup local
+30:	from 10.2.2.0/24 lookup wifi_priority
+40:	from 10.2.3.0/24 lookup guest_priority
+60:	from 10.2.5.0/24 lookup server_priority
+32766:	from all lookup main
+32767:	from all lookup default
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:policy_rules ===
+
+=== TSIM_SECTION_START:interfaces ===
+TITLE: Network Interfaces
+COMMAND: /sbin/ip addr show
+TIMESTAMP: 2025-06-21 15:18:34
+---
+1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN group default qlen 1000
+    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+    inet 127.0.0.1/8 scope host lo
+       valid_lft forever preferred_lft forever
+2: eth0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
+    link/ether 52:54:00:62:24:01 brd ff:ff:ff:ff:ff:ff
+    inet 10.2.1.2/24 brd 10.2.1.255 scope global eth0
+       valid_lft forever preferred_lft forever
+3: eth1: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
+    link/ether 52:54:00:62:24:02 brd ff:ff:ff:ff:ff:ff
+    inet 10.2.2.1/24 brd 10.2.2.255 scope global eth1
+       valid_lft forever preferred_lft forever
+4: eth2: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
+    link/ether 52:54:00:62:24:03 brd ff:ff:ff:ff:ff:ff
+    inet 10.2.3.1/24 brd 10.2.3.255 scope global eth2
+       valid_lft forever preferred_lft forever
+5: eth3: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
+    link/ether 52:54:00:62:24:04 brd ff:ff:ff:ff:ff:ff
+    inet 10.2.5.1/24 brd 10.2.5.255 scope global eth3
+       valid_lft forever preferred_lft forever
+6: eth4: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
+    link/ether 52:54:00:62:24:05 brd ff:ff:ff:ff:ff:ff
+    inet 10.2.6.1/24 brd 10.2.6.255 scope global eth4
+       valid_lft forever preferred_lft forever
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:interfaces ===
+
+=== TSIM_SECTION_START:interface_stats ===
+TITLE: Interface Statistics
+COMMAND: cat /proc/net/dev
+TIMESTAMP: 2025-06-21 15:18:34
+---
+Inter-|   Receive                                                |  Transmit
+ face |bytes    packets errs drop fifo frame compressed multicast|bytes    packets errs drop fifo colls carrier compressed
+    lo:   12345      123    0    0    0     0          0         0    12345      123    0    0    0     0       0          0
+  eth0: 9876543     9876    0    0    0     0          0         0  8765432     8765    0    0    0     0       0          0
+  eth1: 7654321     7654    0    0    0     0          0         0  6543210     6543    0    0    0     0       0          0
+  eth2: 5432109     5432    0    0    0     0          0         0  4321098     4321    0    0    0     0       0          0
+  eth3: 3210987     3210    0    0    0     0          0         0  2109876     2109    0    0    0     0       0          0
+  eth4: 1098765     1098    0    0    0     0          0         0   987654      987    0    0    0     0       0          0
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:interface_stats ===
+
+=== TSIM_SECTION_START:ip_forwarding ===
+TITLE: IP Forwarding Status
+COMMAND: cat /proc/sys/net/ipv4/ip_forward
+TIMESTAMP: 2025-06-21 15:18:34
+---
+1
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:ip_forwarding ===
+
+=== TSIM_SECTION_START:kernel_version ===
+TITLE: Kernel Version
+COMMAND: uname -r
+TIMESTAMP: 2025-06-21 15:18:34
+---
+5.15.0-78-generic
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:kernel_version ===
+
+=== TSIM_SECTION_START:loaded_modules ===
+TITLE: Loaded Kernel Modules
+COMMAND: /bin/lsmod
+TIMESTAMP: 2025-06-21 15:18:34
+---
+Module                  Size  Used by
+xt_REDIRECT            16384  0
+xt_NETMAP              16384  0
+xt_conntrack           16384  8
+xt_CHECKSUM            16384  0
+xt_CLASSIFY            16384  4
+xt_DSCP                16384  2
+xt_LOG                 16384  6
+xt_limit               16384  12
+xt_multiport           16384  8
+xt_recent              16384  4
+xt_set                 16384  16
+xt_state               16384  4
+xt_statistic           16384  2
+xt_string              16384  6
+xt_tcpudp              16384  12
+xt_time                16384  8
+xt_u32                 16384  4
+ipt_MASQUERADE         16384  0
+ipt_REJECT             16384  8
+ipt_ULOG               16384  0
+ip_set                 49152  1 xt_set
+ip_set_hash_net        16384  1
+ip_set_hash_ip         16384  1
+ip_set_hash_netport    16384  1
+ip_set_hash_ipport     16384  1
+ip_set_hash_netnet     16384  1
+ip_set_hash_ipportnet  16384  1
+ip_set_list_set        16384  1
+ip_set_bitmap_port     16384  1
+ip_set_bitmap_ip       16384  1
+ip_tables              32768  0
+x_tables               40960  20 xt_REDIRECT,xt_NETMAP,xt_conntrack,xt_CHECKSUM,xt_CLASSIFY,xt_DSCP,xt_LOG,xt_limit,xt_multiport,xt_recent,xt_set,xt_state,xt_statistic,xt_string,xt_tcpudp,xt_time,xt_u32,ipt_MASQUERADE,ipt_REJECT,ipt_ULOG
+nf_conntrack           139264  4 xt_conntrack,xt_state,ipt_MASQUERADE,nf_nat
+nf_nat                 40960  1 ipt_MASQUERADE
+nf_defrag_ipv4         16384  1 nf_conntrack
+nf_defrag_ipv6         24576  1 nf_conntrack
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:loaded_modules ===
+
+=== TSIM_SECTION_START:conntrack_info ===
+TITLE: Connection Tracking Information
+COMMAND: cat /proc/sys/net/nf_conntrack_max
+TIMESTAMP: 2025-06-21 15:18:34
+---
+262144
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:conntrack_info ===
+
+=== TSIM_SECTION_START:iptables_info ===
+TITLE: Iptables Information
+COMMAND: /sbin/iptables --version
+TIMESTAMP: 2025-06-21 15:18:34
+---
+iptables v1.8.7 (nf_tables)
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:iptables_info ===
+
+=== TSIM_SECTION_START:iptables_save ===
+TITLE: Complete Iptables Configuration
+COMMAND: /sbin/iptables-save
+TIMESTAMP: 2025-06-21 15:18:34
+---
+# Generated by iptables-save v1.8.7 on Fri Jun 21 15:18:34 2025
+*filter
+:INPUT ACCEPT [567:98542]
+:FORWARD DROP [0:0]
+:OUTPUT ACCEPT [432:87234]
+:BR_CORE_FORWARD - [0:0]
+:BR_VLAN_SEGMENTATION - [0:0]
+:BR_WIFI_CONTROL - [0:0]
+:BR_GUEST_ISOLATION - [0:0]
+:BR_SERVER_ACCESS - [0:0]
+:BR_BANDWIDTH_CONTROL - [0:0]
+:BR_SECURITY_SCAN - [0:0]
+:BR_CONTENT_FILTER - [0:0]
+:BR_QOS_MARKING - [0:0]
+:BR_INTER_VLAN - [0:0]
+:BR_GUEST_TIMEOUTS - [0:0]
+:BR_WIFI_PRIORITIES - [0:0]
+:BR_NETWORK_MONITORING - [0:0]
+:BR_TRAFFIC_SHAPING - [0:0]
+:BR_INTRUSION_PREVENTION - [0:0]
+:BR_ACCESS_CONTROL - [0:0]
+:BR_RATE_LIMITING - [0:0]
+:BR_CONTENT_INSPECTION - [0:0]
+:BR_POLICY_ROUTING - [0:0]
+:RATE_LIMIT - [0:0]
+:LOG_AND_DROP - [0:0]
+:ACCEPT_WITH_LOG - [0:0]
+
+# Main FORWARD chain - Branch core distribution logic
+-A FORWARD -i eth0 -o eth1 -m set --match-set BR_WIFI_ALLOWED src -j BR_WIFI_CONTROL
+-A FORWARD -i eth0 -o eth2 -m set --match-set BR_GUEST_ALLOWED src -j BR_GUEST_ISOLATION
+-A FORWARD -i eth0 -o eth3 -m set --match-set BR_SERVER_ALLOWED src -j BR_SERVER_ACCESS
+-A FORWARD -i eth0 -o eth4 -m set --match-set BR_OFFICE_ALLOWED src -j BR_CORE_FORWARD
+-A FORWARD -i eth1 -o eth0 -m set --match-set BR_WIFI_CLIENTS src -j BR_WIFI_CONTROL
+-A FORWARD -i eth1 -o eth2 -m set --match-set BR_WIFI_TO_GUEST dst -j BR_GUEST_ISOLATION
+-A FORWARD -i eth1 -o eth3 -m set --match-set BR_WIFI_TO_SERVER dst -j BR_SERVER_ACCESS
+-A FORWARD -i eth1 -o eth4 -m set --match-set BR_WIFI_TO_OFFICE dst -j BR_VLAN_SEGMENTATION
+-A FORWARD -i eth2 -o eth0 -m set --match-set BR_GUEST_CLIENTS src -j BR_GUEST_TIMEOUTS
+-A FORWARD -i eth2 -o eth1 -m set --match-set BR_GUEST_TO_WIFI dst -j LOG_AND_DROP
+-A FORWARD -i eth2 -o eth3 -m set --match-set BR_GUEST_TO_SERVER dst -j LOG_AND_DROP
+-A FORWARD -i eth2 -o eth4 -m set --match-set BR_GUEST_TO_OFFICE dst -j LOG_AND_DROP
+-A FORWARD -i eth3 -o eth0 -m set --match-set BR_SERVER_CLIENTS src -j BR_SERVER_ACCESS
+-A FORWARD -i eth3 -o eth1 -m set --match-set BR_SERVER_TO_WIFI dst -j BR_WIFI_PRIORITIES
+-A FORWARD -i eth3 -o eth2 -m set --match-set BR_SERVER_TO_GUEST dst -j LOG_AND_DROP
+-A FORWARD -i eth3 -o eth4 -m set --match-set BR_SERVER_TO_OFFICE dst -j BR_INTER_VLAN
+-A FORWARD -i eth4 -o eth0 -m set --match-set BR_OFFICE_CLIENTS src -j BR_CORE_FORWARD
+-A FORWARD -i eth4 -o eth1 -m set --match-set BR_OFFICE_TO_WIFI dst -j BR_WIFI_CONTROL
+-A FORWARD -i eth4 -o eth2 -m set --match-set BR_OFFICE_TO_GUEST dst -j BR_GUEST_ISOLATION
+-A FORWARD -i eth4 -o eth3 -m set --match-set BR_OFFICE_TO_SERVER dst -j BR_SERVER_ACCESS
+-A FORWARD -m state --state RELATED,ESTABLISHED -j ACCEPT
+-A FORWARD -j BR_INTRUSION_PREVENTION
+
+# BR_CORE_FORWARD - Main distribution logic for branch core
+-A BR_CORE_FORWARD -m set --match-set BR_PRIORITY_TRAFFIC src,dst -j BR_QOS_MARKING
+-A BR_CORE_FORWARD -m set --match-set BR_CRITICAL_SERVICES src,dst,dst -j ACCEPT_WITH_LOG
+-A BR_CORE_FORWARD -m set --match-set BR_BUSINESS_HOURS_ONLY src -m time --timestart 08:00 --timestop 18:00 --weekdays Mon,Tue,Wed,Thu,Fri -j ACCEPT
+-A BR_CORE_FORWARD -m set --match-set BR_UNRESTRICTED_HOSTS src -j ACCEPT
+-A BR_CORE_FORWARD -m set --match-set BR_BANDWIDTH_LIMITED src -j BR_BANDWIDTH_CONTROL
+-A BR_CORE_FORWARD -m hashlimit --hashlimit-above 100/sec --hashlimit-burst 200 --hashlimit-mode srcip --hashlimit-name br_flood_protect -j LOG_AND_DROP
+-A BR_CORE_FORWARD -j BR_SECURITY_SCAN
+
+# BR_VLAN_SEGMENTATION - Inter-VLAN communication control
+-A BR_VLAN_SEGMENTATION -m set --match-set BR_VLAN_MATRIX src,dst -j ACCEPT
+-A BR_VLAN_SEGMENTATION -m set --match-set BR_VLAN_RESTRICTED src,dst -j LOG_AND_DROP
+-A BR_VLAN_SEGMENTATION -p tcp -m multiport --dports 80,443,8080 -m set --match-set BR_WEB_SERVERS dst -j ACCEPT
+-A BR_VLAN_SEGMENTATION -p tcp -m multiport --dports 22,3389 -m set --match-set BR_MGMT_SERVERS dst -j BR_ACCESS_CONTROL
+-A BR_VLAN_SEGMENTATION -j BR_POLICY_ROUTING
+
+# BR_WIFI_CONTROL - WiFi network management
+-A BR_WIFI_CONTROL -m set --match-set BR_WIFI_BLACKLIST src -j LOG_AND_DROP
+-A BR_WIFI_CONTROL -m set --match-set BR_WIFI_QUARANTINE src -j BR_CONTENT_FILTER
+-A BR_WIFI_CONTROL -m set --match-set BR_WIFI_PREMIUM src -j BR_WIFI_PRIORITIES
+-A BR_WIFI_CONTROL -m set --match-set BR_WIFI_BASIC src -j BR_BANDWIDTH_CONTROL
+-A BR_WIFI_CONTROL -p tcp -m multiport --dports 25,587,993,995 -j LOG_AND_DROP
+-A BR_WIFI_CONTROL -p tcp -m multiport --dports 1433,3306,5432 -j LOG_AND_DROP
+-A BR_WIFI_CONTROL -m connlimit --connlimit-above 20 --connlimit-mask 32 -j LOG_AND_DROP
+-A BR_WIFI_CONTROL -j BR_CONTENT_INSPECTION
+
+# BR_GUEST_ISOLATION - Guest network isolation
+-A BR_GUEST_ISOLATION -m set --match-set BR_GUEST_ALLOWED_SERVICES dst,dst -j ACCEPT
+-A BR_GUEST_ISOLATION -p tcp -m multiport --dports 80,443 -j ACCEPT
+-A BR_GUEST_ISOLATION -p udp -m multiport --dports 53,123 -j ACCEPT
+-A BR_GUEST_ISOLATION -p icmp --icmp-type 8 -j ACCEPT
+-A BR_GUEST_ISOLATION -m set --match-set BR_LOCAL_NETWORKS dst -j LOG_AND_DROP
+-A BR_GUEST_ISOLATION -j BR_GUEST_TIMEOUTS
+
+# BR_SERVER_ACCESS - Server network access control
+-A BR_SERVER_ACCESS -m set --match-set BR_SERVER_MGMT_ALLOWED src,dst -j ACCEPT
+-A BR_SERVER_ACCESS -m set --match-set BR_SERVER_BACKUP_ALLOWED src,dst,dst -j ACCEPT
+-A BR_SERVER_ACCESS -m set --match-set BR_SERVER_MONITORING src,dst -j ACCEPT
+-A BR_SERVER_ACCESS -p tcp -m multiport --dports 22,3389 -m set --match-set BR_ADMIN_HOSTS src -j ACCEPT
+-A BR_SERVER_ACCESS -p tcp -m multiport --dports 80,443,8080,8443 -j ACCEPT
+-A BR_SERVER_ACCESS -p tcp -m multiport --dports 1433,3306,5432 -m set --match-set BR_DB_CLIENTS src -j ACCEPT
+-A BR_SERVER_ACCESS -j BR_RATE_LIMITING
+
+# BR_BANDWIDTH_CONTROL - Traffic shaping and QoS
+-A BR_BANDWIDTH_CONTROL -m set --match-set BR_HIGH_PRIORITY src -j CLASSIFY --set-class 1:10
+-A BR_BANDWIDTH_CONTROL -m set --match-set BR_MEDIUM_PRIORITY src -j CLASSIFY --set-class 1:20
+-A BR_BANDWIDTH_CONTROL -m set --match-set BR_LOW_PRIORITY src -j CLASSIFY --set-class 1:30
+-A BR_BANDWIDTH_CONTROL -m set --match-set BR_BULK_TRAFFIC src,dst,dst -j CLASSIFY --set-class 1:40
+-A BR_BANDWIDTH_CONTROL -p tcp -m multiport --dports 80,443 -j CLASSIFY --set-class 1:15
+-A BR_BANDWIDTH_CONTROL -p udp -m multiport --dports 53,123 -j CLASSIFY --set-class 1:5
+-A BR_BANDWIDTH_CONTROL -j ACCEPT
+
+# BR_SECURITY_SCAN - Security scanning and threat detection
+-A BR_SECURITY_SCAN -m set --match-set BR_KNOWN_MALWARE src -j LOG_AND_DROP
+-A BR_SECURITY_SCAN -m set --match-set BR_SUSPICIOUS_IPS src -j BR_RATE_LIMITING
+-A BR_SECURITY_SCAN -m recent --name br_scan_detect --set --rsource
+-A BR_SECURITY_SCAN -m recent --name br_scan_detect --rcheck --seconds 60 --hitcount 20 --rsource -j LOG_AND_DROP
+-A BR_SECURITY_SCAN -p tcp --tcp-flags SYN,RST SYN,RST -j LOG_AND_DROP
+-A BR_SECURITY_SCAN -p tcp --tcp-flags FIN,SYN,RST,PSH,ACK,URG NONE -j LOG_AND_DROP
+-A BR_SECURITY_SCAN -j ACCEPT
+
+# BR_CONTENT_FILTER - Content filtering and inspection
+-A BR_CONTENT_FILTER -m set --match-set BR_BLOCKED_DOMAINS dst -j LOG_AND_DROP
+-A BR_CONTENT_FILTER -m set --match-set BR_BLOCKED_CATEGORIES dst -j LOG_AND_DROP
+-A BR_CONTENT_FILTER -m string --string "malware" --algo bm --icase -j LOG_AND_DROP
+-A BR_CONTENT_FILTER -m string --string "virus" --algo bm --icase -j LOG_AND_DROP
+-A BR_CONTENT_FILTER -m u32 --u32 "0x0>>22&0x3C@0x0>>24=0x50" -j BR_CONTENT_INSPECTION
+-A BR_CONTENT_FILTER -j ACCEPT
+
+# BR_QOS_MARKING - Quality of Service marking
+-A BR_QOS_MARKING -m set --match-set BR_VOICE_TRAFFIC src,dst -j DSCP --set-dscp-class EF
+-A BR_QOS_MARKING -m set --match-set BR_VIDEO_TRAFFIC src,dst -j DSCP --set-dscp-class AF31
+-A BR_QOS_MARKING -m set --match-set BR_CRITICAL_DATA src,dst -j DSCP --set-dscp-class AF21
+-A BR_QOS_MARKING -m set --match-set BR_BULK_DATA src,dst -j DSCP --set-dscp-class AF13
+-A BR_QOS_MARKING -p tcp -m multiport --dports 22,3389 -j DSCP --set-dscp-class AF22
+-A BR_QOS_MARKING -p udp -m multiport --dports 53,123 -j DSCP --set-dscp-class CS6
+-A BR_QOS_MARKING -j ACCEPT
+
+# BR_INTER_VLAN - Inter-VLAN routing control
+-A BR_INTER_VLAN -m set --match-set BR_VLAN_ROUTES src,dst -j ACCEPT
+-A BR_INTER_VLAN -m set --match-set BR_VLAN_BLOCKED src,dst -j LOG_AND_DROP
+-A BR_INTER_VLAN -p icmp --icmp-type 8 -j ACCEPT
+-A BR_INTER_VLAN -p tcp --dport 22 -m set --match-set BR_SSH_ALLOWED src -j ACCEPT
+-A BR_INTER_VLAN -p tcp -m multiport --dports 80,443 -j ACCEPT
+-A BR_INTER_VLAN -j BR_POLICY_ROUTING
+
+# BR_GUEST_TIMEOUTS - Guest network time-based access
+-A BR_GUEST_TIMEOUTS -m set --match-set BR_GUEST_UNLIMITED src -j ACCEPT
+-A BR_GUEST_TIMEOUTS -m set --match-set BR_GUEST_4HOUR src -m recent --name br_guest_4h --set --rsource
+-A BR_GUEST_TIMEOUTS -m set --match-set BR_GUEST_4HOUR src -m recent --name br_guest_4h --rcheck --seconds 14400 --rsource -j LOG_AND_DROP
+-A BR_GUEST_TIMEOUTS -m set --match-set BR_GUEST_1HOUR src -m recent --name br_guest_1h --set --rsource
+-A BR_GUEST_TIMEOUTS -m set --match-set BR_GUEST_1HOUR src -m recent --name br_guest_1h --rcheck --seconds 3600 --rsource -j LOG_AND_DROP
+-A BR_GUEST_TIMEOUTS -j ACCEPT
+
+# BR_WIFI_PRIORITIES - WiFi QoS and priority handling
+-A BR_WIFI_PRIORITIES -m set --match-set BR_WIFI_VIP src -j CLASSIFY --set-class 1:5
+-A BR_WIFI_PRIORITIES -m set --match-set BR_WIFI_BUSINESS src -j CLASSIFY --set-class 1:10
+-A BR_WIFI_PRIORITIES -m set --match-set BR_WIFI_STANDARD src -j CLASSIFY --set-class 1:20
+-A BR_WIFI_PRIORITIES -m set --match-set BR_WIFI_GUEST src -j CLASSIFY --set-class 1:30
+-A BR_WIFI_PRIORITIES -p tcp -m multiport --dports 80,443 -j CLASSIFY --set-class 1:15
+-A BR_WIFI_PRIORITIES -p udp -m multiport --dports 53,123 -j CLASSIFY --set-class 1:5
+-A BR_WIFI_PRIORITIES -j ACCEPT
+
+# BR_NETWORK_MONITORING - Network monitoring and logging
+-A BR_NETWORK_MONITORING -m set --match-set BR_MONITOR_TARGETS src -j LOG --log-prefix "BR_MONITOR: " --log-level 6
+-A BR_NETWORK_MONITORING -m set --match-set BR_AUDIT_TRAFFIC src,dst -j LOG --log-prefix "BR_AUDIT: " --log-level 4
+-A BR_NETWORK_MONITORING -m conntrack --ctstate NEW -j LOG --log-prefix "BR_NEW_CONN: " --log-level 6
+-A BR_NETWORK_MONITORING -j ACCEPT
+
+# BR_TRAFFIC_SHAPING - Advanced traffic shaping
+-A BR_TRAFFIC_SHAPING -m set --match-set BR_SHAPE_HEAVY src -j CLASSIFY --set-class 1:50
+-A BR_TRAFFIC_SHAPING -m set --match-set BR_SHAPE_MEDIUM src -j CLASSIFY --set-class 1:40
+-A BR_TRAFFIC_SHAPING -m set --match-set BR_SHAPE_LIGHT src -j CLASSIFY --set-class 1:30
+-A BR_TRAFFIC_SHAPING -m length --length 1400:1500 -j CLASSIFY --set-class 1:35
+-A BR_TRAFFIC_SHAPING -m length --length 0:100 -j CLASSIFY --set-class 1:25
+-A BR_TRAFFIC_SHAPING -j ACCEPT
+
+# BR_INTRUSION_PREVENTION - Intrusion detection and prevention
+-A BR_INTRUSION_PREVENTION -m set --match-set BR_IPS_SIGNATURES src,dst,dst -j LOG_AND_DROP
+-A BR_INTRUSION_PREVENTION -m set --match-set BR_ATTACK_PATTERNS src,dst -j LOG_AND_DROP
+-A BR_INTRUSION_PREVENTION -m recent --name br_intrusion --set --rsource
+-A BR_INTRUSION_PREVENTION -m recent --name br_intrusion --rcheck --seconds 300 --hitcount 10 --rsource -j LOG_AND_DROP
+-A BR_INTRUSION_PREVENTION -p tcp --syn -m connlimit --connlimit-above 50 --connlimit-mask 24 -j LOG_AND_DROP
+-A BR_INTRUSION_PREVENTION -j ACCEPT
+
+# BR_ACCESS_CONTROL - Access control and authentication
+-A BR_ACCESS_CONTROL -m set --match-set BR_ADMIN_WHITELIST src -j ACCEPT
+-A BR_ACCESS_CONTROL -m set --match-set BR_MGMT_ALLOWED src,dst -j ACCEPT
+-A BR_ACCESS_CONTROL -m time --timestart 09:00 --timestop 17:00 --weekdays Mon,Tue,Wed,Thu,Fri -j ACCEPT
+-A BR_ACCESS_CONTROL -m set --match-set BR_EMERGENCY_ACCESS src -j ACCEPT
+-A BR_ACCESS_CONTROL -j LOG_AND_DROP
+
+# BR_RATE_LIMITING - Rate limiting and DoS protection
+-A BR_RATE_LIMITING -m limit --limit 50/sec --limit-burst 100 -j ACCEPT
+-A BR_RATE_LIMITING -m hashlimit --hashlimit-above 10/sec --hashlimit-burst 20 --hashlimit-mode srcip --hashlimit-name br_rate_limit -j LOG_AND_DROP
+-A BR_RATE_LIMITING -j LOG_AND_DROP
+
+# BR_CONTENT_INSPECTION - Deep packet inspection
+-A BR_CONTENT_INSPECTION -m set --match-set BR_INSPECT_PROTOCOLS src,dst,dst -j NFQUEUE --queue-num 1
+-A BR_CONTENT_INSPECTION -m u32 --u32 "0x0>>22&0x3C@0x0>>24=0x47" -j NFQUEUE --queue-num 2
+-A BR_CONTENT_INSPECTION -j ACCEPT
+
+# BR_POLICY_ROUTING - Policy-based routing
+-A BR_POLICY_ROUTING -m set --match-set BR_POLICY_ROUTES src,dst -j ACCEPT
+-A BR_POLICY_ROUTING -m set --match-set BR_ROUTE_PRIORITIES src,dst,dst -j ACCEPT
+-A BR_POLICY_ROUTING -m fwmark --mark 0x1/0x1 -j ACCEPT
+-A BR_POLICY_ROUTING -m fwmark --mark 0x2/0x2 -j ACCEPT
+-A BR_POLICY_ROUTING -j ACCEPT
+
+# RATE_LIMIT - Generic rate limiting
+-A RATE_LIMIT -m limit --limit 30/sec --limit-burst 60 -j ACCEPT
+-A RATE_LIMIT -j DROP
+
+# LOG_AND_DROP - Logging and dropping
+-A LOG_AND_DROP -j LOG --log-prefix "BR_DROPPED: " --log-level 4
+-A LOG_AND_DROP -j DROP
+
+# ACCEPT_WITH_LOG - Logging and accepting
+-A ACCEPT_WITH_LOG -j LOG --log-prefix "BR_ACCEPTED: " --log-level 6
+-A ACCEPT_WITH_LOG -j ACCEPT
+
+COMMIT
+# Completed on Fri Jun 21 15:18:34 2025
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:iptables_save ===
+
+=== TSIM_SECTION_START:ipset_save ===
+TITLE: Complete Ipset Configuration
+COMMAND: /sbin/ipset save
+TIMESTAMP: 2025-06-21 15:18:34
+---
+create BR_WIFI_ALLOWED hash:ip family inet hashsize 1024 maxelem 65536
+add BR_WIFI_ALLOWED 10.2.2.0/24
+add BR_WIFI_ALLOWED 10.2.1.100
+add BR_WIFI_ALLOWED 10.2.1.101
+add BR_WIFI_ALLOWED 10.2.1.102
+
+create BR_GUEST_ALLOWED hash:ip family inet hashsize 1024 maxelem 65536
+add BR_GUEST_ALLOWED 10.2.3.0/24
+add BR_GUEST_ALLOWED 10.2.1.200
+add BR_GUEST_ALLOWED 10.2.1.201
+
+create BR_SERVER_ALLOWED hash:ip family inet hashsize 1024 maxelem 65536
+add BR_SERVER_ALLOWED 10.2.5.0/24
+add BR_SERVER_ALLOWED 10.2.1.10
+add BR_SERVER_ALLOWED 10.2.1.11
+add BR_SERVER_ALLOWED 10.2.1.12
+
+create BR_OFFICE_ALLOWED hash:ip family inet hashsize 1024 maxelem 65536
+add BR_OFFICE_ALLOWED 10.2.6.0/24
+add BR_OFFICE_ALLOWED 10.2.1.50
+add BR_OFFICE_ALLOWED 10.2.1.51
+
+create BR_WIFI_CLIENTS hash:ip family inet hashsize 1024 maxelem 65536
+add BR_WIFI_CLIENTS 10.2.2.10
+add BR_WIFI_CLIENTS 10.2.2.11
+add BR_WIFI_CLIENTS 10.2.2.12
+add BR_WIFI_CLIENTS 10.2.2.13
+add BR_WIFI_CLIENTS 10.2.2.14
+add BR_WIFI_CLIENTS 10.2.2.15
+add BR_WIFI_CLIENTS 10.2.2.16
+add BR_WIFI_CLIENTS 10.2.2.17
+add BR_WIFI_CLIENTS 10.2.2.18
+add BR_WIFI_CLIENTS 10.2.2.19
+
+create BR_WIFI_TO_GUEST hash:ip family inet hashsize 512 maxelem 32768
+add BR_WIFI_TO_GUEST 10.2.3.0/24
+
+create BR_WIFI_TO_SERVER hash:ip family inet hashsize 512 maxelem 32768
+add BR_WIFI_TO_SERVER 10.2.5.10
+add BR_WIFI_TO_SERVER 10.2.5.11
+add BR_WIFI_TO_SERVER 10.2.5.12
+add BR_WIFI_TO_SERVER 10.2.5.20
+
+create BR_WIFI_TO_OFFICE hash:ip family inet hashsize 512 maxelem 32768
+add BR_WIFI_TO_OFFICE 10.2.6.0/24
+
+create BR_GUEST_CLIENTS hash:ip family inet hashsize 1024 maxelem 65536
+add BR_GUEST_CLIENTS 10.2.3.10
+add BR_GUEST_CLIENTS 10.2.3.11
+add BR_GUEST_CLIENTS 10.2.3.12
+add BR_GUEST_CLIENTS 10.2.3.13
+add BR_GUEST_CLIENTS 10.2.3.14
+add BR_GUEST_CLIENTS 10.2.3.15
+add BR_GUEST_CLIENTS 10.2.3.16
+add BR_GUEST_CLIENTS 10.2.3.17
+add BR_GUEST_CLIENTS 10.2.3.18
+add BR_GUEST_CLIENTS 10.2.3.19
+add BR_GUEST_CLIENTS 10.2.3.20
+
+create BR_GUEST_TO_WIFI hash:ip family inet hashsize 512 maxelem 32768
+add BR_GUEST_TO_WIFI 10.2.2.0/24
+
+create BR_GUEST_TO_SERVER hash:ip family inet hashsize 512 maxelem 32768
+add BR_GUEST_TO_SERVER 10.2.5.0/24
+
+create BR_GUEST_TO_OFFICE hash:ip family inet hashsize 512 maxelem 32768
+add BR_GUEST_TO_OFFICE 10.2.6.0/24
+
+create BR_SERVER_CLIENTS hash:ip family inet hashsize 1024 maxelem 65536
+add BR_SERVER_CLIENTS 10.2.5.10
+add BR_SERVER_CLIENTS 10.2.5.11
+add BR_SERVER_CLIENTS 10.2.5.12
+add BR_SERVER_CLIENTS 10.2.5.13
+add BR_SERVER_CLIENTS 10.2.5.14
+add BR_SERVER_CLIENTS 10.2.5.15
+add BR_SERVER_CLIENTS 10.2.5.20
+add BR_SERVER_CLIENTS 10.2.5.21
+add BR_SERVER_CLIENTS 10.2.5.22
+
+create BR_SERVER_TO_WIFI hash:ip family inet hashsize 512 maxelem 32768
+add BR_SERVER_TO_WIFI 10.2.2.0/24
+
+create BR_SERVER_TO_GUEST hash:ip family inet hashsize 512 maxelem 32768
+add BR_SERVER_TO_GUEST 10.2.3.0/24
+
+create BR_SERVER_TO_OFFICE hash:ip family inet hashsize 512 maxelem 32768
+add BR_SERVER_TO_OFFICE 10.2.6.0/24
+
+create BR_OFFICE_CLIENTS hash:ip family inet hashsize 1024 maxelem 65536
+add BR_OFFICE_CLIENTS 10.2.6.10
+add BR_OFFICE_CLIENTS 10.2.6.11
+add BR_OFFICE_CLIENTS 10.2.6.12
+add BR_OFFICE_CLIENTS 10.2.6.13
+add BR_OFFICE_CLIENTS 10.2.6.14
+add BR_OFFICE_CLIENTS 10.2.6.15
+add BR_OFFICE_CLIENTS 10.2.6.16
+add BR_OFFICE_CLIENTS 10.2.6.17
+add BR_OFFICE_CLIENTS 10.2.6.18
+add BR_OFFICE_CLIENTS 10.2.6.19
+add BR_OFFICE_CLIENTS 10.2.6.20
+
+create BR_OFFICE_TO_WIFI hash:ip family inet hashsize 512 maxelem 32768
+add BR_OFFICE_TO_WIFI 10.2.2.0/24
+
+create BR_OFFICE_TO_GUEST hash:ip family inet hashsize 512 maxelem 32768
+add BR_OFFICE_TO_GUEST 10.2.3.0/24
+
+create BR_OFFICE_TO_SERVER hash:ip family inet hashsize 512 maxelem 32768
+add BR_OFFICE_TO_SERVER 10.2.5.0/24
+
+create BR_PRIORITY_TRAFFIC hash:net,net family inet hashsize 1024 maxelem 65536
+add BR_PRIORITY_TRAFFIC 10.2.6.0/24,10.2.5.0/24
+add BR_PRIORITY_TRAFFIC 10.2.5.0/24,10.2.6.0/24
+add BR_PRIORITY_TRAFFIC 10.2.2.0/24,10.1.0.0/16
+add BR_PRIORITY_TRAFFIC 10.2.3.0/24,8.8.8.8/32
+add BR_PRIORITY_TRAFFIC 10.2.5.0/24,10.3.0.0/16
+
+create BR_CRITICAL_SERVICES hash:net,net,port family inet hashsize 1024 maxelem 65536
+add BR_CRITICAL_SERVICES 10.2.5.10,10.2.6.0/24,tcp:80
+add BR_CRITICAL_SERVICES 10.2.5.10,10.2.6.0/24,tcp:443
+add BR_CRITICAL_SERVICES 10.2.5.11,10.2.6.0/24,tcp:22
+add BR_CRITICAL_SERVICES 10.2.5.12,10.2.6.0/24,tcp:3389
+add BR_CRITICAL_SERVICES 10.2.5.20,10.2.2.0/24,tcp:80
+add BR_CRITICAL_SERVICES 10.2.5.20,10.2.2.0/24,tcp:443
+add BR_CRITICAL_SERVICES 10.2.5.21,10.2.6.0/24,tcp:1433
+add BR_CRITICAL_SERVICES 10.2.5.22,10.2.6.0/24,tcp:3306
+
+create BR_BUSINESS_HOURS_ONLY hash:ip family inet hashsize 512 maxelem 32768
+add BR_BUSINESS_HOURS_ONLY 10.2.6.100
+add BR_BUSINESS_HOURS_ONLY 10.2.6.101
+add BR_BUSINESS_HOURS_ONLY 10.2.6.102
+add BR_BUSINESS_HOURS_ONLY 10.2.6.103
+add BR_BUSINESS_HOURS_ONLY 10.2.2.100
+add BR_BUSINESS_HOURS_ONLY 10.2.2.101
+
+create BR_UNRESTRICTED_HOSTS hash:ip family inet hashsize 512 maxelem 32768
+add BR_UNRESTRICTED_HOSTS 10.2.6.10
+add BR_UNRESTRICTED_HOSTS 10.2.6.11
+add BR_UNRESTRICTED_HOSTS 10.2.5.10
+add BR_UNRESTRICTED_HOSTS 10.2.5.11
+add BR_UNRESTRICTED_HOSTS 10.2.1.10
+
+create BR_BANDWIDTH_LIMITED hash:ip family inet hashsize 1024 maxelem 65536
+add BR_BANDWIDTH_LIMITED 10.2.2.0/24
+add BR_BANDWIDTH_LIMITED 10.2.3.0/24
+add BR_BANDWIDTH_LIMITED 10.2.6.100
+add BR_BANDWIDTH_LIMITED 10.2.6.101
+add BR_BANDWIDTH_LIMITED 10.2.6.102
+
+create BR_VLAN_MATRIX hash:net,net family inet hashsize 1024 maxelem 65536
+add BR_VLAN_MATRIX 10.2.2.0/24,10.2.6.0/24
+add BR_VLAN_MATRIX 10.2.6.0/24,10.2.2.0/24
+add BR_VLAN_MATRIX 10.2.5.0/24,10.2.6.0/24
+add BR_VLAN_MATRIX 10.2.6.0/24,10.2.5.0/24
+add BR_VLAN_MATRIX 10.2.2.0/24,10.2.5.0/24
+add BR_VLAN_MATRIX 10.2.5.0/24,10.2.2.0/24
+add BR_VLAN_MATRIX 10.2.2.0/24,10.1.0.0/16
+add BR_VLAN_MATRIX 10.2.5.0/24,10.3.0.0/16
+add BR_VLAN_MATRIX 10.2.6.0/24,10.1.0.0/16
+add BR_VLAN_MATRIX 10.2.6.0/24,10.3.0.0/16
+
+create BR_VLAN_RESTRICTED hash:net,net family inet hashsize 512 maxelem 32768
+add BR_VLAN_RESTRICTED 10.2.3.0/24,10.2.2.0/24
+add BR_VLAN_RESTRICTED 10.2.3.0/24,10.2.5.0/24
+add BR_VLAN_RESTRICTED 10.2.3.0/24,10.2.6.0/24
+add BR_VLAN_RESTRICTED 10.2.2.0/24,10.2.3.0/24
+add BR_VLAN_RESTRICTED 10.2.5.0/24,10.2.3.0/24
+add BR_VLAN_RESTRICTED 10.2.6.0/24,10.2.3.0/24
+
+create BR_WEB_SERVERS hash:ip family inet hashsize 512 maxelem 32768
+add BR_WEB_SERVERS 10.2.5.10
+add BR_WEB_SERVERS 10.2.5.11
+add BR_WEB_SERVERS 10.2.5.20
+add BR_WEB_SERVERS 10.2.5.21
+
+create BR_MGMT_SERVERS hash:ip family inet hashsize 512 maxelem 32768
+add BR_MGMT_SERVERS 10.2.5.12
+add BR_MGMT_SERVERS 10.2.5.13
+add BR_MGMT_SERVERS 10.2.5.14
+add BR_MGMT_SERVERS 10.2.5.15
+
+create BR_WIFI_BLACKLIST hash:ip family inet hashsize 512 maxelem 32768
+add BR_WIFI_BLACKLIST 10.2.2.200
+add BR_WIFI_BLACKLIST 10.2.2.201
+add BR_WIFI_BLACKLIST 10.2.2.202
+add BR_WIFI_BLACKLIST 192.168.1.100
+
+create BR_WIFI_QUARANTINE hash:ip family inet hashsize 512 maxelem 32768
+add BR_WIFI_QUARANTINE 10.2.2.100
+add BR_WIFI_QUARANTINE 10.2.2.101
+add BR_WIFI_QUARANTINE 10.2.2.102
+
+create BR_WIFI_PREMIUM hash:ip family inet hashsize 512 maxelem 32768
+add BR_WIFI_PREMIUM 10.2.2.10
+add BR_WIFI_PREMIUM 10.2.2.11
+add BR_WIFI_PREMIUM 10.2.2.12
+add BR_WIFI_PREMIUM 10.2.2.13
+
+create BR_WIFI_BASIC hash:ip family inet hashsize 1024 maxelem 65536
+add BR_WIFI_BASIC 10.2.2.50
+add BR_WIFI_BASIC 10.2.2.51
+add BR_WIFI_BASIC 10.2.2.52
+add BR_WIFI_BASIC 10.2.2.53
+add BR_WIFI_BASIC 10.2.2.54
+add BR_WIFI_BASIC 10.2.2.55
+add BR_WIFI_BASIC 10.2.2.56
+add BR_WIFI_BASIC 10.2.2.57
+add BR_WIFI_BASIC 10.2.2.58
+add BR_WIFI_BASIC 10.2.2.59
+
+create BR_GUEST_ALLOWED_SERVICES hash:ip,port family inet hashsize 512 maxelem 32768
+add BR_GUEST_ALLOWED_SERVICES 8.8.8.8,udp:53
+add BR_GUEST_ALLOWED_SERVICES 8.8.4.4,udp:53
+add BR_GUEST_ALLOWED_SERVICES 1.1.1.1,udp:53
+add BR_GUEST_ALLOWED_SERVICES 0.0.0.0/0,tcp:80
+add BR_GUEST_ALLOWED_SERVICES 0.0.0.0/0,tcp:443
+add BR_GUEST_ALLOWED_SERVICES 0.0.0.0/0,udp:123
+
+create BR_LOCAL_NETWORKS hash:net family inet hashsize 512 maxelem 32768
+add BR_LOCAL_NETWORKS 10.0.0.0/8
+add BR_LOCAL_NETWORKS 172.16.0.0/12
+add BR_LOCAL_NETWORKS 192.168.0.0/16
+add BR_LOCAL_NETWORKS 169.254.0.0/16
+
+create BR_SERVER_MGMT_ALLOWED hash:net,net family inet hashsize 512 maxelem 32768
+add BR_SERVER_MGMT_ALLOWED 10.2.6.10,10.2.5.0/24
+add BR_SERVER_MGMT_ALLOWED 10.2.6.11,10.2.5.0/24
+add BR_SERVER_MGMT_ALLOWED 10.2.1.10,10.2.5.0/24
+add BR_SERVER_MGMT_ALLOWED 10.1.2.3,10.2.5.0/24
+
+create BR_SERVER_BACKUP_ALLOWED hash:net,net,port family inet hashsize 512 maxelem 32768
+add BR_SERVER_BACKUP_ALLOWED 10.2.5.30,10.2.5.0/24,tcp:22
+add BR_SERVER_BACKUP_ALLOWED 10.2.5.31,10.2.5.0/24,tcp:443
+add BR_SERVER_BACKUP_ALLOWED 10.2.5.32,10.2.5.0/24,tcp:8080
+add BR_SERVER_BACKUP_ALLOWED 10.2.6.30,10.2.5.0/24,tcp:22
+
+create BR_SERVER_MONITORING hash:net,port family inet hashsize 512 maxelem 32768
+add BR_SERVER_MONITORING 10.2.5.0/24,tcp:161
+add BR_SERVER_MONITORING 10.2.5.0/24,udp:161
+add BR_SERVER_MONITORING 10.2.5.0/24,tcp:9100
+add BR_SERVER_MONITORING 10.2.5.0/24,tcp:3000
+
+create BR_ADMIN_HOSTS hash:ip family inet hashsize 256 maxelem 16384
+add BR_ADMIN_HOSTS 10.2.6.10
+add BR_ADMIN_HOSTS 10.2.6.11
+add BR_ADMIN_HOSTS 10.2.1.10
+add BR_ADMIN_HOSTS 10.1.2.3
+
+create BR_DB_CLIENTS hash:ip family inet hashsize 512 maxelem 32768
+add BR_DB_CLIENTS 10.2.5.10
+add BR_DB_CLIENTS 10.2.5.11
+add BR_DB_CLIENTS 10.2.5.20
+add BR_DB_CLIENTS 10.2.6.10
+add BR_DB_CLIENTS 10.2.6.11
+add BR_DB_CLIENTS 10.2.6.12
+
+create BR_HIGH_PRIORITY hash:ip family inet hashsize 512 maxelem 32768
+add BR_HIGH_PRIORITY 10.2.6.10
+add BR_HIGH_PRIORITY 10.2.6.11
+add BR_HIGH_PRIORITY 10.2.5.10
+add BR_HIGH_PRIORITY 10.2.5.11
+add BR_HIGH_PRIORITY 10.2.2.10
+
+create BR_MEDIUM_PRIORITY hash:ip family inet hashsize 512 maxelem 32768
+add BR_MEDIUM_PRIORITY 10.2.6.12
+add BR_MEDIUM_PRIORITY 10.2.6.13
+add BR_MEDIUM_PRIORITY 10.2.5.12
+add BR_MEDIUM_PRIORITY 10.2.5.13
+add BR_MEDIUM_PRIORITY 10.2.2.11
+
+create BR_LOW_PRIORITY hash:ip family inet hashsize 1024 maxelem 65536
+add BR_LOW_PRIORITY 10.2.2.50
+add BR_LOW_PRIORITY 10.2.2.51
+add BR_LOW_PRIORITY 10.2.2.52
+add BR_LOW_PRIORITY 10.2.3.0/24
+add BR_LOW_PRIORITY 10.2.6.100
+add BR_LOW_PRIORITY 10.2.6.101
+
+create BR_BULK_TRAFFIC hash:net,net,port family inet hashsize 512 maxelem 32768
+add BR_BULK_TRAFFIC 10.2.5.30,10.2.5.0/24,tcp:22
+add BR_BULK_TRAFFIC 10.2.5.31,10.2.5.0/24,tcp:443
+add BR_BULK_TRAFFIC 10.2.5.32,10.2.5.0/24,tcp:8080
+add BR_BULK_TRAFFIC 10.2.6.30,10.2.5.0/24,tcp:22
+add BR_BULK_TRAFFIC 10.2.6.0/24,0.0.0.0/0,tcp:25
+add BR_BULK_TRAFFIC 10.2.6.0/24,0.0.0.0/0,tcp:587
+
+create BR_KNOWN_MALWARE hash:ip family inet hashsize 512 maxelem 32768
+add BR_KNOWN_MALWARE 192.168.100.100
+add BR_KNOWN_MALWARE 10.255.255.254
+add BR_KNOWN_MALWARE 172.31.255.254
+add BR_KNOWN_MALWARE 198.51.100.100
+
+create BR_SUSPICIOUS_IPS hash:ip family inet hashsize 512 maxelem 32768
+add BR_SUSPICIOUS_IPS 10.2.2.200
+add BR_SUSPICIOUS_IPS 10.2.2.201
+add BR_SUSPICIOUS_IPS 10.2.3.200
+add BR_SUSPICIOUS_IPS 10.2.3.201
+add BR_SUSPICIOUS_IPS 192.168.1.100
+
+create BR_BLOCKED_DOMAINS hash:ip family inet hashsize 512 maxelem 32768
+add BR_BLOCKED_DOMAINS 198.51.100.50
+add BR_BLOCKED_DOMAINS 198.51.100.51
+add BR_BLOCKED_DOMAINS 198.51.100.52
+add BR_BLOCKED_DOMAINS 203.0.113.50
+add BR_BLOCKED_DOMAINS 203.0.113.51
+
+create BR_BLOCKED_CATEGORIES hash:ip family inet hashsize 512 maxelem 32768
+add BR_BLOCKED_CATEGORIES 198.51.100.60
+add BR_BLOCKED_CATEGORIES 198.51.100.61
+add BR_BLOCKED_CATEGORIES 198.51.100.62
+add BR_BLOCKED_CATEGORIES 203.0.113.60
+add BR_BLOCKED_CATEGORIES 203.0.113.61
+
+create BR_VOICE_TRAFFIC hash:net,net family inet hashsize 256 maxelem 16384
+add BR_VOICE_TRAFFIC 10.2.2.0/24,10.2.6.0/24
+add BR_VOICE_TRAFFIC 10.2.6.0/24,10.2.2.0/24
+add BR_VOICE_TRAFFIC 10.2.5.0/24,10.2.6.0/24
+add BR_VOICE_TRAFFIC 10.2.6.0/24,10.2.5.0/24
+
+create BR_VIDEO_TRAFFIC hash:net,net family inet hashsize 256 maxelem 16384
+add BR_VIDEO_TRAFFIC 10.2.2.0/24,10.2.6.0/24
+add BR_VIDEO_TRAFFIC 10.2.6.0/24,10.2.2.0/24
+add BR_VIDEO_TRAFFIC 10.2.5.0/24,10.2.6.0/24
+add BR_VIDEO_TRAFFIC 10.2.6.0/24,10.2.5.0/24
+
+create BR_CRITICAL_DATA hash:net,net family inet hashsize 512 maxelem 32768
+add BR_CRITICAL_DATA 10.2.5.0/24,10.2.6.0/24
+add BR_CRITICAL_DATA 10.2.6.0/24,10.2.5.0/24
+add BR_CRITICAL_DATA 10.2.5.0/24,10.1.0.0/16
+add BR_CRITICAL_DATA 10.2.5.0/24,10.3.0.0/16
+
+create BR_BULK_DATA hash:net,net family inet hashsize 512 maxelem 32768
+add BR_BULK_DATA 10.2.5.30,10.2.5.0/24
+add BR_BULK_DATA 10.2.5.31,10.2.5.0/24
+add BR_BULK_DATA 10.2.5.32,10.2.5.0/24
+add BR_BULK_DATA 10.2.6.30,10.2.5.0/24
+add BR_BULK_DATA 10.2.6.0/24,0.0.0.0/0
+
+create BR_VLAN_ROUTES hash:net,net family inet hashsize 512 maxelem 32768
+add BR_VLAN_ROUTES 10.2.2.0/24,10.2.6.0/24
+add BR_VLAN_ROUTES 10.2.6.0/24,10.2.2.0/24
+add BR_VLAN_ROUTES 10.2.5.0/24,10.2.6.0/24
+add BR_VLAN_ROUTES 10.2.6.0/24,10.2.5.0/24
+add BR_VLAN_ROUTES 10.2.2.0/24,10.1.0.0/16
+add BR_VLAN_ROUTES 10.2.5.0/24,10.3.0.0/16
+
+create BR_VLAN_BLOCKED hash:net,net family inet hashsize 512 maxelem 32768
+add BR_VLAN_BLOCKED 10.2.3.0/24,10.2.2.0/24
+add BR_VLAN_BLOCKED 10.2.3.0/24,10.2.5.0/24
+add BR_VLAN_BLOCKED 10.2.3.0/24,10.2.6.0/24
+add BR_VLAN_BLOCKED 10.2.2.0/24,10.2.3.0/24
+
+create BR_SSH_ALLOWED hash:ip family inet hashsize 256 maxelem 16384
+add BR_SSH_ALLOWED 10.2.6.10
+add BR_SSH_ALLOWED 10.2.6.11
+add BR_SSH_ALLOWED 10.2.1.10
+add BR_SSH_ALLOWED 10.1.2.3
+
+create BR_GUEST_UNLIMITED hash:ip family inet hashsize 256 maxelem 16384
+add BR_GUEST_UNLIMITED 10.2.3.10
+add BR_GUEST_UNLIMITED 10.2.3.11
+
+create BR_GUEST_4HOUR hash:ip family inet hashsize 512 maxelem 32768
+add BR_GUEST_4HOUR 10.2.3.50
+add BR_GUEST_4HOUR 10.2.3.51
+add BR_GUEST_4HOUR 10.2.3.52
+add BR_GUEST_4HOUR 10.2.3.53
+add BR_GUEST_4HOUR 10.2.3.54
+
+create BR_GUEST_1HOUR hash:ip family inet hashsize 512 maxelem 32768
+add BR_GUEST_1HOUR 10.2.3.100
+add BR_GUEST_1HOUR 10.2.3.101
+add BR_GUEST_1HOUR 10.2.3.102
+add BR_GUEST_1HOUR 10.2.3.103
+add BR_GUEST_1HOUR 10.2.3.104
+add BR_GUEST_1HOUR 10.2.3.105
+
+create BR_WIFI_VIP hash:ip family inet hashsize 256 maxelem 16384
+add BR_WIFI_VIP 10.2.2.10
+add BR_WIFI_VIP 10.2.2.11
+add BR_WIFI_VIP 10.2.2.12
+
+create BR_WIFI_BUSINESS hash:ip family inet hashsize 512 maxelem 32768
+add BR_WIFI_BUSINESS 10.2.2.20
+add BR_WIFI_BUSINESS 10.2.2.21
+add BR_WIFI_BUSINESS 10.2.2.22
+add BR_WIFI_BUSINESS 10.2.2.23
+add BR_WIFI_BUSINESS 10.2.2.24
+
+create BR_WIFI_STANDARD hash:ip family inet hashsize 1024 maxelem 65536
+add BR_WIFI_STANDARD 10.2.2.50
+add BR_WIFI_STANDARD 10.2.2.51
+add BR_WIFI_STANDARD 10.2.2.52
+add BR_WIFI_STANDARD 10.2.2.53
+add BR_WIFI_STANDARD 10.2.2.54
+add BR_WIFI_STANDARD 10.2.2.55
+add BR_WIFI_STANDARD 10.2.2.56
+add BR_WIFI_STANDARD 10.2.2.57
+
+create BR_WIFI_GUEST hash:ip family inet hashsize 1024 maxelem 65536
+add BR_WIFI_GUEST 10.2.3.0/24
+
+create BR_MONITOR_TARGETS hash:ip family inet hashsize 256 maxelem 16384
+add BR_MONITOR_TARGETS 10.2.5.10
+add BR_MONITOR_TARGETS 10.2.5.11
+add BR_MONITOR_TARGETS 10.2.5.12
+add BR_MONITOR_TARGETS 10.2.6.10
+add BR_MONITOR_TARGETS 10.2.6.11
+
+create BR_AUDIT_TRAFFIC hash:net,net family inet hashsize 512 maxelem 32768
+add BR_AUDIT_TRAFFIC 10.2.5.0/24,10.2.6.0/24
+add BR_AUDIT_TRAFFIC 10.2.6.0/24,10.2.5.0/24
+add BR_AUDIT_TRAFFIC 10.2.5.0/24,10.1.0.0/16
+add BR_AUDIT_TRAFFIC 10.2.5.0/24,10.3.0.0/16
+
+create BR_SHAPE_HEAVY hash:ip family inet hashsize 512 maxelem 32768
+add BR_SHAPE_HEAVY 10.2.5.30
+add BR_SHAPE_HEAVY 10.2.5.31
+add BR_SHAPE_HEAVY 10.2.5.32
+add BR_SHAPE_HEAVY 10.2.6.30
+add BR_SHAPE_HEAVY 10.2.6.31
+
+create BR_SHAPE_MEDIUM hash:ip family inet hashsize 512 maxelem 32768
+add BR_SHAPE_MEDIUM 10.2.2.0/24
+add BR_SHAPE_MEDIUM 10.2.6.50
+add BR_SHAPE_MEDIUM 10.2.6.51
+add BR_SHAPE_MEDIUM 10.2.6.52
+
+create BR_SHAPE_LIGHT hash:ip family inet hashsize 512 maxelem 32768
+add BR_SHAPE_LIGHT 10.2.3.0/24
+add BR_SHAPE_LIGHT 10.2.6.100
+add BR_SHAPE_LIGHT 10.2.6.101
+add BR_SHAPE_LIGHT 10.2.6.102
+
+create BR_IPS_SIGNATURES hash:net,net,port family inet hashsize 512 maxelem 32768
+add BR_IPS_SIGNATURES 0.0.0.0/0,10.2.2.0/24,tcp:1433
+add BR_IPS_SIGNATURES 0.0.0.0/0,10.2.5.0/24,tcp:3389
+add BR_IPS_SIGNATURES 0.0.0.0/0,10.2.6.0/24,tcp:445
+add BR_IPS_SIGNATURES 0.0.0.0/0,10.2.0.0/16,tcp:135
+add BR_IPS_SIGNATURES 0.0.0.0/0,10.2.0.0/16,tcp:139
+
+create BR_ATTACK_PATTERNS hash:net,net family inet hashsize 512 maxelem 32768
+add BR_ATTACK_PATTERNS 0.0.0.0/0,10.2.2.0/24
+add BR_ATTACK_PATTERNS 0.0.0.0/0,10.2.3.0/24
+add BR_ATTACK_PATTERNS 0.0.0.0/0,10.2.5.0/24
+add BR_ATTACK_PATTERNS 0.0.0.0/0,10.2.6.0/24
+
+create BR_ADMIN_WHITELIST hash:ip family inet hashsize 256 maxelem 16384
+add BR_ADMIN_WHITELIST 10.2.6.10
+add BR_ADMIN_WHITELIST 10.2.6.11
+add BR_ADMIN_WHITELIST 10.2.1.10
+add BR_ADMIN_WHITELIST 10.1.2.3
+
+create BR_MGMT_ALLOWED hash:net,net family inet hashsize 256 maxelem 16384
+add BR_MGMT_ALLOWED 10.2.6.10,10.2.5.0/24
+add BR_MGMT_ALLOWED 10.2.6.11,10.2.5.0/24
+add BR_MGMT_ALLOWED 10.2.1.10,10.2.5.0/24
+add BR_MGMT_ALLOWED 10.1.2.3,10.2.5.0/24
+
+create BR_EMERGENCY_ACCESS hash:ip family inet hashsize 256 maxelem 16384
+add BR_EMERGENCY_ACCESS 10.2.1.10
+add BR_EMERGENCY_ACCESS 10.1.2.3
+add BR_EMERGENCY_ACCESS 10.2.6.10
+
+create BR_INSPECT_PROTOCOLS hash:net,net,port family inet hashsize 512 maxelem 32768
+add BR_INSPECT_PROTOCOLS 10.2.2.0/24,0.0.0.0/0,tcp:80
+add BR_INSPECT_PROTOCOLS 10.2.2.0/24,0.0.0.0/0,tcp:443
+add BR_INSPECT_PROTOCOLS 10.2.3.0/24,0.0.0.0/0,tcp:80
+add BR_INSPECT_PROTOCOLS 10.2.3.0/24,0.0.0.0/0,tcp:443
+add BR_INSPECT_PROTOCOLS 10.2.6.0/24,0.0.0.0/0,tcp:25
+add BR_INSPECT_PROTOCOLS 10.2.6.0/24,0.0.0.0/0,tcp:587
+
+create BR_POLICY_ROUTES hash:net,net family inet hashsize 512 maxelem 32768
+add BR_POLICY_ROUTES 10.2.2.0/24,10.1.0.0/16
+add BR_POLICY_ROUTES 10.2.5.0/24,10.3.0.0/16
+add BR_POLICY_ROUTES 10.2.6.0/24,10.1.0.0/16
+add BR_POLICY_ROUTES 10.2.6.0/24,10.3.0.0/16
+
+create BR_ROUTE_PRIORITIES hash:net,net,port family inet hashsize 512 maxelem 32768
+add BR_ROUTE_PRIORITIES 10.2.2.0/24,10.1.0.0/16,tcp:80
+add BR_ROUTE_PRIORITIES 10.2.2.0/24,10.1.0.0/16,tcp:443
+add BR_ROUTE_PRIORITIES 10.2.5.0/24,10.3.0.0/16,tcp:22
+add BR_ROUTE_PRIORITIES 10.2.6.0/24,10.1.0.0/16,tcp:22
+add BR_ROUTE_PRIORITIES 10.2.6.0/24,10.3.0.0/16,tcp:22
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:ipset_save ===
+
+=== TSIM_SECTION_START:ipset_list ===
+TITLE: Ipset List Summary
+COMMAND: /sbin/ipset list -n
+TIMESTAMP: 2025-06-21 15:18:34
+---
+BR_WIFI_ALLOWED
+BR_GUEST_ALLOWED
+BR_SERVER_ALLOWED
+BR_OFFICE_ALLOWED
+BR_WIFI_CLIENTS
+BR_WIFI_TO_GUEST
+BR_WIFI_TO_SERVER
+BR_WIFI_TO_OFFICE
+BR_GUEST_CLIENTS
+BR_GUEST_TO_WIFI
+BR_GUEST_TO_SERVER
+BR_GUEST_TO_OFFICE
+BR_SERVER_CLIENTS
+BR_SERVER_TO_WIFI
+BR_SERVER_TO_GUEST
+BR_SERVER_TO_OFFICE
+BR_OFFICE_CLIENTS
+BR_OFFICE_TO_WIFI
+BR_OFFICE_TO_GUEST
+BR_OFFICE_TO_SERVER
+BR_PRIORITY_TRAFFIC
+BR_CRITICAL_SERVICES
+BR_BUSINESS_HOURS_ONLY
+BR_UNRESTRICTED_HOSTS
+BR_BANDWIDTH_LIMITED
+BR_VLAN_MATRIX
+BR_VLAN_RESTRICTED
+BR_WEB_SERVERS
+BR_MGMT_SERVERS
+BR_WIFI_BLACKLIST
+BR_WIFI_QUARANTINE
+BR_WIFI_PREMIUM
+BR_WIFI_BASIC
+BR_GUEST_ALLOWED_SERVICES
+BR_LOCAL_NETWORKS
+BR_SERVER_MGMT_ALLOWED
+BR_SERVER_BACKUP_ALLOWED
+BR_SERVER_MONITORING
+BR_ADMIN_HOSTS
+BR_DB_CLIENTS
+BR_HIGH_PRIORITY
+BR_MEDIUM_PRIORITY
+BR_LOW_PRIORITY
+BR_BULK_TRAFFIC
+BR_KNOWN_MALWARE
+BR_SUSPICIOUS_IPS
+BR_BLOCKED_DOMAINS
+BR_BLOCKED_CATEGORIES
+BR_VOICE_TRAFFIC
+BR_VIDEO_TRAFFIC
+BR_CRITICAL_DATA
+BR_BULK_DATA
+BR_VLAN_ROUTES
+BR_VLAN_BLOCKED
+BR_SSH_ALLOWED
+BR_GUEST_UNLIMITED
+BR_GUEST_4HOUR
+BR_GUEST_1HOUR
+BR_WIFI_VIP
+BR_WIFI_BUSINESS
+BR_WIFI_STANDARD
+BR_WIFI_GUEST
+BR_MONITOR_TARGETS
+BR_AUDIT_TRAFFIC
+BR_SHAPE_HEAVY
+BR_SHAPE_MEDIUM
+BR_SHAPE_LIGHT
+BR_IPS_SIGNATURES
+BR_ATTACK_PATTERNS
+BR_ADMIN_WHITELIST
+BR_MGMT_ALLOWED
+BR_EMERGENCY_ACCESS
+BR_INSPECT_PROTOCOLS
+BR_POLICY_ROUTES
+BR_ROUTE_PRIORITIES
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:ipset_list ===

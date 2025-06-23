@@ -300,7 +300,7 @@ def get_default_config() -> Dict[str, Any]:
         Dictionary containing default configuration
     """
     return {
-        'routing_dir': 'routing_facts',
+        'tsim_facts': os.environ.get('TRACEROUTE_SIMULATOR_FACTS', 'tsim_facts'),
         'verbose': False,
         'verbose_level': 1,
         'quiet': False,
@@ -336,8 +336,6 @@ def merge_config(defaults: Dict[str, Any], config_file: Dict[str, Any],
     
     # Apply command line arguments (override config file and defaults)
     # Only set values that were explicitly provided on command line
-    if hasattr(args, 'routing_dir') and args.routing_dir is not None:
-        config['routing_dir'] = args.routing_dir
     if hasattr(args, 'verbose') and args.verbose is not None:
         if args.verbose == 0:
             config['verbose'] = False
@@ -358,6 +356,8 @@ def merge_config(defaults: Dict[str, Any], config_file: Dict[str, Any],
         config['enable_reverse_trace'] = True
     if hasattr(args, 'controller_ip') and args.controller_ip:
         config['controller_ip'] = args.controller_ip
+    if hasattr(args, 'tsim_facts') and args.tsim_facts:
+        config['tsim_facts'] = args.tsim_facts
     
     return config
 
@@ -388,19 +388,23 @@ class TracerouteSimulator:
         route_formatter (RouteFormatter): Output formatting handler
     """
     
-    def __init__(self, routing_facts_dir: str = 'routing_facts', verbose: bool = False, verbose_level: int = 1):
+    def __init__(self, tsim_facts: str = None, verbose: bool = False, verbose_level: int = 1):
         """
         Initialize the traceroute simulator.
         
         Args:
-            routing_facts_dir: Directory containing *_route.json and *_rule.json files
+            tsim_facts: Directory containing unified JSON facts files (defaults to TRACEROUTE_SIMULATOR_FACTS env var)
             verbose: Enable verbose output for debugging router loading
             verbose_level: Verbosity level (1=basic, 2=detailed debugging)
         """
+        # Use environment variable if tsim_facts not provided
+        if tsim_facts is None:
+            tsim_facts = os.environ.get('TRACEROUTE_SIMULATOR_FACTS', 'tsim_facts')
+        
         self.verbose = verbose
         self.verbose_level = verbose_level
         # Load all router data from JSON files
-        self.routers = self._load_routers(routing_facts_dir)
+        self.routers = self._load_routers(tsim_facts)
         # Build fast lookup table for IP-to-router mapping
         self.router_lookup = self._build_router_lookup()
         
@@ -414,21 +418,28 @@ class TracerouteSimulator:
             self.mtr_executor = None
             self.route_formatter = None
     
-    def _load_routers(self, routing_facts_dir: str) -> Dict[str, Router]:
+    def _load_routers(self, tsim_facts: str) -> Dict[str, Router]:
         """
-        Load all router data from JSON files dynamically.
+        Load all router data from unified JSON facts files.
         
-        Discovers routers by scanning for *_route.json files, then loads
-        corresponding *_rule.json and *_metadata.json files. This allows adding new routers
-        without code changes - just add their JSON files to the directory.
+        Discovers routers by scanning for *.json files containing unified facts,
+        then extracts routing, metadata, and firewall information from each file.
+        This allows adding new routers without code changes - just add their
+        unified facts JSON file to the directory.
         
         File naming convention:
-        - {router_name}_route.json: Contains 'ip --json route list' output
-        - {router_name}_rule.json: Contains 'ip --json rule list' output (optional)
-        - {router_name}_metadata.json: Contains router metadata (optional, defaults provided)
+        - {router_name}.json: Contains unified facts with routing, metadata, and firewall data
+        
+        Expected JSON structure:
+        {
+            "routing": {"tables": [...], "rules": [...]},
+            "metadata": {"linux": bool, "type": str, "location": str, ...},
+            "firewall": {"iptables": {...}, "ipset": {...}},
+            ...
+        }
         
         Args:
-            routing_facts_dir: Directory containing router JSON files
+            tsim_facts: Directory containing router unified JSON facts files
             
         Returns:
             Dictionary mapping router names to Router objects
@@ -438,7 +449,7 @@ class TracerouteSimulator:
         """
         routers = {}
         
-        # Default metadata for routers when metadata file doesn't exist
+        # Default metadata for routers when metadata is missing from facts
         default_metadata = {
             "linux": True,
             "type": "none",
@@ -449,57 +460,91 @@ class TracerouteSimulator:
             "ansible_controller": False
         }
         
-        # Discover all routers by finding their route files
-        # This pattern allows dynamic addition of new routers
-        route_files = glob.glob(os.path.join(routing_facts_dir, '*_route.json'))
+        # Discover all unified facts files 
+        facts_files = glob.glob(os.path.join(tsim_facts, '*.json'))
         
-        for route_file in route_files:
-            # Extract router name from filename (e.g., master_route.json -> master)
-            basename = os.path.basename(route_file)
-            name = basename.replace('_route.json', '')
-            
-            # Corresponding rule and metadata files (may not exist for simple setups)
-            rule_file = os.path.join(routing_facts_dir, f'{name}_rule.json')
-            metadata_file = os.path.join(routing_facts_dir, f'{name}_metadata.json')
+        if self.verbose and self.verbose_level >= 2:
+            print(f"Found {len(facts_files)} unified facts files in {tsim_facts}", file=sys.stderr)
+        
+        # Process unified facts files
+        for facts_file in facts_files:
+            # Extract router name from filename (e.g., router1.json -> router1)
+            basename = os.path.basename(facts_file)
+            name = basename.replace('.json', '')
             
             try:
-                # Load routing table (required)
-                with open(route_file, 'r') as f:
-                    routes = json.load(f)
+                # Load unified facts file
+                with open(facts_file, 'r') as f:
+                    facts = json.load(f)
                 
-                # Load policy rules (optional)
+                # Extract routing data from unified format
+                routes = []
                 rules = []
-                if os.path.exists(rule_file):
-                    with open(rule_file, 'r') as f:
-                        rules = json.load(f)
-                else:
-                    if self.verbose and self.verbose_level >= 3:
-                        print(f"Warning: Rule file for {name} not found, using empty rules", file=sys.stderr)
                 
-                # Load metadata (optional, use defaults if not found)
+                if 'routing' in facts:
+                    # Extract routing tables (equivalent to old _route.json)
+                    if 'tables' in facts['routing']:
+                        if isinstance(facts['routing']['tables'], list):
+                            routes = facts['routing']['tables']
+                        elif isinstance(facts['routing']['tables'], dict) and 'parsing_error' in facts['routing']['tables']:
+                            # Handle parsing errors gracefully
+                            if self.verbose:
+                                print(f"Warning: Routing table parsing error for {name}: {facts['routing']['tables']['parsing_error']}", file=sys.stderr)
+                            routes = []
+                    
+                    # Extract policy rules (equivalent to old _rule.json)
+                    if 'rules' in facts['routing']:
+                        if isinstance(facts['routing']['rules'], list):
+                            rules = facts['routing']['rules']
+                        elif isinstance(facts['routing']['rules'], dict) and 'parsing_error' in facts['routing']['rules']:
+                            # Handle parsing errors gracefully
+                            if self.verbose:
+                                print(f"Warning: Policy rules parsing error for {name}: {facts['routing']['rules']['parsing_error']}", file=sys.stderr)
+                            rules = []
+                
+                # Extract metadata from unified format (equivalent to old _metadata.json)
                 metadata = default_metadata.copy()
-                if os.path.exists(metadata_file):
-                    with open(metadata_file, 'r') as f:
-                        loaded_metadata = json.load(f)
-                        metadata.update(loaded_metadata)
+                if 'metadata' in facts:
+                    # Map from facts metadata to router metadata format
+                    facts_metadata = facts['metadata']
+                    
+                    # Direct mappings for router classification
+                    if 'linux' in facts_metadata:
+                        metadata['linux'] = facts_metadata['linux']
+                    if 'type' in facts_metadata:
+                        metadata['type'] = facts_metadata['type']
+                    if 'location' in facts_metadata:
+                        metadata['location'] = facts_metadata['location']
+                    if 'role' in facts_metadata:
+                        metadata['role'] = facts_metadata['role']
+                    if 'vendor' in facts_metadata:
+                        metadata['vendor'] = facts_metadata['vendor']
+                    if 'manageable' in facts_metadata:
+                        metadata['manageable'] = facts_metadata['manageable']
+                    if 'ansible_controller' in facts_metadata:
+                        metadata['ansible_controller'] = facts_metadata['ansible_controller']
+                    
                     if self.verbose and self.verbose_level >= 3:
                         print(f"Loaded metadata for {name}: {metadata}", file=sys.stderr)
                 else:
                     if self.verbose and self.verbose_level >= 3:
-                        print(f"Warning: Metadata file for {name} not found, using defaults: {metadata}", file=sys.stderr)
+                        print(f"Warning: No metadata section for {name}, using defaults: {metadata}", file=sys.stderr)
                 
-                # Create router object with loaded data
+                # Create router object with extracted data
                 routers[name] = Router(name, routes, rules, metadata)
                 if self.verbose and self.verbose_level >= 3:
                     print(f"Loaded router: {name} (Linux: {metadata['linux']}, Type: {metadata['type']})", file=sys.stderr)
                     
             except (FileNotFoundError, json.JSONDecodeError) as e:
                 if self.verbose:
-                    print(f"Error loading router {name}: {e}", file=sys.stderr)
+                    print(f"Error loading router {name} from unified facts: {e}", file=sys.stderr)
+            except KeyError as e:
+                if self.verbose:
+                    print(f"Error extracting data from unified facts for {name}: {e}", file=sys.stderr)
         
         # Ensure at least one router was loaded
         if not routers:
-            raise ValueError(f"No router data found in {routing_facts_dir}")
+            raise ValueError(f"No router data found in {tsim_facts}")
         
         return routers
     
@@ -1252,13 +1297,11 @@ Examples:
   %(prog)s -s 10.1.1.1 -d 10.2.1.1 -vvv               # Configuration details
   %(prog)s -s 10.1.1.1 -d 10.2.1.1 -q                 # Quiet mode (check $?)
   %(prog)s -s 10.100.1.1 -d 10.100.1.3 -j             # JSON output (WireGuard tunnel)
-  %(prog)s --routing-dir tests/routing_facts -s 10.1.10.1 -d 10.3.20.1  # Complex multi-hop
+  %(prog)s -s 10.1.10.1 -d 10.3.20.1                  # Complex multi-hop
   %(prog)s -s 10.1.1.1 -d 192.168.1.1 --reverse-trace # Enable reverse path tracing
         """)
     parser.add_argument('-s', '--source', required=True, help='Source IP address')
     parser.add_argument('-d', '--destination', required=True, help='Destination IP address')
-    parser.add_argument('--routing-dir', 
-                       help='Directory containing routing facts (default: routing_facts)')
     parser.add_argument('-v', '--verbose', action='count', default=0,
                        help='Enable verbose output (-v for basic, -vv for detailed debugging, -vvv for configuration details)')
     parser.add_argument('-q', '--quiet', action='store_true',
@@ -1271,6 +1314,8 @@ Examples:
                        help='Enable reverse path tracing when forward simulation fails')
     parser.add_argument('--controller-ip', 
                        help='Ansible controller IP address (for reverse tracing; auto-detected from metadata if not specified)')
+    parser.add_argument('--tsim-facts', 
+                       help='Directory containing unified tsim facts files (overrides config and environment)')
     
     args = parser.parse_args()
     
@@ -1289,7 +1334,7 @@ Examples:
         sys.exit(EXIT_ERROR)
     
     try:
-        simulator = TracerouteSimulator(config['routing_dir'], verbose=config['verbose'], verbose_level=config['verbose_level'])
+        simulator = TracerouteSimulator(config['tsim_facts'], verbose=config['verbose'], verbose_level=config['verbose_level'])
         
         # Decide which simulation method to use
         path = None

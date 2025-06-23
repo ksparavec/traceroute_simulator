@@ -1,8 +1,0 @@
-{
-  "linux": true,
-  "type": "gateway",
-  "location": "datacenter",
-  "role": "gateway",
-  "vendor": "linux",
-  "manageable": true
-}

@@ -1,0 +1,570 @@
+# Traceroute Simulator Facts Collection
+# Generated on: 2025-06-21 14:30:15
+# Hostname: hq-gw
+# Kernel: 5.15.0-75-generic
+# Collection Script Version: 1.0
+
+# Locating required commands in standard paths
+# Found commands:
+# IP: /sbin/ip
+# IPTABLES: /sbin/iptables
+# IPTABLES-SAVE: /sbin/iptables-save
+# IPSET: /sbin/ipset
+# LSMOD: /bin/lsmod
+# Running as root: 1
+
+=== TSIM_SECTION_START:routing_table ===
+TITLE: IP Routing Table
+COMMAND: /sbin/ip route show
+TIMESTAMP: 2025-06-21 14:30:15
+---
+default via 203.0.113.1 dev eth0 metric 100
+10.1.1.0/24 dev eth1 proto kernel scope link src 10.1.1.1
+10.1.2.0/24 via 10.1.1.2 dev eth1 metric 1
+10.1.3.0/24 via 10.1.1.2 dev eth1 metric 1
+10.1.10.0/24 via 10.1.1.2 dev eth1 metric 1
+10.1.11.0/24 via 10.1.1.2 dev eth1 metric 1
+10.2.0.0/16 dev wg0 scope link src 10.100.1.1
+10.3.0.0/16 dev wg0 scope link src 10.100.1.1
+10.100.1.0/24 dev wg0 proto kernel scope link src 10.100.1.1
+203.0.113.0/24 dev eth0 proto kernel scope link src 203.0.113.10
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:routing_table ===
+
+=== TSIM_SECTION_START:policy_rules ===
+TITLE: IP Policy Rules
+COMMAND: /sbin/ip rule show
+TIMESTAMP: 2025-06-21 14:30:15
+---
+0:	from all lookup local
+32766:	from all lookup main
+32767:	from all lookup default
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:policy_rules ===
+
+=== TSIM_SECTION_START:interfaces ===
+TITLE: Network Interfaces
+COMMAND: /sbin/ip addr show
+TIMESTAMP: 2025-06-21 14:30:15
+---
+1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN group default qlen 1000
+    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+    inet 127.0.0.1/8 scope host lo
+       valid_lft forever preferred_lft forever
+2: eth0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
+    link/ether 52:54:00:12:34:01 brd ff:ff:ff:ff:ff:ff
+    inet 203.0.113.10/24 brd 203.0.113.255 scope global eth0
+       valid_lft forever preferred_lft forever
+3: eth1: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
+    link/ether 52:54:00:12:34:02 brd ff:ff:ff:ff:ff:ff
+    inet 10.1.1.1/24 brd 10.1.1.255 scope global eth1
+       valid_lft forever preferred_lft forever
+4: wg0: <POINTOPOINT,NOARP,UP,LOWER_UP> mtu 1420 qdisc noqueue state UNKNOWN group default qlen 1000
+    link/none
+    inet 10.100.1.1/24 scope global wg0
+       valid_lft forever preferred_lft forever
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:interfaces ===
+
+=== TSIM_SECTION_START:interface_stats ===
+TITLE: Interface Statistics
+COMMAND: cat /proc/net/dev
+TIMESTAMP: 2025-06-21 14:30:15
+---
+Inter-|   Receive                                                |  Transmit
+ face |bytes    packets errs drop fifo frame compressed multicast|bytes    packets errs drop fifo colls carrier compressed
+    lo:  123456      789    0    0    0     0          0         0   123456      789    0    0    0     0       0          0
+  eth0: 9876543    12345    0    0    0     0          0         0  8765432    11234    0    0    0     0       0          0
+  eth1: 5432109     6789    0    0    0     0          0         0  4321098     5678    0    0    0     0       0          0
+   wg0: 1111111     1234    0    0    0     0          0         0  2222222     2345    0    0    0     0       0          0
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:interface_stats ===
+
+=== TSIM_SECTION_START:ip_forwarding ===
+TITLE: IP Forwarding Status
+COMMAND: cat /proc/sys/net/ipv4/ip_forward
+TIMESTAMP: 2025-06-21 14:30:15
+---
+1
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:ip_forwarding ===
+
+=== TSIM_SECTION_START:kernel_version ===
+TITLE: Kernel Version
+COMMAND: uname -r
+TIMESTAMP: 2025-06-21 14:30:15
+---
+5.15.0-75-generic
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:kernel_version ===
+
+=== TSIM_SECTION_START:hostname ===
+TITLE: System Hostname
+COMMAND: hostname
+TIMESTAMP: 2025-06-21 14:30:15
+---
+hq-gw
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:hostname ===
+
+=== TSIM_SECTION_START:iptables_filter ===
+TITLE: Iptables Filter Table
+COMMAND: /sbin/iptables -t filter -L -n -v --line-numbers
+TIMESTAMP: 2025-06-21 14:30:15
+---
+Chain INPUT (policy ACCEPT 0 packets, 0 bytes)
+num   pkts bytes target     prot opt in     out     source               destination         
+1      123  9876 ACCEPT     all  --  lo     *       0.0.0.0/0            0.0.0.0/0           
+2     4567 123456 DROP      all  --  eth0   *       0.0.0.0/0            0.0.0.0/0            ctstate INVALID
+3     2345 234567 HQ_MGMT_ACCESS  all  --  *      *       0.0.0.0/0            10.1.1.1            
+4     1234 456789 ACCEPT     icmp --  *      *       0.0.0.0/0            0.0.0.0/0            icmp-type 8
+5      789  34567 ACCEPT     tcp  --  *      *       0.0.0.0/0            0.0.0.0/0            tcp dpt:22 ctstate NEW,ESTABLISHED
+6      456  23456 ACCEPT     udp  --  wg0    *       0.0.0.0/0            0.0.0.0/0            udp dpt:51820
+7      234  12345 ACCEPT     all  --  *      *       0.0.0.0/0            0.0.0.0/0            ctstate RELATED,ESTABLISHED
+8       89   5678 LOG        all  --  *      *       0.0.0.0/0            0.0.0.0/0            LOG flags 0 level 4 prefix "INPUT-DROP: "
+9       56   2345 DROP       all  --  *      *       0.0.0.0/0            0.0.0.0/0           
+
+Chain FORWARD (policy DROP 0 packets, 0 bytes)
+num   pkts bytes target     prot opt in     out     source               destination         
+1     8765 876543 ACCEPT     all  --  lo     *       0.0.0.0/0            0.0.0.0/0           
+2     5432 543210 HQ_LAN_FORWARD  all  --  eth1   *       10.1.0.0/16          0.0.0.0/0           
+3     3456 345678 WG_VPN_FORWARD  all  --  wg0    *       10.100.1.0/24        0.0.0.0/0           
+4     2345 234567 INET_FORWARD  all  --  eth1   eth0    10.1.0.0/16          0.0.0.0/0           
+5     1234 123456 ACCEPT     all  --  *      eth1    0.0.0.0/0            10.1.0.0/16          ctstate RELATED,ESTABLISHED
+6      987  98765 DROP       all  --  eth0   eth1    0.0.0.0/0            10.1.0.0/16         
+7      654  65432 LOG        all  --  *      *       0.0.0.0/0            0.0.0.0/0            LOG flags 0 level 4 prefix "FORWARD-DROP: "
+8      321  32123 DROP       all  --  *      *       0.0.0.0/0            0.0.0.0/0           
+
+Chain OUTPUT (policy ACCEPT 0 packets, 0 bytes)
+num   pkts bytes target     prot opt in     out     source               destination         
+1      987  98765 ACCEPT     all  --  *      lo      0.0.0.0/0            0.0.0.0/0           
+2      654  65432 ACCEPT     all  --  *      *       0.0.0.0/0            0.0.0.0/0            ctstate RELATED,ESTABLISHED
+3      321  32123 ACCEPT     icmp --  *      *       0.0.0.0/0            0.0.0.0/0           
+4      123  12345 ACCEPT     tcp  --  *      *       0.0.0.0/0            0.0.0.0/0            tcp spt:22
+5       98   9876 DROP       all  --  *      *       0.0.0.0/0            0.0.0.0/0           
+
+Chain HQ_MGMT_ACCESS (1 references)
+num   pkts bytes target     prot opt in     out     source               destination         
+1      567  56789 ACCEPT     tcp  --  *      *       10.1.2.0/24          0.0.0.0/0            multiport dports 22,443,8080 ctstate NEW,ESTABLISHED
+2      234  23456 ACCEPT     tcp  --  *      *       10.1.3.0/24          0.0.0.0/0            multiport dports 22,443 ctstate NEW,ESTABLISHED
+3      123  12345 ACCEPT     udp  --  *      *       10.1.10.0/24         0.0.0.0/0            multiport dports 161,514 ctstate NEW,ESTABLISHED
+4       67   6789 RETURN     all  --  *      *       0.0.0.0/0            0.0.0.0/0           
+
+Chain HQ_LAN_FORWARD (1 references)
+num   pkts bytes target     prot opt in     out     source               destination         
+1     2345 234567 ACCEPT     all  --  *      *       0.0.0.0/0            0.0.0.0/0            match-set HQ_TRUSTED_NETS src match-set HQ_INTERNAL_SERVICES dst
+2     1234 123456 ACCEPT     tcp  --  *      *       10.1.0.0/16          0.0.0.0/0            multiport dports 80,443,8080,8443
+3      789  78901 ACCEPT     udp  --  *      *       10.1.0.0/16          0.0.0.0/0            multiport dports 53,123,514
+4      456  45678 DROP       tcp  --  *      *       10.1.11.0/24         10.1.3.0/24          tcp dpt:3389
+5      234  23456 ACCEPT     icmp --  *      *       10.1.0.0/16          10.1.0.0/16          icmp-type 8
+6      123  12345 LOG        all  --  *      *       10.1.0.0/16          0.0.0.0/0            limit: avg 10/min burst 5 LOG flags 0 level 6 prefix "HQ-LAN-ALLOW: "
+7       67   6789 RETURN     all  --  *      *       0.0.0.0/0            0.0.0.0/0           
+
+Chain WG_VPN_FORWARD (1 references)
+num   pkts bytes target     prot opt in     out     source               destination         
+1     1234 123456 ACCEPT     all  --  *      *       10.100.1.0/24        0.0.0.0/0            match-set VPN_ALLOWED_PROTOCOLS src,dst,proto
+2      789  78901 ACCEPT     tcp  --  *      *       10.100.1.0/24        10.0.0.0/8           multiport dports 22,80,443
+3      456  45678 ACCEPT     udp  --  *      *       10.100.1.0/24        10.0.0.0/8           multiport dports 53,123
+4      234  23456 DROP       all  --  *      *       10.100.1.0/24        192.168.0.0/16      
+5      123  12345 LOG        all  --  *      *       10.100.1.0/24        0.0.0.0/0            limit: avg 5/min burst 3 LOG flags 0 level 6 prefix "VPN-FORWARD: "
+6       67   6789 RETURN     all  --  *      *       0.0.0.0/0            0.0.0.0/0           
+
+Chain INET_FORWARD (1 references)
+num   pkts bytes target     prot opt in     out     source               destination         
+1     2345 234567 ACCEPT     tcp  --  *      *       0.0.0.0/0            0.0.0.0/0            match-set HQ_WEB_USERS src multiport dports 80,443,8080,8443
+2     1234 123456 ACCEPT     udp  --  *      *       0.0.0.0/0            0.0.0.0/0            match-set HQ_DNS_USERS src udp dpt:53
+3      789  78901 ACCEPT     tcp  --  *      *       10.1.3.0/24          0.0.0.0/0            multiport dports 25,465,587,993,995
+4      456  45678 ACCEPT     tcp  --  *      *       10.1.10.0/24         0.0.0.0/0            multiport dports 22,443,9443
+5      234  23456 DROP       tcp  --  *      *       0.0.0.0/0            0.0.0.0/0            multiport dports 135,139,445,1433,3389
+6      123  12345 ACCEPT     icmp --  *      *       10.1.0.0/16          0.0.0.0/0            icmp-type 8
+7       67   6789 LOG        all  --  *      *       10.1.0.0/16          0.0.0.0/0            limit: avg 20/min burst 10 LOG flags 0 level 6 prefix "INET-FORWARD: "
+8       34   3456 RETURN     all  --  *      *       0.0.0.0/0            0.0.0.0/0           
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:iptables_filter ===
+
+=== TSIM_SECTION_START:iptables_nat ===
+TITLE: Iptables NAT Table
+COMMAND: /sbin/iptables -t nat -L -n -v --line-numbers
+TIMESTAMP: 2025-06-21 14:30:15
+---
+Chain PREROUTING (policy ACCEPT 0 packets, 0 bytes)
+num   pkts bytes target     prot opt in     out     source               destination         
+1      567  56789 DNAT       tcp  --  eth0   *       0.0.0.0/0            203.0.113.10         tcp dpt:80 to:10.1.3.10:80
+2      234  23456 DNAT       tcp  --  eth0   *       0.0.0.0/0            203.0.113.10         tcp dpt:443 to:10.1.3.10:443
+3      123  12345 DNAT       tcp  --  eth0   *       0.0.0.0/0            203.0.113.10         tcp dpt:25 to:10.1.3.20:25
+4       67   6789 DNAT       tcp  --  eth0   *       0.0.0.0/0            203.0.113.10         tcp dpt:22 to:10.1.3.5:22
+
+Chain INPUT (policy ACCEPT 0 packets, 0 bytes)
+num   pkts bytes target     prot opt in     out     source               destination         
+
+Chain OUTPUT (policy ACCEPT 0 packets, 0 bytes)
+num   pkts bytes target     prot opt in     out     source               destination         
+
+Chain POSTROUTING (policy ACCEPT 0 packets, 0 bytes)
+num   pkts bytes target     prot opt in     out     source               destination         
+1     5432 543210 SNAT       all  --  *      eth0    10.1.0.0/16          0.0.0.0/0            to:203.0.113.10
+2     2345 234567 MASQUERADE  all  --  *      wg0     10.100.1.1           0.0.0.0/0           
+3     1234 123456 SNAT       all  --  *      eth0    10.100.1.0/24        0.0.0.0/0            to:203.0.113.10
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:iptables_nat ===
+
+=== TSIM_SECTION_START:iptables_mangle ===
+TITLE: Iptables Mangle Table
+COMMAND: /sbin/iptables -t mangle -L -n -v --line-numbers
+TIMESTAMP: 2025-06-21 14:30:15
+---
+Chain PREROUTING (policy ACCEPT 0 packets, 0 bytes)
+num   pkts bytes target     prot opt in     out     source               destination         
+1     2345 234567 MARK       tcp  --  *      *       0.0.0.0/0            0.0.0.0/0            multiport dports 80,443 MARK set 0x1
+2     1234 123456 MARK       tcp  --  *      *       0.0.0.0/0            0.0.0.0/0            multiport dports 22,3389 MARK set 0x2
+3      789  78901 DSCP       all  --  wg0    *       10.100.1.0/24        0.0.0.0/0            DSCP set 0x2e
+
+Chain INPUT (policy ACCEPT 0 packets, 0 bytes)
+num   pkts bytes target     prot opt in     out     source               destination         
+
+Chain FORWARD (policy ACCEPT 0 packets, 0 bytes)
+num   pkts bytes target     prot opt in     out     source               destination         
+1     3456 345678 MARK       all  --  eth1   eth0    10.1.0.0/16          0.0.0.0/0            match-set HQ_HIGH_PRIORITY src MARK set 0x10
+2     2345 234567 DSCP       all  --  wg0    *       10.100.1.0/24        0.0.0.0/0            DSCP set 0x2e
+3     1234 123456 TOS        all  --  eth1   eth0    10.1.3.0/24          0.0.0.0/0            TOS set 0x10
+
+Chain OUTPUT (policy ACCEPT 0 packets, 0 bytes)
+num   pkts bytes target     prot opt in     out     source               destination         
+
+Chain POSTROUTING (policy ACCEPT 0 packets, 0 bytes)
+num   pkts bytes target     prot opt in     out     source               destination         
+1     4567 456789 DSCP       all  --  *      eth0    0.0.0.0/0            0.0.0.0/0            DSCP set 0x00
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:iptables_mangle ===
+
+=== TSIM_SECTION_START:iptables_save ===
+TITLE: Complete Iptables Configuration
+COMMAND: /sbin/iptables-save
+TIMESTAMP: 2025-06-21 14:30:15
+---
+# Generated by iptables-save v1.8.7 on Fri Jun 21 14:30:15 2025
+*filter
+:INPUT ACCEPT [0:0]
+:FORWARD DROP [0:0]
+:OUTPUT ACCEPT [0:0]
+:HQ_MGMT_ACCESS - [0:0]
+:HQ_LAN_FORWARD - [0:0]
+:WG_VPN_FORWARD - [0:0]
+:INET_FORWARD - [0:0]
+-A INPUT -i lo -j ACCEPT
+-A INPUT -i eth0 -m conntrack --ctstate INVALID -j DROP
+-A INPUT -d 10.1.1.1/32 -j HQ_MGMT_ACCESS
+-A INPUT -p icmp -m icmp --icmp-type 8 -j ACCEPT
+-A INPUT -p tcp -m tcp --dport 22 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
+-A INPUT -i wg0 -p udp -m udp --dport 51820 -j ACCEPT
+-A INPUT -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
+-A INPUT -j LOG --log-prefix "INPUT-DROP: "
+-A INPUT -j DROP
+-A FORWARD -i lo -j ACCEPT
+-A FORWARD -s 10.1.0.0/16 -i eth1 -j HQ_LAN_FORWARD
+-A FORWARD -s 10.100.1.0/24 -i wg0 -j WG_VPN_FORWARD
+-A FORWARD -s 10.1.0.0/16 -i eth1 -o eth0 -j INET_FORWARD
+-A FORWARD -d 10.1.0.0/16 -o eth1 -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
+-A FORWARD -s 0.0.0.0/0 -i eth0 -o eth1 -d 10.1.0.0/16 -j DROP
+-A FORWARD -j LOG --log-prefix "FORWARD-DROP: "
+-A FORWARD -j DROP
+-A OUTPUT -o lo -j ACCEPT
+-A OUTPUT -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
+-A OUTPUT -p icmp -j ACCEPT
+-A OUTPUT -p tcp -m tcp --sport 22 -j ACCEPT
+-A OUTPUT -j DROP
+-A HQ_MGMT_ACCESS -s 10.1.2.0/24 -p tcp -m multiport --dports 22,443,8080 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
+-A HQ_MGMT_ACCESS -s 10.1.3.0/24 -p tcp -m multiport --dports 22,443 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
+-A HQ_MGMT_ACCESS -s 10.1.10.0/24 -p udp -m multiport --dports 161,514 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
+-A HQ_MGMT_ACCESS -j RETURN
+-A HQ_LAN_FORWARD -m set --match-set HQ_TRUSTED_NETS src --match-set HQ_INTERNAL_SERVICES dst -j ACCEPT
+-A HQ_LAN_FORWARD -s 10.1.0.0/16 -p tcp -m multiport --dports 80,443,8080,8443 -j ACCEPT
+-A HQ_LAN_FORWARD -s 10.1.0.0/16 -p udp -m multiport --dports 53,123,514 -j ACCEPT
+-A HQ_LAN_FORWARD -s 10.1.11.0/24 -d 10.1.3.0/24 -p tcp -m tcp --dport 3389 -j DROP
+-A HQ_LAN_FORWARD -s 10.1.0.0/16 -d 10.1.0.0/16 -p icmp -m icmp --icmp-type 8 -j ACCEPT
+-A HQ_LAN_FORWARD -s 10.1.0.0/16 -m limit --limit 10/min --limit-burst 5 -j LOG --log-prefix "HQ-LAN-ALLOW: " --log-level 6
+-A HQ_LAN_FORWARD -j RETURN
+-A WG_VPN_FORWARD -m set --match-set VPN_ALLOWED_PROTOCOLS src,dst,proto -j ACCEPT
+-A WG_VPN_FORWARD -s 10.100.1.0/24 -d 10.0.0.0/8 -p tcp -m multiport --dports 22,80,443 -j ACCEPT
+-A WG_VPN_FORWARD -s 10.100.1.0/24 -d 10.0.0.0/8 -p udp -m multiport --dports 53,123 -j ACCEPT
+-A WG_VPN_FORWARD -s 10.100.1.0/24 -d 192.168.0.0/16 -j DROP
+-A WG_VPN_FORWARD -s 10.100.1.0/24 -m limit --limit 5/min --limit-burst 3 -j LOG --log-prefix "VPN-FORWARD: " --log-level 6
+-A WG_VPN_FORWARD -j RETURN
+-A INET_FORWARD -m set --match-set HQ_WEB_USERS src -p tcp -m multiport --dports 80,443,8080,8443 -j ACCEPT
+-A INET_FORWARD -m set --match-set HQ_DNS_USERS src -p udp -m udp --dport 53 -j ACCEPT
+-A INET_FORWARD -s 10.1.3.0/24 -p tcp -m multiport --dports 25,465,587,993,995 -j ACCEPT
+-A INET_FORWARD -s 10.1.10.0/24 -p tcp -m multiport --dports 22,443,9443 -j ACCEPT
+-A INET_FORWARD -p tcp -m multiport --dports 135,139,445,1433,3389 -j DROP
+-A INET_FORWARD -s 10.1.0.0/16 -p icmp -m icmp --icmp-type 8 -j ACCEPT
+-A INET_FORWARD -s 10.1.0.0/16 -m limit --limit 20/min --limit-burst 10 -j LOG --log-prefix "INET-FORWARD: " --log-level 6
+-A INET_FORWARD -j RETURN
+COMMIT
+# Completed on Fri Jun 21 14:30:15 2025
+# Generated by iptables-save v1.8.7 on Fri Jun 21 14:30:15 2025
+*nat
+:PREROUTING ACCEPT [0:0]
+:INPUT ACCEPT [0:0]
+:OUTPUT ACCEPT [0:0]
+:POSTROUTING ACCEPT [0:0]
+-A PREROUTING -i eth0 -d 203.0.113.10/32 -p tcp -m tcp --dport 80 -j DNAT --to-destination 10.1.3.10:80
+-A PREROUTING -i eth0 -d 203.0.113.10/32 -p tcp -m tcp --dport 443 -j DNAT --to-destination 10.1.3.10:443
+-A PREROUTING -i eth0 -d 203.0.113.10/32 -p tcp -m tcp --dport 25 -j DNAT --to-destination 10.1.3.20:25
+-A PREROUTING -i eth0 -d 203.0.113.10/32 -p tcp -m tcp --dport 22 -j DNAT --to-destination 10.1.3.5:22
+-A POSTROUTING -s 10.1.0.0/16 -o eth0 -j SNAT --to-source 203.0.113.10
+-A POSTROUTING -s 10.100.1.1/32 -o wg0 -j MASQUERADE
+-A POSTROUTING -s 10.100.1.0/24 -o eth0 -j SNAT --to-source 203.0.113.10
+COMMIT
+# Completed on Fri Jun 21 14:30:15 2025
+# Generated by iptables-save v1.8.7 on Fri Jun 21 14:30:15 2025
+*mangle
+:PREROUTING ACCEPT [0:0]
+:INPUT ACCEPT [0:0]
+:FORWARD ACCEPT [0:0]
+:OUTPUT ACCEPT [0:0]
+:POSTROUTING ACCEPT [0:0]
+-A PREROUTING -p tcp -m multiport --dports 80,443 -j MARK --set-xmark 0x1/0xffffffff
+-A PREROUTING -p tcp -m multiport --dports 22,3389 -j MARK --set-xmark 0x2/0xffffffff
+-A PREROUTING -s 10.100.1.0/24 -i wg0 -j DSCP --set-dscp 0x2e
+-A FORWARD -s 10.1.0.0/16 -i eth1 -o eth0 -m set --match-set HQ_HIGH_PRIORITY src -j MARK --set-xmark 0x10/0xffffffff
+-A FORWARD -s 10.100.1.0/24 -i wg0 -j DSCP --set-dscp 0x2e
+-A FORWARD -s 10.1.3.0/24 -i eth1 -o eth0 -j TOS --set-tos 0x10
+-A POSTROUTING -o eth0 -j DSCP --set-dscp 0x00
+COMMIT
+# Completed on Fri Jun 21 14:30:15 2025
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:iptables_save ===
+
+=== TSIM_SECTION_START:ipset_list ===
+TITLE: Ipset Lists and Membership
+COMMAND: /sbin/ipset list
+TIMESTAMP: 2025-06-21 14:30:15
+---
+Name: HQ_TRUSTED_NETS
+Type: hash:net
+Revision: 6
+Header: family inet hashsize 1024 maxelem 65536
+Size in memory: 584
+References: 1
+Number of entries: 6
+Members:
+10.1.1.0/24
+10.1.2.0/24
+10.1.3.0/24
+10.1.10.0/24
+10.1.11.0/24
+10.100.1.0/24
+
+Name: HQ_INTERNAL_SERVICES
+Type: hash:ip,port
+Revision: 5
+Header: family inet hashsize 1024 maxelem 65536
+Size in memory: 728
+References: 1
+Number of entries: 12
+Members:
+10.1.3.10,tcp:80
+10.1.3.10,tcp:443
+10.1.3.10,tcp:8080
+10.1.3.20,tcp:25
+10.1.3.20,tcp:465
+10.1.3.20,tcp:587
+10.1.3.5,tcp:22
+10.1.3.15,tcp:53
+10.1.3.15,udp:53
+10.1.3.25,tcp:389
+10.1.3.25,tcp:636
+10.1.2.100,tcp:161
+
+Name: VPN_ALLOWED_PROTOCOLS
+Type: hash:net,net,port
+Revision: 0
+Header: family inet hashsize 1024 maxelem 65536
+Size in memory: 920
+References: 1
+Number of entries: 8
+Members:
+10.100.1.1/32,10.2.0.0/16,tcp:22
+10.100.1.1/32,10.2.0.0/16,tcp:80
+10.100.1.1/32,10.2.0.0/16,tcp:443
+10.100.1.1/32,10.3.0.0/16,tcp:22
+10.100.1.1/32,10.3.0.0/16,tcp:80
+10.100.1.1/32,10.3.0.0/16,tcp:443
+10.100.1.2/32,10.1.0.0/16,tcp:22
+10.100.1.3/32,10.1.0.0/16,tcp:22
+
+Name: HQ_WEB_USERS
+Type: hash:net
+Revision: 6
+Header: family inet hashsize 1024 maxelem 65536
+Size in memory: 456
+References: 1
+Number of entries: 4
+Members:
+10.1.1.0/24
+10.1.2.0/24
+10.1.10.0/24
+10.1.11.0/24
+
+Name: HQ_DNS_USERS
+Type: hash:net
+Revision: 6
+Header: family inet hashsize 1024 maxelem 65536
+Size in memory: 520
+References: 1
+Number of entries: 5
+Members:
+10.1.1.0/24
+10.1.2.0/24
+10.1.3.0/24
+10.1.10.0/24
+10.1.11.0/24
+
+Name: HQ_HIGH_PRIORITY
+Type: hash:ip
+Revision: 4
+Header: family inet hashsize 1024 maxelem 65536
+Size in memory: 296
+References: 1
+Number of entries: 8
+Members:
+10.1.3.5
+10.1.3.10
+10.1.3.15
+10.1.3.20
+10.1.10.5
+10.1.10.10
+10.1.11.5
+10.1.2.100
+
+Name: HQ_BLACKLIST
+Type: hash:net
+Revision: 6
+Header: family inet hashsize 1024 maxelem 65536
+Size in memory: 424
+References: 0
+Number of entries: 3
+Members:
+192.168.1.0/24
+172.16.0.0/16
+169.254.0.0/16
+
+Name: HQ_VIP_PORTS
+Type: bitmap:port
+Revision: 3
+Header: range 0-65535
+Size in memory: 8264
+References: 0
+Number of entries: 12
+Members:
+22
+25
+53
+80
+110
+143
+443
+465
+587
+993
+995
+8080
+
+Name: HQ_MGMT_IPS
+Type: hash:ip,mac
+Revision: 1
+Header: family inet hashsize 1024 maxelem 65536
+Size in memory: 424
+References: 0
+Number of entries: 5
+Members:
+10.1.2.100,52:54:00:aa:bb:cc
+10.1.3.5,52:54:00:dd:ee:ff
+10.1.10.5,52:54:00:11:22:33
+10.1.11.5,52:54:00:44:55:66
+10.1.1.100,52:54:00:77:88:99
+
+Name: HQ_TIME_RESTRICTED
+Type: hash:ip,port,ip
+Revision: 1
+Header: family inet hashsize 1024 maxelem 65536
+Size in memory: 648
+References: 0
+Number of entries: 6
+Members:
+10.1.11.0/24,tcp:80,8.8.8.8
+10.1.11.0/24,tcp:443,8.8.8.8
+10.1.11.0/24,tcp:80,1.1.1.1
+10.1.11.0/24,tcp:443,1.1.1.1
+10.1.10.0/24,tcp:22,10.1.3.0/24
+10.1.2.0/24,tcp:3389,10.1.3.0/24
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:ipset_list ===
+
+=== TSIM_SECTION_START:conntrack ===
+TITLE: Connection Tracking Entries (first 10)
+COMMAND: head -10 /proc/net/nf_conntrack
+TIMESTAMP: 2025-06-21 14:30:15
+---
+ipv4     2 tcp      6 431994 ESTABLISHED src=10.1.1.2 dst=203.0.113.10 sport=34567 dport=80 src=203.0.113.10 dst=10.1.1.2 sport=80 dport=34567 [ASSURED] mark=1 use=1
+ipv4     2 tcp      6 431993 ESTABLISHED src=10.1.3.10 dst=8.8.8.8 sport=45678 dport=443 src=8.8.8.8 dst=203.0.113.10 sport=443 dport=45678 [ASSURED] mark=1 use=1
+ipv4     2 udp     17 29 src=10.1.2.5 dst=10.1.3.15 sport=56789 dport=53 src=10.1.3.15 dst=10.1.2.5 sport=53 dport=56789 use=1
+ipv4     2 tcp      6 431992 ESTABLISHED src=10.100.1.2 dst=10.1.3.20 sport=12345 dport=25 src=10.1.3.20 dst=10.100.1.2 sport=25 dport=12345 [ASSURED] mark=2 use=1
+ipv4     2 icmp     1 29 src=10.1.10.5 dst=8.8.8.8 type=8 code=0 id=23456 src=8.8.8.8 dst=203.0.113.10 type=0 code=0 id=23456 use=1
+ipv4     2 tcp      6 431991 ESTABLISHED src=10.1.11.10 dst=10.1.3.10 sport=67890 dport=80 src=10.1.3.10 dst=10.1.11.10 sport=80 dport=67890 [ASSURED] use=1
+ipv4     2 udp     17 51820 src=198.51.100.10 dst=203.0.113.10 sport=51820 dport=51820 src=203.0.113.10 dst=198.51.100.10 sport=51820 dport=51820 use=1
+ipv4     2 tcp      6 431990 ESTABLISHED src=10.1.3.5 dst=203.0.113.10 sport=78901 dport=22 src=203.0.113.10 dst=10.1.3.5 sport=22 dport=78901 [ASSURED] mark=2 use=1
+ipv4     2 udp     17 28 src=10.1.1.5 dst=10.1.3.15 sport=89012 dport=53 src=10.1.3.15 dst=10.1.1.5 sport=53 dport=89012 use=1
+ipv4     2 tcp      6 86384 TIME_WAIT src=10.100.1.3 dst=10.1.2.100 sport=90123 dport=161 src=10.1.2.100 dst=10.100.1.3 sport=161 dport=90123 [ASSURED] use=1
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:conntrack ===
+
+=== TSIM_SECTION_START:netfilter_modules ===
+TITLE: Loaded Netfilter Modules
+COMMAND: /bin/lsmod | /bin/grep -E '(iptable|netfilter|conntrack|nf_)'
+TIMESTAMP: 2025-06-21 14:30:15
+---
+nf_conntrack_netlink    49152  0
+nf_conntrack           139264  1 nf_conntrack_netlink
+nf_defrag_ipv4         16384  1 nf_conntrack
+libcrc32c              16384  1 nf_conntrack
+iptable_mangle         16384  1
+iptable_nat            16384  1
+iptable_filter         16384  1
+ip_tables              32768  3 iptable_filter,iptable_mangle,iptable_nat
+nf_nat                 45056  1 iptable_nat
+nf_log_syslog          20480  1
+nf_log_common          16384  1 nf_log_syslog
+xt_multiport           20480  10
+xt_conntrack           16384  8
+xt_mark                16384  2
+xt_MARK                16384  2
+xt_set                 16384  6
+xt_DSCP                16384  3
+xt_TOS                 16384  1
+xt_LOG                 16384  3
+xt_limit               16384  3
+xt_tcpudp              20480  15
+xt_SNAT                20480  3
+xt_DNAT                20480  4
+xt_MASQUERADE          20480  1
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:netfilter_modules ===
+
+=== TSIM_FACTS_COLLECTION_COMPLETE ===
+TIMESTAMP: 2025-06-21 14:30:15
+HOSTNAME: hq-gw
+SECTIONS_COLLECTED: routing_table,policy_rules,interfaces,interface_stats,ip_forwarding,kernel_version,hostname,iptables_*,ipset_*,conntrack,netfilter_modules

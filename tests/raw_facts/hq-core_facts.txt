@@ -1,0 +1,1123 @@
+# Traceroute Simulator Facts Collection
+# Generated on: 2025-06-21 15:15:42
+# Hostname: hq-core
+# Kernel: 5.15.0-82-generic
+# Collection Script Version: 1.0
+
+# Locating required commands in standard paths
+# Found commands:
+# IP: /sbin/ip
+# IPTABLES: /sbin/iptables
+# IPTABLES-SAVE: /sbin/iptables-save
+# IPSET: /sbin/ipset
+# LSMOD: /bin/lsmod
+# Running as root: 1
+
+=== TSIM_SECTION_START:routing_table ===
+TITLE: IP Routing Table
+COMMAND: /sbin/ip route show
+TIMESTAMP: 2025-06-21 15:15:42
+---
+default via 10.1.1.1 dev eth0 metric 100
+10.1.1.0/24 dev eth0 proto kernel scope link src 10.1.1.2
+10.1.2.0/24 dev eth1 proto kernel scope link src 10.1.2.1
+10.1.3.0/24 via 10.1.2.3 dev eth1 metric 1
+10.1.10.0/24 via 10.1.2.4 dev eth1 metric 1
+10.1.11.0/24 via 10.1.2.4 dev eth1 metric 1
+10.2.0.0/16 via 10.1.1.1 dev eth0 metric 1
+10.3.0.0/16 via 10.1.1.1 dev eth0 metric 1
+10.100.1.0/24 via 10.1.1.1 dev eth0 metric 1
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:routing_table ===
+
+=== TSIM_SECTION_START:policy_rules ===
+TITLE: IP Policy Rules
+COMMAND: /sbin/ip rule show
+TIMESTAMP: 2025-06-21 15:15:42
+---
+0:	from all lookup local
+50:	from 10.1.3.0/24 lookup dmz_priority
+100:	from 10.1.10.0/24 lookup lab_priority
+150:	from 10.1.11.0/24 lookup dev_priority
+32766:	from all lookup main
+32767:	from all lookup default
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:policy_rules ===
+
+=== TSIM_SECTION_START:interfaces ===
+TITLE: Network Interfaces
+COMMAND: /sbin/ip addr show
+TIMESTAMP: 2025-06-21 15:15:42
+---
+1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN group default qlen 1000
+    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+    inet 127.0.0.1/8 scope host lo
+       valid_lft forever preferred_lft forever
+2: eth0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
+    link/ether 52:54:00:52:34:01 brd ff:ff:ff:ff:ff:ff
+    inet 10.1.1.2/24 brd 10.1.1.255 scope global eth0
+       valid_lft forever preferred_lft forever
+3: eth1: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
+    link/ether 52:54:00:52:34:02 brd ff:ff:ff:ff:ff:ff
+    inet 10.1.2.1/24 brd 10.1.2.255 scope global eth1
+       valid_lft forever preferred_lft forever
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:interfaces ===
+
+=== TSIM_SECTION_START:interface_stats ===
+TITLE: Interface Statistics
+COMMAND: cat /proc/net/dev
+TIMESTAMP: 2025-06-21 15:15:42
+---
+Inter-|   Receive                                                |  Transmit
+ face |bytes    packets errs drop fifo frame compressed multicast|bytes    packets errs drop fifo colls carrier compressed
+    lo:   98765      654    0    0    0     0          0         0    98765      654    0    0    0     0       0          0
+  eth0: 8765432     8765    0    0    0     0          0         0  7654321     7654    0    0    0     0       0          0
+  eth1: 6543210     6543    0    0    0     0          0         0  5432109     5432    0    0    0     0       0          0
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:interface_stats ===
+
+=== TSIM_SECTION_START:ip_forwarding ===
+TITLE: IP Forwarding Status
+COMMAND: cat /proc/sys/net/ipv4/ip_forward
+TIMESTAMP: 2025-06-21 15:15:42
+---
+1
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:ip_forwarding ===
+
+=== TSIM_SECTION_START:kernel_version ===
+TITLE: Kernel Version
+COMMAND: uname -r
+TIMESTAMP: 2025-06-21 15:15:42
+---
+5.15.0-82-generic
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:kernel_version ===
+
+=== TSIM_SECTION_START:hostname ===
+TITLE: System Hostname
+COMMAND: hostname
+TIMESTAMP: 2025-06-21 15:15:42
+---
+hq-core
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:hostname ===
+
+=== TSIM_SECTION_START:iptables_filter ===
+TITLE: Iptables Filter Table
+COMMAND: /sbin/iptables -t filter -L -n -v --line-numbers
+TIMESTAMP: 2025-06-21 15:15:42
+---
+Chain INPUT (policy ACCEPT 0 packets, 0 bytes)
+num   pkts bytes target     prot opt in     out     source               destination         
+1      567  56789 ACCEPT     all  --  lo     *       0.0.0.0/0            0.0.0.0/0           
+2     2345 234567 ACCEPT     all  --  *      *       0.0.0.0/0            0.0.0.0/0            ctstate RELATED,ESTABLISHED
+3      789  78901 HQ_CORE_MGMT  all  --  *      *       0.0.0.0/0            10.1.1.2            
+4      456  45678 HQ_CORE_MGMT  all  --  *      *       0.0.0.0/0            10.1.2.1            
+5      234  23456 ACCEPT     icmp --  *      *       10.1.0.0/16          0.0.0.0/0            icmp-type 8 limit: avg 30/sec burst 15
+6      123  12345 ACCEPT     tcp  --  *      *       10.1.0.0/16          0.0.0.0/0            tcp dpt:22 ctstate NEW,ESTABLISHED
+7       89   8901 ACCEPT     udp  --  *      *       10.1.0.0/16          0.0.0.0/0            multiport dports 161,514,123
+8       56   5678 LOG        all  --  *      *       0.0.0.0/0            0.0.0.0/0            limit: avg 20/min burst 25 LOG flags 0 level 4 prefix "HQ-CORE-INPUT-DROP: "
+
+Chain FORWARD (policy ACCEPT 0 packets, 0 bytes)
+num   pkts bytes target     prot opt in     out     source               destination         
+1     5678 567890 HQ_ZONE_CONTROL  all  --  *      *       0.0.0.0/0            0.0.0.0/0           
+2     4567 456789 HQ_INTER_VLAN  all  --  *      *       0.0.0.0/0            0.0.0.0/0           
+3     3456 345678 HQ_DMZ_FORWARD  all  --  *      eth1    0.0.0.0/0            10.1.3.0/24         
+4     2345 234567 HQ_LAB_FORWARD  all  --  *      eth1    0.0.0.0/0            10.1.10.0/24        
+5     1234 123456 HQ_LAB_FORWARD  all  --  *      eth1    0.0.0.0/0            10.1.11.0/24        
+6      987  98765 HQ_GATEWAY_FORWARD  all  --  eth1   eth0    10.1.0.0/16          0.0.0.0/0           
+7      654  65432 HQ_INCOMING_FORWARD  all  --  eth0   eth1    0.0.0.0/0            10.1.0.0/16         
+8      432  43210 HQ_VPN_ROUTING  all  --  *      *       10.100.1.0/24        10.1.0.0/16         
+9      321  32109 HQ_VPN_ROUTING  all  --  *      *       10.1.0.0/16          10.100.1.0/24       
+10     210  21098 ACCEPT     all  --  *      *       0.0.0.0/0            0.0.0.0/0            ctstate RELATED,ESTABLISHED
+11     123  12345 HQ_SECURITY_SCAN  all  --  *      *       0.0.0.0/0            0.0.0.0/0           
+12      89   8901 LOG        all  --  *      *       0.0.0.0/0            0.0.0.0/0            limit: avg 15/min burst 20 LOG flags 0 level 6 prefix "HQ-CORE-FORWARD-DROP: "
+13      56   5678 DROP       all  --  *      *       0.0.0.0/0            0.0.0.0/0           
+
+Chain OUTPUT (policy ACCEPT 0 packets, 0 bytes)
+num   pkts bytes target     prot opt in     out     source               destination         
+1     1234 123456 ACCEPT     all  --  *      lo      0.0.0.0/0            0.0.0.0/0           
+2      987  98765 ACCEPT     all  --  *      *       0.0.0.0/0            0.0.0.0/0            ctstate RELATED,ESTABLISHED
+3      654  65432 ACCEPT     icmp --  *      *       0.0.0.0/0            10.1.0.0/16         
+4      432  43210 ACCEPT     tcp  --  *      *       0.0.0.0/0            0.0.0.0/0            tcp spt:22
+5      321  32109 HQ_OUTBOUND_FILTER  all  --  *      *       0.0.0.0/0            0.0.0.0/0           
+
+Chain HQ_CORE_MGMT (2 references)
+num   pkts bytes target     prot opt in     out     source               destination         
+1      789  78901 ACCEPT     tcp  --  *      *       10.1.1.0/24          0.0.0.0/0            multiport dports 22,80,443,8080 ctstate NEW,ESTABLISHED
+2      567  56789 ACCEPT     tcp  --  *      *       10.1.2.0/24          0.0.0.0/0            multiport dports 22,443,8080 ctstate NEW,ESTABLISHED
+3      345  34567 ACCEPT     tcp  --  *      *       10.1.3.0/24          0.0.0.0/0            multiport dports 22,443 ctstate NEW,ESTABLISHED
+4      234  23456 ACCEPT     udp  --  *      *       10.1.0.0/16          0.0.0.0/0            multiport dports 161,514,123 ctstate NEW,ESTABLISHED
+5      123  12345 ACCEPT     tcp  --  *      *       0.0.0.0/0            0.0.0.0/0            match-set HQ_CORE_ADMIN_SOURCES src match-set HQ_CORE_MGMT_PORTS dst,port
+6       89   8901 RETURN     all  --  *      *       0.0.0.0/0            0.0.0.0/0           
+
+Chain HQ_ZONE_CONTROL (1 references)
+num   pkts bytes target     prot opt in     out     source               destination         
+1     2345 234567 ACCEPT     all  --  *      *       0.0.0.0/0            0.0.0.0/0            match-set HQ_ZONE_MATRIX src,dst
+2     1234 123456 HQ_LAB_ISOLATION  all  --  *      *       10.1.10.0/24         0.0.0.0/0           
+3      987  98765 HQ_LAB_ISOLATION  all  --  *      *       10.1.11.0/24         0.0.0.0/0           
+4      654  65432 HQ_DMZ_ISOLATION  all  --  *      *       10.1.3.0/24          0.0.0.0/0           
+5      432  43210 HQ_PRODUCTION_PROTECT  all  --  *      *       0.0.0.0/0            10.1.1.0/24         
+6      321  32109 HQ_NETWORK_SEGMENTATION  all  --  *      *       0.0.0.0/0            0.0.0.0/0           
+7      210  21098 RETURN     all  --  *      *       0.0.0.0/0            0.0.0.0/0           
+
+Chain HQ_INTER_VLAN (1 references)
+num   pkts bytes target     prot opt in     out     source               destination         
+1     1789 178901 ACCEPT     tcp  --  *      *       0.0.0.0/0            0.0.0.0/0            match-set HQ_INTER_VLAN_SERVICES src,dst,port
+2     1456 145678 ACCEPT     tcp  --  eth1   eth1    10.1.2.0/24          10.1.3.0/24          multiport dports 80,443,22
+3     1234 123456 ACCEPT     tcp  --  eth1   eth1    10.1.3.0/24          10.1.2.0/24          multiport dports 25,587,993
+4      987  98765 ACCEPT     udp  --  eth1   eth1    10.1.0.0/16          10.1.0.0/16          multiport dports 53,123,514
+5      765  76543 ACCEPT     tcp  --  eth1   eth1    10.1.10.0/24         10.1.2.0/24          multiport dports 80,443,22
+6      654  65432 ACCEPT     tcp  --  eth1   eth1    10.1.11.0/24         10.1.2.0/24          multiport dports 80,443,8080
+7      543  54321 DROP       tcp  --  eth1   eth1    10.1.10.0/24         10.1.11.0/24         
+8      432  43210 DROP       tcp  --  eth1   eth1    10.1.11.0/24         10.1.10.0/24         
+9      321  32109 ACCEPT     icmp --  eth1   eth1    10.1.0.0/16          10.1.0.0/16          icmp-type 8
+10     210  21098 LOG        all  --  eth1   eth1    10.1.0.0/16          10.1.0.0/16          limit: avg 10/min burst 15 LOG flags 0 level 6 prefix "HQ-INTER-VLAN: "
+11     123  12345 RETURN     all  --  *      *       0.0.0.0/0            0.0.0.0/0           
+
+Chain HQ_DMZ_FORWARD (1 references)
+num   pkts bytes target     prot opt in     out     source               destination         
+1     1567 156789 ACCEPT     tcp  --  *      *       0.0.0.0/0            0.0.0.0/0            match-set HQ_DMZ_PUBLIC_SERVICES dst,port
+2     1234 123456 ACCEPT     tcp  --  eth1   eth1    10.1.2.0/24          10.1.3.0/24          multiport dports 22,80,443,8080
+3      987  98765 ACCEPT     tcp  --  eth0   eth1    10.100.1.0/24        10.1.3.0/24          multiport dports 22,80,443
+4      765  76543 DROP       tcp  --  eth1   eth1    10.1.11.0/24         10.1.3.0/24          multiport dports 22,3389
+5      654  65432 ACCEPT     udp  --  eth1   eth1    10.1.0.0/16          10.1.3.0/24          multiport dports 53,123
+6      543  54321 ACCEPT     tcp  --  eth1   eth1    10.1.3.0/24          10.1.2.0/24          multiport dports 161,514
+7      432  43210 LOG        all  --  *      eth1    0.0.0.0/0            10.1.3.0/24          limit: avg 12/min burst 18 LOG flags 0 level 6 prefix "HQ-DMZ-FWD: "
+8      321  32109 RETURN     all  --  *      *       0.0.0.0/0            0.0.0.0/0           
+
+Chain HQ_LAB_FORWARD (2 references)
+num   pkts bytes target     prot opt in     out     source               destination         
+1     1345 134567 HQ_LAB_DEV_RULES  all  --  *      *       0.0.0.0/0            10.1.11.0/24        
+2     1123 112345 HQ_LAB_PROD_RULES  all  --  *      *       0.0.0.0/0            10.1.10.0/24        
+3      987  98765 ACCEPT     tcp  --  eth1   eth1    10.1.2.0/24          10.1.10.0/24         multiport dports 22,80,443
+4      876  87654 ACCEPT     tcp  --  eth1   eth1    10.1.2.0/24          10.1.11.0/24         multiport dports 22,80,443,8080
+5      765  76543 ACCEPT     tcp  --  eth0   eth1    10.100.1.0/24        10.1.10.0/24         multiport dports 22,80,443
+6      654  65432 ACCEPT     tcp  --  eth0   eth1    10.100.1.0/24        10.1.11.0/24         multiport dports 22,80,443,8080
+7      543  54321 DROP       tcp  --  eth1   eth1    10.1.3.0/24          10.1.10.0/24         multiport dports 22,3389
+8      432  43210 DROP       tcp  --  eth1   eth1    10.1.3.0/24          10.1.11.0/24         multiport dports 22,3389
+9      321  32109 ACCEPT     udp  --  eth1   eth1    10.1.0.0/16          10.1.10.0/24         multiport dports 53,123,514
+10     210  21098 ACCEPT     udp  --  eth1   eth1    10.1.0.0/16          10.1.11.0/24         multiport dports 53,123,514
+11     123  12345 LOG        all  --  *      eth1    0.0.0.0/0            10.1.10.0/24         limit: avg 8/min burst 12 LOG flags 0 level 6 prefix "HQ-LAB-PROD-FWD: "
+12      89   8901 LOG        all  --  *      eth1    0.0.0.0/0            10.1.11.0/24         limit: avg 8/min burst 12 LOG flags 0 level 6 prefix "HQ-LAB-DEV-FWD: "
+13      56   5678 RETURN     all  --  *      *       0.0.0.0/0            0.0.0.0/0           
+
+Chain HQ_GATEWAY_FORWARD (1 references)
+num   pkts bytes target     prot opt in     out     source               destination         
+1     1456 145678 ACCEPT     tcp  --  *      *       0.0.0.0/0            0.0.0.0/0            match-set HQ_INTERNET_ALLOWED src multiport dports 80,443,8080,8443
+2     1234 123456 ACCEPT     udp  --  *      *       0.0.0.0/0            0.0.0.0/0            match-set HQ_DNS_CLIENTS src udp dpt:53
+3      987  98765 ACCEPT     tcp  --  *      *       10.1.3.0/24          0.0.0.0/0            multiport dports 25,465,587,993,995
+4      876  87654 ACCEPT     tcp  --  *      *       10.1.2.0/24          0.0.0.0/0            multiport dports 80,443,22
+5      765  76543 ACCEPT     tcp  --  *      *       10.1.10.0/24         0.0.0.0/0            multiport dports 80,443,22
+6      654  65432 ACCEPT     tcp  --  *      *       10.1.11.0/24         0.0.0.0/0            multiport dports 80,443,8080,9000
+7      543  54321 DROP       tcp  --  *      *       0.0.0.0/0            0.0.0.0/0            multiport dports 135,139,445,1433,3389
+8      432  43210 ACCEPT     icmp --  *      *       10.1.0.0/16          0.0.0.0/0            icmp-type 8
+9      321  32109 LOG        all  --  *      *       10.1.0.0/16          0.0.0.0/0            limit: avg 25/min burst 30 LOG flags 0 level 6 prefix "HQ-INET-FWD: "
+10     210  21098 RETURN     all  --  *      *       0.0.0.0/0            0.0.0.0/0           
+
+Chain HQ_INCOMING_FORWARD (1 references)
+num   pkts bytes target     prot opt in     out     source               destination         
+1      987  98765 ACCEPT     all  --  *      *       0.0.0.0/0            0.0.0.0/0            ctstate RELATED,ESTABLISHED
+2      876  87654 ACCEPT     tcp  --  *      *       10.100.1.0/24        10.1.0.0/16          multiport dports 22,80,443
+3      765  76543 DROP       tcp  --  *      *       0.0.0.0/0            10.1.1.0/24          multiport dports 22,135,139,445
+4      654  65432 ACCEPT     tcp  --  *      *       0.0.0.0/0            10.1.3.0/24          multiport dports 80,443,25,587
+5      543  54321 ACCEPT     tcp  --  *      *       0.0.0.0/0            10.1.2.0/24          multiport dports 80,443
+6      432  43210 DROP       tcp  --  *      *       0.0.0.0/0            10.1.10.0/24         multiport dports 22,3389
+7      321  32109 DROP       tcp  --  *      *       0.0.0.0/0            10.1.11.0/24         multiport dports 22,3389
+8      210  21098 ACCEPT     icmp --  *      *       0.0.0.0/0            10.1.0.0/16          icmp-type 8
+9      123  12345 LOG        all  --  *      *       0.0.0.0/0            10.1.0.0/16          limit: avg 20/min burst 25 LOG flags 0 level 6 prefix "HQ-INCOMING-FWD: "
+10      89   8901 RETURN     all  --  *      *       0.0.0.0/0            0.0.0.0/0           
+
+Chain HQ_VPN_ROUTING (2 references)
+num   pkts bytes target     prot opt in     out     source               destination         
+1      654  65432 ACCEPT     all  --  *      *       0.0.0.0/0            0.0.0.0/0            match-set HQ_VPN_ALLOWED_FLOWS src,dst,port
+2      543  54321 ACCEPT     tcp  --  *      *       10.100.1.2/32        10.1.0.0/16          multiport dports 22,80,443
+3      432  43210 ACCEPT     tcp  --  *      *       10.100.1.3/32        10.1.0.0/16          multiport dports 22,80,443
+4      321  32109 ACCEPT     tcp  --  *      *       10.1.0.0/16          10.100.1.0/24        multiport dports 22,80,443
+5      210  21098 DROP       tcp  --  *      *       10.100.1.0/24        10.1.11.0/24         multiport dports 22,3389
+6      123  12345 ACCEPT     udp  --  *      *       10.100.1.0/24        10.1.0.0/16          multiport dports 53,123
+7       89   8901 ACCEPT     udp  --  *      *       10.1.0.0/16          10.100.1.0/24        multiport dports 53,123
+8       56   5678 LOG        all  --  *      *       10.100.1.0/24        10.1.0.0/16          limit: avg 10/min burst 15 LOG flags 0 level 6 prefix "HQ-VPN-IN: "
+9       34   3456 LOG        all  --  *      *       10.1.0.0/16          10.100.1.0/24        limit: avg 10/min burst 15 LOG flags 0 level 6 prefix "HQ-VPN-OUT: "
+10      21   2109 RETURN     all  --  *      *       0.0.0.0/0            0.0.0.0/0           
+
+Chain HQ_SECURITY_SCAN (1 references)
+num   pkts bytes target     prot opt in     out     source               destination         
+1      234  23456 DROP       all  --  *      *       0.0.0.0/0            0.0.0.0/0            match-set HQ_CORE_BLACKLIST src
+2      210  21098 DROP       all  --  *      *       0.0.0.0/0            0.0.0.0/0            match-set HQ_CORE_BLACKLIST dst
+3      189  18901 NFLOG      tcp  --  *      *       0.0.0.0/0            0.0.0.0/0            match-set HQ_SUSPICIOUS_PATTERNS src,dst,port --nflog-group 1
+4      123  12345 DROP       tcp  --  *      *       0.0.0.0/0            0.0.0.0/0            recent: CHECK seconds: 300 hit_count: 20 name: SCANNERS side: source
+5       89   8901 LOG        tcp  --  *      *       0.0.0.0/0            0.0.0.0/0            match-set HQ_SCAN_DETECT dst,port recent: SET name: SCANNERS side: source LOG flags 0 level 4 prefix "SCAN-DETECT: "
+6       56   5678 RETURN     all  --  *      *       0.0.0.0/0            0.0.0.0/0           
+
+Chain HQ_LAB_ISOLATION (2 references)
+num   pkts bytes target     prot opt in     out     source               destination         
+1      456  45678 DROP       all  --  *      *       0.0.0.0/0            10.1.1.0/24         
+2      345  34567 DROP       tcp  --  *      *       0.0.0.0/0            10.1.2.0/24          multiport dports 22,135,139,445,3389
+3      234  23456 ACCEPT     tcp  --  *      *       0.0.0.0/0            10.1.2.0/24          multiport dports 80,443
+4      123  12345 ACCEPT     tcp  --  *      *       0.0.0.0/0            10.1.3.0/24          multiport dports 80,443
+5       89   8901 DROP       all  --  *      *       0.0.0.0/0            10.1.3.0/24         
+6       56   5678 RETURN     all  --  *      *       0.0.0.0/0            0.0.0.0/0           
+
+Chain HQ_DMZ_ISOLATION (1 references)
+num   pkts bytes target     prot opt in     out     source               destination         
+1      345  34567 DROP       all  --  *      *       0.0.0.0/0            10.1.1.0/24         
+2      234  23456 ACCEPT     tcp  --  *      *       0.0.0.0/0            10.1.2.0/24          multiport dports 25,587,993
+3      123  12345 DROP       tcp  --  *      *       0.0.0.0/0            10.1.2.0/24          multiport dports 22,135,139,445
+4       89   8901 DROP       all  --  *      *       0.0.0.0/0            10.1.10.0/24        
+5       56   5678 DROP       all  --  *      *       0.0.0.0/0            10.1.11.0/24        
+6       34   3456 RETURN     all  --  *      *       0.0.0.0/0            0.0.0.0/0           
+
+Chain HQ_PRODUCTION_PROTECT (1 references)
+num   pkts bytes target     prot opt in     out     source               destination         
+1      234  23456 DROP       tcp  --  *      *       10.1.10.0/24         0.0.0.0/0            multiport dports 22,135,139,445,3389
+2      123  12345 DROP       tcp  --  *      *       10.1.11.0/24         0.0.0.0/0            multiport dports 22,135,139,445,3389
+3       89   8901 ACCEPT     tcp  --  *      *       10.1.2.0/24          0.0.0.0/0            multiport dports 22,80,443
+4       56   5678 ACCEPT     tcp  --  *      *       10.1.3.0/24          0.0.0.0/0            multiport dports 80,443
+5       34   3456 RETURN     all  --  *      *       0.0.0.0/0            0.0.0.0/0           
+
+Chain HQ_NETWORK_SEGMENTATION (1 references)
+num   pkts bytes target     prot opt in     out     source               destination         
+1      189  18901 ACCEPT     all  --  *      *       0.0.0.0/0            0.0.0.0/0            match-set HQ_SEGMENT_RULES src,dst,proto
+2      123  12345 DROP       tcp  --  *      *       10.1.11.0/24         10.1.10.0/24         
+3       89   8901 DROP       tcp  --  *      *       10.1.10.0/24         10.1.11.0/24         
+4       56   5678 ACCEPT     tcp  --  *      *       10.1.2.0/24          10.1.3.0/24          multiport dports 80,443,22
+5       34   3456 ACCEPT     tcp  --  *      *       10.1.3.0/24          10.1.2.0/24          multiport dports 25,587
+6       21   2109 RETURN     all  --  *      *       0.0.0.0/0            0.0.0.0/0           
+
+Chain HQ_LAB_DEV_RULES (1 references)
+num   pkts bytes target     prot opt in     out     source               destination         
+1      456  45678 ACCEPT     tcp  --  *      *       0.0.0.0/0            0.0.0.0/0            match-set HQ_DEV_ALLOWED_SERVICES dst,port
+2      345  34567 ACCEPT     tcp  --  *      *       10.1.2.0/24          10.1.11.0/24         multiport dports 22,80,443,8080,9000
+3      234  23456 ACCEPT     tcp  --  *      *       10.1.3.0/24          10.1.11.0/24         multiport dports 80,443
+4      123  12345 DROP       tcp  --  *      *       10.1.1.0/24          10.1.11.0/24         multiport dports 22,135,139,445
+5       89   8901 ACCEPT     tcp  --  *      *       10.100.1.0/24        10.1.11.0/24         multiport dports 22,80,443,8080
+6       56   5678 LOG        all  --  *      *       0.0.0.0/0            10.1.11.0/24         limit: avg 5/min burst 10 LOG flags 0 level 6 prefix "HQ-DEV-ACCESS: "
+7       34   3456 RETURN     all  --  *      *       0.0.0.0/0            0.0.0.0/0           
+
+Chain HQ_LAB_PROD_RULES (1 references)
+num   pkts bytes target     prot opt in     out     source               destination         
+1      567  56789 ACCEPT     tcp  --  *      *       0.0.0.0/0            0.0.0.0/0            match-set HQ_PROD_ALLOWED_SERVICES dst,port
+2      456  45678 ACCEPT     tcp  --  *      *       10.1.2.0/24          10.1.10.0/24         multiport dports 22,80,443
+3      345  34567 ACCEPT     tcp  --  *      *       10.1.3.0/24          10.1.10.0/24         multiport dports 80,443
+4      234  23456 DROP       tcp  --  *      *       10.1.1.0/24          10.1.10.0/24         multiport dports 22,135,139,445
+5      123  12345 DROP       tcp  --  *      *       10.1.11.0/24         10.1.10.0/24         
+6       89   8901 ACCEPT     tcp  --  *      *       10.100.1.0/24        10.1.10.0/24         multiport dports 22,80,443
+7       56   5678 LOG        all  --  *      *       0.0.0.0/0            10.1.10.0/24         limit: avg 5/min burst 10 LOG flags 0 level 6 prefix "HQ-PROD-ACCESS: "
+8       34   3456 RETURN     all  --  *      *       0.0.0.0/0            0.0.0.0/0           
+
+Chain HQ_OUTBOUND_FILTER (1 references)
+num   pkts bytes target     prot opt in     out     source               destination         
+1      345  34567 ACCEPT     tcp  --  *      *       10.1.0.0/16          0.0.0.0/0            match-set HQ_CORE_UPDATE_SERVERS dst,port
+2      234  23456 ACCEPT     udp  --  *      *       10.1.0.0/16          0.0.0.0/0            udp dpt:53
+3      123  12345 ACCEPT     tcp  --  *      *       10.1.1.2/32          0.0.0.0/0            multiport dports 22,80,443
+4       89   8901 ACCEPT     tcp  --  *      *       10.1.2.1/32          0.0.0.0/0            multiport dports 22,80,443
+5       56   5678 DROP       tcp  --  *      *       10.1.0.0/16          0.0.0.0/0            multiport dports 21,23,135,139,445
+6       34   3456 LOG        all  --  *      *       10.1.0.0/16          0.0.0.0/0            limit: avg 8/min burst 12 LOG flags 0 level 6 prefix "HQ-CORE-OUTBOUND: "
+7       21   2109 RETURN     all  --  *      *       0.0.0.0/0            0.0.0.0/0           
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:iptables_filter ===
+
+=== TSIM_SECTION_START:iptables_nat ===
+TITLE: Iptables NAT Table
+COMMAND: /sbin/iptables -t nat -L -n -v --line-numbers
+TIMESTAMP: 2025-06-21 15:15:42
+---
+Chain PREROUTING (policy ACCEPT 0 packets, 0 bytes)
+num   pkts bytes target     prot opt in     out     source               destination         
+
+Chain INPUT (policy ACCEPT 0 packets, 0 bytes)
+num   pkts bytes target     prot opt in     out     source               destination         
+
+Chain OUTPUT (policy ACCEPT 0 packets, 0 bytes)
+num   pkts bytes target     prot opt in     out     source               destination         
+
+Chain POSTROUTING (policy ACCEPT 0 packets, 0 bytes)
+num   pkts bytes target     prot opt in     out     source               destination         
+1      567  56789 MASQUERADE  all  --  *      eth0    10.1.2.0/24          10.100.1.0/24       
+2      345  34567 MASQUERADE  all  --  *      eth0    10.1.3.0/24          10.100.1.0/24       
+3      234  23456 MASQUERADE  all  --  *      eth0    10.1.10.0/24         10.100.1.0/24       
+4      123  12345 MASQUERADE  all  --  *      eth0    10.1.11.0/24         10.100.1.0/24       
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:iptables_nat ===
+
+=== TSIM_SECTION_START:iptables_mangle ===
+TITLE: Iptables Mangle Table
+COMMAND: /sbin/iptables -t mangle -L -n -v --line-numbers
+TIMESTAMP: 2025-06-21 15:15:42
+---
+Chain PREROUTING (policy ACCEPT 0 packets, 0 bytes)
+num   pkts bytes target     prot opt in     out     source               destination         
+1     2345 234567 MARK       all  --  eth1   *       10.1.2.0/24          0.0.0.0/0            MARK set 0x2
+2     1789 178901 MARK       all  --  eth1   *       10.1.3.0/24          0.0.0.0/0            MARK set 0x3
+3     1456 145678 MARK       all  --  eth1   *       10.1.10.0/24         0.0.0.0/0            MARK set 0x10
+4     1234 123456 MARK       all  --  eth1   *       10.1.11.0/24         0.0.0.0/0            MARK set 0x11
+5      987  98765 HQ_CORE_QOS_CLASSIFY  all  --  *      *       0.0.0.0/0            0.0.0.0/0           
+6      765  76543 DSCP       tcp  --  *      *       0.0.0.0/0            0.0.0.0/0            match-set HQ_CORE_PRIORITY_SERVICES dst,port DSCP set 0x2e
+
+Chain INPUT (policy ACCEPT 0 packets, 0 bytes)
+num   pkts bytes target     prot opt in     out     source               destination         
+
+Chain FORWARD (policy ACCEPT 0 packets, 0 bytes)
+num   pkts bytes target     prot opt in     out     source               destination         
+1     3456 345678 HQ_CORE_QOS_FORWARD  all  --  *      *       0.0.0.0/0            0.0.0.0/0           
+2     2789 278901 CONNMARK   all  --  *      *       0.0.0.0/0            0.0.0.0/0            CONNMARK --restore-mark --nfmask 0xffffffff --ctmask 0xffffffff
+3     2345 234567 MARK       tcp  --  *      *       0.0.0.0/0            0.0.0.0/0            match-set HQ_CORE_HIGH_PRIORITY src,dst,port MARK set 0x100
+4     1987 198765 MARK       tcp  --  eth1   eth0    10.1.0.0/16          0.0.0.0/0            multiport dports 80,443 MARK set 0x200
+5     1654 165432 CONNMARK   all  --  *      *       0.0.0.0/0            0.0.0.0/0            CONNMARK --save-mark --nfmask 0xffffffff --ctmask 0xffffffff
+
+Chain OUTPUT (policy ACCEPT 0 packets, 0 bytes)
+num   pkts bytes target     prot opt in     out     source               destination         
+
+Chain POSTROUTING (policy ACCEPT 0 packets, 0 bytes)
+num   pkts bytes target     prot opt in     out     source               destination         
+1     4567 456789 CLASSIFY   all  --  *      eth0    0.0.0.0/0            0.0.0.0/0            mark match 0x2 CLASSIFY set 1:2
+2     3789 378901 CLASSIFY   all  --  *      eth0    0.0.0.0/0            0.0.0.0/0            mark match 0x3 CLASSIFY set 1:3
+3     3456 345678 CLASSIFY   all  --  *      eth0    0.0.0.0/0            0.0.0.0/0            mark match 0x10 CLASSIFY set 1:10
+4     3123 312345 CLASSIFY   all  --  *      eth0    0.0.0.0/0            0.0.0.0/0            mark match 0x11 CLASSIFY set 1:11
+5     2890 289012 CLASSIFY   all  --  *      eth1    0.0.0.0/0            0.0.0.0/0            mark match 0x100 CLASSIFY set 1:100
+6     2567 256789 DSCP       all  --  *      *       0.0.0.0/0            0.0.0.0/0            mark match 0x200 DSCP set 0x2e
+
+Chain HQ_CORE_QOS_CLASSIFY (1 references)
+num   pkts bytes target     prot opt in     out     source               destination         
+1      890  89012 MARK       tcp  --  *      *       0.0.0.0/0            0.0.0.0/0            multiport dports 22,443 MARK set 0x1
+2      789  78901 MARK       tcp  --  *      *       0.0.0.0/0            0.0.0.0/0            multiport dports 80,8080 MARK set 0x2
+3      678  67890 MARK       udp  --  *      *       0.0.0.0/0            0.0.0.0/0            multiport dports 53,123 MARK set 0x3
+4      567  56789 MARK       tcp  --  *      *       0.0.0.0/0            0.0.0.0/0            multiport dports 25,587,993 MARK set 0x4
+5      456  45678 MARK       icmp --  *      *       0.0.0.0/0            0.0.0.0/0            MARK set 0x5
+6      345  34567 RETURN     all  --  *      *       0.0.0.0/0            0.0.0.0/0           
+
+Chain HQ_CORE_QOS_FORWARD (1 references)
+num   pkts bytes target     prot opt in     out     source               destination         
+1     1234 123456 DSCP       all  --  eth1   eth0    10.1.3.0/24          0.0.0.0/0            DSCP set 0x2e
+2     1098 109876 DSCP       all  --  eth1   eth0    10.1.2.0/24          0.0.0.0/0            DSCP set 0x08
+3      987  98765 DSCP       all  --  eth1   eth0    10.1.10.0/24         0.0.0.0/0            DSCP set 0x00
+4      876  87654 DSCP       all  --  eth1   eth0    10.1.11.0/24         0.0.0.0/0            DSCP set 0x00
+5      765  76543 TOS        all  --  *      eth0    10.1.0.0/16          0.0.0.0/0            TOS set 0x08
+6      654  65432 MARK       all  --  *      *       0.0.0.0/0            0.0.0.0/0            match-set HQ_CORE_FLOW_PRIORITY src,dst,port MARK set 0x1000
+7      543  54321 RETURN     all  --  *      *       0.0.0.0/0            0.0.0.0/0           
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:iptables_mangle ===
+
+=== TSIM_SECTION_START:iptables_save ===
+TITLE: Complete Iptables Configuration
+COMMAND: /sbin/iptables-save
+TIMESTAMP: 2025-06-21 15:15:42
+---
+# Generated by iptables-save v1.8.7 on Fri Jun 21 15:15:42 2025
+*filter
+:INPUT ACCEPT [0:0]
+:FORWARD ACCEPT [0:0]
+:OUTPUT ACCEPT [0:0]
+:HQ_CORE_MGMT - [0:0]
+:HQ_ZONE_CONTROL - [0:0]
+:HQ_INTER_VLAN - [0:0]
+:HQ_DMZ_FORWARD - [0:0]
+:HQ_LAB_FORWARD - [0:0]
+:HQ_GATEWAY_FORWARD - [0:0]
+:HQ_INCOMING_FORWARD - [0:0]
+:HQ_VPN_ROUTING - [0:0]
+:HQ_SECURITY_SCAN - [0:0]
+:HQ_LAB_ISOLATION - [0:0]
+:HQ_DMZ_ISOLATION - [0:0]
+:HQ_PRODUCTION_PROTECT - [0:0]
+:HQ_NETWORK_SEGMENTATION - [0:0]
+:HQ_LAB_DEV_RULES - [0:0]
+:HQ_LAB_PROD_RULES - [0:0]
+:HQ_OUTBOUND_FILTER - [0:0]
+-A INPUT -i lo -j ACCEPT
+-A INPUT -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
+-A INPUT -d 10.1.1.2/32 -j HQ_CORE_MGMT
+-A INPUT -d 10.1.2.1/32 -j HQ_CORE_MGMT
+-A INPUT -s 10.1.0.0/16 -p icmp -m icmp --icmp-type 8 -m limit --limit 30/sec --limit-burst 15 -j ACCEPT
+-A INPUT -s 10.1.0.0/16 -p tcp -m tcp --dport 22 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
+-A INPUT -s 10.1.0.0/16 -p udp -m multiport --dports 161,514,123 -j ACCEPT
+-A INPUT -m limit --limit 20/min --limit-burst 25 -j LOG --log-prefix "HQ-CORE-INPUT-DROP: "
+-A FORWARD -j HQ_ZONE_CONTROL
+-A FORWARD -j HQ_INTER_VLAN
+-A FORWARD -o eth1 -d 10.1.3.0/24 -j HQ_DMZ_FORWARD
+-A FORWARD -o eth1 -d 10.1.10.0/24 -j HQ_LAB_FORWARD
+-A FORWARD -o eth1 -d 10.1.11.0/24 -j HQ_LAB_FORWARD
+-A FORWARD -s 10.1.0.0/16 -i eth1 -o eth0 -j HQ_GATEWAY_FORWARD
+-A FORWARD -i eth0 -o eth1 -d 10.1.0.0/16 -j HQ_INCOMING_FORWARD
+-A FORWARD -s 10.100.1.0/24 -d 10.1.0.0/16 -j HQ_VPN_ROUTING
+-A FORWARD -s 10.1.0.0/16 -d 10.100.1.0/24 -j HQ_VPN_ROUTING
+-A FORWARD -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
+-A FORWARD -j HQ_SECURITY_SCAN
+-A FORWARD -m limit --limit 15/min --limit-burst 20 -j LOG --log-prefix "HQ-CORE-FORWARD-DROP: " --log-level 6
+-A FORWARD -j DROP
+-A OUTPUT -o lo -j ACCEPT
+-A OUTPUT -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
+-A OUTPUT -d 10.1.0.0/16 -p icmp -j ACCEPT
+-A OUTPUT -p tcp -m tcp --sport 22 -j ACCEPT
+-A OUTPUT -j HQ_OUTBOUND_FILTER
+-A HQ_CORE_MGMT -s 10.1.1.0/24 -p tcp -m multiport --dports 22,80,443,8080 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
+-A HQ_CORE_MGMT -s 10.1.2.0/24 -p tcp -m multiport --dports 22,443,8080 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
+-A HQ_CORE_MGMT -s 10.1.3.0/24 -p tcp -m multiport --dports 22,443 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
+-A HQ_CORE_MGMT -s 10.1.0.0/16 -p udp -m multiport --dports 161,514,123 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
+-A HQ_CORE_MGMT -m set --match-set HQ_CORE_ADMIN_SOURCES src --match-set HQ_CORE_MGMT_PORTS dst,port -p tcp -j ACCEPT
+-A HQ_CORE_MGMT -j RETURN
+-A HQ_ZONE_CONTROL -m set --match-set HQ_ZONE_MATRIX src,dst -j ACCEPT
+-A HQ_ZONE_CONTROL -s 10.1.10.0/24 -j HQ_LAB_ISOLATION
+-A HQ_ZONE_CONTROL -s 10.1.11.0/24 -j HQ_LAB_ISOLATION
+-A HQ_ZONE_CONTROL -s 10.1.3.0/24 -j HQ_DMZ_ISOLATION
+-A HQ_ZONE_CONTROL -d 10.1.1.0/24 -j HQ_PRODUCTION_PROTECT
+-A HQ_ZONE_CONTROL -j HQ_NETWORK_SEGMENTATION
+-A HQ_ZONE_CONTROL -j RETURN
+-A HQ_INTER_VLAN -m set --match-set HQ_INTER_VLAN_SERVICES src,dst,port -p tcp -j ACCEPT
+-A HQ_INTER_VLAN -s 10.1.2.0/24 -d 10.1.3.0/24 -i eth1 -o eth1 -p tcp -m multiport --dports 80,443,22 -j ACCEPT
+-A HQ_INTER_VLAN -s 10.1.3.0/24 -d 10.1.2.0/24 -i eth1 -o eth1 -p tcp -m multiport --dports 25,587,993 -j ACCEPT
+-A HQ_INTER_VLAN -s 10.1.0.0/16 -d 10.1.0.0/16 -i eth1 -o eth1 -p udp -m multiport --dports 53,123,514 -j ACCEPT
+-A HQ_INTER_VLAN -s 10.1.10.0/24 -d 10.1.2.0/24 -i eth1 -o eth1 -p tcp -m multiport --dports 80,443,22 -j ACCEPT
+-A HQ_INTER_VLAN -s 10.1.11.0/24 -d 10.1.2.0/24 -i eth1 -o eth1 -p tcp -m multiport --dports 80,443,8080 -j ACCEPT
+-A HQ_INTER_VLAN -s 10.1.10.0/24 -d 10.1.11.0/24 -i eth1 -o eth1 -p tcp -j DROP
+-A HQ_INTER_VLAN -s 10.1.11.0/24 -d 10.1.10.0/24 -i eth1 -o eth1 -p tcp -j DROP
+-A HQ_INTER_VLAN -s 10.1.0.0/16 -d 10.1.0.0/16 -i eth1 -o eth1 -p icmp -m icmp --icmp-type 8 -j ACCEPT
+-A HQ_INTER_VLAN -s 10.1.0.0/16 -d 10.1.0.0/16 -i eth1 -o eth1 -m limit --limit 10/min --limit-burst 15 -j LOG --log-prefix "HQ-INTER-VLAN: " --log-level 6
+-A HQ_INTER_VLAN -j RETURN
+-A HQ_DMZ_FORWARD -m set --match-set HQ_DMZ_PUBLIC_SERVICES dst,port -p tcp -j ACCEPT
+-A HQ_DMZ_FORWARD -s 10.1.2.0/24 -d 10.1.3.0/24 -i eth1 -o eth1 -p tcp -m multiport --dports 22,80,443,8080 -j ACCEPT
+-A HQ_DMZ_FORWARD -s 10.100.1.0/24 -d 10.1.3.0/24 -i eth0 -o eth1 -p tcp -m multiport --dports 22,80,443 -j ACCEPT
+-A HQ_DMZ_FORWARD -s 10.1.11.0/24 -d 10.1.3.0/24 -i eth1 -o eth1 -p tcp -m multiport --dports 22,3389 -j DROP
+-A HQ_DMZ_FORWARD -s 10.1.0.0/16 -d 10.1.3.0/24 -i eth1 -o eth1 -p udp -m multiport --dports 53,123 -j ACCEPT
+-A HQ_DMZ_FORWARD -s 10.1.3.0/24 -d 10.1.2.0/24 -i eth1 -o eth1 -p tcp -m multiport --dports 161,514 -j ACCEPT
+-A HQ_DMZ_FORWARD -o eth1 -d 10.1.3.0/24 -m limit --limit 12/min --limit-burst 18 -j LOG --log-prefix "HQ-DMZ-FWD: " --log-level 6
+-A HQ_DMZ_FORWARD -j RETURN
+-A HQ_LAB_FORWARD -d 10.1.11.0/24 -j HQ_LAB_DEV_RULES
+-A HQ_LAB_FORWARD -d 10.1.10.0/24 -j HQ_LAB_PROD_RULES
+-A HQ_LAB_FORWARD -s 10.1.2.0/24 -d 10.1.10.0/24 -i eth1 -o eth1 -p tcp -m multiport --dports 22,80,443 -j ACCEPT
+-A HQ_LAB_FORWARD -s 10.1.2.0/24 -d 10.1.11.0/24 -i eth1 -o eth1 -p tcp -m multiport --dports 22,80,443,8080 -j ACCEPT
+-A HQ_LAB_FORWARD -s 10.100.1.0/24 -d 10.1.10.0/24 -i eth0 -o eth1 -p tcp -m multiport --dports 22,80,443 -j ACCEPT
+-A HQ_LAB_FORWARD -s 10.100.1.0/24 -d 10.1.11.0/24 -i eth0 -o eth1 -p tcp -m multiport --dports 22,80,443,8080 -j ACCEPT
+-A HQ_LAB_FORWARD -s 10.1.3.0/24 -d 10.1.10.0/24 -i eth1 -o eth1 -p tcp -m multiport --dports 22,3389 -j DROP
+-A HQ_LAB_FORWARD -s 10.1.3.0/24 -d 10.1.11.0/24 -i eth1 -o eth1 -p tcp -m multiport --dports 22,3389 -j DROP
+-A HQ_LAB_FORWARD -s 10.1.0.0/16 -d 10.1.10.0/24 -i eth1 -o eth1 -p udp -m multiport --dports 53,123,514 -j ACCEPT
+-A HQ_LAB_FORWARD -s 10.1.0.0/16 -d 10.1.11.0/24 -i eth1 -o eth1 -p udp -m multiport --dports 53,123,514 -j ACCEPT
+-A HQ_LAB_FORWARD -o eth1 -d 10.1.10.0/24 -m limit --limit 8/min --limit-burst 12 -j LOG --log-prefix "HQ-LAB-PROD-FWD: " --log-level 6
+-A HQ_LAB_FORWARD -o eth1 -d 10.1.11.0/24 -m limit --limit 8/min --limit-burst 12 -j LOG --log-prefix "HQ-LAB-DEV-FWD: " --log-level 6
+-A HQ_LAB_FORWARD -j RETURN
+-A HQ_GATEWAY_FORWARD -m set --match-set HQ_INTERNET_ALLOWED src -p tcp -m multiport --dports 80,443,8080,8443 -j ACCEPT
+-A HQ_GATEWAY_FORWARD -m set --match-set HQ_DNS_CLIENTS src -p udp -m udp --dport 53 -j ACCEPT
+-A HQ_GATEWAY_FORWARD -s 10.1.3.0/24 -p tcp -m multiport --dports 25,465,587,993,995 -j ACCEPT
+-A HQ_GATEWAY_FORWARD -s 10.1.2.0/24 -p tcp -m multiport --dports 80,443,22 -j ACCEPT
+-A HQ_GATEWAY_FORWARD -s 10.1.10.0/24 -p tcp -m multiport --dports 80,443,22 -j ACCEPT
+-A HQ_GATEWAY_FORWARD -s 10.1.11.0/24 -p tcp -m multiport --dports 80,443,8080,9000 -j ACCEPT
+-A HQ_GATEWAY_FORWARD -p tcp -m multiport --dports 135,139,445,1433,3389 -j DROP
+-A HQ_GATEWAY_FORWARD -s 10.1.0.0/16 -p icmp -m icmp --icmp-type 8 -j ACCEPT
+-A HQ_GATEWAY_FORWARD -s 10.1.0.0/16 -m limit --limit 25/min --limit-burst 30 -j LOG --log-prefix "HQ-INET-FWD: " --log-level 6
+-A HQ_GATEWAY_FORWARD -j RETURN
+-A HQ_INCOMING_FORWARD -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
+-A HQ_INCOMING_FORWARD -s 10.100.1.0/24 -d 10.1.0.0/16 -p tcp -m multiport --dports 22,80,443 -j ACCEPT
+-A HQ_INCOMING_FORWARD -d 10.1.1.0/24 -p tcp -m multiport --dports 22,135,139,445 -j DROP
+-A HQ_INCOMING_FORWARD -d 10.1.3.0/24 -p tcp -m multiport --dports 80,443,25,587 -j ACCEPT
+-A HQ_INCOMING_FORWARD -d 10.1.2.0/24 -p tcp -m multiport --dports 80,443 -j ACCEPT
+-A HQ_INCOMING_FORWARD -d 10.1.10.0/24 -p tcp -m multiport --dports 22,3389 -j DROP
+-A HQ_INCOMING_FORWARD -d 10.1.11.0/24 -p tcp -m multiport --dports 22,3389 -j DROP
+-A HQ_INCOMING_FORWARD -d 10.1.0.0/16 -p icmp -m icmp --icmp-type 8 -j ACCEPT
+-A HQ_INCOMING_FORWARD -d 10.1.0.0/16 -m limit --limit 20/min --limit-burst 25 -j LOG --log-prefix "HQ-INCOMING-FWD: " --log-level 6
+-A HQ_INCOMING_FORWARD -j RETURN
+-A HQ_VPN_ROUTING -m set --match-set HQ_VPN_ALLOWED_FLOWS src,dst,port -j ACCEPT
+-A HQ_VPN_ROUTING -s 10.100.1.2/32 -d 10.1.0.0/16 -p tcp -m multiport --dports 22,80,443 -j ACCEPT
+-A HQ_VPN_ROUTING -s 10.100.1.3/32 -d 10.1.0.0/16 -p tcp -m multiport --dports 22,80,443 -j ACCEPT
+-A HQ_VPN_ROUTING -s 10.1.0.0/16 -d 10.100.1.0/24 -p tcp -m multiport --dports 22,80,443 -j ACCEPT
+-A HQ_VPN_ROUTING -s 10.100.1.0/24 -d 10.1.11.0/24 -p tcp -m multiport --dports 22,3389 -j DROP
+-A HQ_VPN_ROUTING -s 10.100.1.0/24 -d 10.1.0.0/16 -p udp -m multiport --dports 53,123 -j ACCEPT
+-A HQ_VPN_ROUTING -s 10.1.0.0/16 -d 10.100.1.0/24 -p udp -m multiport --dports 53,123 -j ACCEPT
+-A HQ_VPN_ROUTING -s 10.100.1.0/24 -d 10.1.0.0/16 -m limit --limit 10/min --limit-burst 15 -j LOG --log-prefix "HQ-VPN-IN: " --log-level 6
+-A HQ_VPN_ROUTING -s 10.1.0.0/16 -d 10.100.1.0/24 -m limit --limit 10/min --limit-burst 15 -j LOG --log-prefix "HQ-VPN-OUT: " --log-level 6
+-A HQ_VPN_ROUTING -j RETURN
+-A HQ_SECURITY_SCAN -m set --match-set HQ_CORE_BLACKLIST src -j DROP
+-A HQ_SECURITY_SCAN -m set --match-set HQ_CORE_BLACKLIST dst -j DROP
+-A HQ_SECURITY_SCAN -m set --match-set HQ_SUSPICIOUS_PATTERNS src,dst,port -p tcp -j NFLOG --nflog-group 1
+-A HQ_SECURITY_SCAN -p tcp -m recent --check --seconds 300 --hitcount 20 --name SCANNERS --rsource -j DROP
+-A HQ_SECURITY_SCAN -m set --match-set HQ_SCAN_DETECT dst,port -p tcp -m recent --set --name SCANNERS --rsource -j LOG --log-prefix "SCAN-DETECT: "
+-A HQ_SECURITY_SCAN -j RETURN
+-A HQ_LAB_ISOLATION -d 10.1.1.0/24 -j DROP
+-A HQ_LAB_ISOLATION -d 10.1.2.0/24 -p tcp -m multiport --dports 22,135,139,445,3389 -j DROP
+-A HQ_LAB_ISOLATION -d 10.1.2.0/24 -p tcp -m multiport --dports 80,443 -j ACCEPT
+-A HQ_LAB_ISOLATION -d 10.1.3.0/24 -p tcp -m multiport --dports 80,443 -j ACCEPT
+-A HQ_LAB_ISOLATION -d 10.1.3.0/24 -j DROP
+-A HQ_LAB_ISOLATION -j RETURN
+-A HQ_DMZ_ISOLATION -d 10.1.1.0/24 -j DROP
+-A HQ_DMZ_ISOLATION -d 10.1.2.0/24 -p tcp -m multiport --dports 25,587,993 -j ACCEPT
+-A HQ_DMZ_ISOLATION -d 10.1.2.0/24 -p tcp -m multiport --dports 22,135,139,445 -j DROP
+-A HQ_DMZ_ISOLATION -d 10.1.10.0/24 -j DROP
+-A HQ_DMZ_ISOLATION -d 10.1.11.0/24 -j DROP
+-A HQ_DMZ_ISOLATION -j RETURN
+-A HQ_PRODUCTION_PROTECT -s 10.1.10.0/24 -p tcp -m multiport --dports 22,135,139,445,3389 -j DROP
+-A HQ_PRODUCTION_PROTECT -s 10.1.11.0/24 -p tcp -m multiport --dports 22,135,139,445,3389 -j DROP
+-A HQ_PRODUCTION_PROTECT -s 10.1.2.0/24 -p tcp -m multiport --dports 22,80,443 -j ACCEPT
+-A HQ_PRODUCTION_PROTECT -s 10.1.3.0/24 -p tcp -m multiport --dports 80,443 -j ACCEPT
+-A HQ_PRODUCTION_PROTECT -j RETURN
+-A HQ_NETWORK_SEGMENTATION -m set --match-set HQ_SEGMENT_RULES src,dst,proto -j ACCEPT
+-A HQ_NETWORK_SEGMENTATION -s 10.1.11.0/24 -d 10.1.10.0/24 -p tcp -j DROP
+-A HQ_NETWORK_SEGMENTATION -s 10.1.10.0/24 -d 10.1.11.0/24 -p tcp -j DROP
+-A HQ_NETWORK_SEGMENTATION -s 10.1.2.0/24 -d 10.1.3.0/24 -p tcp -m multiport --dports 80,443,22 -j ACCEPT
+-A HQ_NETWORK_SEGMENTATION -s 10.1.3.0/24 -d 10.1.2.0/24 -p tcp -m multiport --dports 25,587 -j ACCEPT
+-A HQ_NETWORK_SEGMENTATION -j RETURN
+-A HQ_LAB_DEV_RULES -m set --match-set HQ_DEV_ALLOWED_SERVICES dst,port -p tcp -j ACCEPT
+-A HQ_LAB_DEV_RULES -s 10.1.2.0/24 -d 10.1.11.0/24 -p tcp -m multiport --dports 22,80,443,8080,9000 -j ACCEPT
+-A HQ_LAB_DEV_RULES -s 10.1.3.0/24 -d 10.1.11.0/24 -p tcp -m multiport --dports 80,443 -j ACCEPT
+-A HQ_LAB_DEV_RULES -s 10.1.1.0/24 -d 10.1.11.0/24 -p tcp -m multiport --dports 22,135,139,445 -j DROP
+-A HQ_LAB_DEV_RULES -s 10.100.1.0/24 -d 10.1.11.0/24 -p tcp -m multiport --dports 22,80,443,8080 -j ACCEPT
+-A HQ_LAB_DEV_RULES -d 10.1.11.0/24 -m limit --limit 5/min --limit-burst 10 -j LOG --log-prefix "HQ-DEV-ACCESS: " --log-level 6
+-A HQ_LAB_DEV_RULES -j RETURN
+-A HQ_LAB_PROD_RULES -m set --match-set HQ_PROD_ALLOWED_SERVICES dst,port -p tcp -j ACCEPT
+-A HQ_LAB_PROD_RULES -s 10.1.2.0/24 -d 10.1.10.0/24 -p tcp -m multiport --dports 22,80,443 -j ACCEPT
+-A HQ_LAB_PROD_RULES -s 10.1.3.0/24 -d 10.1.10.0/24 -p tcp -m multiport --dports 80,443 -j ACCEPT
+-A HQ_LAB_PROD_RULES -s 10.1.1.0/24 -d 10.1.10.0/24 -p tcp -m multiport --dports 22,135,139,445 -j DROP
+-A HQ_LAB_PROD_RULES -s 10.1.11.0/24 -d 10.1.10.0/24 -p tcp -j DROP
+-A HQ_LAB_PROD_RULES -s 10.100.1.0/24 -d 10.1.10.0/24 -p tcp -m multiport --dports 22,80,443 -j ACCEPT
+-A HQ_LAB_PROD_RULES -d 10.1.10.0/24 -m limit --limit 5/min --limit-burst 10 -j LOG --log-prefix "HQ-PROD-ACCESS: " --log-level 6
+-A HQ_LAB_PROD_RULES -j RETURN
+-A HQ_OUTBOUND_FILTER -s 10.1.0.0/16 -m set --match-set HQ_CORE_UPDATE_SERVERS dst,port -p tcp -j ACCEPT
+-A HQ_OUTBOUND_FILTER -s 10.1.0.0/16 -p udp -m udp --dport 53 -j ACCEPT
+-A HQ_OUTBOUND_FILTER -s 10.1.1.2/32 -p tcp -m multiport --dports 22,80,443 -j ACCEPT
+-A HQ_OUTBOUND_FILTER -s 10.1.2.1/32 -p tcp -m multiport --dports 22,80,443 -j ACCEPT
+-A HQ_OUTBOUND_FILTER -s 10.1.0.0/16 -p tcp -m multiport --dports 21,23,135,139,445 -j DROP
+-A HQ_OUTBOUND_FILTER -s 10.1.0.0/16 -m limit --limit 8/min --limit-burst 12 -j LOG --log-prefix "HQ-CORE-OUTBOUND: " --log-level 6
+-A HQ_OUTBOUND_FILTER -j RETURN
+COMMIT
+# Completed on Fri Jun 21 15:15:42 2025
+# Generated by iptables-save v1.8.7 on Fri Jun 21 15:15:42 2025
+*nat
+:PREROUTING ACCEPT [0:0]
+:INPUT ACCEPT [0:0]
+:OUTPUT ACCEPT [0:0]
+:POSTROUTING ACCEPT [0:0]
+-A POSTROUTING -s 10.1.2.0/24 -d 10.100.1.0/24 -o eth0 -j MASQUERADE
+-A POSTROUTING -s 10.1.3.0/24 -d 10.100.1.0/24 -o eth0 -j MASQUERADE
+-A POSTROUTING -s 10.1.10.0/24 -d 10.100.1.0/24 -o eth0 -j MASQUERADE
+-A POSTROUTING -s 10.1.11.0/24 -d 10.100.1.0/24 -o eth0 -j MASQUERADE
+COMMIT
+# Completed on Fri Jun 21 15:15:42 2025
+# Generated by iptables-save v1.8.7 on Fri Jun 21 15:15:42 2025
+*mangle
+:PREROUTING ACCEPT [0:0]
+:INPUT ACCEPT [0:0]
+:FORWARD ACCEPT [0:0]
+:OUTPUT ACCEPT [0:0]
+:POSTROUTING ACCEPT [0:0]
+:HQ_CORE_QOS_CLASSIFY - [0:0]
+:HQ_CORE_QOS_FORWARD - [0:0]
+-A PREROUTING -s 10.1.2.0/24 -i eth1 -j MARK --set-xmark 0x2/0xffffffff
+-A PREROUTING -s 10.1.3.0/24 -i eth1 -j MARK --set-xmark 0x3/0xffffffff
+-A PREROUTING -s 10.1.10.0/24 -i eth1 -j MARK --set-xmark 0x10/0xffffffff
+-A PREROUTING -s 10.1.11.0/24 -i eth1 -j MARK --set-xmark 0x11/0xffffffff
+-A PREROUTING -j HQ_CORE_QOS_CLASSIFY
+-A PREROUTING -m set --match-set HQ_CORE_PRIORITY_SERVICES dst,port -p tcp -j DSCP --set-dscp 0x2e
+-A FORWARD -j HQ_CORE_QOS_FORWARD
+-A FORWARD -j CONNMARK --restore-mark --nfmask 0xffffffff --ctmask 0xffffffff
+-A FORWARD -m set --match-set HQ_CORE_HIGH_PRIORITY src,dst,port -p tcp -j MARK --set-xmark 0x100/0xffffffff
+-A FORWARD -s 10.1.0.0/16 -i eth1 -o eth0 -p tcp -m multiport --dports 80,443 -j MARK --set-xmark 0x200/0xffffffff
+-A FORWARD -j CONNMARK --save-mark --nfmask 0xffffffff --ctmask 0xffffffff
+-A POSTROUTING -m mark --mark 0x2 -o eth0 -j CLASSIFY --set-class 1:2
+-A POSTROUTING -m mark --mark 0x3 -o eth0 -j CLASSIFY --set-class 1:3
+-A POSTROUTING -m mark --mark 0x10 -o eth0 -j CLASSIFY --set-class 1:10
+-A POSTROUTING -m mark --mark 0x11 -o eth0 -j CLASSIFY --set-class 1:11
+-A POSTROUTING -m mark --mark 0x100 -o eth1 -j CLASSIFY --set-class 1:100
+-A POSTROUTING -m mark --mark 0x200 -j DSCP --set-dscp 0x2e
+-A HQ_CORE_QOS_CLASSIFY -p tcp -m multiport --dports 22,443 -j MARK --set-xmark 0x1/0xffffffff
+-A HQ_CORE_QOS_CLASSIFY -p tcp -m multiport --dports 80,8080 -j MARK --set-xmark 0x2/0xffffffff
+-A HQ_CORE_QOS_CLASSIFY -p udp -m multiport --dports 53,123 -j MARK --set-xmark 0x3/0xffffffff
+-A HQ_CORE_QOS_CLASSIFY -p tcp -m multiport --dports 25,587,993 -j MARK --set-xmark 0x4/0xffffffff
+-A HQ_CORE_QOS_CLASSIFY -p icmp -j MARK --set-xmark 0x5/0xffffffff
+-A HQ_CORE_QOS_CLASSIFY -j RETURN
+-A HQ_CORE_QOS_FORWARD -s 10.1.3.0/24 -i eth1 -o eth0 -j DSCP --set-dscp 0x2e
+-A HQ_CORE_QOS_FORWARD -s 10.1.2.0/24 -i eth1 -o eth0 -j DSCP --set-dscp 0x08
+-A HQ_CORE_QOS_FORWARD -s 10.1.10.0/24 -i eth1 -o eth0 -j DSCP --set-dscp 0x00
+-A HQ_CORE_QOS_FORWARD -s 10.1.11.0/24 -i eth1 -o eth0 -j DSCP --set-dscp 0x00
+-A HQ_CORE_QOS_FORWARD -s 10.1.0.0/16 -o eth0 -j TOS --set-tos 0x08
+-A HQ_CORE_QOS_FORWARD -m set --match-set HQ_CORE_FLOW_PRIORITY src,dst,port -j MARK --set-xmark 0x1000/0xffffffff
+-A HQ_CORE_QOS_FORWARD -j RETURN
+COMMIT
+# Completed on Fri Jun 21 15:15:42 2025
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:iptables_save ===
+
+=== TSIM_SECTION_START:ipset_list ===
+TITLE: Ipset Lists and Membership
+COMMAND: /sbin/ipset list
+TIMESTAMP: 2025-06-21 15:15:42
+---
+Name: HQ_CORE_ADMIN_SOURCES
+Type: hash:net
+Revision: 6
+Header: family inet hashsize 1024 maxelem 65536
+Size in memory: 520
+References: 1
+Number of entries: 5
+Members:
+10.1.1.0/24
+10.1.2.0/24
+10.1.3.0/24
+10.100.1.0/24
+203.0.113.0/24
+
+Name: HQ_CORE_MGMT_PORTS
+Type: hash:ip,port
+Revision: 5
+Header: family inet hashsize 1024 maxelem 65536
+Size in memory: 584
+References: 1
+Number of entries: 8
+Members:
+10.1.1.2,tcp:22
+10.1.1.2,tcp:80
+10.1.1.2,tcp:443
+10.1.1.2,tcp:8080
+10.1.2.1,tcp:22
+10.1.2.1,tcp:80
+10.1.2.1,tcp:443
+10.1.2.1,tcp:8080
+
+Name: HQ_ZONE_MATRIX
+Type: hash:net,net
+Revision: 0
+Header: family inet hashsize 1024 maxelem 65536
+Size in memory: 1112
+References: 1
+Number of entries: 16
+Members:
+10.1.1.0/24,10.1.2.0/24
+10.1.1.0/24,10.1.3.0/24
+10.1.2.0/24,10.1.1.0/24
+10.1.2.0/24,10.1.3.0/24
+10.1.2.0/24,10.1.10.0/24
+10.1.2.0/24,10.1.11.0/24
+10.1.3.0/24,10.1.1.0/24
+10.1.3.0/24,10.1.2.0/24
+10.1.10.0/24,10.1.2.0/24
+10.1.10.0/24,10.1.3.0/24
+10.1.11.0/24,10.1.2.0/24
+10.1.11.0/24,10.1.3.0/24
+10.100.1.0/24,10.1.0.0/16
+10.1.0.0/16,10.100.1.0/24
+10.1.1.0/24,10.100.1.0/24
+10.100.1.0/24,10.1.1.0/24
+
+Name: HQ_INTER_VLAN_SERVICES
+Type: hash:net,net,port
+Revision: 0
+Header: family inet hashsize 1024 maxelem 65536
+Size in memory: 1368
+References: 1
+Number of entries: 20
+Members:
+10.1.2.0/24,10.1.3.0/24,tcp:80
+10.1.2.0/24,10.1.3.0/24,tcp:443
+10.1.2.0/24,10.1.3.0/24,tcp:22
+10.1.3.0/24,10.1.2.0/24,tcp:25
+10.1.3.0/24,10.1.2.0/24,tcp:587
+10.1.3.0/24,10.1.2.0/24,tcp:993
+10.1.3.0/24,10.1.2.0/24,tcp:161
+10.1.3.0/24,10.1.2.0/24,tcp:514
+10.1.10.0/24,10.1.2.0/24,tcp:80
+10.1.10.0/24,10.1.2.0/24,tcp:443
+10.1.10.0/24,10.1.2.0/24,tcp:22
+10.1.11.0/24,10.1.2.0/24,tcp:80
+10.1.11.0/24,10.1.2.0/24,tcp:443
+10.1.11.0/24,10.1.2.0/24,tcp:8080
+10.1.2.0/24,10.1.10.0/24,tcp:22
+10.1.2.0/24,10.1.11.0/24,tcp:22
+10.1.2.0/24,10.1.11.0/24,tcp:8080
+10.1.3.0/24,10.1.10.0/24,tcp:80
+10.1.3.0/24,10.1.10.0/24,tcp:443
+10.1.3.0/24,10.1.11.0/24,tcp:80
+
+Name: HQ_DMZ_PUBLIC_SERVICES
+Type: hash:ip,port
+Revision: 5
+Header: family inet hashsize 1024 maxelem 65536
+Size in memory: 648
+References: 1
+Number of entries: 12
+Members:
+10.1.3.10,tcp:80
+10.1.3.10,tcp:443
+10.1.3.11,tcp:80
+10.1.3.11,tcp:443
+10.1.3.12,tcp:80
+10.1.3.12,tcp:443
+10.1.3.15,tcp:53
+10.1.3.15,udp:53
+10.1.3.20,tcp:25
+10.1.3.20,tcp:587
+10.1.3.25,tcp:389
+10.1.3.25,tcp:636
+
+Name: HQ_INTERNET_ALLOWED
+Type: hash:net
+Revision: 6
+Header: family inet hashsize 1024 maxelem 65536
+Size in memory: 520
+References: 1
+Number of entries: 5
+Members:
+10.1.2.0/24
+10.1.3.0/24
+10.1.10.0/24
+10.1.11.0/24
+10.100.1.0/24
+
+Name: HQ_DNS_CLIENTS
+Type: hash:net
+Revision: 6
+Header: family inet hashsize 1024 maxelem 65536
+Size in memory: 584
+References: 1
+Number of entries: 6
+Members:
+10.1.1.0/24
+10.1.2.0/24
+10.1.3.0/24
+10.1.10.0/24
+10.1.11.0/24
+10.100.1.0/24
+
+Name: HQ_VPN_ALLOWED_FLOWS
+Type: hash:net,net,port
+Revision: 0
+Header: family inet hashsize 1024 maxelem 65536
+Size in memory: 1240
+References: 1
+Number of entries: 18
+Members:
+10.100.1.1/32,10.1.0.0/16,tcp:22
+10.100.1.1/32,10.1.0.0/16,tcp:80
+10.100.1.1/32,10.1.0.0/16,tcp:443
+10.100.1.2/32,10.1.0.0/16,tcp:22
+10.100.1.2/32,10.1.0.0/16,tcp:80
+10.100.1.2/32,10.1.0.0/16,tcp:443
+10.100.1.3/32,10.1.0.0/16,tcp:22
+10.100.1.3/32,10.1.0.0/16,tcp:80
+10.100.1.3/32,10.1.0.0/16,tcp:443
+10.1.0.0/16,10.100.1.1/32,tcp:22
+10.1.0.0/16,10.100.1.1/32,tcp:80
+10.1.0.0/16,10.100.1.1/32,tcp:443
+10.1.0.0/16,10.100.1.2/32,tcp:22
+10.1.0.0/16,10.100.1.2/32,tcp:80
+10.1.0.0/16,10.100.1.2/32,tcp:443
+10.1.0.0/16,10.100.1.3/32,tcp:22
+10.1.0.0/16,10.100.1.3/32,tcp:80
+10.1.0.0/16,10.100.1.3/32,tcp:443
+
+Name: HQ_CORE_BLACKLIST
+Type: hash:net
+Revision: 6
+Header: family inet hashsize 1024 maxelem 65536
+Size in memory: 744
+References: 2
+Number of entries: 20
+Members:
+0.0.0.0/8
+127.0.0.0/8
+169.254.0.0/16
+172.16.0.0/12
+192.0.2.0/24
+192.168.0.0/16
+224.0.0.0/4
+240.0.0.0/4
+185.220.100.0/24
+185.220.101.0/24
+198.96.155.0/24
+23.129.64.0/24
+104.244.42.0/24
+178.162.202.0/24
+192.42.116.0/24
+199.87.154.0/24
+77.247.181.0/24
+95.128.43.0/24
+212.102.50.0/24
+37.187.129.0/24
+
+Name: HQ_SUSPICIOUS_PATTERNS
+Type: hash:net,net,port
+Revision: 0
+Header: family inet hashsize 1024 maxelem 65536
+Size in memory: 1048
+References: 1
+Number of entries: 15
+Members:
+0.0.0.0/0,10.1.0.0/16,tcp:22
+0.0.0.0/0,10.1.0.0/16,tcp:135
+0.0.0.0/0,10.1.0.0/16,tcp:139
+0.0.0.0/0,10.1.0.0/16,tcp:445
+0.0.0.0/0,10.1.0.0/16,tcp:1433
+0.0.0.0/0,10.1.0.0/16,tcp:3389
+0.0.0.0/0,10.1.0.0/16,tcp:5900
+10.1.0.0/16,0.0.0.0/0,tcp:1234
+10.1.0.0/16,0.0.0.0/0,tcp:4444
+10.1.0.0/16,0.0.0.0/0,tcp:6667
+10.1.0.0/16,0.0.0.0/0,tcp:9999
+10.1.0.0/16,0.0.0.0/0,tcp:31337
+10.1.0.0/16,0.0.0.0/0,udp:1234
+10.1.0.0/16,0.0.0.0/0,udp:4444
+10.1.0.0/16,0.0.0.0/0,udp:31337
+
+Name: HQ_SCAN_DETECT
+Type: bitmap:port
+Revision: 3
+Header: range 0-65535
+Size in memory: 8264
+References: 1
+Number of entries: 25
+Members:
+21
+22
+23
+25
+53
+80
+110
+135
+139
+143
+443
+445
+993
+995
+1433
+1434
+3389
+5900
+5985
+5986
+8080
+8443
+9000
+9443
+31337
+
+Name: HQ_SEGMENT_RULES
+Type: hash:net,net,proto
+Revision: 1
+Header: family inet hashsize 1024 maxelem 65536
+Size in memory: 1048
+References: 1
+Number of entries: 12
+Members:
+10.1.2.0/24,10.1.3.0/24,tcp
+10.1.3.0/24,10.1.2.0/24,tcp
+10.1.2.0/24,10.1.10.0/24,tcp
+10.1.2.0/24,10.1.11.0/24,tcp
+10.1.10.0/24,10.1.2.0/24,tcp
+10.1.11.0/24,10.1.2.0/24,tcp
+10.1.3.0/24,10.1.10.0/24,tcp
+10.1.3.0/24,10.1.11.0/24,tcp
+10.100.1.0/24,10.1.0.0/16,tcp
+10.1.0.0/16,10.100.1.0/24,tcp
+10.1.0.0/16,10.1.0.0/16,udp
+10.1.0.0/16,10.1.0.0/16,icmp
+
+Name: HQ_DEV_ALLOWED_SERVICES
+Type: hash:ip,port
+Revision: 5
+Header: family inet hashsize 1024 maxelem 65536
+Size in memory: 712
+References: 1
+Number of entries: 15
+Members:
+10.1.11.10,tcp:22
+10.1.11.10,tcp:80
+10.1.11.10,tcp:443
+10.1.11.10,tcp:8080
+10.1.11.10,tcp:9000
+10.1.11.11,tcp:80
+10.1.11.11,tcp:443
+10.1.11.11,tcp:8080
+10.1.11.12,tcp:80
+10.1.11.12,tcp:443
+10.1.11.12,tcp:9000
+10.1.11.13,tcp:8080
+10.1.11.13,tcp:9000
+10.1.11.13,tcp:9443
+10.1.11.14,tcp:3000
+
+Name: HQ_PROD_ALLOWED_SERVICES
+Type: hash:ip,port
+Revision: 5
+Header: family inet hashsize 1024 maxelem 65536
+Size in memory: 648
+References: 1
+Number of entries: 12
+Members:
+10.1.10.10,tcp:22
+10.1.10.10,tcp:80
+10.1.10.10,tcp:443
+10.1.10.11,tcp:80
+10.1.10.11,tcp:443
+10.1.10.12,tcp:80
+10.1.10.12,tcp:443
+10.1.10.13,tcp:8080
+10.1.10.13,tcp:8443
+10.1.10.14,tcp:3306
+10.1.10.15,tcp:5432
+10.1.10.16,tcp:1433
+
+Name: HQ_CORE_UPDATE_SERVERS
+Type: hash:net,port
+Revision: 0
+Header: family inet hashsize 1024 maxelem 65536
+Size in memory: 840
+References: 1
+Number of entries: 14
+Members:
+archive.ubuntu.com,tcp:80
+archive.ubuntu.com,tcp:443
+security.ubuntu.com,tcp:80
+security.ubuntu.com,tcp:443
+8.8.8.8/32,tcp:53
+8.8.4.4/32,tcp:53
+1.1.1.1/32,tcp:53
+208.67.222.222/32,tcp:53
+91.189.95.83/32,tcp:80
+91.189.95.85/32,tcp:443
+github.com,tcp:443
+api.github.com,tcp:443
+registry.npmjs.org,tcp:443
+pypi.org,tcp:443
+
+Name: HQ_CORE_PRIORITY_SERVICES
+Type: hash:ip,port
+Revision: 5
+Header: family inet hashsize 1024 maxelem 65536
+Size in memory: 584
+References: 1
+Number of entries: 8
+Members:
+10.1.1.2,tcp:22
+10.1.1.2,tcp:443
+10.1.2.1,tcp:22
+10.1.2.1,tcp:443
+10.1.3.15,tcp:53
+10.1.3.15,udp:53
+10.1.3.20,tcp:25
+10.1.3.25,tcp:389
+
+Name: HQ_CORE_HIGH_PRIORITY
+Type: hash:net,net,port
+Revision: 0
+Header: family inet hashsize 1024 maxelem 65536
+Size in memory: 1112
+References: 1
+Number of entries: 16
+Members:
+10.1.1.0/24,10.1.2.0/24,tcp:22
+10.1.1.0/24,10.1.3.0/24,tcp:22
+10.1.2.0/24,10.1.1.0/24,tcp:22
+10.1.2.0/24,10.1.3.0/24,tcp:22
+10.1.3.0/24,10.1.1.0/24,tcp:25
+10.1.3.0/24,10.1.2.0/24,tcp:25
+10.100.1.0/24,10.1.0.0/16,tcp:22
+10.1.0.0/16,10.100.1.0/24,tcp:22
+10.1.3.0/24,0.0.0.0/0,tcp:25
+10.1.3.0/24,0.0.0.0/0,tcp:587
+10.1.3.0/24,0.0.0.0/0,tcp:993
+10.1.2.0/24,0.0.0.0/0,tcp:80
+10.1.2.0/24,0.0.0.0/0,tcp:443
+10.1.10.0/24,0.0.0.0/0,tcp:80
+10.1.10.0/24,0.0.0.0/0,tcp:443
+10.1.11.0/24,0.0.0.0/0,tcp:80
+
+Name: HQ_CORE_FLOW_PRIORITY
+Type: hash:net,net,port
+Revision: 0
+Header: family inet hashsize 1024 maxelem 65536
+Size in memory: 1176
+References: 1
+Number of entries: 18
+Members:
+10.1.1.0/24,10.1.2.0/24,tcp:22
+10.1.1.0/24,10.1.3.0/24,tcp:22
+10.1.2.0/24,10.1.1.0/24,tcp:22
+10.1.2.0/24,10.1.3.0/24,tcp:22
+10.1.3.0/24,10.1.1.0/24,tcp:22
+10.1.3.0/24,10.1.2.0/24,tcp:22
+10.1.10.0/24,10.1.2.0/24,tcp:22
+10.1.11.0/24,10.1.2.0/24,tcp:22
+10.1.2.0/24,10.1.10.0/24,tcp:22
+10.1.2.0/24,10.1.11.0/24,tcp:22
+10.1.3.0/24,10.1.10.0/24,tcp:80
+10.1.3.0/24,10.1.11.0/24,tcp:80
+10.1.10.0/24,10.1.3.0/24,tcp:80
+10.1.11.0/24,10.1.3.0/24,tcp:80
+10.100.1.0/24,10.1.0.0/16,tcp:22
+10.1.0.0/16,10.100.1.0/24,tcp:22
+10.1.3.0/24,0.0.0.0/0,tcp:25
+10.1.3.0/24,0.0.0.0/0,tcp:587
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:ipset_list ===
+
+=== TSIM_SECTION_START:conntrack ===
+TITLE: Connection Tracking Entries (first 10)
+COMMAND: head -10 /proc/net/nf_conntrack
+TIMESTAMP: 2025-06-21 15:15:42
+---
+ipv4     2 tcp      6 431998 ESTABLISHED src=10.1.2.50 dst=10.1.3.10 sport=54321 dport=80 src=10.1.3.10 dst=10.1.2.50 sport=80 dport=54321 [ASSURED] mark=2 use=1
+ipv4     2 tcp      6 431997 ESTABLISHED src=10.1.10.25 dst=10.1.2.100 sport=65432 dport=22 src=10.1.2.100 dst=10.1.10.25 sport=22 dport=65432 [ASSURED] mark=1 use=1
+ipv4     2 tcp      6 431996 ESTABLISHED src=10.1.11.30 dst=10.1.3.15 sport=76543 dport=53 src=10.1.3.15 dst=10.1.11.30 sport=53 dport=76543 [ASSURED] mark=3 use=1
+ipv4     2 udp     17 29 src=10.1.2.75 dst=8.8.8.8 sport=87654 dport=53 src=8.8.8.8 dst=10.1.1.2 sport=53 dport=87654 mark=3 use=1
+ipv4     2 tcp      6 431995 ESTABLISHED src=10.100.1.2 dst=10.1.2.200 sport=98765 dport=443 src=10.1.2.200 dst=10.100.1.2 sport=443 dport=98765 [ASSURED] mark=100 use=1
+ipv4     2 icmp     1 29 src=10.1.11.40 dst=10.1.10.50 type=8 code=0 id=10987 src=10.1.10.50 dst=10.1.11.40 type=0 code=0 id=10987 use=1
+ipv4     2 tcp      6 431994 ESTABLISHED src=10.1.3.20 dst=8.8.8.8 sport=21098 dport=25 src=8.8.8.8 dst=10.1.1.2 sport=25 dport=21098 [ASSURED] mark=4 use=1
+ipv4     2 tcp      6 86395 TIME_WAIT src=10.1.10.15 dst=10.1.3.25 sport=32109 dport=389 src=10.1.3.25 dst=10.1.10.15 sport=389 dport=32109 [ASSURED] mark=1 use=1
+ipv4     2 udp     17 28 src=10.1.11.35 dst=10.1.3.15 sport=43210 dport=53 src=10.1.3.15 dst=10.1.11.35 sport=53 dport=43210 mark=3 use=1
+ipv4     2 tcp      6 431993 ESTABLISHED src=10.100.1.3 dst=10.1.10.100 sport=54321 dport=80 src=10.1.10.100 dst=10.100.1.3 sport=80 dport=54321 [ASSURED] mark=100 use=1
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:conntrack ===
+
+=== TSIM_SECTION_START:netfilter_modules ===
+TITLE: Loaded Netfilter Modules
+COMMAND: /bin/lsmod | /bin/grep -E '(iptable|netfilter|conntrack|nf_)'
+TIMESTAMP: 2025-06-21 15:15:42
+---
+nf_conntrack_netlink    49152  0
+nf_conntrack           139264  1 nf_conntrack_netlink
+nf_defrag_ipv4         16384  1 nf_conntrack
+libcrc32c              16384  1 nf_conntrack
+iptable_mangle         16384  1
+iptable_nat            16384  1
+iptable_filter         16384  1
+ip_tables              32768  3 iptable_filter,iptable_mangle,iptable_nat
+nf_nat                 45056  1 iptable_nat
+nf_log_syslog          20480  1
+nf_log_common          16384  1 nf_log_syslog
+xt_multiport           20480  58
+xt_conntrack           20480  45
+xt_mark                16384  22
+xt_MARK                16384  22
+xt_set                 16384  35
+xt_DSCP                16384  12
+xt_TOS                 16384  6
+xt_LOG                 16384  15
+xt_limit               16384  28
+xt_tcpudp              20480  85
+xt_MASQUERADE          20480  4
+xt_recent              20480  6
+xt_NFLOG               16384  1
+xt_CONNMARK            16384  6
+xt_CLASSIFY            16384  6
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:netfilter_modules ===
+
+=== TSIM_FACTS_COLLECTION_COMPLETE ===
+TIMESTAMP: 2025-06-21 15:15:42
+HOSTNAME: hq-core
+SECTIONS_COLLECTED: routing_table,policy_rules,interfaces,interface_stats,ip_forwarding,kernel_version,hostname,iptables_*,ipset_*,conntrack,netfilter_modules

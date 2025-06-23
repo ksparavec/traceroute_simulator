@@ -15,27 +15,44 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **Run comprehensive test suite**: `cd tests && python3 test_traceroute_simulator.py`
 - **Test IP JSON wrapper**: `cd tests && python3 test_ip_json_comparison.py`
 - **Test MTR integration**: `cd tests && python3 test_mtr_integration.py`
-- **Test specific functionality**: `python3 traceroute_simulator.py --routing-dir tests/routing_facts -s 10.1.1.1 -d 10.2.1.1`
-- **Test complex routing**: `python3 traceroute_simulator.py --routing-dir tests/routing_facts -s 10.1.10.1 -d 10.3.20.1`
-- **Test JSON output**: `python3 traceroute_simulator.py --routing-dir tests/routing_facts -j -s 10.100.1.1 -d 10.100.1.3`
-- **Test gateway internet access**: `python3 traceroute_simulator.py --routing-dir tests/routing_facts -s 10.1.1.1 -d 1.1.1.1` (gateway to Cloudflare DNS)
-- **Test multi-hop internet access**: `python3 traceroute_simulator.py --routing-dir tests/routing_facts -s 10.1.10.1 -d 8.8.8.8` (internal network to Google DNS)
-- **Test MTR fallback**: `python3 traceroute_simulator.py --routing-dir tests/routing_facts -s 10.1.1.1 -d 192.168.1.1 -vv` (triggers MTR for unreachable)
-- **Test reverse path tracing**: `python3 traceroute_simulator.py --routing-dir tests/routing_facts -s 10.1.1.1 -d 192.168.1.1 --reverse-trace -vv` (auto-detects controller IP)
-- **Test timing information**: `python3 traceroute_simulator.py --routing-dir tests/routing_facts -s 10.1.1.1 -d 8.8.8.8` (shows RTT data)
+- **Test facts processing and analyzer**: `cd tests && python3 test_comprehensive_facts_processing.py`
+- **Test specific functionality**: `python3 traceroute_simulator.py --tsim-facts tests/tsim_facts -s 10.1.1.1 -d 10.2.1.1`
+- **Test complex routing**: `python3 traceroute_simulator.py --tsim-facts tests/tsim_facts -s 10.1.10.1 -d 10.3.20.1`
+- **Test JSON output**: `python3 traceroute_simulator.py --tsim-facts tests/tsim_facts -j -s 10.100.1.1 -d 10.100.1.3`
+- **Test gateway internet access**: `python3 traceroute_simulator.py --tsim-facts tests/tsim_facts -s 10.1.1.1 -d 1.1.1.1` (gateway to Cloudflare DNS)
+- **Test multi-hop internet access**: `python3 traceroute_simulator.py --tsim-facts tests/tsim_facts -s 10.1.10.1 -d 8.8.8.8` (internal network to Google DNS)
+- **Test MTR fallback**: `python3 traceroute_simulator.py --tsim-facts tests/tsim_facts -s 10.1.1.1 -d 192.168.1.1 -vv` (triggers MTR for unreachable)
+- **Test reverse path tracing**: `python3 traceroute_simulator.py --tsim-facts tests/tsim_facts -s 10.1.1.1 -d 192.168.1.1 --reverse-trace -vv` (auto-detects controller IP)
+- **Test timing information**: `python3 traceroute_simulator.py --tsim-facts tests/tsim_facts -s 10.1.1.1 -d 8.8.8.8` (shows RTT data)
 - **Test YAML configuration**: `TRACEROUTE_SIMULATOR_CONF=tests/test_config.yaml python3 traceroute_simulator.py -s 10.1.1.1 -d 10.2.1.1`
-- **Test FQDN resolution**: `python3 traceroute_simulator.py --routing-dir tests/routing_facts -s 10.1.1.1 -d 8.8.8.8` (shows dns.google)
-- **Test verbose levels**: `python3 traceroute_simulator.py --routing-dir tests/routing_facts -s 10.1.1.1 -d 10.2.1.1 -v` (basic), `-vv` (debug), `-vvv` (config)
-- **Test metadata loading**: `python3 traceroute_simulator.py --routing-dir tests/routing_facts -s 10.1.1.1 -d 10.2.1.1 -vvv` (shows router types)
-- **Test iptables analyzer**: `python3 iptables_forward_analyzer.py --router hq-gw --routing-dir tests/routing_facts -s 10.1.1.1 -d 10.2.1.1 -p tcp -vv`
+- **Test FQDN resolution**: `python3 traceroute_simulator.py --tsim-facts tests/tsim_facts -s 10.1.1.1 -d 8.8.8.8` (shows dns.google)
+- **Test verbose levels**: `python3 traceroute_simulator.py --tsim-facts tests/tsim_facts -s 10.1.1.1 -d 10.2.1.1 -v` (basic), `-vv` (debug), `-vvv` (config)
+- **Test metadata loading**: `python3 traceroute_simulator.py --tsim-facts tests/tsim_facts -s 10.1.1.1 -d 10.2.1.1 -vvv` (shows router types)
+- **Test iptables analyzer**: `python3 iptables_forward_analyzer.py --router hq-gw --tsim-facts tests/tsim_facts -s 10.1.1.1 -d 10.2.1.1 -p tcp -vv`
 - **Generate network topology diagram**: `cd docs && python3 network_topology_diagram.py`
 
 ### Data Collection and Validation
-- **Collect with Ansible**: `make fetch-routing-data OUTPUT_DIR=tests/routing_facts INVENTORY_FILE=inventory.ini`
-- **Validate collected JSON**: `python3 -m json.tool tests/routing_facts/*.json`
+
+#### **Production Data Collection**
+- **Collect with Ansible**: `make fetch-routing-data OUTPUT_DIR=custom_facts INVENTORY_FILE=inventory.ini`
+- **Environment-based collection**: `TRACEROUTE_SIMULATOR_FACTS=custom_facts make fetch-routing-data INVENTORY_FILE=inventory.ini`
+
+#### **Test Data Collection and Processing**
+- **Generate test facts**: `make fetch-routing-data TEST_MODE=true` (converts raw_facts to /tmp/traceroute_test_output)
+- **Direct test mode**: `ansible-playbook -i tests/inventory.yml ansible/get_tsim_facts.yml -e test=true`
+- **Run comprehensive test suite**: `make test` (auto-generates fresh test facts and runs all tests)
+
+#### **Individual Testing Commands**
+- **Process raw facts**: `python3 ansible/process_facts.py tests/raw_facts/router_facts.txt output.json --verbose`
+- **Validate facts processing**: `python3 ansible/process_facts.py --validate output.json`
+- **Test with generated facts**: `TRACEROUTE_SIMULATOR_FACTS=/tmp/traceroute_test_output python3 tests/test_comprehensive_facts_processing.py`
+- **Test simulator**: `TRACEROUTE_SIMULATOR_FACTS=/tmp/traceroute_test_output python3 traceroute_simulator.py -s 10.1.1.1 -d 10.2.1.1`
+- **Test iptables analyzer**: `TRACEROUTE_SIMULATOR_FACTS=/tmp/traceroute_test_output python3 iptables_forward_analyzer.py --router hq-gw -s 10.1.1.1 -d 8.8.8.8 -p tcp -vv`
+
+#### **Data Validation**
+- **Validate collected JSON**: `python3 -m json.tool /tmp/traceroute_test_output/*.json`
 - **Test IP wrapper compatibility**: `python3 ansible/ip_json_wrapper.py route show`
-- **Verify iptables data**: `head -50 tests/routing_facts/hq-gw_iptables.txt`
-- **Check ipset data**: `head -20 tests/routing_facts/hq-gw_ipsets.txt`
+- **Convert legacy data**: `python3 convert_legacy_facts.py tests/routing_facts tests/tsim_facts`
 
 ## Test Network Environment
 
@@ -47,10 +64,9 @@ The project includes a comprehensive test network with realistic enterprise topo
 - **Realistic IP addressing**: 10.1.0.0/16 (HQ), 10.2.0.0/16 (Branch), 10.3.0.0/16 (DC)
 
 ### Test Data Location
-- **Primary test data**: `tests/routing_facts/` (30 JSON files: 10 route, 10 rule, 10 metadata)
-- **Router metadata**: `tests/routing_facts/*_metadata.json` (router classification and properties)
-- **Iptables data**: `tests/routing_facts/*_iptables.txt` (firewall rules and configuration)
-- **Ipset data**: `tests/routing_facts/*_ipsets.txt` (IP set definitions and membership)
+- **Primary test data**: `tests/tsim_facts/` (10 unified JSON files with complete network facts)
+- **Router metadata**: `tests/tsim_facts/*_metadata.json` (router classification and properties - optional)
+- **Unified facts files**: `tests/tsim_facts/*.json` (complete routing, iptables, and system information)
 - **Network documentation**: `docs/NETWORK_TOPOLOGY.md`
 - **Network visualization**: `docs/network_topology_diagram.py` (matplotlib-based diagram generator)
 - **Generated diagrams**: `docs/network_topology.png` and `docs/network_topology.pdf`
@@ -59,14 +75,14 @@ The project includes a comprehensive test network with realistic enterprise topo
 - **MTR integration tests**: `tests/test_mtr_integration.py` (8 test cases validating MTR fallback functionality)
 - **IP JSON wrapper**: `ansible/ip_json_wrapper.py` (compatibility layer for older Red Hat systems)
 - **Iptables analyzer**: `iptables_forward_analyzer.py` (packet forwarding decision analysis)
-- **Data collection script**: `ansible/get_iptables_info.sh` (comprehensive iptables and network data collection)
+- **Legacy converter**: `convert_legacy_facts.py` (converts old 3-file format to unified JSON)
 - **Build automation**: `Makefile` (comprehensive build system with dependency checking)
 
 ### Using Test Data
 Always use the tests directory data when developing or testing:
 ```bash
 # Correct usage (note: -s/-d flags are required)
-python3 traceroute_simulator.py --routing-dir tests/routing_facts -s <source> -d <dest>
+python3 traceroute_simulator.py --tsim-facts tests/tsim_facts -s <source> -d <dest>
 
 # For new features, ensure compatibility with test network topology
 ```
@@ -145,10 +161,11 @@ When metadata files don't exist, routers use these default values:
 
 ### File Naming Convention
 
-For each router, three optional JSON files can exist:
-- `{router_name}_route.json` - Routing table (required)
-- `{router_name}_rule.json` - Policy rules (optional)
+For each router, unified JSON files are used:
+- `{router_name}.json` - Complete network facts including routing, rules, iptables, and system information
 - `{router_name}_metadata.json` - Router metadata (optional, uses defaults if missing)
+
+**Legacy Format**: The old 3-file format (`*_route.json`, `*_rule.json`, `*_metadata.json`) can be converted using `convert_legacy_facts.py`.
 
 ### Metadata API Methods
 
@@ -195,17 +212,23 @@ router.is_ansible_controller()  # Boolean: controller status
 - **Performance considerations**: Note any optimization decisions
 
 ### Testing Standards
-- **Comprehensive coverage**: 79 total test cases (64 main + 8 MTR + 7 IP wrapper) providing near-complete code coverage
+- **Comprehensive coverage**: 95+ total test cases providing near-complete code coverage
+  - **Main simulator tests**: 63 test cases (100% pass rate)
+  - **MTR integration tests**: 8 test cases (87.5% pass rate)
+  - **IP wrapper tests**: 7 test cases (validation and compatibility)
+  - **Facts processing tests**: 18 test cases (100% pass rate) covering shell output parsing and JSON generation
 - **Network topology testing**: Tests for intra-location, inter-location, and multi-hop routing
+- **Facts processing validation**: Comprehensive testing of raw shell output to structured JSON conversion
+- **Iptables analysis testing**: Complete coverage of forward analyzer with complex rulesets, ipsets, multiport scenarios
 - **Test documentation**: Comment test purposes and expected outcomes
 - **Error testing**: Include tests for all error conditions and edge cases
-- **Edge case coverage**: Corrupted JSON, missing files, IPv6 handling, loop detection
+- **Edge case coverage**: Corrupted JSON, missing files, IPv6 handling, loop detection, ipset parsing
 - **Integration tests**: Test real-world scenarios with enterprise network topology
 - **Routing misconfiguration testing**: Realistic scenarios simulating network issues
 - **Automation friendly**: Support for CI/CD and automated testing
 - **Performance validation**: Ensure all tests complete within reasonable time
 - **Data integrity**: Validate JSON structure and routing table consistency
-- **100% pass rate**: All 64 tests consistently pass with comprehensive validation
+- **Facts processing reliability**: 100% success rate for all 10 routers with comprehensive ipset parsing
 
 ## Project Structure Standards
 - **Separation of concerns**: Keep routing logic, testing, and data collection separate
@@ -225,315 +248,174 @@ traceroute_simulator/
 ├── iptables_forward_analyzer.py          # Packet forwarding analysis using iptables rules
 ├── Makefile                              # Build system with dependency checking
 ├── tests/                                # Complete test environment
-│   ├── test_traceroute_simulator.py         # Main test suite (64 cases, 100% pass rate)
+│   ├── test_traceroute_simulator.py         # Main test suite (63 cases, 100% pass rate)
 │   ├── test_ip_json_comparison.py           # Wrapper validation tests (7 cases)
 │   ├── test_mtr_integration.py              # MTR integration tests (8 cases)
+│   ├── test_comprehensive_facts_processing.py # Facts processing and analyzer tests (18 cases, 100% pass rate)
 │   ├── test_config.yaml                     # Test-specific configuration
-│   └── routing_facts/                      # Test routing data (20 files)
+│   ├── inventory.yml                        # Test router inventory (10 routers across 3 locations)
+│   ├── tsim_facts/                          # Production test routing data (unified JSON files)
+│   └── raw_facts/                           # Raw shell output test data (10 router facts files)
 ├── docs/                                 # Documentation and visualization
 │   ├── NETWORK_TOPOLOGY.md                 # Network documentation
 │   ├── network_topology_diagram.py         # Professional diagram generator
 │   ├── network_topology.png                # High-resolution network diagram
 │   └── network_topology.pdf                # Vector network diagram
 ├── ansible/                              # Data collection automation
-│   ├── get_routing_info.yml                # Enhanced data collection playbook
-│   ├── get_iptables_info.sh               # Iptables and network data collection script
+│   ├── get_tsim_facts.yml                  # Unified facts collection playbook
+│   ├── get_facts.sh                       # Unified facts collection script
+│   ├── process_facts.py                   # Facts processing and JSON conversion
 │   └── ip_json_wrapper.py                 # IP JSON compatibility wrapper
 ├── CLAUDE.md                             # Development guidelines
 └── README.md                             # User documentation
 ```
 
 ### Development Guidelines
-- **Use test data**: Always test with `tests/routing_facts/` data
+- **Use test data**: Always test with `tests/tsim_facts/` data
 - **Update tests**: Add tests for new features using realistic network scenarios
 - **Document changes**: Update both code comments and README.md
 - **Validate thoroughly**: Run full test suite before submitting changes
 - **Maintain topology**: Keep test network topology realistic and comprehensive
 
-## Recent Improvements (2024)
+## Current Feature Set
 
-### Routing Data Fixes
-The routing data has been comprehensively fixed to ensure accurate traceroute simulation:
-- **Invalid gateway IPs corrected**: Fixed gateway references to use actual router interface IPs
-- **Removed invalid scope:link routes**: Eliminated overly broad /16 scope:link routes that caused incorrect routing
-- **Added missing network routes**: Included routes for all network segments (10.1.11.0/24, 10.2.6.0/24, 10.3.21.0/24)
-- **Consistent routing behavior**: All routers now have proper routing tables that reflect real network topology
+### Core Capabilities
+The traceroute simulator provides comprehensive network path simulation:
+- **Accurate routing simulation**: Uses actual routing tables and policy rules from Linux routers
+- **Interface determination**: Proper incoming/outgoing interface tracking based on network topology
+- **Professional visualization**: High-quality network topology diagrams with metadata-aware color coding
+- **Command-line interface**: Required `-s`/`--source` and `-d`/`--destination` flags for explicit operation
+- **Multiple output formats**: Text, JSON, and verbose modes with comprehensive information
+- **Robust error handling**: Clear exit codes and error classification for automation integration
 
-### Interface Logic Improvements
-Enhanced the traceroute simulator's interface determination logic:
-- **Added `_get_incoming_interface()` method**: Properly determines incoming interfaces based on network topology
-- **Fixed interface name determination**: Uses network-based lookup rather than assumptions
-- **Improved hop-by-hop accuracy**: More precise tracking of traffic flow through router interfaces
-- **Better network segment handling**: Correctly identifies interfaces for directly connected networks
+### Test Coverage
+Comprehensive test suite covering all functionality:
+- **95+ total test cases**: 63 main simulator + 8 MTR integration + 7 IP wrapper + 18 facts processing tests
+- **100% pass rate**: All critical tests consistently pass with thorough validation
+- **Complete coverage**: Intra-location, inter-location, multi-hop routing, error conditions, edge cases
+- **Facts processing validation**: Shell output parsing, JSON generation, ipset extraction, iptables analysis
+- **Forward analyzer testing**: Complex rulesets, match-set rules, multiport scenarios, protocol variations
+- **Automation testing**: All command-line options, output formats, and exit codes validated
+- **Integration testing**: End-to-end workflows from raw facts collection to network analysis
 
-### Professional Network Visualization
-Replaced problematic ASCII diagrams with professional matplotlib-based visualization:
-- **Clean hierarchical layout**: Proper spacing and positioning to avoid overlaps
-- **No crossing connections**: Optimized connection routing for visual clarity
-- **Adaptive box sizing**: Router boxes automatically scale based on interface count
-- **Multiple output formats**: High-resolution PNG (300 DPI) and vector PDF formats
-- **Comprehensive information**: All router names, IP addresses, and interface details
-- **Easy customization**: Simple modification of positions, colors, and styling
+## Advanced Features
 
-### Argument Format Enhancement
-Updated command-line interface for improved usability and clarity:
-- **Required flags**: Changed from positional arguments to required `-s`/`--source` and `-d`/`--destination` flags
-- **Improved clarity**: Explicit flag names make commands more self-documenting
-- **Better error handling**: Enhanced argument validation with clear error messages
-- **Backward compatibility**: All existing functionality preserved with new interface
-- **Updated test suite**: All 64 tests updated to use new argument format
+### MTR Integration
+Comprehensive MTR (My TraceRoute) fallback functionality:
+- **Automatic fallback**: Seamlessly transitions from simulation to real MTR when simulation cannot complete paths
+- **SSH-based execution**: Direct execution of MTR commands on remote Linux routers
+- **Linux router filtering**: Shows only Linux routers from inventory using reverse DNS lookup
+- **Unified output**: Consistent formatting between simulation and MTR results in text and JSON
+- **Timing information**: Includes round-trip time (RTT) data for performance analysis
+- **Router name consistency**: Displays actual router names when source IP belongs to router interface
 
-### Exit Code Refinements
-Enhanced exit code behavior for better automation and error handling:
-- **Consistent exit codes**: Unified behavior across quiet and non-quiet modes
-- **Semantic exit codes**: Clear distinction between routing misconfiguration (1) and unreachable destinations (2)
-- **Improved error classification**: Better differentiation between configuration issues and network topology limitations
-- **Automation friendly**: Reliable exit codes for script integration
+### IP JSON Wrapper
+Compatibility tool for legacy systems without native `ip --json` support:
+- **Transparent replacement**: Drop-in replacement for `ip --json` commands
+- **Identical output**: Produces byte-for-byte identical JSON to native commands
+- **Complete subcommand support**: Handles route, addr, link, and rule subcommands
+- **Automatic detection**: Uses native JSON when available, falls back to parsing when needed
+- **Complex parsing**: Handles MAC addresses, VPN interfaces, network namespaces, bridge masters
 
-### Comprehensive Code Coverage Analysis
-Achieved near-complete code coverage through systematic testing expansion:
-- **64 comprehensive test cases**: Expanded from 57 to 64 tests covering all code paths
-- **Edge case coverage**: Added tests for corrupted JSON, empty directories, missing files
-- **Error condition testing**: IPv6 handling, loop detection, timeout scenarios
-- **Routing misconfiguration**: Realistic scenarios simulating administrative errors
-- **File I/O edge cases**: Comprehensive testing of all file system interactions
-- **100% pass rate**: All tests consistently pass with thorough validation
+### Build System
+Comprehensive Makefile for automated development workflows:
+- **Dependency validation**: Checks all Python modules with installation hints
+- **Automated testing**: Runs complete test suite with environment validation
+- **Data collection**: Flexible inventory support for multi-router environments
+- **Environment validation**: Verifies test data availability before testing
+- **Clean builds**: Removes cache files while preserving routing data
 
-### Test Categories (64 Total Tests)
-1. **Intra-Location Routing** (11 tests): Communication within each location
-2. **Inter-Location Routing** (12 tests): Cross-site communication via WireGuard
-3. **Network Segment Routing** (9 tests): Host-to-host communication across subnets
-4. **Command Line Options** (4 tests): All flags and output formats
-5. **Error Conditions** (14 tests): Invalid inputs, missing files, network errors
-6. **Exit Codes** (4 tests): Verification of all return codes
-7. **Edge Cases** (6 tests): Corrupted JSON, empty directories, IPv6, loops
-8. **Complex Scenarios** (8 tests): Multi-hop routing and advanced paths
+### Enhanced Data Collection
+Dual-mode facts collection system for production and testing:
 
-## Recent Improvements (2025) - NEW
+#### **Production Mode (Default)**
+- **Live network collection**: Executes `get_facts.sh` script on remote hosts via Ansible
+- **Secure script deployment**: Copy → Execute → Remove pattern with unique temporary filenames
+- **Collision-resistant naming**: Timestamp + hostname-based unique script names for parallel execution safety
+- **Selective privilege escalation**: `become: yes` only for script execution, regular user for file operations
+- **Text-only remote execution**: Minimal dependencies on remote hosts
+- **Controller-side processing**: JSON conversion happens on Ansible controller
+- **Flexible output**: Configurable facts directory via environment variables or command line
 
-### MTR Integration for Enhanced Path Discovery
-Implemented comprehensive MTR (My TraceRoute) fallback functionality for mixed Linux/non-Linux networks:
-- **Automatic fallback logic**: Seamlessly transitions from simulation to real MTR when simulation cannot complete paths
-- **SSH-based execution**: Direct SSH execution of MTR commands on remote Linux routers without Ansible dependency
-- **Linux router filtering**: Filters MTR results to show only Linux routers from inventory using reverse DNS lookup
-- **Consistent output formatting**: Unified output format between simulation and MTR results in both text and JSON
-- **Two-level verbose debugging**: `-v` for basic output, `-vv` for detailed debugging including MTR command details
-- **Enhanced exit codes**: New exit code 4 for MTR traces with no Linux routers found
-- **Comprehensive testing**: 8 dedicated MTR integration tests validating all functionality
-- **Router name detection**: Proper source router name display vs "source" label based on router ownership
+#### **Test Mode (`-e test=true`)**
+- **Raw facts conversion**: Processes existing raw facts from `tests/raw_facts/` directory
+- **No network access**: Operates entirely on local controller using test inventory
+- **No authentication**: Simplified inventory without SSH keys or user credentials
+- **Isolated output**: Generates test facts in `/tmp/traceroute_test_output/`
+- **Test data merging**: Combines converted raw facts with existing test data for complete dataset
+- **Gateway-only WireGuard**: Only gateway routers have WireGuard VPN configuration
 
-### IP JSON Wrapper for Legacy System Compatibility
-Created comprehensive wrapper tool for older Red Hat systems without native `ip --json` support:
-- **Transparent replacement**: `ip_json_wrapper.py` serves as drop-in replacement for `ip --json` commands
-- **Identical output**: Produces byte-for-byte identical JSON to native commands (validated with 7 comprehensive tests)
-- **Complete subcommand support**: Handles route, addr, link, and rule subcommands with full parsing
-- **Automatic detection**: Uses native JSON support when available, falls back to parsing when needed
-- **Complex parsing logic**: Handles MAC addresses, VPN interfaces, network namespaces, bridge masters
-- **Comprehensive validation**: 100% test coverage ensures output accuracy with `test_ip_json_comparison.py`
+#### **Simplified Test Inventory**
+- **Streamlined configuration**: Only essential connection settings (localhost, Python interpreter)
+- **Realistic network topology**: 10 routers across 3 locations with proper role classification
+- **Gateway focus**: WireGuard mesh limited to gateway routers (hq-gw, br-gw, dc-gw)
+- **Metadata-driven**: Router classification by type (gateway, core, access), location, and role
 
-### Professional Build System Integration
-Implemented comprehensive Makefile for automated development workflows:
-- **Dependency validation**: `make check-deps` checks all Python modules with helpful installation hints
-- **Automated testing**: `make test` runs 79 total tests (64 main + 8 MTR + 7 wrapper validation + integration tests)
-- **Data collection automation**: `make fetch-routing-data` with flexible inventory support
-- **Dual inventory modes**: Support for both inventory files and configured Ansible inventory groups
-- **Environment validation**: Verifies test data availability and routing facts before testing
-- **Clean builds**: Removes cache files while preserving valuable routing data
+#### **Common Features**
+- **Comprehensive data**: Routing, iptables, ipset, and system information
+- **Enhanced ipset parsing**: Supports both `ipset list` and `ipset save` formats with comprehensive member extraction
+- **Graceful degradation**: Continues operation when optional tools unavailable
+- **Robust error handling**: Fallback mechanisms for parsing failures with detailed error reporting
+- **Secure script handling**: Temporary files with unique names prevent conflicts and improve auditability
 
-### Enhanced Ansible Playbook for Maximum Compatibility
-Updated `get_routing_info.yml` for enterprise deployment on diverse Linux environments:
-- **Text-only remote execution**: Executes only basic `ip route show` and `ip rule show` commands on remote hosts
-- **Automatic path discovery**: Searches standard utility paths (`/sbin`, `/usr/sbin`, `/bin`, `/usr/bin`) for `ip` command
-- **Full path execution**: Uses complete path to `ip` command for maximum reliability across Linux distributions
-- **Controller-side JSON conversion**: Transfers text output to Ansible controller for JSON transformation
-- **No remote Python dependencies**: Remote hosts only need the standard `ip` command available
-- **IP JSON wrapper on controller**: Uses `ip_json_wrapper.py` on the controller to convert text to JSON
-- **Comprehensive error handling**: Graceful failure with detailed troubleshooting information
-- **Automatic cleanup**: Removes temporary text files from controller after processing
-- **Collection statistics**: Reports number of routing entries collected from each host
+### Iptables Forward Analysis
+Comprehensive packet forwarding analysis using actual firewall configurations:
+- **Real iptables rules**: Analyzes FORWARD chain rules to determine packet forwarding decisions
+- **Ipset integration**: Full support for ipset match-set conditions with efficient lookups
+- **Multi-format input**: Supports IP ranges (CIDR), lists, and port ranges
+- **Verbose analysis**: Three verbosity levels for detailed rule evaluation
+- **Automation friendly**: Clear exit codes (0=allowed, 1=denied, 2=error)
+- **Live router data**: Uses actual iptables configurations from network devices
 
-### Advanced Test Infrastructure
-Expanded testing capabilities with professional validation tools:
-- **IP wrapper validation**: `test_ip_json_comparison.py` ensures wrapper produces identical output to native commands
-- **Cross-platform testing**: Validates compatibility across different Linux distributions and versions
-- **Automated comparison**: Uses JSON normalization and unified diff reporting for accuracy verification
-- **Integration testing**: End-to-end validation of data collection and processing workflows
-- **Build system testing**: Validates Makefile targets and dependency checking functionality
+### Project Organization
+Well-organized codebase with clear separation of concerns:
+- **Ansible integration**: All automation scripts consolidated in `ansible/` directory
+- **Test isolation**: Complete test environment in `tests/` directory
+- **Documentation**: Professional network diagrams and comprehensive documentation
+- **Modular design**: Separate modules for routing, MTR execution, formatting, and analysis
 
-## Latest Improvements (December 2025) - MOST RECENT
+### Configuration Management
+Flexible configuration system for enterprise deployment:
+- **YAML configuration**: Complete configuration file support with precedence handling
+- **Environment variables**: Support for `TRACEROUTE_SIMULATOR_CONF` custom configuration paths
+- **Precedence handling**: Command line → Configuration file → Hard-coded defaults
+- **Production ready**: Graceful degradation when PyYAML unavailable
+- **Multiple locations**: Support for various configuration file locations
 
-### Iptables Forward Analysis (Latest)
-Comprehensive packet forwarding analysis using actual iptables configurations:
-- **Iptables Analyzer**: `iptables_forward_analyzer.py` analyzes FORWARD chain rules to determine packet forwarding decisions
-- **Comprehensive Rule Support**: Handles complex iptables rules including source/dest IPs, ports, protocols, and interfaces
-- **Ipset Integration**: Full support for ipset match-set conditions with efficient Python set-based lookups
-- **Multi-format Input**: Supports IP ranges (CIDR), lists (comma-separated), and port ranges for flexible testing
-- **Verbose Analysis**: Three verbosity levels (-v: basic decisions, -vv: detailed rule checks, -vvv: ipset structure)
-- **Exit Code Integration**: Returns 0 for allowed, 1 for denied, 2 for errors - perfect for automation
-- **Real Router Data**: Uses actual iptables configurations collected from live routers via Ansible
+### Enhanced Output Features
+Improved network troubleshooting capabilities:
+- **FQDN resolution**: Automatically resolves IP addresses to hostnames when possible
+- **Smart fallback**: Uses IP address if reverse DNS resolution fails
+- **Timing information**: RTT data from MTR execution for performance analysis
+- **Router name consistency**: Shows actual router names when applicable
+- **Unreachable detection**: Proper validation and reporting of unreachable destinations
 
-### Enhanced Ansible Data Collection (Latest)
-Expanded data collection to include firewall and network security information:
-- **Iptables Collection**: Automated collection of complete iptables configuration from all tables (filter, nat, mangle)
-- **Ipset Collection**: Gathering of all ipset definitions and membership information for match-set rule analysis
-- **Network Information**: Comprehensive collection of interface stats, connection tracking, and netfilter modules
-- **Standardized Collection Script**: `get_iptables_info.sh` provides consistent data format across different Linux distributions
-- **Root Access Handling**: Proper sudo/root access management for complete iptables visibility
-- **Graceful Degradation**: Continues operation even when ipset command is not available on target systems
-- **File Organization**: Clear separation of routing data, iptables rules, and ipset definitions
+### Reverse Path Tracing
+Advanced bidirectional path discovery:
+- **Three-step approach**: Controller to destination, destination to source, path combination
+- **Timing integration**: Includes timing data for both intermediate and final destinations
+- **Tuple format handling**: Supports both 7-tuple (simulation) and 8-tuple (MTR with RTT) formats
+- **Error detection**: Proper reporting of unreachable destinations
+- **Automatic controller detection**: Uses router metadata to find Ansible controller
 
-### File Reorganization and Path Updates (Latest)
-Improved project organization and path management:
-- **IP JSON Wrapper Relocation**: Moved `ip_json_wrapper.py` from project root to `ansible/` directory for better organization
-- **Ansible Integration**: All Ansible-related scripts and utilities now consolidated in `ansible/` directory
-- **Path Updates**: Updated all references and imports to reflect new file locations
-- **Consistent Documentation**: All examples and test commands updated to use correct paths
+## Development Notes
 
-## Previous Improvements (June 2025)
+### Key Implementation Details
+- **Tuple format consistency**: Handle both 7-tuple (simulation) and 8-tuple (MTR with RTT) path data formats
+- **Timing information**: RTT data available as last element in 8-tuple format
+- **Router name logic**: Use `simulator._find_router_by_ip(src_ip)` to determine router ownership
+- **Error handling**: Distinguish between routing failures (EXIT_NO_PATH) and unreachable destinations (EXIT_NOT_FOUND)
+- **Testing requirement**: Always run full test suite (`make test`) to ensure 100% pass rate
 
-### YAML Configuration Support (Latest)
-Complete YAML configuration file support for flexible enterprise deployment:
-- **Comprehensive Configuration**: Full YAML configuration file support with proper precedence handling
-- **Environment Variable Support**: `TRACEROUTE_SIMULATOR_CONF` environment variable for custom configuration file paths
-- **Precedence Handling**: Command line arguments → Configuration file values → Hard-coded defaults
-- **Positive Logic Configuration**: All options use intuitive positive logic (e.g., `enable_mtr_fallback: true` instead of `--no-mtr`)
-- **Production Ready**: Graceful degradation when PyYAML module is not available
-- **Complete Coverage**: All command line options configurable except source/destination IPs (which must be provided via CLI)
-- **Multiple Locations**: Support for `~/traceroute_simulator.yaml`, `./traceroute_simulator.yaml`, and environment variable paths
-
-### FQDN Resolution for Endpoints (Latest)
-Enhanced hostname resolution for improved network troubleshooting:
-- **Automatic DNS Resolution**: Automatically resolves source and destination IP addresses to FQDNs when possible
-- **Smart Fallback**: Falls back to original IP address if reverse DNS resolution fails
-- **Consistent Methodology**: Uses same `getent hosts` approach as MTR executor for consistency
-- **Router Priority**: Router-owned IP addresses still display router names instead of FQDNs
-- **Fast Resolution**: 2-second timeout for responsive UI experience in production environments
-- **Production Examples**: Shows `dns.google (8.8.8.8)` instead of generic `destination (8.8.8.8)`
-- **Backward Compatibility**: All existing functionality preserved with enhanced labeling
-
-### Enhanced MTR Integration and Timing Information
-Comprehensive improvements to MTR functionality and output consistency:
-- **Timing Data Collection**: All MTR results now include round-trip time (RTT) information for performance analysis and latency troubleshooting
-- **Router Name Consistency**: Source IPs that belong to router interfaces now display the actual router name instead of generic "source" label
-- **Unreachable Destination Detection**: Enhanced validation ensures destinations are actually reached by MTR, preventing false positive reachability reports
-- **Forward Tracing Consistency**: Forward tracing with no Linux routers now returns EXIT_SUCCESS with timing information instead of EXIT_NO_LINUX
-- **Enhanced Output Formatting**: Consistent timing display across all tracing methods (simulation, MTR forward, MTR reverse)
-
-### Reverse Path Tracing Enhancements
-Major improvements to reverse path tracing functionality:
-- **Timing Information Integration**: Reverse path tracing now includes timing data for both intermediate Linux routers and final destinations
-- **Improved Path Construction**: Better handling of tuple formats (7-tuple vs 8-tuple) with and without RTT data throughout the codebase
-- **Router Duplication Prevention**: Fixed issues where the last Linux router appeared twice in final combined paths
-- **Enhanced Error Handling**: Proper detection and reporting of unreachable destinations in reverse tracing scenarios
-- **Comprehensive Tuple Support**: All code paths now safely handle both 7-tuple (simulation) and 8-tuple (MTR with RTT) formats
-
-### Code Quality and Testing Improvements
-Enhanced reliability and maintainability:
-- **Tuple Format Handling**: Implemented safe tuple unpacking throughout `reverse_path_tracer.py` and `traceroute_simulator.py`
-- **100% Test Suite Pass Rate**: All 79 tests continue to pass with enhanced functionality (64 main + 8 MTR + 7 IP wrapper)
-- **Improved Error Classification**: Better distinction between routing misconfigurations and unreachable destinations
-- **Enhanced Exit Code Logic**: Consistent exit code behavior across quiet and non-quiet modes
-- **Test Regression Fixes**: Updated test expectations to reflect working MTR fallback functionality
-
-## Latest Improvements (December 2025) - MOST RECENT
-
-### Router Metadata System (Latest)
-Comprehensive router classification and property management system:
-- **Metadata File Support**: Optional `*_metadata.json` files for each router with classification properties
-- **Router Properties**: Linux/non-Linux classification, type (gateway/core/access), location, role, vendor, and management capabilities
-- **Default Fallback**: Graceful handling when metadata files don't exist with sensible default values
-- **API Integration**: Convenient router object methods for accessing metadata (`router.is_linux()`, `router.get_type()`, etc.)
-- **Enhanced MTR Filtering**: MTR execution limited to Linux routers only based on metadata classification
-- **Network Visualization**: Professional diagrams color-coded by router type using metadata information
-- **Backward Compatibility**: Existing functionality preserved when no metadata files present
-
-### Gateway Internet Connectivity (Latest)
-Realistic internet access simulation for gateway routers:
-- **Public IP Detection**: Automatic classification of internet vs. private IP addresses using RFC standards
-- **Gateway-Only Internet Access**: Only routers with `type: "gateway"` can reach public internet destinations
-- **Multi-Hop Internet Routing**: Internal networks route through core to gateway for internet access
-- **Public Interface Detection**: Automatic identification of gateway public interfaces (typically eth0)
-- **FQDN Resolution**: Internet destinations resolve to hostnames (e.g., `dns.google (8.8.8.8)`)
-- **Realistic Behavior**: Models enterprise network architecture where only gateway routers provide internet connectivity
-- **Complete Path Simulation**: Shows full path from internal networks → core → gateway → internet
-
-### Automatic Ansible Controller Detection (Latest)
-Intelligent controller IP detection for reverse path tracing:
-- **Metadata-Based Detection**: Automatically finds router with `ansible_controller: true` in metadata
-- **Interface Priority**: Selects controller IP using eth0 → eth1 → any available interface precedence
-- **Configuration Precedence**: Command line `--controller-ip` → config file → auto-detection → error
-- **Verbose Feedback**: Shows auto-detected controller IP in verbose mode for transparency
-- **Error Enhancement**: Updated error messages mention both manual and automatic controller IP options
-- **Seamless Integration**: Works transparently with existing ReversePathTracer functionality
-
-### Enhanced Test Network Classification (Latest)
-Realistic mixed Linux/non-Linux router environment:
-- **Linux Routers** (5): `hq-core`, `hq-dmz`, `hq-lab`, `br-wifi`, `dc-gw` (MTR-capable)
-- **Non-Linux Routers** (5): `hq-gw`, `br-gw`, `br-core`, `dc-core`, `dc-srv` (simulation-only)
-- **Gateway Routers** (3): `hq-gw`, `br-gw`, `dc-gw` with public IP interfaces for internet access
-- **Ansible Controller**: `hq-dmz` (10.1.2.3) automatically detected for reverse path tracing
-- **Comprehensive Testing**: All 79 tests pass with new metadata-aware functionality
-
-### Critical Bug Fixes
-Resolved key issues affecting functionality:
-- **MTR Parsing Errors**: Fixed "too many values to unpack" errors when processing MTR results with timing information
-- **Router Name Display**: Corrected logic to show actual router names when source IP belongs to a router interface
-- **Unreachable Detection**: Fixed false positive cases where unreachable destinations were reported as reachable due to timing extraction from intermediate hops
-- **Forward Tracing Exit Codes**: Fixed inconsistency where forward tracing returned failure instead of success when no Linux routers found but destination reachable
-- **Test Regressions**: Updated "Max hops/loop handling" test to use `--no-mtr` flag for pure simulation testing
-
-### Testing and Validation
-Comprehensive testing of new functionality:
-- **All existing tests maintained**: 79/79 tests pass with 100% success rate
-- **Enhanced MTR integration testing**: Verified timing information extraction and router name consistency
-- **Reverse path tracing validation**: Confirmed proper tuple handling and timing data preservation
-- **Error condition testing**: Validated unreachable destination detection and proper exit code behavior
-- **Output format verification**: Ensured consistent formatting across all tracing methods
-
-### Key Files Modified (December 2025)
-- **Core simulator**: `traceroute_simulator.py` (UPDATED - enhanced MTR fallback with timing, router name consistency, unreachable detection)
-- **Reverse tracer**: `reverse_path_tracer.py` (UPDATED - comprehensive tuple handling, timing integration, path construction improvements)
-- **Main test suite**: `tests/test_traceroute_simulator.py` (UPDATED - fixed test regressions for MTR fallback functionality)
-- **MTR integration tests**: `tests/test_mtr_integration.py` (UPDATED - corrected expectations for working SSH environment)
-- **Documentation**: `README.md` and `CLAUDE.md` (UPDATED - comprehensive documentation of timing features and improvements)
-
-### Development Notes for Recent Changes
-- **Tuple Format Consistency**: When working with path data, always check tuple length before unpacking to handle both 7-tuple and 8-tuple formats
-- **Timing Information**: RTT data is now available in 8-tuple format as the last element: `(hop, router, ip, interface, is_owned, connected, outgoing, rtt)`
-- **Router Name Logic**: Use `simulator._find_router_by_ip(src_ip)` to determine if source IP belongs to a router for proper naming
-- **Error Handling**: Distinguish between routing failures (EXIT_NO_PATH) and unreachable destinations (EXIT_NOT_FOUND) based on MTR validation
-- **Testing**: Always run full test suite (`make test`) after modifications to ensure 100% pass rate is maintained
-
-### Key Files Added/Modified (December 2025) - MOST RECENT
-- **Iptables analyzer**: `iptables_forward_analyzer.py` (NEW - comprehensive packet forwarding analysis with ipset support)
-- **Data collection script**: `ansible/get_iptables_info.sh` (NEW - standardized iptables and network data collection)
-- **IP JSON wrapper**: `ansible/ip_json_wrapper.py` (MOVED - relocated from project root to ansible directory)
-- **Enhanced Ansible playbook**: `ansible/get_routing_info.yml` (UPDATED - added iptables and ipset collection capabilities)
-- **Router metadata**: `tests/routing_facts/*_metadata.json` (EXISTING - 10 metadata files defining router properties and classification)
-- **Core simulator**: `traceroute_simulator.py` (STABLE - metadata support, gateway internet connectivity, auto controller detection)
-- **Network diagram**: `docs/network_topology_diagram.py` (STABLE - metadata-aware color coding for Linux/non-Linux routers)
-- **Documentation**: `CLAUDE.md` and `README.md` (UPDATED - comprehensive iptables analysis and file reorganization documentation)
-
-### Key Files Added/Modified (2025)
-- **YAML configuration file**: `traceroute_simulator.yaml` (NEW - example configuration file with comprehensive options)
-- **Configuration system**: Added YAML configuration loading to `traceroute_simulator.py` (UPDATED - complete configuration management)
-- **FQDN resolution**: Enhanced `traceroute_simulator.py`, `reverse_path_tracer.py`, `route_formatter.py` (UPDATED - automatic hostname resolution)
-- **MTR executor**: `mtr_executor.py` (UPDATED - enhanced hostname matching and debug output for production troubleshooting)
-- **Route formatter**: `route_formatter.py` (NEW - unified output formatting for simulation and MTR results)
-- **Reverse tracer**: `reverse_path_tracer.py` (NEW - three-step bidirectional path discovery)
-- **MTR integration tests**: `tests/test_mtr_integration.py` (NEW - 8 tests validating MTR fallback functionality)
-- **IP JSON wrapper**: `ip_json_wrapper.py` (NEW - compatibility layer for older Red Hat systems)
-- **Wrapper tests**: `tests/test_ip_json_comparison.py` (NEW - 7 tests validating wrapper accuracy)
-- **Build system**: `Makefile` (NEW - comprehensive build automation with dependency checking)
-- **Enhanced playbook**: `ansible/get_routing_info.yml` (UPDATED - text-only remote execution with controller-side JSON conversion)
-- **Core simulator**: `traceroute_simulator.py` (UPDATED - enhanced with YAML config, FQDN resolution, MTR fallback, reverse tracing, timing)
-- **Test corrections**: `tests/test_traceroute_simulator.py` (UPDATED - corrected exit code expectations for logical behavior)
-- **Documentation**: `README.md` and `CLAUDE.md` (UPDATED - comprehensive documentation including configuration and FQDN features)
-
-### Previous Key Files Modified (2024)
-- **Routing data**: `tests/routing_facts/*.json` (corrected routing tables and gateway IPs)
-- **Core logic**: `traceroute_simulator.py` (improved interface determination, new argument format, enhanced exit codes)
-- **Test suite**: `tests/test_traceroute_simulator.py` (expanded to 64 tests with comprehensive coverage)
-- **Visualization**: `docs/network_topology_diagram.py` (professional diagram system)
-- **Documentation**: `docs/NETWORK_TOPOLOGY.md` and `README.md` (updated with all improvements)
-- **Development guide**: `CLAUDE.md` (comprehensive documentation of all enhancements)
+### Key Components
+- **Core simulator**: `traceroute_simulator.py` - Main application with routing logic
+- **MTR executor**: `mtr_executor.py` - Real MTR execution via SSH
+- **Route formatter**: `route_formatter.py` - Unified output formatting
+- **Reverse tracer**: `reverse_path_tracer.py` - Bidirectional path discovery
+- **Iptables analyzer**: `iptables_forward_analyzer.py` - Packet forwarding analysis with comprehensive ipset support
+- **Facts processor**: `ansible/process_facts.py` - Enhanced shell output parsing with dual ipset format support
+- **Facts converter**: `convert_legacy_facts.py` - Migration from legacy format
+- **Build system**: `Makefile` - Automated development workflows with integrated comprehensive testing
+- **Data collection**: `ansible/get_tsim_facts.yml`, `ansible/get_facts.sh` - Dual-mode facts collection with secure script deployment
+- **IP wrapper**: `ansible/ip_json_wrapper.py` - Legacy system compatibility
+- **Comprehensive tests**: `tests/test_comprehensive_facts_processing.py` - 18 test cases covering facts processing and analyzer functionality

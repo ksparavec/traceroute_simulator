@@ -47,7 +47,7 @@ class TestReversePathTracer(unittest.TestCase):
         
         # Create mock routing data directory
         self.test_dir = tempfile.mkdtemp()
-        self.routing_dir = os.path.join(self.test_dir, "routing_facts")
+        self.routing_dir = os.path.join(self.test_dir, "tsim_facts")
         os.makedirs(self.routing_dir)
         
         # Create minimal test routing data
@@ -434,7 +434,7 @@ class TestReversePathTracingIntegration(unittest.TestCase):
             self.skipTest("Required modules not available")
         
         # Use existing test routing data
-        test_data_dir = os.path.join(os.path.dirname(__file__), "routing_facts")
+        test_data_dir = os.path.join(os.path.dirname(__file__), "tsim_facts")
         if not os.path.exists(test_data_dir):
             self.skipTest("Test routing data not available")
         

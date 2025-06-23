@@ -1,9 +1,0 @@
-[
-  {"dst": "default", "gateway": "10.2.2.1", "dev": "eth0", "metric": 1},
-  {"dst": "10.2.2.0/24", "dev": "eth0", "protocol": "kernel", "scope": "link", "prefsrc": "10.2.2.3"},
-  {"dst": "10.2.5.0/24", "dev": "wlan0", "protocol": "kernel", "scope": "link", "prefsrc": "10.2.5.1"},
-  {"dst": "10.2.6.0/24", "dev": "wlan1", "protocol": "kernel", "scope": "link", "prefsrc": "10.2.6.1"},
-  {"dst": "10.2.1.0/24", "gateway": "10.2.2.1", "dev": "eth0", "metric": 1},
-  {"dst": "10.1.0.0/16", "gateway": "10.2.2.1", "dev": "eth0", "metric": 10},
-  {"dst": "10.3.0.0/16", "gateway": "10.2.2.1", "dev": "eth0", "metric": 10}
-]

@@ -1,0 +1,921 @@
+# Traceroute Simulator Facts Collection
+# Generated on: 2025-06-21 15:29:38
+# Hostname: dc-gw
+# Kernel: 5.15.0-94-generic
+# Collection Script Version: 1.0
+
+# Locating required commands in standard paths
+# Found commands:
+# IP: /sbin/ip
+# IPTABLES: /sbin/iptables
+# IPTABLES-SAVE: /sbin/iptables-save
+# IPSET: /sbin/ipset
+# LSMOD: /bin/lsmod
+# Running as root: 1
+
+=== TSIM_SECTION_START:routing_table ===
+TITLE: IP Routing Table
+COMMAND: /sbin/ip route show
+TIMESTAMP: 2025-06-21 15:29:38
+---
+default via 192.0.2.1 dev eth0 metric 100
+192.0.2.0/24 dev eth0 proto kernel scope link src 192.0.2.10
+10.3.1.0/24 dev eth1 proto kernel scope link src 10.3.1.1
+10.100.1.0/24 dev wg0 proto kernel scope link src 10.100.1.3
+10.1.0.0/16 via 10.100.1.1 dev wg0 metric 1
+10.2.0.0/16 via 10.100.1.2 dev wg0 metric 1
+10.3.0.0/16 via 10.3.1.2 dev eth1 metric 1
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:routing_table ===
+
+=== TSIM_SECTION_START:policy_rules ===
+TITLE: IP Policy Rules
+COMMAND: /sbin/ip rule show
+TIMESTAMP: 2025-06-21 15:29:38
+---
+0:	from all lookup local
+100:	from 10.3.1.0/24 lookup dc_priority
+200:	from 10.100.1.0/24 lookup vpn_priority
+32766:	from all lookup main
+32767:	from all lookup default
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:policy_rules ===
+
+=== TSIM_SECTION_START:interfaces ===
+TITLE: Network Interfaces
+COMMAND: /sbin/ip addr show
+TIMESTAMP: 2025-06-21 15:29:38
+---
+1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN group default qlen 1000
+    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+    inet 127.0.0.1/8 scope host lo
+       valid_lft forever preferred_lft forever
+2: eth0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
+    link/ether 52:54:00:32:14:01 brd ff:ff:ff:ff:ff:ff
+    inet 192.0.2.10/24 brd 192.0.2.255 scope global eth0
+       valid_lft forever preferred_lft forever
+3: eth1: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
+    link/ether 52:54:00:32:14:02 brd ff:ff:ff:ff:ff:ff
+    inet 10.3.1.1/24 brd 10.3.1.255 scope global eth1
+       valid_lft forever preferred_lft forever
+4: wg0: <POINTOPOINT,NOARP,UP,LOWER_UP> mtu 1420 qdisc noqueue state UNKNOWN group default qlen 1000
+    link/none
+    inet 10.100.1.3/24 scope global wg0
+       valid_lft forever preferred_lft forever
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:interfaces ===
+
+=== TSIM_SECTION_START:interface_stats ===
+TITLE: Interface Statistics
+COMMAND: cat /proc/net/dev
+TIMESTAMP: 2025-06-21 15:29:38
+---
+Inter-|   Receive                                                |  Transmit
+ face |bytes    packets errs drop fifo frame compressed multicast|bytes    packets errs drop fifo colls carrier compressed
+    lo:   67890      678    0    0    0     0          0         0    67890      678    0    0    0     0       0          0
+  eth0:12345678    12345    0    0    0     0          0         0 11234567    11234    0    0    0     0       0          0
+  eth1: 9876543     9876    0    0    0     0          0         0  8765432     8765    0    0    0     0       0          0
+   wg0: 7654321     7654    0    0    0     0          0         0  6543210     6543    0    0    0     0       0          0
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:interface_stats ===
+
+=== TSIM_SECTION_START:ip_forwarding ===
+TITLE: IP Forwarding Status
+COMMAND: cat /proc/sys/net/ipv4/ip_forward
+TIMESTAMP: 2025-06-21 15:29:38
+---
+1
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:ip_forwarding ===
+
+=== TSIM_SECTION_START:kernel_version ===
+TITLE: Kernel Version
+COMMAND: uname -r
+TIMESTAMP: 2025-06-21 15:29:38
+---
+5.15.0-94-generic
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:kernel_version ===
+
+=== TSIM_SECTION_START:loaded_modules ===
+TITLE: Loaded Kernel Modules
+COMMAND: /bin/lsmod
+TIMESTAMP: 2025-06-21 15:29:38
+---
+Module                  Size  Used by
+xt_REDIRECT            16384  0
+xt_NETMAP              16384  0
+xt_conntrack           16384  14
+xt_CHECKSUM            16384  0
+xt_CLASSIFY            16384  10
+xt_DSCP                16384  8
+xt_MARK                16384  12
+xt_LOG                 16384  16
+xt_limit               16384  18
+xt_multiport           16384  16
+xt_recent              16384  12
+xt_set                 16384  26
+xt_state               16384  10
+xt_statistic           16384  6
+xt_string              16384  8
+xt_tcpudp              16384  18
+xt_time                16384  14
+xt_u32                 16384  6
+ipt_MASQUERADE         16384  0
+ipt_REJECT             16384  14
+ipt_ULOG               16384  0
+ip_set                 49152  1 xt_set
+ip_set_hash_net        16384  1
+ip_set_hash_ip         16384  1
+ip_set_hash_netport    16384  1
+ip_set_hash_ipport     16384  1
+ip_set_hash_netnet     16384  1
+ip_set_hash_ipportnet  16384  1
+ip_set_hash_ipportproto 16384  1
+ip_set_hash_netnetport 16384  1
+ip_set_hash_ipmark     16384  1
+ip_set_list_set        16384  1
+ip_set_bitmap_port     16384  1
+ip_set_bitmap_ip       16384  1
+ip_tables              32768  0
+x_tables               40960  26 xt_REDIRECT,xt_NETMAP,xt_conntrack,xt_CHECKSUM,xt_CLASSIFY,xt_DSCP,xt_MARK,xt_LOG,xt_limit,xt_multiport,xt_recent,xt_set,xt_state,xt_statistic,xt_string,xt_tcpudp,xt_time,xt_u32,ipt_MASQUERADE,ipt_REJECT,ipt_ULOG
+nf_conntrack           139264  10 xt_conntrack,xt_state,ipt_MASQUERADE,nf_nat
+nf_nat                 40960  1 ipt_MASQUERADE
+nf_defrag_ipv4         16384  1 nf_conntrack
+nf_defrag_ipv6         24576  1 nf_conntrack
+wireguard              262144  0
+ip6_udp_tunnel         16384  1 wireguard
+udp_tunnel             16384  1 wireguard
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:loaded_modules ===
+
+=== TSIM_SECTION_START:conntrack_info ===
+TITLE: Connection Tracking Information
+COMMAND: cat /proc/sys/net/nf_conntrack_max
+TIMESTAMP: 2025-06-21 15:29:38
+---
+262144
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:conntrack_info ===
+
+=== TSIM_SECTION_START:iptables_info ===
+TITLE: Iptables Information
+COMMAND: /sbin/iptables --version
+TIMESTAMP: 2025-06-21 15:29:38
+---
+iptables v1.8.7 (nf_tables)
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:iptables_info ===
+
+=== TSIM_SECTION_START:iptables_save ===
+TITLE: Complete Iptables Configuration
+COMMAND: /sbin/iptables-save
+TIMESTAMP: 2025-06-21 15:29:38
+---
+# Generated by iptables-save v1.8.7 on Fri Jun 21 15:29:38 2025
+*nat
+:PREROUTING ACCEPT [123:45678]
+:INPUT ACCEPT [67:12345]
+:OUTPUT ACCEPT [89:23456]
+:POSTROUTING ACCEPT [0:0]
+:DC_GW_NAT - [0:0]
+:DC_GW_DNAT - [0:0]
+:DC_GW_SNAT - [0:0]
+:VPN_NAT_CONTROL - [0:0]
+
+# POSTROUTING rules for internet access
+-A POSTROUTING -o eth0 -m set --match-set DC_INTERNET_CLIENTS src -j DC_GW_NAT
+-A POSTROUTING -o eth0 -s 10.3.0.0/16 -j MASQUERADE
+-A POSTROUTING -o eth0 -s 10.100.1.0/24 -j VPN_NAT_CONTROL
+
+# PREROUTING rules for inbound services
+-A PREROUTING -i eth0 -m set --match-set DC_PUBLIC_SERVICES dst,dst -j DC_GW_DNAT
+-A PREROUTING -i eth0 -p tcp --dport 80 -j DNAT --to-destination 10.3.2.10:80
+-A PREROUTING -i eth0 -p tcp --dport 443 -j DNAT --to-destination 10.3.2.10:443
+-A PREROUTING -i eth0 -p tcp --dport 8080 -j DNAT --to-destination 10.3.2.11:8080
+-A PREROUTING -i eth0 -p tcp --dport 22 -j DNAT --to-destination 10.3.2.12:22
+
+# DC_GW_NAT - Data center gateway NAT
+-A DC_GW_NAT -m set --match-set DC_HIGH_PRIORITY_NAT src -j SNAT --to-source 192.0.2.10
+-A DC_GW_NAT -m set --match-set DC_LOAD_BALANCED_NAT src -j DC_GW_SNAT
+-A DC_GW_NAT -j MASQUERADE
+
+# DC_GW_DNAT - Inbound service mapping
+-A DC_GW_DNAT -p tcp --dport 80 -j DNAT --to-destination 10.3.2.10:80
+-A DC_GW_DNAT -p tcp --dport 443 -j DNAT --to-destination 10.3.2.10:443
+-A DC_GW_DNAT -p tcp --dport 8080 -j DNAT --to-destination 10.3.2.11:8080
+-A DC_GW_DNAT -p tcp --dport 8443 -j DNAT --to-destination 10.3.2.11:8443
+
+# DC_GW_SNAT - Source NAT with load balancing
+-A DC_GW_SNAT -m statistic --mode nth --every 3 --packet 0 -j SNAT --to-source 192.0.2.10
+-A DC_GW_SNAT -m statistic --mode nth --every 3 --packet 1 -j SNAT --to-source 192.0.2.11
+-A DC_GW_SNAT -m statistic --mode nth --every 3 --packet 2 -j SNAT --to-source 192.0.2.12
+
+# VPN_NAT_CONTROL - VPN traffic NAT management
+-A VPN_NAT_CONTROL -m set --match-set DC_VPN_CLIENTS src -j MASQUERADE
+-A VPN_NAT_CONTROL -j MASQUERADE
+
+COMMIT
+
+*filter
+:INPUT DROP [0:0]
+:FORWARD DROP [0:0]
+:OUTPUT ACCEPT [234:67890]
+:DC_GW_FORWARD - [0:0]
+:DC_GW_INPUT - [0:0]
+:DC_INTERNET_ACCESS - [0:0]
+:DC_VPN_CONTROL - [0:0]
+:DC_FIREWALL_ZONES - [0:0]
+:DC_THREAT_PROTECTION - [0:0]
+:DC_DDoS_PROTECTION - [0:0]
+:DC_GEO_BLOCKING - [0:0]
+:DC_CONTENT_INSPECTION - [0:0]
+:DC_BANDWIDTH_SHAPING - [0:0]
+:DC_CONNECTION_TRACKING - [0:0]
+:DC_INTRUSION_DETECTION - [0:0]
+:DC_MALWARE_PROTECTION - [0:0]
+:DC_BOT_PROTECTION - [0:0]
+:DC_RATE_LIMITING - [0:0]
+:DC_SESSION_MANAGEMENT - [0:0]
+:DC_SSL_INSPECTION - [0:0]
+:DC_APPLICATION_CONTROL - [0:0]
+:DC_COMPLIANCE_FILTERING - [0:0]
+:DC_LOAD_BALANCER - [0:0]
+:DC_FAILOVER_CONTROL - [0:0]
+:DC_MONITORING - [0:0]
+:RATE_LIMIT - [0:0]
+:LOG_AND_DROP - [0:0]
+:ACCEPT_WITH_LOG - [0:0]
+
+# INPUT chain - Gateway management and services
+-A INPUT -i lo -j ACCEPT
+-A INPUT -m state --state RELATED,ESTABLISHED -j ACCEPT
+-A INPUT -i eth0 -m set --match-set DC_MGMT_ACCESS src -j DC_GW_INPUT
+-A INPUT -i eth1 -m set --match-set DC_INTERNAL_MGMT src -j DC_GW_INPUT
+-A INPUT -i wg0 -m set --match-set DC_VPN_MGMT src -j DC_VPN_CONTROL
+-A INPUT -j LOG_AND_DROP
+
+# FORWARD chain - Main gateway forwarding logic
+-A FORWARD -i eth1 -o eth0 -m set --match-set DC_INTERNET_ALLOWED src -j DC_INTERNET_ACCESS
+-A FORWARD -i wg0 -o eth0 -m set --match-set DC_VPN_INTERNET_ALLOWED src -j DC_INTERNET_ACCESS
+-A FORWARD -i eth0 -o eth1 -m set --match-set DC_INBOUND_SERVICES dst -j DC_GW_FORWARD
+-A FORWARD -i wg0 -o eth1 -m set --match-set DC_VPN_TO_INTERNAL dst -j DC_VPN_CONTROL
+-A FORWARD -i eth1 -o wg0 -m set --match-set DC_INTERNAL_TO_VPN dst -j DC_VPN_CONTROL
+-A FORWARD -i wg0 -o wg0 -m set --match-set DC_VPN_TO_VPN src,dst -j DC_VPN_CONTROL
+-A FORWARD -m state --state RELATED,ESTABLISHED -j ACCEPT
+-A FORWARD -j DC_THREAT_PROTECTION
+
+# DC_GW_INPUT - Gateway management access
+-A DC_GW_INPUT -p tcp --dport 22 -m set --match-set DC_SSH_ALLOWED src -j ACCEPT
+-A DC_GW_INPUT -p tcp --dport 443 -m set --match-set DC_HTTPS_MGMT_ALLOWED src -j ACCEPT
+-A DC_GW_INPUT -p udp --dport 161 -m set --match-set DC_SNMP_ALLOWED src -j ACCEPT
+-A DC_GW_INPUT -p icmp --icmp-type 8 -j ACCEPT
+-A DC_GW_INPUT -j LOG_AND_DROP
+
+# DC_GW_FORWARD - Internal to external forwarding
+-A DC_GW_FORWARD -m set --match-set DC_CRITICAL_SERVICES src,dst -j ACCEPT_WITH_LOG
+-A DC_GW_FORWARD -m set --match-set DC_HIGH_PRIORITY_FORWARD src,dst,dst -j DC_LOAD_BALANCER
+-A DC_GW_FORWARD -m set --match-set DC_BUSINESS_CRITICAL src -j DC_FAILOVER_CONTROL
+-A DC_GW_FORWARD -m hashlimit --hashlimit-above 1000/sec --hashlimit-burst 2000 --hashlimit-mode srcip --hashlimit-name dc_gw_flood_protect -j LOG_AND_DROP
+-A DC_GW_FORWARD -j DC_FIREWALL_ZONES
+
+# DC_INTERNET_ACCESS - Internet access control and filtering
+-A DC_INTERNET_ACCESS -m set --match-set DC_UNRESTRICTED_INTERNET src -j DC_BANDWIDTH_SHAPING
+-A DC_INTERNET_ACCESS -m set --match-set DC_FILTERED_INTERNET src -j DC_CONTENT_INSPECTION
+-A DC_INTERNET_ACCESS -m set --match-set DC_BLOCKED_DESTINATIONS dst -j LOG_AND_DROP
+-A DC_INTERNET_ACCESS -m set --match-set DC_MALICIOUS_IPS dst -j DC_MALWARE_PROTECTION
+-A DC_INTERNET_ACCESS -j DC_DDoS_PROTECTION
+
+# DC_VPN_CONTROL - VPN tunnel management and security
+-A DC_VPN_CONTROL -m set --match-set DC_VPN_AUTHENTICATED src -j DC_SESSION_MANAGEMENT
+-A DC_VPN_CONTROL -m set --match-set DC_VPN_HIGH_PRIORITY src,dst -j ACCEPT_WITH_LOG
+-A DC_VPN_CONTROL -m set --match-set DC_VPN_RESTRICTED src -j DC_APPLICATION_CONTROL
+-A DC_VPN_CONTROL -p udp --dport 51820 -j ACCEPT
+-A DC_VPN_CONTROL -j DC_CONNECTION_TRACKING
+
+# DC_FIREWALL_ZONES - Zone-based security policy
+-A DC_FIREWALL_ZONES -m set --match-set DC_DMZ_ZONE src,dst -j DC_COMPLIANCE_FILTERING
+-A DC_FIREWALL_ZONES -m set --match-set DC_TRUST_ZONE src,dst -j ACCEPT
+-A DC_FIREWALL_ZONES -m set --match-set DC_UNTRUST_ZONE src,dst -j DC_THREAT_PROTECTION
+-A DC_FIREWALL_ZONES -m set --match-set DC_QUARANTINE_ZONE src -j LOG_AND_DROP
+-A DC_FIREWALL_ZONES -j DC_APPLICATION_CONTROL
+
+# DC_THREAT_PROTECTION - Advanced threat detection and prevention
+-A DC_THREAT_PROTECTION -m set --match-set DC_KNOWN_THREATS src -j LOG_AND_DROP
+-A DC_THREAT_PROTECTION -m set --match-set DC_THREAT_SIGNATURES src,dst,dst -j DC_INTRUSION_DETECTION
+-A DC_THREAT_PROTECTION -m set --match-set DC_SUSPICIOUS_BEHAVIOR src -j DC_BOT_PROTECTION
+-A DC_THREAT_PROTECTION -m recent --name dc_threat_detect --set --rsource
+-A DC_THREAT_PROTECTION -m recent --name dc_threat_detect --rcheck --seconds 300 --hitcount 20 --rsource -j LOG_AND_DROP
+-A DC_THREAT_PROTECTION -j DC_GEO_BLOCKING
+
+# DC_DDoS_PROTECTION - DDoS mitigation and rate limiting
+-A DC_DDoS_PROTECTION -m set --match-set DC_DDOS_SOURCES src -j LOG_AND_DROP
+-A DC_DDoS_PROTECTION -m hashlimit --hashlimit-above 100/sec --hashlimit-burst 200 --hashlimit-mode srcip --hashlimit-name dc_ddos_protect -j LOG_AND_DROP
+-A DC_DDoS_PROTECTION -m connlimit --connlimit-above 50 --connlimit-mask 24 -j LOG_AND_DROP
+-A DC_DDoS_PROTECTION -p tcp --syn -m limit --limit 20/sec --limit-burst 40 -j ACCEPT
+-A DC_DDoS_PROTECTION -j DC_RATE_LIMITING
+
+# DC_GEO_BLOCKING - Geographic IP filtering
+-A DC_GEO_BLOCKING -m set --match-set DC_BLOCKED_COUNTRIES src -j LOG_AND_DROP
+-A DC_GEO_BLOCKING -m set --match-set DC_HIGH_RISK_REGIONS src -j DC_RATE_LIMITING
+-A DC_GEO_BLOCKING -m set --match-set DC_ALLOWED_COUNTRIES src -j ACCEPT
+-A DC_GEO_BLOCKING -j DC_CONTENT_INSPECTION
+
+# DC_CONTENT_INSPECTION - Deep packet inspection and filtering
+-A DC_CONTENT_INSPECTION -m set --match-set DC_INSPECT_PROTOCOLS src,dst,dst -j NFQUEUE --queue-num 1
+-A DC_CONTENT_INSPECTION -m string --string "malware" --algo bm --icase -j LOG_AND_DROP
+-A DC_CONTENT_INSPECTION -m string --string "exploit" --algo bm --icase -j LOG_AND_DROP
+-A DC_CONTENT_INSPECTION -m u32 --u32 "0x0>>22&0x3C@0x0>>24=0x47" -j NFQUEUE --queue-num 2
+-A DC_CONTENT_INSPECTION -j DC_SSL_INSPECTION
+
+# DC_BANDWIDTH_SHAPING - Traffic shaping and QoS
+-A DC_BANDWIDTH_SHAPING -m set --match-set DC_HIGH_BANDWIDTH src -j CLASSIFY --set-class 1:10
+-A DC_BANDWIDTH_SHAPING -m set --match-set DC_MEDIUM_BANDWIDTH src -j CLASSIFY --set-class 1:20
+-A DC_BANDWIDTH_SHAPING -m set --match-set DC_LOW_BANDWIDTH src -j CLASSIFY --set-class 1:30
+-A DC_BANDWIDTH_SHAPING -m set --match-set DC_BULK_TRAFFIC src,dst,dst -j CLASSIFY --set-class 1:40
+-A DC_BANDWIDTH_SHAPING -p tcp -m multiport --dports 80,443 -j CLASSIFY --set-class 1:15
+-A DC_BANDWIDTH_SHAPING -j ACCEPT
+
+# DC_CONNECTION_TRACKING - Connection state management
+-A DC_CONNECTION_TRACKING -m conntrack --ctstate NEW -j LOG --log-prefix "DC_NEW_CONN: " --log-level 6
+-A DC_CONNECTION_TRACKING -m conntrack --ctstate INVALID -j LOG_AND_DROP
+-A DC_CONNECTION_TRACKING -m set --match-set DC_TRACKED_CONNECTIONS src,dst -j ACCEPT
+-A DC_CONNECTION_TRACKING -j ACCEPT
+
+# DC_INTRUSION_DETECTION - IDS/IPS functionality
+-A DC_INTRUSION_DETECTION -m set --match-set DC_IDS_SIGNATURES src,dst,dst -j LOG_AND_DROP
+-A DC_INTRUSION_DETECTION -m set --match-set DC_ATTACK_PATTERNS src,dst -j LOG_AND_DROP
+-A DC_INTRUSION_DETECTION -m recent --name dc_intrusion --set --rsource
+-A DC_INTRUSION_DETECTION -m recent --name dc_intrusion --rcheck --seconds 600 --hitcount 10 --rsource -j LOG_AND_DROP
+-A DC_INTRUSION_DETECTION -j ACCEPT
+
+# DC_MALWARE_PROTECTION - Anti-malware and reputation filtering
+-A DC_MALWARE_PROTECTION -m set --match-set DC_MALWARE_DOMAINS dst -j LOG_AND_DROP
+-A DC_MALWARE_PROTECTION -m set --match-set DC_C2_SERVERS dst -j LOG_AND_DROP
+-A DC_MALWARE_PROTECTION -m set --match-set DC_REPUTATION_BAD src -j LOG_AND_DROP
+-A DC_MALWARE_PROTECTION -m set --match-set DC_REPUTATION_GOOD src -j ACCEPT
+-A DC_MALWARE_PROTECTION -j DC_CONTENT_INSPECTION
+
+# DC_BOT_PROTECTION - Bot detection and mitigation
+-A DC_BOT_PROTECTION -m set --match-set DC_KNOWN_BOTS src -j LOG_AND_DROP
+-A DC_BOT_PROTECTION -m set --match-set DC_BOT_SIGNATURES src,dst,dst -j LOG_AND_DROP
+-A DC_BOT_PROTECTION -m recent --name dc_bot_detect --set --rsource
+-A DC_BOT_PROTECTION -m recent --name dc_bot_detect --rcheck --seconds 120 --hitcount 50 --rsource -j LOG_AND_DROP
+-A DC_BOT_PROTECTION -j ACCEPT
+
+# DC_RATE_LIMITING - Advanced rate limiting and throttling
+-A DC_RATE_LIMITING -m limit --limit 500/sec --limit-burst 1000 -j ACCEPT
+-A DC_RATE_LIMITING -m hashlimit --hashlimit-above 50/sec --hashlimit-burst 100 --hashlimit-mode srcip --hashlimit-name dc_rate_limit -j LOG_AND_DROP
+-A DC_RATE_LIMITING -j LOG_AND_DROP
+
+# DC_SESSION_MANAGEMENT - Session tracking and management
+-A DC_SESSION_MANAGEMENT -m set --match-set DC_ACTIVE_SESSIONS src,dst -j ACCEPT
+-A DC_SESSION_MANAGEMENT -m set --match-set DC_SESSION_LIMITS src -m connlimit --connlimit-above 100 --connlimit-mask 32 -j LOG_AND_DROP
+-A DC_SESSION_MANAGEMENT -j ACCEPT
+
+# DC_SSL_INSPECTION - SSL/TLS inspection and validation
+-A DC_SSL_INSPECTION -m set --match-set DC_SSL_BYPASS src,dst -j ACCEPT
+-A DC_SSL_INSPECTION -m set --match-set DC_SSL_INSPECT src,dst,dst -j NFQUEUE --queue-num 3
+-A DC_SSL_INSPECTION -p tcp --dport 443 -j NFQUEUE --queue-num 3
+-A DC_SSL_INSPECTION -j ACCEPT
+
+# DC_APPLICATION_CONTROL - Application-level filtering
+-A DC_APPLICATION_CONTROL -m set --match-set DC_ALLOWED_APPS src,dst,dst -j ACCEPT
+-A DC_APPLICATION_CONTROL -m set --match-set DC_BLOCKED_APPS src,dst -j LOG_AND_DROP
+-A DC_APPLICATION_CONTROL -m set --match-set DC_RESTRICTED_APPS src,dst -j DC_RATE_LIMITING
+-A DC_APPLICATION_CONTROL -j ACCEPT
+
+# DC_COMPLIANCE_FILTERING - Regulatory compliance filtering
+-A DC_COMPLIANCE_FILTERING -m set --match-set DC_PCI_TRAFFIC src,dst,dst -j LOG --log-prefix "DC_PCI: " --log-level 4
+-A DC_COMPLIANCE_FILTERING -m set --match-set DC_HIPAA_TRAFFIC src,dst -j LOG --log-prefix "DC_HIPAA: " --log-level 4
+-A DC_COMPLIANCE_FILTERING -m set --match-set DC_SOX_TRAFFIC src,dst -j LOG --log-prefix "DC_SOX: " --log-level 4
+-A DC_COMPLIANCE_FILTERING -j ACCEPT
+
+# DC_LOAD_BALANCER - Load balancing and distribution
+-A DC_LOAD_BALANCER -m set --match-set DC_LB_TARGETS src,dst -m statistic --mode nth --every 3 --packet 0 -j MARK --set-mark 0x1
+-A DC_LOAD_BALANCER -m set --match-set DC_LB_TARGETS src,dst -m statistic --mode nth --every 3 --packet 1 -j MARK --set-mark 0x2
+-A DC_LOAD_BALANCER -m set --match-set DC_LB_TARGETS src,dst -m statistic --mode nth --every 3 --packet 2 -j MARK --set-mark 0x3
+-A DC_LOAD_BALANCER -j ACCEPT
+
+# DC_FAILOVER_CONTROL - High availability and failover
+-A DC_FAILOVER_CONTROL -m set --match-set DC_PRIMARY_PATHS dst -m recent --name dc_health_check --set --rsource
+-A DC_FAILOVER_CONTROL -m set --match-set DC_PRIMARY_PATHS dst -m recent --name dc_health_check --rcheck --seconds 30 --rsource -j ACCEPT
+-A DC_FAILOVER_CONTROL -m set --match-set DC_BACKUP_PATHS dst -j ACCEPT
+-A DC_FAILOVER_CONTROL -j LOG_AND_DROP
+
+# DC_MONITORING - Gateway monitoring and logging
+-A DC_MONITORING -m set --match-set DC_MONITOR_TARGETS src -j LOG --log-prefix "DC_GW_MONITOR: " --log-level 6
+-A DC_MONITORING -m conntrack --ctstate NEW -j LOG --log-prefix "DC_GW_NEW_CONN: " --log-level 6
+-A DC_MONITORING -m limit --limit 100/sec --limit-burst 200 -j LOG --log-prefix "DC_GW_RATE: " --log-level 6
+-A DC_MONITORING -j ACCEPT
+
+# RATE_LIMIT - Generic rate limiting
+-A RATE_LIMIT -m limit --limit 200/sec --limit-burst 400 -j ACCEPT
+-A RATE_LIMIT -j DROP
+
+# LOG_AND_DROP - Logging and dropping
+-A LOG_AND_DROP -j LOG --log-prefix "DC_GW_DROPPED: " --log-level 4
+-A LOG_AND_DROP -j DROP
+
+# ACCEPT_WITH_LOG - Logging and accepting
+-A ACCEPT_WITH_LOG -j LOG --log-prefix "DC_GW_ACCEPTED: " --log-level 6
+-A ACCEPT_WITH_LOG -j ACCEPT
+
+COMMIT
+# Completed on Fri Jun 21 15:29:38 2025
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:iptables_save ===
+
+=== TSIM_SECTION_START:ipset_save ===
+TITLE: Complete Ipset Configuration
+COMMAND: /sbin/ipset save
+TIMESTAMP: 2025-06-21 15:29:38
+---
+create DC_INTERNET_CLIENTS hash:ip family inet hashsize 1024 maxelem 65536
+add DC_INTERNET_CLIENTS 10.3.0.0/16
+add DC_INTERNET_CLIENTS 10.100.1.0/24
+
+create DC_PUBLIC_SERVICES hash:ip,port family inet hashsize 256 maxelem 16384
+add DC_PUBLIC_SERVICES 192.0.2.10,tcp:80
+add DC_PUBLIC_SERVICES 192.0.2.10,tcp:443
+add DC_PUBLIC_SERVICES 192.0.2.10,tcp:8080
+add DC_PUBLIC_SERVICES 192.0.2.10,tcp:22
+
+create DC_HIGH_PRIORITY_NAT hash:ip family inet hashsize 256 maxelem 16384
+add DC_HIGH_PRIORITY_NAT 10.3.2.10
+add DC_HIGH_PRIORITY_NAT 10.3.2.11
+add DC_HIGH_PRIORITY_NAT 10.3.20.10
+add DC_HIGH_PRIORITY_NAT 10.3.20.11
+
+create DC_LOAD_BALANCED_NAT hash:ip family inet hashsize 512 maxelem 32768
+add DC_LOAD_BALANCED_NAT 10.3.2.12
+add DC_LOAD_BALANCED_NAT 10.3.2.13
+add DC_LOAD_BALANCED_NAT 10.3.10.10
+add DC_LOAD_BALANCED_NAT 10.3.10.11
+add DC_LOAD_BALANCED_NAT 10.3.20.12
+add DC_LOAD_BALANCED_NAT 10.3.20.13
+
+create DC_VPN_CLIENTS hash:ip family inet hashsize 256 maxelem 16384
+add DC_VPN_CLIENTS 10.100.1.1
+add DC_VPN_CLIENTS 10.100.1.2
+add DC_VPN_CLIENTS 10.100.1.4
+add DC_VPN_CLIENTS 10.100.1.5
+
+create DC_MGMT_ACCESS hash:ip family inet hashsize 256 maxelem 16384
+add DC_MGMT_ACCESS 203.0.113.100
+add DC_MGMT_ACCESS 203.0.113.101
+add DC_MGMT_ACCESS 198.51.100.100
+add DC_MGMT_ACCESS 198.51.100.101
+
+create DC_INTERNAL_MGMT hash:ip family inet hashsize 256 maxelem 16384
+add DC_INTERNAL_MGMT 10.3.1.10
+add DC_INTERNAL_MGMT 10.3.1.11
+add DC_INTERNAL_MGMT 10.3.2.10
+add DC_INTERNAL_MGMT 10.3.2.11
+
+create DC_VPN_MGMT hash:ip family inet hashsize 256 maxelem 16384
+add DC_VPN_MGMT 10.100.1.1
+add DC_VPN_MGMT 10.100.1.2
+
+create DC_INTERNET_ALLOWED hash:ip family inet hashsize 1024 maxelem 65536
+add DC_INTERNET_ALLOWED 10.3.2.0/24
+add DC_INTERNET_ALLOWED 10.3.10.0/24
+add DC_INTERNET_ALLOWED 10.3.20.0/24
+add DC_INTERNET_ALLOWED 10.3.21.0/24
+
+create DC_VPN_INTERNET_ALLOWED hash:ip family inet hashsize 256 maxelem 16384
+add DC_VPN_INTERNET_ALLOWED 10.100.1.1
+add DC_VPN_INTERNET_ALLOWED 10.100.1.2
+add DC_VPN_INTERNET_ALLOWED 10.100.1.4
+add DC_VPN_INTERNET_ALLOWED 10.100.1.5
+
+create DC_INBOUND_SERVICES hash:ip family inet hashsize 256 maxelem 16384
+add DC_INBOUND_SERVICES 10.3.2.10
+add DC_INBOUND_SERVICES 10.3.2.11
+add DC_INBOUND_SERVICES 10.3.2.12
+add DC_INBOUND_SERVICES 10.3.20.10
+
+create DC_VPN_TO_INTERNAL hash:ip family inet hashsize 512 maxelem 32768
+add DC_VPN_TO_INTERNAL 10.3.0.0/16
+
+create DC_INTERNAL_TO_VPN hash:ip family inet hashsize 512 maxelem 32768
+add DC_INTERNAL_TO_VPN 10.100.1.0/24
+
+create DC_VPN_TO_VPN hash:net,net family inet hashsize 256 maxelem 16384
+add DC_VPN_TO_VPN 10.100.1.1,10.100.1.2
+add DC_VPN_TO_VPN 10.100.1.2,10.100.1.1
+add DC_VPN_TO_VPN 10.100.1.3,10.100.1.4
+add DC_VPN_TO_VPN 10.100.1.4,10.100.1.3
+
+create DC_SSH_ALLOWED hash:ip family inet hashsize 256 maxelem 16384
+add DC_SSH_ALLOWED 203.0.113.100
+add DC_SSH_ALLOWED 203.0.113.101
+add DC_SSH_ALLOWED 10.3.1.10
+add DC_SSH_ALLOWED 10.3.1.11
+add DC_SSH_ALLOWED 10.100.1.1
+add DC_SSH_ALLOWED 10.100.1.2
+
+create DC_HTTPS_MGMT_ALLOWED hash:ip family inet hashsize 256 maxelem 16384
+add DC_HTTPS_MGMT_ALLOWED 203.0.113.100
+add DC_HTTPS_MGMT_ALLOWED 203.0.113.101
+add DC_HTTPS_MGMT_ALLOWED 10.3.1.10
+add DC_HTTPS_MGMT_ALLOWED 10.3.1.11
+
+create DC_SNMP_ALLOWED hash:ip family inet hashsize 256 maxelem 16384
+add DC_SNMP_ALLOWED 10.3.1.100
+add DC_SNMP_ALLOWED 10.3.1.101
+add DC_SNMP_ALLOWED 10.3.2.100
+add DC_SNMP_ALLOWED 10.100.1.1
+
+create DC_CRITICAL_SERVICES hash:net,net family inet hashsize 256 maxelem 16384
+add DC_CRITICAL_SERVICES 10.3.2.0/24,0.0.0.0/0
+add DC_CRITICAL_SERVICES 10.3.20.0/24,0.0.0.0/0
+add DC_CRITICAL_SERVICES 10.100.1.0/24,10.3.0.0/16
+
+create DC_HIGH_PRIORITY_FORWARD hash:net,net,port family inet hashsize 256 maxelem 16384
+add DC_HIGH_PRIORITY_FORWARD 10.3.2.10,0.0.0.0/0,tcp:80
+add DC_HIGH_PRIORITY_FORWARD 10.3.2.10,0.0.0.0/0,tcp:443
+add DC_HIGH_PRIORITY_FORWARD 10.3.20.10,0.0.0.0/0,tcp:80
+add DC_HIGH_PRIORITY_FORWARD 10.3.20.10,0.0.0.0/0,tcp:443
+
+create DC_BUSINESS_CRITICAL hash:ip family inet hashsize 256 maxelem 16384
+add DC_BUSINESS_CRITICAL 10.3.2.10
+add DC_BUSINESS_CRITICAL 10.3.2.11
+add DC_BUSINESS_CRITICAL 10.3.20.10
+add DC_BUSINESS_CRITICAL 10.3.20.11
+add DC_BUSINESS_CRITICAL 10.100.1.1
+add DC_BUSINESS_CRITICAL 10.100.1.2
+
+create DC_UNRESTRICTED_INTERNET hash:ip family inet hashsize 256 maxelem 16384
+add DC_UNRESTRICTED_INTERNET 10.3.2.10
+add DC_UNRESTRICTED_INTERNET 10.3.2.11
+add DC_UNRESTRICTED_INTERNET 10.3.20.10
+add DC_UNRESTRICTED_INTERNET 10.100.1.1
+add DC_UNRESTRICTED_INTERNET 10.100.1.2
+
+create DC_FILTERED_INTERNET hash:ip family inet hashsize 512 maxelem 32768
+add DC_FILTERED_INTERNET 10.3.10.0/24
+add DC_FILTERED_INTERNET 10.3.21.0/24
+add DC_FILTERED_INTERNET 10.100.1.4
+add DC_FILTERED_INTERNET 10.100.1.5
+
+create DC_BLOCKED_DESTINATIONS hash:ip family inet hashsize 512 maxelem 32768
+add DC_BLOCKED_DESTINATIONS 198.51.100.50
+add DC_BLOCKED_DESTINATIONS 198.51.100.51
+add DC_BLOCKED_DESTINATIONS 203.0.113.50
+add DC_BLOCKED_DESTINATIONS 203.0.113.51
+add DC_BLOCKED_DESTINATIONS 192.0.2.50
+add DC_BLOCKED_DESTINATIONS 192.0.2.51
+
+create DC_MALICIOUS_IPS hash:ip family inet hashsize 512 maxelem 32768
+add DC_MALICIOUS_IPS 198.51.100.100
+add DC_MALICIOUS_IPS 198.51.100.101
+add DC_MALICIOUS_IPS 203.0.113.100
+add DC_MALICIOUS_IPS 203.0.113.101
+add DC_MALICIOUS_IPS 192.0.2.100
+add DC_MALICIOUS_IPS 192.0.2.101
+
+create DC_VPN_AUTHENTICATED hash:ip family inet hashsize 256 maxelem 16384
+add DC_VPN_AUTHENTICATED 10.100.1.1
+add DC_VPN_AUTHENTICATED 10.100.1.2
+add DC_VPN_AUTHENTICATED 10.100.1.4
+add DC_VPN_AUTHENTICATED 10.100.1.5
+
+create DC_VPN_HIGH_PRIORITY hash:net,net family inet hashsize 256 maxelem 16384
+add DC_VPN_HIGH_PRIORITY 10.100.1.1,10.3.2.0/24
+add DC_VPN_HIGH_PRIORITY 10.100.1.2,10.3.20.0/24
+add DC_VPN_HIGH_PRIORITY 10.100.1.3,10.3.0.0/16
+
+create DC_VPN_RESTRICTED hash:ip family inet hashsize 256 maxelem 16384
+add DC_VPN_RESTRICTED 10.100.1.4
+add DC_VPN_RESTRICTED 10.100.1.5
+
+create DC_DMZ_ZONE hash:net,net family inet hashsize 256 maxelem 16384
+add DC_DMZ_ZONE 192.0.2.0/24,10.3.1.0/24
+add DC_DMZ_ZONE 10.3.1.0/24,10.3.2.0/24
+
+create DC_TRUST_ZONE hash:net,net family inet hashsize 256 maxelem 16384
+add DC_TRUST_ZONE 10.3.2.0/24,10.3.20.0/24
+add DC_TRUST_ZONE 10.3.20.0/24,10.3.21.0/24
+add DC_TRUST_ZONE 10.100.1.0/24,10.3.0.0/16
+
+create DC_UNTRUST_ZONE hash:net,net family inet hashsize 256 maxelem 16384
+add DC_UNTRUST_ZONE 0.0.0.0/0,10.3.0.0/16
+add DC_UNTRUST_ZONE 0.0.0.0/0,10.100.1.0/24
+
+create DC_QUARANTINE_ZONE hash:ip family inet hashsize 256 maxelem 16384
+add DC_QUARANTINE_ZONE 10.3.1.200
+add DC_QUARANTINE_ZONE 10.3.2.200
+add DC_QUARANTINE_ZONE 10.100.1.200
+
+create DC_KNOWN_THREATS hash:ip family inet hashsize 512 maxelem 32768
+add DC_KNOWN_THREATS 198.51.100.200
+add DC_KNOWN_THREATS 198.51.100.201
+add DC_KNOWN_THREATS 203.0.113.200
+add DC_KNOWN_THREATS 203.0.113.201
+add DC_KNOWN_THREATS 192.0.2.200
+add DC_KNOWN_THREATS 192.0.2.201
+
+create DC_THREAT_SIGNATURES hash:net,net,port family inet hashsize 512 maxelem 32768
+add DC_THREAT_SIGNATURES 0.0.0.0/0,10.3.0.0/16,tcp:1433
+add DC_THREAT_SIGNATURES 0.0.0.0/0,10.3.0.0/16,tcp:3389
+add DC_THREAT_SIGNATURES 0.0.0.0/0,10.3.0.0/16,tcp:445
+add DC_THREAT_SIGNATURES 0.0.0.0/0,10.100.1.0/24,tcp:135
+add DC_THREAT_SIGNATURES 0.0.0.0/0,10.100.1.0/24,tcp:139
+
+create DC_SUSPICIOUS_BEHAVIOR hash:ip family inet hashsize 256 maxelem 16384
+add DC_SUSPICIOUS_BEHAVIOR 198.51.100.150
+add DC_SUSPICIOUS_BEHAVIOR 203.0.113.150
+add DC_SUSPICIOUS_BEHAVIOR 192.0.2.150
+
+create DC_DDOS_SOURCES hash:ip family inet hashsize 512 maxelem 32768
+add DC_DDOS_SOURCES 198.51.100.250
+add DC_DDOS_SOURCES 198.51.100.251
+add DC_DDOS_SOURCES 203.0.113.250
+add DC_DDOS_SOURCES 203.0.113.251
+add DC_DDOS_SOURCES 192.0.2.250
+add DC_DDOS_SOURCES 192.0.2.251
+
+create DC_BLOCKED_COUNTRIES hash:net family inet hashsize 512 maxelem 32768
+add DC_BLOCKED_COUNTRIES 1.0.0.0/8
+add DC_BLOCKED_COUNTRIES 14.0.0.0/8
+add DC_BLOCKED_COUNTRIES 27.0.0.0/8
+add DC_BLOCKED_COUNTRIES 31.0.0.0/8
+add DC_BLOCKED_COUNTRIES 36.0.0.0/8
+add DC_BLOCKED_COUNTRIES 39.0.0.0/8
+
+create DC_HIGH_RISK_REGIONS hash:net family inet hashsize 256 maxelem 16384
+add DC_HIGH_RISK_REGIONS 41.0.0.0/8
+add DC_HIGH_RISK_REGIONS 42.0.0.0/8
+add DC_HIGH_RISK_REGIONS 43.0.0.0/8
+add DC_HIGH_RISK_REGIONS 45.0.0.0/8
+
+create DC_ALLOWED_COUNTRIES hash:net family inet hashsize 256 maxelem 16384
+add DC_ALLOWED_COUNTRIES 8.8.8.0/24
+add DC_ALLOWED_COUNTRIES 1.1.1.0/24
+add DC_ALLOWED_COUNTRIES 208.67.222.0/24
+add DC_ALLOWED_COUNTRIES 208.67.220.0/24
+
+create DC_INSPECT_PROTOCOLS hash:net,net,port family inet hashsize 512 maxelem 32768
+add DC_INSPECT_PROTOCOLS 10.3.0.0/16,0.0.0.0/0,tcp:80
+add DC_INSPECT_PROTOCOLS 10.3.0.0/16,0.0.0.0/0,tcp:443
+add DC_INSPECT_PROTOCOLS 10.100.1.0/24,0.0.0.0/0,tcp:25
+add DC_INSPECT_PROTOCOLS 10.100.1.0/24,0.0.0.0/0,tcp:587
+add DC_INSPECT_PROTOCOLS 10.3.0.0/16,0.0.0.0/0,tcp:22
+add DC_INSPECT_PROTOCOLS 10.3.0.0/16,0.0.0.0/0,tcp:3389
+
+create DC_HIGH_BANDWIDTH hash:ip family inet hashsize 256 maxelem 16384
+add DC_HIGH_BANDWIDTH 10.3.2.10
+add DC_HIGH_BANDWIDTH 10.3.2.11
+add DC_HIGH_BANDWIDTH 10.3.20.10
+add DC_HIGH_BANDWIDTH 10.100.1.1
+add DC_HIGH_BANDWIDTH 10.100.1.2
+
+create DC_MEDIUM_BANDWIDTH hash:ip family inet hashsize 512 maxelem 32768
+add DC_MEDIUM_BANDWIDTH 10.3.2.12
+add DC_MEDIUM_BANDWIDTH 10.3.2.13
+add DC_MEDIUM_BANDWIDTH 10.3.10.0/24
+add DC_MEDIUM_BANDWIDTH 10.100.1.4
+add DC_MEDIUM_BANDWIDTH 10.100.1.5
+
+create DC_LOW_BANDWIDTH hash:ip family inet hashsize 512 maxelem 32768
+add DC_LOW_BANDWIDTH 10.3.21.0/24
+add DC_LOW_BANDWIDTH 10.3.1.50
+add DC_LOW_BANDWIDTH 10.3.1.51
+
+create DC_BULK_TRAFFIC hash:net,net,port family inet hashsize 256 maxelem 16384
+add DC_BULK_TRAFFIC 10.3.21.0/24,0.0.0.0/0,tcp:22
+add DC_BULK_TRAFFIC 10.3.21.0/24,0.0.0.0/0,tcp:443
+add DC_BULK_TRAFFIC 10.3.21.0/24,0.0.0.0/0,tcp:8080
+add DC_BULK_TRAFFIC 10.3.0.0/16,0.0.0.0/0,tcp:25
+
+create DC_TRACKED_CONNECTIONS hash:net,net family inet hashsize 512 maxelem 32768
+add DC_TRACKED_CONNECTIONS 10.3.0.0/16,0.0.0.0/0
+add DC_TRACKED_CONNECTIONS 10.100.1.0/24,0.0.0.0/0
+add DC_TRACKED_CONNECTIONS 0.0.0.0/0,10.3.0.0/16
+add DC_TRACKED_CONNECTIONS 0.0.0.0/0,10.100.1.0/24
+
+create DC_IDS_SIGNATURES hash:net,net,port family inet hashsize 512 maxelem 32768
+add DC_IDS_SIGNATURES 0.0.0.0/0,10.3.0.0/16,tcp:1433
+add DC_IDS_SIGNATURES 0.0.0.0/0,10.3.0.0/16,tcp:3306
+add DC_IDS_SIGNATURES 0.0.0.0/0,10.3.0.0/16,tcp:5432
+add DC_IDS_SIGNATURES 0.0.0.0/0,10.100.1.0/24,tcp:445
+add DC_IDS_SIGNATURES 0.0.0.0/0,10.100.1.0/24,tcp:135
+
+create DC_ATTACK_PATTERNS hash:net,net family inet hashsize 256 maxelem 16384
+add DC_ATTACK_PATTERNS 0.0.0.0/0,10.3.0.0/16
+add DC_ATTACK_PATTERNS 0.0.0.0/0,10.100.1.0/24
+
+create DC_MALWARE_DOMAINS hash:ip family inet hashsize 256 maxelem 16384
+add DC_MALWARE_DOMAINS 198.51.100.60
+add DC_MALWARE_DOMAINS 198.51.100.61
+add DC_MALWARE_DOMAINS 203.0.113.60
+add DC_MALWARE_DOMAINS 203.0.113.61
+
+create DC_C2_SERVERS hash:ip family inet hashsize 256 maxelem 16384
+add DC_C2_SERVERS 198.51.100.70
+add DC_C2_SERVERS 198.51.100.71
+add DC_C2_SERVERS 203.0.113.70
+add DC_C2_SERVERS 203.0.113.71
+
+create DC_REPUTATION_BAD hash:ip family inet hashsize 512 maxelem 32768
+add DC_REPUTATION_BAD 198.51.100.80
+add DC_REPUTATION_BAD 198.51.100.81
+add DC_REPUTATION_BAD 203.0.113.80
+add DC_REPUTATION_BAD 203.0.113.81
+add DC_REPUTATION_BAD 192.0.2.80
+add DC_REPUTATION_BAD 192.0.2.81
+
+create DC_REPUTATION_GOOD hash:ip family inet hashsize 256 maxelem 16384
+add DC_REPUTATION_GOOD 8.8.8.8
+add DC_REPUTATION_GOOD 8.8.4.4
+add DC_REPUTATION_GOOD 1.1.1.1
+add DC_REPUTATION_GOOD 1.0.0.1
+
+create DC_KNOWN_BOTS hash:ip family inet hashsize 256 maxelem 16384
+add DC_KNOWN_BOTS 198.51.100.90
+add DC_KNOWN_BOTS 198.51.100.91
+add DC_KNOWN_BOTS 203.0.113.90
+add DC_KNOWN_BOTS 203.0.113.91
+
+create DC_BOT_SIGNATURES hash:net,net,port family inet hashsize 256 maxelem 16384
+add DC_BOT_SIGNATURES 0.0.0.0/0,10.3.0.0/16,tcp:6667
+add DC_BOT_SIGNATURES 0.0.0.0/0,10.3.0.0/16,tcp:6697
+add DC_BOT_SIGNATURES 0.0.0.0/0,10.100.1.0/24,tcp:1337
+add DC_BOT_SIGNATURES 0.0.0.0/0,10.100.1.0/24,tcp:31337
+
+create DC_ACTIVE_SESSIONS hash:net,net family inet hashsize 1024 maxelem 65536
+add DC_ACTIVE_SESSIONS 10.3.0.0/16,0.0.0.0/0
+add DC_ACTIVE_SESSIONS 10.100.1.0/24,0.0.0.0/0
+add DC_ACTIVE_SESSIONS 0.0.0.0/0,10.3.0.0/16
+add DC_ACTIVE_SESSIONS 0.0.0.0/0,10.100.1.0/24
+
+create DC_SESSION_LIMITS hash:ip family inet hashsize 256 maxelem 16384
+add DC_SESSION_LIMITS 10.3.1.100
+add DC_SESSION_LIMITS 10.3.1.101
+add DC_SESSION_LIMITS 10.100.1.4
+add DC_SESSION_LIMITS 10.100.1.5
+
+create DC_SSL_BYPASS hash:net,net family inet hashsize 256 maxelem 16384
+add DC_SSL_BYPASS 10.3.2.10,8.8.8.8
+add DC_SSL_BYPASS 10.3.2.11,8.8.4.4
+add DC_SSL_BYPASS 10.100.1.1,1.1.1.1
+add DC_SSL_BYPASS 10.100.1.2,1.0.0.1
+
+create DC_SSL_INSPECT hash:net,net,port family inet hashsize 512 maxelem 32768
+add DC_SSL_INSPECT 10.3.0.0/16,0.0.0.0/0,tcp:443
+add DC_SSL_INSPECT 10.100.1.0/24,0.0.0.0/0,tcp:443
+add DC_SSL_INSPECT 10.3.0.0/16,0.0.0.0/0,tcp:993
+add DC_SSL_INSPECT 10.100.1.0/24,0.0.0.0/0,tcp:995
+
+create DC_ALLOWED_APPS hash:net,net,port family inet hashsize 512 maxelem 32768
+add DC_ALLOWED_APPS 10.3.0.0/16,0.0.0.0/0,tcp:80
+add DC_ALLOWED_APPS 10.3.0.0/16,0.0.0.0/0,tcp:443
+add DC_ALLOWED_APPS 10.3.0.0/16,0.0.0.0/0,tcp:22
+add DC_ALLOWED_APPS 10.100.1.0/24,0.0.0.0/0,tcp:80
+add DC_ALLOWED_APPS 10.100.1.0/24,0.0.0.0/0,tcp:443
+add DC_ALLOWED_APPS 10.100.1.0/24,0.0.0.0/0,tcp:22
+
+create DC_BLOCKED_APPS hash:net,net family inet hashsize 256 maxelem 16384
+add DC_BLOCKED_APPS 10.3.0.0/16,198.51.100.0/24
+add DC_BLOCKED_APPS 10.100.1.0/24,203.0.113.0/24
+
+create DC_RESTRICTED_APPS hash:net,net family inet hashsize 256 maxelem 16384
+add DC_RESTRICTED_APPS 10.3.10.0/24,0.0.0.0/0
+add DC_RESTRICTED_APPS 10.3.21.0/24,0.0.0.0/0
+add DC_RESTRICTED_APPS 10.100.1.4,0.0.0.0/0
+add DC_RESTRICTED_APPS 10.100.1.5,0.0.0.0/0
+
+create DC_PCI_TRAFFIC hash:net,net,port family inet hashsize 256 maxelem 16384
+add DC_PCI_TRAFFIC 10.3.2.0/24,0.0.0.0/0,tcp:443
+add DC_PCI_TRAFFIC 10.3.20.0/24,0.0.0.0/0,tcp:443
+add DC_PCI_TRAFFIC 10.3.2.0/24,10.3.20.0/24,tcp:1433
+add DC_PCI_TRAFFIC 10.3.20.0/24,10.3.2.0/24,tcp:3306
+
+create DC_HIPAA_TRAFFIC hash:net,net family inet hashsize 256 maxelem 16384
+add DC_HIPAA_TRAFFIC 10.3.2.20,0.0.0.0/0
+add DC_HIPAA_TRAFFIC 10.3.20.20,0.0.0.0/0
+add DC_HIPAA_TRAFFIC 10.3.2.21,10.3.20.0/24
+add DC_HIPAA_TRAFFIC 10.3.20.21,10.3.2.0/24
+
+create DC_SOX_TRAFFIC hash:net,net family inet hashsize 256 maxelem 16384
+add DC_SOX_TRAFFIC 10.3.2.0/24,10.3.20.0/24
+add DC_SOX_TRAFFIC 10.3.20.0/24,10.3.21.0/24
+add DC_SOX_TRAFFIC 10.3.10.0/24,10.3.2.0/24
+
+create DC_LB_TARGETS hash:net,net family inet hashsize 256 maxelem 16384
+add DC_LB_TARGETS 0.0.0.0/0,10.3.2.10
+add DC_LB_TARGETS 0.0.0.0/0,10.3.2.11
+add DC_LB_TARGETS 0.0.0.0/0,10.3.2.12
+add DC_LB_TARGETS 10.100.1.0/24,10.3.20.10
+add DC_LB_TARGETS 10.100.1.0/24,10.3.20.11
+add DC_LB_TARGETS 10.100.1.0/24,10.3.20.12
+
+create DC_PRIMARY_PATHS hash:ip family inet hashsize 256 maxelem 16384
+add DC_PRIMARY_PATHS 10.3.2.10
+add DC_PRIMARY_PATHS 10.3.20.10
+add DC_PRIMARY_PATHS 10.100.1.1
+add DC_PRIMARY_PATHS 10.100.1.2
+
+create DC_BACKUP_PATHS hash:ip family inet hashsize 256 maxelem 16384
+add DC_BACKUP_PATHS 10.3.2.11
+add DC_BACKUP_PATHS 10.3.20.11
+add DC_BACKUP_PATHS 10.100.1.4
+add DC_BACKUP_PATHS 10.100.1.5
+
+create DC_MONITOR_TARGETS hash:ip family inet hashsize 256 maxelem 16384
+add DC_MONITOR_TARGETS 10.3.2.10
+add DC_MONITOR_TARGETS 10.3.2.11
+add DC_MONITOR_TARGETS 10.3.20.10
+add DC_MONITOR_TARGETS 10.3.20.11
+add DC_MONITOR_TARGETS 10.100.1.1
+add DC_MONITOR_TARGETS 10.100.1.2
+add DC_MONITOR_TARGETS 10.100.1.3
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:ipset_save ===
+
+=== TSIM_SECTION_START:ipset_list ===
+TITLE: Ipset List Summary
+COMMAND: /sbin/ipset list -n
+TIMESTAMP: 2025-06-21 15:29:38
+---
+DC_INTERNET_CLIENTS
+DC_PUBLIC_SERVICES
+DC_HIGH_PRIORITY_NAT
+DC_LOAD_BALANCED_NAT
+DC_VPN_CLIENTS
+DC_MGMT_ACCESS
+DC_INTERNAL_MGMT
+DC_VPN_MGMT
+DC_INTERNET_ALLOWED
+DC_VPN_INTERNET_ALLOWED
+DC_INBOUND_SERVICES
+DC_VPN_TO_INTERNAL
+DC_INTERNAL_TO_VPN
+DC_VPN_TO_VPN
+DC_SSH_ALLOWED
+DC_HTTPS_MGMT_ALLOWED
+DC_SNMP_ALLOWED
+DC_CRITICAL_SERVICES
+DC_HIGH_PRIORITY_FORWARD
+DC_BUSINESS_CRITICAL
+DC_UNRESTRICTED_INTERNET
+DC_FILTERED_INTERNET
+DC_BLOCKED_DESTINATIONS
+DC_MALICIOUS_IPS
+DC_VPN_AUTHENTICATED
+DC_VPN_HIGH_PRIORITY
+DC_VPN_RESTRICTED
+DC_DMZ_ZONE
+DC_TRUST_ZONE
+DC_UNTRUST_ZONE
+DC_QUARANTINE_ZONE
+DC_KNOWN_THREATS
+DC_THREAT_SIGNATURES
+DC_SUSPICIOUS_BEHAVIOR
+DC_DDOS_SOURCES
+DC_BLOCKED_COUNTRIES
+DC_HIGH_RISK_REGIONS
+DC_ALLOWED_COUNTRIES
+DC_INSPECT_PROTOCOLS
+DC_HIGH_BANDWIDTH
+DC_MEDIUM_BANDWIDTH
+DC_LOW_BANDWIDTH
+DC_BULK_TRAFFIC
+DC_TRACKED_CONNECTIONS
+DC_IDS_SIGNATURES
+DC_ATTACK_PATTERNS
+DC_MALWARE_DOMAINS
+DC_C2_SERVERS
+DC_REPUTATION_BAD
+DC_REPUTATION_GOOD
+DC_KNOWN_BOTS
+DC_BOT_SIGNATURES
+DC_ACTIVE_SESSIONS
+DC_SESSION_LIMITS
+DC_SSL_BYPASS
+DC_SSL_INSPECT
+DC_ALLOWED_APPS
+DC_BLOCKED_APPS
+DC_RESTRICTED_APPS
+DC_PCI_TRAFFIC
+DC_HIPAA_TRAFFIC
+DC_SOX_TRAFFIC
+DC_LB_TARGETS
+DC_PRIMARY_PATHS
+DC_BACKUP_PATHS
+DC_MONITOR_TARGETS
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:ipset_list ===

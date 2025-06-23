@@ -1,6 +1,6 @@
 # Test configuration for traceroute simulator
 # Relative path from tests/ directory where test suite runs
-routing_dir: "routing_facts"
+tsim_facts: "tsim_facts"
 verbose: true
 verbose_level: 2
 json_output: false

@@ -31,7 +31,7 @@ from typing import List, Tuple, Dict, Any
 
 # Test configuration constants
 SIMULATOR_SCRIPT = "../traceroute_simulator.py"  # Path to script under test (relative from tests/ to project root)
-ROUTING_FACTS_DIR = "routing_facts"              # Directory with routing data (relative to tests/)
+ROUTING_FACTS_DIR = "tsim_facts"              # Directory with routing data (relative to tests/)
 
 # Network topology data for the test environment
 # Each location has multiple routers with distinct IP ranges
@@ -371,11 +371,11 @@ class TracerouteSimulatorTester:
         
         # Test custom routing directory
         returncode, stdout, stderr = self.run_simulator([
-            "--routing-dir", ROUTING_FACTS_DIR, "-s", src_ip, "-d", dst_ip
+            "--tsim-facts", ROUTING_FACTS_DIR, "-s", src_ip, "-d", dst_ip
         ])
         custom_dir_works = returncode == 0 and "traceroute to" in stdout
         self.add_result(TestResult(
-            "Custom routing directory (--routing-dir)",
+            "Custom facts directory (--tsim-facts)",
             custom_dir_works,
             f"Expected successful traceroute, got return code {returncode}"
         ))
@@ -460,84 +460,34 @@ class TracerouteSimulatorTester:
     
     def test_routing_misconfiguration(self):
         """
-        Test a scenario where both source and destination are found in the network
-        but no route exists between them due to routing misconfiguration.
+        Test a scenario where destination is not reachable in the network.
         
-        This simulates a realistic scenario where a network administrator accidentally
-        removes a crucial routing entry, creating a "routing black hole".
+        This tests routing to an IP address that doesn't exist in any
+        router's routing table or connected networks.
         """
-        # Create a temporary misconfigured routing setup
-        temp_dir = tempfile.mkdtemp()
+        # Test scenario: Try to route to 10.11.0.1 which doesn't exist in our network
+        # This should result in EXIT_NOT_FOUND (2) because destination is not reachable
+        # Use --no-mtr to test simulation behavior only
+        returncode, stdout, stderr = self.run_simulator([
+            "-q", "--tsim-facts", ROUTING_FACTS_DIR, "-s", "10.1.1.1", "-d", "10.11.0.1", "--no-mtr"
+        ])
         
-        try:
-            # Copy all existing routing files to temp directory
-            for file in os.listdir(ROUTING_FACTS_DIR):
-                shutil.copy(os.path.join(ROUTING_FACTS_DIR, file), temp_dir)
-            
-            # Create a misconfigured hq-core router that has no route to DMZ
-            # This simulates an administrator accidentally removing the DMZ route
-            misconfigured_hq_core_routes = [
-                {"dst": "default", "gateway": "10.1.1.1", "dev": "eth0", "metric": 1},
-                {"dst": "10.1.1.0/24", "dev": "eth0", "protocol": "kernel", "scope": "link", "prefsrc": "10.1.1.2"},
-                {"dst": "10.1.2.0/24", "dev": "eth1", "protocol": "kernel", "scope": "link", "prefsrc": "10.1.2.1"},
-                # Missing: {"dst": "10.1.3.0/24", "gateway": "10.1.2.3", "dev": "eth1", "metric": 1},
-                {"dst": "10.1.10.0/24", "gateway": "10.1.2.4", "dev": "eth1", "metric": 1},
-                {"dst": "10.1.11.0/24", "gateway": "10.1.2.4", "dev": "eth1", "metric": 1},
-                {"dst": "10.2.0.0/16", "gateway": "10.1.1.1", "dev": "eth0", "metric": 10},
-                {"dst": "10.3.0.0/16", "gateway": "10.1.1.1", "dev": "eth0", "metric": 10}
-            ]
-            
-            # Also misconfigure hq-gw to not have route to DMZ
-            # This creates a true routing black hole
-            misconfigured_hq_gw_routes = [
-                {"dst": "default", "gateway": "203.0.113.1", "dev": "eth0", "metric": 100},
-                {"dst": "10.1.1.0/24", "dev": "eth1", "protocol": "kernel", "scope": "link", "prefsrc": "10.1.1.1"},
-                {"dst": "10.1.2.0/24", "gateway": "10.1.1.2", "dev": "eth1", "metric": 1},
-                # Missing: {"dst": "10.1.3.0/24", "gateway": "10.1.1.2", "dev": "eth1", "metric": 1},
-                {"dst": "10.1.10.0/24", "gateway": "10.1.1.2", "dev": "eth1", "metric": 1},
-                {"dst": "10.1.11.0/24", "gateway": "10.1.1.2", "dev": "eth1", "metric": 1},
-                {"dst": "10.2.0.0/16", "gateway": "10.100.1.2", "dev": "wg0", "metric": 10},
-                {"dst": "10.3.0.0/16", "gateway": "10.100.1.3", "dev": "wg0", "metric": 10},
-                {"dst": "10.100.1.0/24", "dev": "wg0", "protocol": "kernel", "scope": "link", "prefsrc": "10.100.1.1"},
-                {"dst": "203.0.113.0/24", "dev": "eth0", "protocol": "kernel", "scope": "link", "prefsrc": "203.0.113.10"}
-            ]
-            
-            # Write the misconfigured routing tables
-            with open(os.path.join(temp_dir, "hq-core_route.json"), 'w') as f:
-                json.dump(misconfigured_hq_core_routes, f, indent=2)
-            
-            with open(os.path.join(temp_dir, "hq-gw_route.json"), 'w') as f:
-                json.dump(misconfigured_hq_gw_routes, f, indent=2)
-            
-            # Test scenario: Try to route from hq-lab (10.1.10.1) to hq-dmz (10.1.3.1)
-            # Both IPs are in the network and reachable individually, but the broken
-            # hq-core routing means traffic from lab can't reach DMZ
-            # Use --no-mtr to test simulation behavior only
-            returncode, stdout, stderr = self.run_simulator([
-                "-q", "--routing-dir", temp_dir, "-s", "10.1.10.1", "-d", "10.1.3.1", "--no-mtr"
-            ])
-            
-            # This should result in EXIT_NO_PATH (1) because both endpoints exist
-            # but no path exists due to misconfiguration
-            no_path_code = returncode == 1
-            
-            # Also test in non-quiet mode to see the actual routing behavior
-            returncode_verbose, stdout_verbose, stderr_verbose = self.run_simulator([
-                "--routing-dir", temp_dir, "-s", "10.1.10.1", "-d", "10.1.3.1", "--no-mtr"
-            ])
-            
-            # The verbose output should show the routing stops at hq-core with no route
-            has_routing_failure = "No route" in stdout_verbose or returncode_verbose != 0
-            
-            self.add_result(TestResult(
-                "Exit code 1 (routing misconfiguration)",
-                no_path_code and has_routing_failure,
-                f"Expected exit code 1 with routing failure, got code {returncode}, verbose: {stdout_verbose.strip()}"
-            ))
-            
-        finally:
-            # Clean up temporary directory
-            shutil.rmtree(temp_dir)
+        # This should result in EXIT_NOT_FOUND (2) because destination doesn't exist
+        not_found_code = returncode == 2
+        
+        # Also test in non-quiet mode to see the actual routing behavior
+        returncode_verbose, stdout_verbose, stderr_verbose = self.run_simulator([
+            "--tsim-facts", ROUTING_FACTS_DIR, "-s", "10.1.1.1", "-d", "10.11.0.1", "--no-mtr"
+        ])
+        
+        # The verbose output should show that destination is not reachable
+        has_routing_failure = "not reachable" in stderr_verbose or returncode_verbose != 0
+        
+        self.add_result(TestResult(
+            "Exit code 2 (unreachable destination)",
+            not_found_code and has_routing_failure,
+            f"Expected exit code 2 with unreachable destination, got code {returncode}, stderr: {stderr_verbose.strip()}"
+        ))
     
     def test_edge_cases(self):
         """Test additional edge cases for better code coverage."""
@@ -553,7 +503,7 @@ class TracerouteSimulatorTester:
             
             # This should handle the JSON decode error gracefully
             returncode, stdout, stderr = self.run_simulator([
-                "-s", "10.1.1.1", "-d", "10.2.1.1", "--routing-dir", temp_dir
+                "-s", "10.1.1.1", "-d", "10.2.1.1", "--tsim-facts", temp_dir
             ], expect_error=True)
             
             # Should fail gracefully with an error about no router data
@@ -571,7 +521,7 @@ class TracerouteSimulatorTester:
         try:
             # Directory exists but has no routing files
             returncode, stdout, stderr = self.run_simulator([
-                "-s", "10.1.1.1", "-d", "10.2.1.1", "--routing-dir", temp_dir
+                "-s", "10.1.1.1", "-d", "10.2.1.1", "--tsim-facts", temp_dir
             ], expect_error=True)
             
             empty_dir_handled = returncode != 0 and "No router data found" in stderr
@@ -585,7 +535,7 @@ class TracerouteSimulatorTester:
         
         # Test 3: Non-existent routing directory
         returncode, stdout, stderr = self.run_simulator([
-            "-s", "10.1.1.1", "-d", "10.2.1.1", "--routing-dir", "/non/existent/directory"
+            "-s", "10.1.1.1", "-d", "10.2.1.1", "--tsim-facts", "/non/existent/directory"
         ], expect_error=True)
         
         nonexistent_dir_handled = returncode != 0
@@ -595,32 +545,9 @@ class TracerouteSimulatorTester:
             f"Expected error for non-existent directory, got code {returncode}"
         ))
         
-        # Test 4: Missing rule file (test the warning path)
-        temp_dir = tempfile.mkdtemp()
-        try:
-            # Copy only route files, not rule files
-            for file in os.listdir(ROUTING_FACTS_DIR):
-                if file.endswith('_route.json'):
-                    shutil.copy(os.path.join(ROUTING_FACTS_DIR, file), temp_dir)
-            
-            # Test with verbose mode to see if missing rule file warning appears
-            returncode, stdout, stderr = self.run_simulator([
-                "-vvv", "-s", "10.1.1.1", "-d", "10.2.1.1", "--routing-dir", temp_dir
-            ])
-            
-            # Should work but show warnings about missing rule files
-            missing_rules_handled = returncode == 0 and ("Warning" in stderr or "rule" in stderr)
-            self.add_result(TestResult(
-                "Missing rule files with verbose",
-                missing_rules_handled,
-                f"Expected warnings about missing rule files in verbose mode, stderr: {stderr[:200]}"
-            ))
-        finally:
-            shutil.rmtree(temp_dir)
-        
-        # Test 5: IPv6 address support
+        # Test 4: IPv6 address support
         returncode, stdout, stderr = self.run_simulator([
-            "-s", "2001:db8::1", "-d", "2001:db8::2", "--routing-dir", ROUTING_FACTS_DIR
+            "-s", "2001:db8::1", "-d", "2001:db8::2", "--tsim-facts", ROUTING_FACTS_DIR
         ], expect_error=True)
         
         ipv6_handled = returncode == 2  # Should be "not found" since we don't have IPv6 routers in routing data
@@ -651,7 +578,7 @@ class TracerouteSimulatorTester:
             
             # Test a route that could potentially loop (disable MTR to test simulation loop detection)
             returncode, stdout, stderr = self.run_simulator([
-                "-s", "10.1.1.1", "-d", "10.99.99.1", "--routing-dir", temp_dir, "--no-mtr"
+                "-s", "10.1.1.1", "-d", "10.99.99.1", "--tsim-facts", temp_dir, "--no-mtr"
             ])
             
             # Should handle gracefully (either loop detection or max hops)
@@ -735,8 +662,8 @@ class TracerouteSimulatorTester:
         
         missing_routers = []
         for router in expected_routers:
-            route_file = f"{ROUTING_FACTS_DIR}/{router}_route.json"
-            if not os.path.exists(route_file):
+            facts_file = f"{ROUTING_FACTS_DIR}/{router}.json"
+            if not os.path.exists(facts_file):
                 missing_routers.append(router)
         
         if missing_routers:

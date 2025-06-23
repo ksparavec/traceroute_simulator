@@ -1,0 +1,938 @@
+# Traceroute Simulator Facts Collection
+# Generated on: 2025-06-21 14:42:18
+# Hostname: hq-dmz
+# Kernel: 5.15.0-78-generic
+# Collection Script Version: 1.0
+
+# Locating required commands in standard paths
+# Found commands:
+# IP: /sbin/ip
+# IPTABLES: /sbin/iptables
+# IPTABLES-SAVE: /sbin/iptables-save
+# IPSET: /sbin/ipset
+# LSMOD: /bin/lsmod
+# Running as root: 1
+
+=== TSIM_SECTION_START:routing_table ===
+TITLE: IP Routing Table
+COMMAND: /sbin/ip route show
+TIMESTAMP: 2025-06-21 14:42:18
+---
+default via 10.1.2.1 dev eth0 metric 100
+10.1.2.0/24 dev eth0 proto kernel scope link src 10.1.2.3
+10.1.3.0/24 dev eth1 proto kernel scope link src 10.1.3.1
+10.1.1.0/24 via 10.1.2.1 dev eth0 metric 1
+10.1.10.0/24 via 10.1.2.1 dev eth0 metric 1
+10.1.11.0/24 via 10.1.2.1 dev eth0 metric 1
+10.2.0.0/16 via 10.1.2.1 dev eth0 metric 1
+10.3.0.0/16 via 10.1.2.1 dev eth0 metric 1
+10.100.1.0/24 via 10.1.2.1 dev eth0 metric 1
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:routing_table ===
+
+=== TSIM_SECTION_START:policy_rules ===
+TITLE: IP Policy Rules
+COMMAND: /sbin/ip rule show
+TIMESTAMP: 2025-06-21 14:42:18
+---
+0:	from all lookup local
+100:	from 10.1.3.0/24 lookup dmz_services
+200:	from 10.1.3.5/32 lookup mgmt_priority
+32766:	from all lookup main
+32767:	from all lookup default
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:policy_rules ===
+
+=== TSIM_SECTION_START:interfaces ===
+TITLE: Network Interfaces
+COMMAND: /sbin/ip addr show
+TIMESTAMP: 2025-06-21 14:42:18
+---
+1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN group default qlen 1000
+    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+    inet 127.0.0.1/8 scope host lo
+       valid_lft forever preferred_lft forever
+2: eth0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
+    link/ether 52:54:00:32:34:01 brd ff:ff:ff:ff:ff:ff
+    inet 10.1.2.3/24 brd 10.1.2.255 scope global eth0
+       valid_lft forever preferred_lft forever
+3: eth1: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
+    link/ether 52:54:00:32:34:02 brd ff:ff:ff:ff:ff:ff
+    inet 10.1.3.1/24 brd 10.1.3.255 scope global eth1
+       valid_lft forever preferred_lft forever
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:interfaces ===
+
+=== TSIM_SECTION_START:interface_stats ===
+TITLE: Interface Statistics
+COMMAND: cat /proc/net/dev
+TIMESTAMP: 2025-06-21 14:42:18
+---
+Inter-|   Receive                                                |  Transmit
+ face |bytes    packets errs drop fifo frame compressed multicast|bytes    packets errs drop fifo colls carrier compressed
+    lo:   78901      432    0    0    0     0          0         0    78901      432    0    0    0     0       0          0
+  eth0: 4567890     5678    0    0    0     0          0         0  3456789     4567    0    0    0     0       0          0
+  eth1: 2345678     3456    0    0    0     0          0         0  1234567     2345    0    0    0     0       0          0
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:interface_stats ===
+
+=== TSIM_SECTION_START:ip_forwarding ===
+TITLE: IP Forwarding Status
+COMMAND: cat /proc/sys/net/ipv4/ip_forward
+TIMESTAMP: 2025-06-21 14:42:18
+---
+1
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:ip_forwarding ===
+
+=== TSIM_SECTION_START:kernel_version ===
+TITLE: Kernel Version
+COMMAND: uname -r
+TIMESTAMP: 2025-06-21 14:42:18
+---
+5.15.0-78-generic
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:kernel_version ===
+
+=== TSIM_SECTION_START:hostname ===
+TITLE: System Hostname
+COMMAND: hostname
+TIMESTAMP: 2025-06-21 14:42:18
+---
+hq-dmz
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:hostname ===
+
+=== TSIM_SECTION_START:iptables_filter ===
+TITLE: Iptables Filter Table
+COMMAND: /sbin/iptables -t filter -L -n -v --line-numbers
+TIMESTAMP: 2025-06-21 14:42:18
+---
+Chain INPUT (policy DROP 0 packets, 0 bytes)
+num   pkts bytes target     prot opt in     out     source               destination         
+1      345  34567 ACCEPT     all  --  lo     *       0.0.0.0/0            0.0.0.0/0           
+2     1234 123456 ACCEPT     all  --  *      *       0.0.0.0/0            0.0.0.0/0            ctstate RELATED,ESTABLISHED
+3      567  56789 DMZ_MGMT_ACCESS  all  --  *      *       0.0.0.0/0            10.1.2.3            
+4      234  23456 DMZ_SERVICE_ACCESS  all  --  *      *       0.0.0.0/0            10.1.3.1            
+5      123  12345 ACCEPT     icmp --  *      *       0.0.0.0/0            0.0.0.0/0            icmp-type 8 limit: avg 5/sec burst 3
+6       89   8901 ACCEPT     tcp  --  eth0   *       10.1.0.0/16          0.0.0.0/0            tcp dpt:22 ctstate NEW,ESTABLISHED
+7       56   5678 INTRUSION_DETECT  all  --  *      *       0.0.0.0/0            0.0.0.0/0           
+8       34   3456 LOG        all  --  *      *       0.0.0.0/0            0.0.0.0/0            limit: avg 10/min burst 15 LOG flags 0 level 4 prefix "DMZ-INPUT-DROP: "
+9       21   2109 DROP       all  --  *      *       0.0.0.0/0            0.0.0.0/0           
+
+Chain FORWARD (policy DROP 0 packets, 0 bytes)
+num   pkts bytes target     prot opt in     out     source               destination         
+1     2345 234567 DMZ_SECURITY_SCAN  all  --  *      *       0.0.0.0/0            0.0.0.0/0           
+2     1234 123456 DMZ_TO_LAN  all  --  eth1   eth0    10.1.3.0/24          0.0.0.0/0           
+3      789  78901 LAN_TO_DMZ  all  --  eth0   eth1    0.0.0.0/0            10.1.3.0/24         
+4      456  45678 ACCEPT     all  --  *      *       0.0.0.0/0            0.0.0.0/0            ctstate RELATED,ESTABLISHED
+5      234  23456 LOG        all  --  *      *       0.0.0.0/0            0.0.0.0/0            limit: avg 5/min burst 8 LOG flags 0 level 6 prefix "DMZ-FORWARD-DROP: "
+6      123  12345 DROP       all  --  *      *       0.0.0.0/0            0.0.0.0/0           
+
+Chain OUTPUT (policy ACCEPT 0 packets, 0 bytes)
+num   pkts bytes target     prot opt in     out     source               destination         
+1      876  87654 ACCEPT     all  --  *      lo      0.0.0.0/0            0.0.0.0/0           
+2      543  54321 ACCEPT     all  --  *      *       0.0.0.0/0            0.0.0.0/0            ctstate RELATED,ESTABLISHED
+3      321  32109 ACCEPT     icmp --  *      *       0.0.0.0/0            0.0.0.0/0           
+4      210  21098 ACCEPT     tcp  --  *      *       0.0.0.0/0            0.0.0.0/0            tcp spt:22
+5      109  10987 DMZ_OUTBOUND_FILTER  all  --  *      *       0.0.0.0/0            0.0.0.0/0           
+
+Chain DMZ_MGMT_ACCESS (1 references)
+num   pkts bytes target     prot opt in     out     source               destination         
+1      345  34567 ACCEPT     tcp  --  *      *       10.1.2.0/24          0.0.0.0/0            multiport dports 22,443,8080 ctstate NEW,ESTABLISHED
+2      234  23456 ACCEPT     tcp  --  *      *       10.1.1.0/24          0.0.0.0/0            multiport dports 22,443 ctstate NEW,ESTABLISHED
+3      123  12345 ACCEPT     udp  --  *      *       10.1.10.0/24         0.0.0.0/0            multiport dports 161,514 ctstate NEW,ESTABLISHED
+4       67   6789 ACCEPT     tcp  --  *      *       0.0.0.0/0            0.0.0.0/0            match-set DMZ_MGMT_SOURCES src match-set DMZ_MGMT_PORTS dst,port
+5       34   3456 RETURN     all  --  *      *       0.0.0.0/0            0.0.0.0/0           
+
+Chain DMZ_SERVICE_ACCESS (1 references)
+num   pkts bytes target     prot opt in     out     source               destination         
+1      456  45678 ACCEPT     tcp  --  *      *       0.0.0.0/0            0.0.0.0/0            match-set DMZ_WEB_SERVICES dst,port ctstate NEW,ESTABLISHED
+2      234  23456 ACCEPT     tcp  --  *      *       0.0.0.0/0            0.0.0.0/0            match-set DMZ_MAIL_SERVICES dst,port ctstate NEW,ESTABLISHED
+3      123  12345 ACCEPT     tcp  --  *      *       0.0.0.0/0            0.0.0.0/0            match-set DMZ_DB_SERVICES dst,port match-set DMZ_DB_CLIENTS src
+4       67   6789 ACCEPT     udp  --  *      *       0.0.0.0/0            0.0.0.0/0            match-set DMZ_DNS_SERVICES dst,port
+5       34   3456 RETURN     all  --  *      *       0.0.0.0/0            0.0.0.0/0           
+
+Chain INTRUSION_DETECT (1 references)
+num   pkts bytes target     prot opt in     out     source               destination         
+1      123  12345 DROP       all  --  *      *       0.0.0.0/0            0.0.0.0/0            match-set DMZ_BLACKLIST src
+2       89   8901 TARPIT     tcp  --  *      *       0.0.0.0/0            0.0.0.0/0            match-set DMZ_HONEYPOT_PORTS dst,port recent: SET name: ATTACKERS side: source
+3       56   5678 DROP       all  --  *      *       0.0.0.0/0            0.0.0.0/0            recent: CHECK seconds: 600 hit_count: 3 name: ATTACKERS side: source
+4       34   3456 LOG        tcp  --  *      *       0.0.0.0/0            0.0.0.0/0            match-set DMZ_SCAN_PORTS dst,port LOG flags 0 level 4 prefix "PORT-SCAN: "
+5       21   2109 DROP       tcp  --  *      *       0.0.0.0/0            0.0.0.0/0            match-set DMZ_SCAN_PORTS dst,port recent: SET name: SCANNERS side: source
+6       12   1234 RETURN     all  --  *      *       0.0.0.0/0            0.0.0.0/0           
+
+Chain DMZ_SECURITY_SCAN (1 references)
+num   pkts bytes target     prot opt in     out     source               destination         
+1      567  56789 DROP       all  --  *      *       0.0.0.0/0            0.0.0.0/0            match-set DMZ_THREAT_IPS src
+2      345  34567 DROP       all  --  *      *       0.0.0.0/0            0.0.0.0/0            match-set DMZ_THREAT_IPS dst
+3      234  23456 NFQUEUE    tcp  --  *      *       0.0.0.0/0            0.0.0.0/0            match-set DMZ_INSPECT_PROTOCOLS src,dst,proto --queue-num 0
+4      123  12345 LOG        tcp  --  *      *       0.0.0.0/0            0.0.0.0/0            match-set DMZ_MALWARE_SIGS src,dst,port LOG flags 0 level 4 prefix "MALWARE-DETECT: "
+5       67   6789 DROP       tcp  --  *      *       0.0.0.0/0            0.0.0.0/0            match-set DMZ_MALWARE_SIGS src,dst,port
+6       34   3456 RETURN     all  --  *      *       0.0.0.0/0            0.0.0.0/0           
+
+Chain DMZ_TO_LAN (1 references)
+num   pkts bytes target     prot opt in     out     source               destination         
+1      789  78901 ACCEPT     tcp  --  *      *       0.0.0.0/0            0.0.0.0/0            match-set DMZ_ALLOWED_OUTBOUND src,dst,port
+2      456  45678 ACCEPT     udp  --  *      *       10.1.3.15/32         10.1.2.100/32       udp dpt:161
+3      234  23456 ACCEPT     tcp  --  *      *       10.1.3.5/32          10.1.2.0/24          tcp dpt:22
+4      123  12345 DROP       tcp  --  *      *       10.1.3.0/24          10.1.1.0/24          multiport dports 135,139,445
+5       67   6789 ACCEPT     icmp --  *      *       10.1.3.0/24          10.1.0.0/16          icmp-type 8
+6       34   3456 LOG        all  --  *      *       10.1.3.0/24          10.1.0.0/16          limit: avg 8/min burst 5 LOG flags 0 level 6 prefix "DMZ-TO-LAN: "
+7       21   2109 RETURN     all  --  *      *       0.0.0.0/0            0.0.0.0/0           
+
+Chain LAN_TO_DMZ (1 references)
+num   pkts bytes target     prot opt in     out     source               destination         
+1      543  54321 ACCEPT     tcp  --  *      *       0.0.0.0/0            0.0.0.0/0            match-set DMZ_PUBLIC_SERVICES dst,port
+2      321  32109 ACCEPT     tcp  --  *      *       10.1.2.0/24          10.1.3.5/32          tcp dpt:22
+3      210  21098 ACCEPT     tcp  --  *      *       10.1.10.0/24         10.1.3.0/24          multiport dports 80,443,8080
+4      109  10987 DROP       tcp  --  *      *       10.1.11.0/24         10.1.3.0/24          multiport dports 22,3389
+5       87   8765 ACCEPT     udp  --  *      *       10.1.2.0/24          10.1.3.15/32         udp dpt:53
+6       54   5432 LOG        all  --  *      *       10.1.0.0/16          10.1.3.0/24          limit: avg 12/min burst 6 LOG flags 0 level 6 prefix "LAN-TO-DMZ: "
+7       32   3210 RETURN     all  --  *      *       0.0.0.0/0            0.0.0.0/0           
+
+Chain DMZ_OUTBOUND_FILTER (1 references)
+num   pkts bytes target     prot opt in     out     source               destination         
+1      234  23456 ACCEPT     tcp  --  *      *       10.1.3.0/24          0.0.0.0/0            match-set DMZ_UPDATE_SERVERS dst,port
+2      123  12345 ACCEPT     udp  --  *      *       10.1.3.15/32         0.0.0.0/0            udp dpt:53
+3       89   8901 ACCEPT     tcp  --  *      *       10.1.3.5/32          0.0.0.0/0            multiport dports 22,443,80
+4       56   5678 DROP       tcp  --  *      *       10.1.3.0/24          0.0.0.0/0            multiport dports 21,23,135,139,445
+5       34   3456 LOG        all  --  *      *       10.1.3.0/24          0.0.0.0/0            limit: avg 6/min burst 4 LOG flags 0 level 6 prefix "DMZ-OUTBOUND: "
+6       21   2109 RETURN     all  --  *      *       0.0.0.0/0            0.0.0.0/0           
+
+Chain TARPIT (1 references)
+num   pkts bytes target     prot opt in     out     source               destination         
+1       45   4567 LOG        tcp  --  *      *       0.0.0.0/0            0.0.0.0/0            LOG flags 0 level 4 prefix "HONEYPOT-TRIGGER: "
+2       23   2345 REJECT     tcp  --  *      *       0.0.0.0/0            0.0.0.0/0            reject-with tcp-reset
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:iptables_filter ===
+
+=== TSIM_SECTION_START:iptables_nat ===
+TITLE: Iptables NAT Table
+COMMAND: /sbin/iptables -t nat -L -n -v --line-numbers
+TIMESTAMP: 2025-06-21 14:42:18
+---
+Chain PREROUTING (policy ACCEPT 0 packets, 0 bytes)
+num   pkts bytes target     prot opt in     out     source               destination         
+1      123  12345 DMZ_LOAD_BALANCE  tcp  --  eth0   *       0.0.0.0/0            10.1.3.1             multiport dports 80,443
+
+Chain INPUT (policy ACCEPT 0 packets, 0 bytes)
+num   pkts bytes target     prot opt in     out     source               destination         
+
+Chain OUTPUT (policy ACCEPT 0 packets, 0 bytes)
+num   pkts bytes target     prot opt in     out     source               destination         
+
+Chain POSTROUTING (policy ACCEPT 0 packets, 0 bytes)
+num   pkts bytes target     prot opt in     out     source               destination         
+1      567  56789 MASQUERADE  all  --  *      eth0    10.1.3.0/24          10.1.0.0/16          match-set DMZ_NAT_EXEMPT src ! 
+2      345  34567 SNAT       all  --  *      eth0    10.1.3.0/24          0.0.0.0/0            to:10.1.2.3
+
+Chain DMZ_LOAD_BALANCE (1 references)
+num   pkts bytes target     prot opt in     out     source               destination         
+1       67   6789 DNAT       tcp  --  *      *       0.0.0.0/0            0.0.0.0/0            tcp dpt:80 statistic mode nth every 3 packet 0 to:10.1.3.10:80
+2       45   4567 DNAT       tcp  --  *      *       0.0.0.0/0            0.0.0.0/0            tcp dpt:80 statistic mode nth every 2 packet 0 to:10.1.3.11:80
+3       23   2345 DNAT       tcp  --  *      *       0.0.0.0/0            0.0.0.0/0            tcp dpt:80 to:10.1.3.12:80
+4       34   3456 DNAT       tcp  --  *      *       0.0.0.0/0            0.0.0.0/0            tcp dpt:443 statistic mode nth every 2 packet 0 to:10.1.3.10:443
+5       12   1234 DNAT       tcp  --  *      *       0.0.0.0/0            0.0.0.0/0            tcp dpt:443 to:10.1.3.11:443
+6        8    876 RETURN     all  --  *      *       0.0.0.0/0            0.0.0.0/0           
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:iptables_nat ===
+
+=== TSIM_SECTION_START:iptables_mangle ===
+TITLE: Iptables Mangle Table
+COMMAND: /sbin/iptables -t mangle -L -n -v --line-numbers
+TIMESTAMP: 2025-06-21 14:42:18
+---
+Chain PREROUTING (policy ACCEPT 0 packets, 0 bytes)
+num   pkts bytes target     prot opt in     out     source               destination         
+1      789  78901 MARK       all  --  *      *       0.0.0.0/0            0.0.0.0/0            match-set DMZ_HIGH_PRIORITY src MARK set 0x100
+2      456  45678 MARK       all  --  *      *       0.0.0.0/0            0.0.0.0/0            match-set DMZ_LOW_PRIORITY src MARK set 0x200
+3      234  23456 DMZ_TRAFFIC_SHAPING  all  --  *      *       0.0.0.0/0            0.0.0.0/0           
+4      123  12345 DSCP       tcp  --  *      *       0.0.0.0/0            0.0.0.0/0            match-set DMZ_CRITICAL_SERVICES dst,port DSCP set 0x2e
+
+Chain INPUT (policy ACCEPT 0 packets, 0 bytes)
+num   pkts bytes target     prot opt in     out     source               destination         
+
+Chain FORWARD (policy ACCEPT 0 packets, 0 bytes)
+num   pkts bytes target     prot opt in     out     source               destination         
+1     1234 123456 DMZ_QOS_FORWARD  all  --  *      *       0.0.0.0/0            0.0.0.0/0           
+2      789  78901 CONNMARK   all  --  *      *       0.0.0.0/0            0.0.0.0/0            CONNMARK --restore-mark --nfmask 0xffffffff --ctmask 0xffffffff
+3      456  45678 MARK       tcp  --  *      *       10.1.3.0/24          0.0.0.0/0            multiport dports 80,443 MARK set 0x10
+4      234  23456 CONNMARK   all  --  *      *       0.0.0.0/0            0.0.0.0/0            CONNMARK --save-mark --nfmask 0xffffffff --ctmask 0xffffffff
+
+Chain OUTPUT (policy ACCEPT 0 packets, 0 bytes)
+num   pkts bytes target     prot opt in     out     source               destination         
+
+Chain POSTROUTING (policy ACCEPT 0 packets, 0 bytes)
+num   pkts bytes target     prot opt in     out     source               destination         
+1      567  56789 CLASSIFY   all  --  *      eth0    0.0.0.0/0            0.0.0.0/0            mark match 0x100 CLASSIFY set 1:10
+2      345  34567 CLASSIFY   all  --  *      eth1    0.0.0.0/0            0.0.0.0/0            mark match 0x200 CLASSIFY set 1:20
+3      234  23456 DSCP       all  --  *      *       0.0.0.0/0            0.0.0.0/0            mark match 0x10 DSCP set 0x2e
+
+Chain DMZ_TRAFFIC_SHAPING (1 references)
+num   pkts bytes target     prot opt in     out     source               destination         
+1      345  34567 MARK       tcp  --  *      *       0.0.0.0/0            0.0.0.0/0            multiport dports 80,443,8080 MARK set 0x10
+2      234  23456 MARK       tcp  --  *      *       0.0.0.0/0            0.0.0.0/0            multiport dports 22,3389 MARK set 0x20
+3      123  12345 MARK       udp  --  *      *       0.0.0.0/0            0.0.0.0/0            multiport dports 53,123 MARK set 0x30
+4       67   6789 MARK       all  --  *      *       0.0.0.0/0            0.0.0.0/0            match-set DMZ_BULK_TRANSFER src,dst,port MARK set 0x40
+5       34   3456 RETURN     all  --  *      *       0.0.0.0/0            0.0.0.0/0           
+
+Chain DMZ_QOS_FORWARD (1 references)
+num   pkts bytes target     prot opt in     out     source               destination         
+1      456  45678 DSCP       all  --  eth1   eth0    10.1.3.0/24          0.0.0.0/0            match-set DMZ_DSCP_MAPPING src,mark DSCP set --dscp-class ef
+2      234  23456 TOS        all  --  eth0   eth1    0.0.0.0/0            10.1.3.0/24          TOS set 0x10
+3      123  12345 MARK       all  --  *      *       0.0.0.0/0            0.0.0.0/0            match-set DMZ_SERVICE_PRIORITY dst,port,proto MARK set 0x1000
+4       67   6789 RETURN     all  --  *      *       0.0.0.0/0            0.0.0.0/0           
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:iptables_mangle ===
+
+=== TSIM_SECTION_START:iptables_save ===
+TITLE: Complete Iptables Configuration
+COMMAND: /sbin/iptables-save
+TIMESTAMP: 2025-06-21 14:42:18
+---
+# Generated by iptables-save v1.8.7 on Fri Jun 21 14:42:18 2025
+*filter
+:INPUT DROP [0:0]
+:FORWARD DROP [0:0]
+:OUTPUT ACCEPT [0:0]
+:DMZ_MGMT_ACCESS - [0:0]
+:DMZ_SERVICE_ACCESS - [0:0]
+:INTRUSION_DETECT - [0:0]
+:DMZ_SECURITY_SCAN - [0:0]
+:DMZ_TO_LAN - [0:0]
+:LAN_TO_DMZ - [0:0]
+:DMZ_OUTBOUND_FILTER - [0:0]
+:TARPIT - [0:0]
+-A INPUT -i lo -j ACCEPT
+-A INPUT -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
+-A INPUT -d 10.1.2.3/32 -j DMZ_MGMT_ACCESS
+-A INPUT -d 10.1.3.1/32 -j DMZ_SERVICE_ACCESS
+-A INPUT -p icmp -m icmp --icmp-type 8 -m limit --limit 5/sec --limit-burst 3 -j ACCEPT
+-A INPUT -s 10.1.0.0/16 -i eth0 -p tcp -m tcp --dport 22 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
+-A INPUT -j INTRUSION_DETECT
+-A INPUT -m limit --limit 10/min --limit-burst 15 -j LOG --log-prefix "DMZ-INPUT-DROP: "
+-A INPUT -j DROP
+-A FORWARD -j DMZ_SECURITY_SCAN
+-A FORWARD -s 10.1.3.0/24 -i eth1 -o eth0 -j DMZ_TO_LAN
+-A FORWARD -i eth0 -o eth1 -d 10.1.3.0/24 -j LAN_TO_DMZ
+-A FORWARD -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
+-A FORWARD -m limit --limit 5/min --limit-burst 8 -j LOG --log-prefix "DMZ-FORWARD-DROP: " --log-level 6
+-A FORWARD -j DROP
+-A OUTPUT -o lo -j ACCEPT
+-A OUTPUT -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
+-A OUTPUT -p icmp -j ACCEPT
+-A OUTPUT -p tcp -m tcp --sport 22 -j ACCEPT
+-A OUTPUT -j DMZ_OUTBOUND_FILTER
+-A DMZ_MGMT_ACCESS -s 10.1.2.0/24 -p tcp -m multiport --dports 22,443,8080 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
+-A DMZ_MGMT_ACCESS -s 10.1.1.0/24 -p tcp -m multiport --dports 22,443 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
+-A DMZ_MGMT_ACCESS -s 10.1.10.0/24 -p udp -m multiport --dports 161,514 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
+-A DMZ_MGMT_ACCESS -m set --match-set DMZ_MGMT_SOURCES src --match-set DMZ_MGMT_PORTS dst,port -p tcp -j ACCEPT
+-A DMZ_MGMT_ACCESS -j RETURN
+-A DMZ_SERVICE_ACCESS -m set --match-set DMZ_WEB_SERVICES dst,port -p tcp -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
+-A DMZ_SERVICE_ACCESS -m set --match-set DMZ_MAIL_SERVICES dst,port -p tcp -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
+-A DMZ_SERVICE_ACCESS -m set --match-set DMZ_DB_SERVICES dst,port --match-set DMZ_DB_CLIENTS src -p tcp -j ACCEPT
+-A DMZ_SERVICE_ACCESS -m set --match-set DMZ_DNS_SERVICES dst,port -p udp -j ACCEPT
+-A DMZ_SERVICE_ACCESS -j RETURN
+-A INTRUSION_DETECT -m set --match-set DMZ_BLACKLIST src -j DROP
+-A INTRUSION_DETECT -m set --match-set DMZ_HONEYPOT_PORTS dst,port -p tcp -m recent --set --name ATTACKERS --rsource -j TARPIT
+-A INTRUSION_DETECT -m recent --check --seconds 600 --hitcount 3 --name ATTACKERS --rsource -j DROP
+-A INTRUSION_DETECT -m set --match-set DMZ_SCAN_PORTS dst,port -p tcp -j LOG --log-prefix "PORT-SCAN: "
+-A INTRUSION_DETECT -m set --match-set DMZ_SCAN_PORTS dst,port -p tcp -m recent --set --name SCANNERS --rsource -j DROP
+-A INTRUSION_DETECT -j RETURN
+-A DMZ_SECURITY_SCAN -m set --match-set DMZ_THREAT_IPS src -j DROP
+-A DMZ_SECURITY_SCAN -m set --match-set DMZ_THREAT_IPS dst -j DROP
+-A DMZ_SECURITY_SCAN -m set --match-set DMZ_INSPECT_PROTOCOLS src,dst,proto -p tcp -j NFQUEUE --queue-num 0
+-A DMZ_SECURITY_SCAN -m set --match-set DMZ_MALWARE_SIGS src,dst,port -p tcp -j LOG --log-prefix "MALWARE-DETECT: "
+-A DMZ_SECURITY_SCAN -m set --match-set DMZ_MALWARE_SIGS src,dst,port -p tcp -j DROP
+-A DMZ_SECURITY_SCAN -j RETURN
+-A DMZ_TO_LAN -m set --match-set DMZ_ALLOWED_OUTBOUND src,dst,port -p tcp -j ACCEPT
+-A DMZ_TO_LAN -s 10.1.3.15/32 -d 10.1.2.100/32 -p udp -m udp --dport 161 -j ACCEPT
+-A DMZ_TO_LAN -s 10.1.3.5/32 -d 10.1.2.0/24 -p tcp -m tcp --dport 22 -j ACCEPT
+-A DMZ_TO_LAN -s 10.1.3.0/24 -d 10.1.1.0/24 -p tcp -m multiport --dports 135,139,445 -j DROP
+-A DMZ_TO_LAN -s 10.1.3.0/24 -d 10.1.0.0/16 -p icmp -m icmp --icmp-type 8 -j ACCEPT
+-A DMZ_TO_LAN -s 10.1.3.0/24 -d 10.1.0.0/16 -m limit --limit 8/min --limit-burst 5 -j LOG --log-prefix "DMZ-TO-LAN: " --log-level 6
+-A DMZ_TO_LAN -j RETURN
+-A LAN_TO_DMZ -m set --match-set DMZ_PUBLIC_SERVICES dst,port -p tcp -j ACCEPT
+-A LAN_TO_DMZ -s 10.1.2.0/24 -d 10.1.3.5/32 -p tcp -m tcp --dport 22 -j ACCEPT
+-A LAN_TO_DMZ -s 10.1.10.0/24 -d 10.1.3.0/24 -p tcp -m multiport --dports 80,443,8080 -j ACCEPT
+-A LAN_TO_DMZ -s 10.1.11.0/24 -d 10.1.3.0/24 -p tcp -m multiport --dports 22,3389 -j DROP
+-A LAN_TO_DMZ -s 10.1.2.0/24 -d 10.1.3.15/32 -p udp -m udp --dport 53 -j ACCEPT
+-A LAN_TO_DMZ -s 10.1.0.0/16 -d 10.1.3.0/24 -m limit --limit 12/min --limit-burst 6 -j LOG --log-prefix "LAN-TO-DMZ: " --log-level 6
+-A LAN_TO_DMZ -j RETURN
+-A DMZ_OUTBOUND_FILTER -s 10.1.3.0/24 -m set --match-set DMZ_UPDATE_SERVERS dst,port -p tcp -j ACCEPT
+-A DMZ_OUTBOUND_FILTER -s 10.1.3.15/32 -p udp -m udp --dport 53 -j ACCEPT
+-A DMZ_OUTBOUND_FILTER -s 10.1.3.5/32 -p tcp -m multiport --dports 22,443,80 -j ACCEPT
+-A DMZ_OUTBOUND_FILTER -s 10.1.3.0/24 -p tcp -m multiport --dports 21,23,135,139,445 -j DROP
+-A DMZ_OUTBOUND_FILTER -s 10.1.3.0/24 -m limit --limit 6/min --limit-burst 4 -j LOG --log-prefix "DMZ-OUTBOUND: " --log-level 6
+-A DMZ_OUTBOUND_FILTER -j RETURN
+-A TARPIT -p tcp -j LOG --log-prefix "HONEYPOT-TRIGGER: "
+-A TARPIT -p tcp -j REJECT --reject-with tcp-reset
+COMMIT
+# Completed on Fri Jun 21 14:42:18 2025
+# Generated by iptables-save v1.8.7 on Fri Jun 21 14:42:18 2025
+*nat
+:PREROUTING ACCEPT [0:0]
+:INPUT ACCEPT [0:0]
+:OUTPUT ACCEPT [0:0]
+:POSTROUTING ACCEPT [0:0]
+:DMZ_LOAD_BALANCE - [0:0]
+-A PREROUTING -i eth0 -d 10.1.3.1/32 -p tcp -m multiport --dports 80,443 -j DMZ_LOAD_BALANCE
+-A POSTROUTING -s 10.1.3.0/24 -d 10.1.0.0/16 -o eth0 -m set ! --match-set DMZ_NAT_EXEMPT src -j MASQUERADE
+-A POSTROUTING -s 10.1.3.0/24 -o eth0 -j SNAT --to-source 10.1.2.3
+-A DMZ_LOAD_BALANCE -p tcp -m tcp --dport 80 -m statistic --mode nth --every 3 --packet 0 -j DNAT --to-destination 10.1.3.10:80
+-A DMZ_LOAD_BALANCE -p tcp -m tcp --dport 80 -m statistic --mode nth --every 2 --packet 0 -j DNAT --to-destination 10.1.3.11:80
+-A DMZ_LOAD_BALANCE -p tcp -m tcp --dport 80 -j DNAT --to-destination 10.1.3.12:80
+-A DMZ_LOAD_BALANCE -p tcp -m tcp --dport 443 -m statistic --mode nth --every 2 --packet 0 -j DNAT --to-destination 10.1.3.10:443
+-A DMZ_LOAD_BALANCE -p tcp -m tcp --dport 443 -j DNAT --to-destination 10.1.3.11:443
+-A DMZ_LOAD_BALANCE -j RETURN
+COMMIT
+# Completed on Fri Jun 21 14:42:18 2025
+# Generated by iptables-save v1.8.7 on Fri Jun 21 14:42:18 2025
+*mangle
+:PREROUTING ACCEPT [0:0]
+:INPUT ACCEPT [0:0]
+:FORWARD ACCEPT [0:0]
+:OUTPUT ACCEPT [0:0]
+:POSTROUTING ACCEPT [0:0]
+:DMZ_TRAFFIC_SHAPING - [0:0]
+:DMZ_QOS_FORWARD - [0:0]
+-A PREROUTING -m set --match-set DMZ_HIGH_PRIORITY src -j MARK --set-xmark 0x100/0xffffffff
+-A PREROUTING -m set --match-set DMZ_LOW_PRIORITY src -j MARK --set-xmark 0x200/0xffffffff
+-A PREROUTING -j DMZ_TRAFFIC_SHAPING
+-A PREROUTING -m set --match-set DMZ_CRITICAL_SERVICES dst,port -p tcp -j DSCP --set-dscp 0x2e
+-A FORWARD -j DMZ_QOS_FORWARD
+-A FORWARD -j CONNMARK --restore-mark --nfmask 0xffffffff --ctmask 0xffffffff
+-A FORWARD -s 10.1.3.0/24 -p tcp -m multiport --dports 80,443 -j MARK --set-xmark 0x10/0xffffffff
+-A FORWARD -j CONNMARK --save-mark --nfmask 0xffffffff --ctmask 0xffffffff
+-A POSTROUTING -m mark --mark 0x100 -o eth0 -j CLASSIFY --set-class 1:10
+-A POSTROUTING -m mark --mark 0x200 -o eth1 -j CLASSIFY --set-class 1:20
+-A POSTROUTING -m mark --mark 0x10 -j DSCP --set-dscp 0x2e
+-A DMZ_TRAFFIC_SHAPING -p tcp -m multiport --dports 80,443,8080 -j MARK --set-xmark 0x10/0xffffffff
+-A DMZ_TRAFFIC_SHAPING -p tcp -m multiport --dports 22,3389 -j MARK --set-xmark 0x20/0xffffffff
+-A DMZ_TRAFFIC_SHAPING -p udp -m multiport --dports 53,123 -j MARK --set-xmark 0x30/0xffffffff
+-A DMZ_TRAFFIC_SHAPING -m set --match-set DMZ_BULK_TRANSFER src,dst,port -j MARK --set-xmark 0x40/0xffffffff
+-A DMZ_TRAFFIC_SHAPING -j RETURN
+-A DMZ_QOS_FORWARD -s 10.1.3.0/24 -i eth1 -o eth0 -m set --match-set DMZ_DSCP_MAPPING src,mark -j DSCP --set-dscp-class ef
+-A DMZ_QOS_FORWARD -i eth0 -o eth1 -d 10.1.3.0/24 -j TOS --set-tos 0x10
+-A DMZ_QOS_FORWARD -m set --match-set DMZ_SERVICE_PRIORITY dst,port,proto -j MARK --set-xmark 0x1000/0xffffffff
+-A DMZ_QOS_FORWARD -j RETURN
+COMMIT
+# Completed on Fri Jun 21 14:42:18 2025
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:iptables_save ===
+
+=== TSIM_SECTION_START:ipset_list ===
+TITLE: Ipset Lists and Membership
+COMMAND: /sbin/ipset list
+TIMESTAMP: 2025-06-21 14:42:18
+---
+Name: DMZ_MGMT_SOURCES
+Type: hash:net
+Revision: 6
+Header: family inet hashsize 1024 maxelem 65536
+Size in memory: 456
+References: 1
+Number of entries: 4
+Members:
+10.1.1.0/24
+10.1.2.0/24
+10.1.10.0/24
+10.100.1.0/24
+
+Name: DMZ_MGMT_PORTS
+Type: hash:ip,port
+Revision: 5
+Header: family inet hashsize 1024 maxelem 65536
+Size in memory: 584
+References: 1
+Number of entries: 8
+Members:
+10.1.2.3,tcp:22
+10.1.2.3,tcp:443
+10.1.2.3,tcp:8080
+10.1.3.1,tcp:22
+10.1.3.1,tcp:443
+10.1.3.1,tcp:8080
+10.1.3.5,tcp:22
+10.1.3.15,udp:161
+
+Name: DMZ_WEB_SERVICES
+Type: hash:ip,port
+Revision: 5
+Header: family inet hashsize 1024 maxelem 65536
+Size in memory: 648
+References: 1
+Number of entries: 12
+Members:
+10.1.3.10,tcp:80
+10.1.3.10,tcp:443
+10.1.3.10,tcp:8080
+10.1.3.11,tcp:80
+10.1.3.11,tcp:443
+10.1.3.11,tcp:8080
+10.1.3.12,tcp:80
+10.1.3.12,tcp:443
+10.1.3.12,tcp:8080
+10.1.3.1,tcp:80
+10.1.3.1,tcp:443
+10.1.3.1,tcp:8080
+
+Name: DMZ_MAIL_SERVICES
+Type: hash:ip,port
+Revision: 5
+Header: family inet hashsize 1024 maxelem 65536
+Size in memory: 584
+References: 1
+Number of entries: 8
+Members:
+10.1.3.20,tcp:25
+10.1.3.20,tcp:465
+10.1.3.20,tcp:587
+10.1.3.20,tcp:993
+10.1.3.20,tcp:995
+10.1.3.20,tcp:110
+10.1.3.20,tcp:143
+10.1.3.21,tcp:25
+
+Name: DMZ_DB_SERVICES
+Type: hash:ip,port
+Revision: 5
+Header: family inet hashsize 1024 maxelem 65536
+Size in memory: 520
+References: 1
+Number of entries: 6
+Members:
+10.1.3.30,tcp:3306
+10.1.3.30,tcp:5432
+10.1.3.31,tcp:1433
+10.1.3.31,tcp:1521
+10.1.3.32,tcp:27017
+10.1.3.32,tcp:6379
+
+Name: DMZ_DB_CLIENTS
+Type: hash:net
+Revision: 6
+Header: family inet hashsize 1024 maxelem 65536
+Size in memory: 424
+References: 1
+Number of entries: 3
+Members:
+10.1.3.10/32
+10.1.3.11/32
+10.1.3.12/32
+
+Name: DMZ_DNS_SERVICES
+Type: hash:ip,port
+Revision: 5
+Header: family inet hashsize 1024 maxelem 65536
+Size in memory: 456
+References: 1
+Number of entries: 4
+Members:
+10.1.3.15,tcp:53
+10.1.3.15,udp:53
+10.1.3.16,tcp:53
+10.1.3.16,udp:53
+
+Name: DMZ_BLACKLIST
+Type: hash:net
+Revision: 6
+Header: family inet hashsize 1024 maxelem 65536
+Size in memory: 680
+References: 1
+Number of entries: 15
+Members:
+0.0.0.0/8
+10.0.0.0/8
+127.0.0.0/8
+169.254.0.0/16
+172.16.0.0/12
+192.0.0.0/24
+192.0.2.0/24
+192.168.0.0/16
+224.0.0.0/4
+240.0.0.0/4
+185.220.100.0/24
+185.220.101.0/24
+198.96.155.0/24
+23.129.64.0/24
+104.244.42.0/24
+
+Name: DMZ_HONEYPOT_PORTS
+Type: hash:ip,port
+Revision: 5
+Header: family inet hashsize 1024 maxelem 65536
+Size in memory: 712
+References: 1
+Number of entries: 18
+Members:
+0.0.0.0/0,tcp:21
+0.0.0.0/0,tcp:23
+0.0.0.0/0,tcp:135
+0.0.0.0/0,tcp:139
+0.0.0.0/0,tcp:445
+0.0.0.0/0,tcp:1433
+0.0.0.0/0,tcp:1434
+0.0.0.0/0,tcp:3389
+0.0.0.0/0,tcp:5900
+0.0.0.0/0,tcp:5985
+0.0.0.0/0,tcp:5986
+0.0.0.0/0,udp:135
+0.0.0.0/0,udp:137
+0.0.0.0/0,udp:138
+0.0.0.0/0,udp:445
+0.0.0.0/0,udp:1434
+0.0.0.0/0,tcp:2222
+0.0.0.0/0,tcp:4444
+
+Name: DMZ_SCAN_PORTS
+Type: bitmap:port
+Revision: 3
+Header: range 0-65535
+Size in memory: 8264
+References: 2
+Number of entries: 20
+Members:
+21
+22
+23
+25
+53
+80
+110
+135
+139
+143
+443
+445
+993
+995
+1433
+1434
+3389
+5900
+5985
+5986
+
+Name: DMZ_THREAT_IPS
+Type: hash:net
+Revision: 6
+Header: family inet hashsize 1024 maxelem 65536
+Size in memory: 840
+References: 2
+Number of entries: 25
+Members:
+1.2.3.0/24
+5.6.7.0/24
+8.9.10.0/24
+45.66.230.0/24
+45.66.231.0/24
+91.240.118.0/24
+103.109.247.0/24
+141.98.80.0/24
+141.98.81.0/24
+185.220.100.0/24
+185.220.101.0/24
+198.96.155.0/24
+23.129.64.0/24
+104.244.42.0/24
+178.162.202.0/24
+192.42.116.0/24
+199.87.154.0/24
+77.247.181.0/24
+95.128.43.0/24
+212.102.50.0/24
+37.187.129.0/24
+51.255.202.0/24
+92.222.184.0/24
+146.70.52.0/24
+217.182.230.0/24
+
+Name: DMZ_INSPECT_PROTOCOLS
+Type: hash:net,net,port
+Revision: 0
+Header: family inet hashsize 1024 maxelem 65536
+Size in memory: 1048
+References: 1
+Number of entries: 12
+Members:
+0.0.0.0/0,10.1.3.0/24,tcp:80
+0.0.0.0/0,10.1.3.0/24,tcp:443
+0.0.0.0/0,10.1.3.0/24,tcp:8080
+10.1.3.0/24,0.0.0.0/0,tcp:80
+10.1.3.0/24,0.0.0.0/0,tcp:443
+10.1.3.0/24,0.0.0.0/0,tcp:8080
+10.1.0.0/16,10.1.3.0/24,tcp:22
+10.1.3.0/24,10.1.0.0/16,tcp:22
+10.1.3.0/24,0.0.0.0/0,tcp:25
+10.1.3.0/24,0.0.0.0/0,tcp:465
+10.1.3.0/24,0.0.0.0/0,tcp:587
+10.1.3.0/24,0.0.0.0/0,tcp:993
+
+Name: DMZ_MALWARE_SIGS
+Type: hash:net,net,port
+Revision: 0
+Header: family inet hashsize 1024 maxelem 65536
+Size in memory: 856
+References: 2
+Number of entries: 8
+Members:
+0.0.0.0/0,0.0.0.0/0,tcp:6667
+0.0.0.0/0,0.0.0.0/0,tcp:6668
+0.0.0.0/0,0.0.0.0/0,tcp:6669
+0.0.0.0/0,0.0.0.0/0,tcp:9999
+0.0.0.0/0,0.0.0.0/0,tcp:31337
+0.0.0.0/0,0.0.0.0/0,tcp:12345
+0.0.0.0/0,0.0.0.0/0,udp:31337
+0.0.0.0/0,0.0.0.0/0,udp:12345
+
+Name: DMZ_ALLOWED_OUTBOUND
+Type: hash:net,net,port
+Revision: 0
+Header: family inet hashsize 1024 maxelem 65536
+Size in memory: 920
+References: 1
+Number of entries: 10
+Members:
+10.1.3.5/32,10.1.2.0/24,tcp:22
+10.1.3.10/32,10.1.2.100/32,tcp:161
+10.1.3.11/32,10.1.2.100/32,tcp:161
+10.1.3.12/32,10.1.2.100/32,tcp:161
+10.1.3.15/32,10.1.2.100/32,udp:161
+10.1.3.20/32,10.1.1.100/32,tcp:25
+10.1.3.30/32,10.1.2.200/32,tcp:3306
+10.1.3.31/32,10.1.2.200/32,tcp:1433
+10.1.3.32/32,10.1.2.200/32,tcp:27017
+10.1.3.0/24,10.1.2.100/32,udp:123
+
+Name: DMZ_PUBLIC_SERVICES
+Type: hash:ip,port
+Revision: 5
+Header: family inet hashsize 1024 maxelem 65536
+Size in memory: 648
+References: 1
+Number of entries: 12
+Members:
+10.1.3.10,tcp:80
+10.1.3.10,tcp:443
+10.1.3.11,tcp:80
+10.1.3.11,tcp:443
+10.1.3.12,tcp:80
+10.1.3.12,tcp:443
+10.1.3.15,tcp:53
+10.1.3.15,udp:53
+10.1.3.16,tcp:53
+10.1.3.16,udp:53
+10.1.3.20,tcp:25
+10.1.3.20,tcp:587
+
+Name: DMZ_UPDATE_SERVERS
+Type: hash:net,port
+Revision: 0
+Header: family inet hashsize 1024 maxelem 65536
+Size in memory: 712
+References: 1
+Number of entries: 10
+Members:
+archive.ubuntu.com,tcp:80
+archive.ubuntu.com,tcp:443
+security.ubuntu.com,tcp:80
+security.ubuntu.com,tcp:443
+8.8.8.8/32,tcp:53
+8.8.4.4/32,tcp:53
+1.1.1.1/32,tcp:53
+208.67.222.222/32,tcp:53
+91.189.95.83/32,tcp:80
+91.189.95.85/32,tcp:443
+
+Name: DMZ_HIGH_PRIORITY
+Type: hash:ip
+Revision: 4
+Header: family inet hashsize 1024 maxelem 65536
+Size in memory: 328
+References: 1
+Number of entries: 10
+Members:
+10.1.3.5
+10.1.3.10
+10.1.3.11
+10.1.3.12
+10.1.3.15
+10.1.3.16
+10.1.3.20
+10.1.3.30
+10.1.3.31
+10.1.3.32
+
+Name: DMZ_LOW_PRIORITY
+Type: hash:ip
+Revision: 4
+Header: family inet hashsize 1024 maxelem 65536
+Size in memory: 264
+References: 1
+Number of entries: 6
+Members:
+10.1.3.40
+10.1.3.41
+10.1.3.42
+10.1.3.50
+10.1.3.51
+10.1.3.52
+
+Name: DMZ_CRITICAL_SERVICES
+Type: hash:ip,port
+Revision: 5
+Header: family inet hashsize 1024 maxelem 65536
+Size in memory: 520
+References: 1
+Number of entries: 6
+Members:
+10.1.3.15,tcp:53
+10.1.3.15,udp:53
+10.1.3.16,tcp:53
+10.1.3.16,udp:53
+10.1.3.20,tcp:25
+10.1.3.30,tcp:3306
+
+Name: DMZ_NAT_EXEMPT
+Type: hash:net
+Revision: 6
+Header: family inet hashsize 1024 maxelem 65536
+Size in memory: 424
+References: 1
+Number of entries: 3
+Members:
+10.1.3.5/32
+10.1.3.15/32
+10.1.3.30/32
+
+Name: DMZ_BULK_TRANSFER
+Type: hash:net,net,port
+Revision: 0
+Header: family inet hashsize 1024 maxelem 65536
+Size in memory: 856
+References: 1
+Number of entries: 8
+Members:
+10.1.3.0/24,10.1.2.200/32,tcp:21
+10.1.3.0/24,10.1.2.200/32,tcp:22
+10.1.3.0/24,10.1.2.200/32,tcp:873
+10.1.3.0/24,10.1.2.200/32,tcp:3306
+10.1.3.0/24,10.1.2.200/32,tcp:5432
+10.1.3.0/24,10.1.2.200/32,tcp:1433
+10.1.2.200/32,10.1.3.0/24,tcp:3306
+10.1.2.200/32,10.1.3.0/24,tcp:5432
+
+Name: DMZ_DSCP_MAPPING
+Type: hash:ip,mark
+Revision: 2
+Header: family inet hashsize 1024 maxelem 65536
+Size in memory: 456
+References: 1
+Number of entries: 6
+Members:
+10.1.3.10,0x10
+10.1.3.11,0x10
+10.1.3.12,0x10
+10.1.3.15,0x100
+10.1.3.20,0x100
+10.1.3.30,0x200
+
+Name: DMZ_SERVICE_PRIORITY
+Type: hash:ip,port,proto
+Revision: 1
+Header: family inet hashsize 1024 maxelem 65536
+Size in memory: 680
+References: 1
+Number of entries: 12
+Members:
+10.1.3.15,53,tcp
+10.1.3.15,53,udp
+10.1.3.16,53,tcp
+10.1.3.16,53,udp
+10.1.3.20,25,tcp
+10.1.3.20,587,tcp
+10.1.3.30,3306,tcp
+10.1.3.31,1433,tcp
+10.1.3.32,27017,tcp
+10.1.3.10,80,tcp
+10.1.3.11,443,tcp
+10.1.3.12,8080,tcp
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:ipset_list ===
+
+=== TSIM_SECTION_START:conntrack ===
+TITLE: Connection Tracking Entries (first 10)
+COMMAND: head -10 /proc/net/nf_conntrack
+TIMESTAMP: 2025-06-21 14:42:18
+---
+ipv4     2 tcp      6 431996 ESTABLISHED src=10.1.2.100 dst=10.1.3.15 sport=54321 dport=53 src=10.1.3.15 dst=10.1.2.100 sport=53 dport=54321 [ASSURED] mark=30 use=1
+ipv4     2 tcp      6 431995 ESTABLISHED src=10.1.10.5 dst=10.1.3.10 sport=65432 dport=80 src=10.1.3.10 dst=10.1.10.5 sport=80 dport=65432 [ASSURED] mark=10 use=1
+ipv4     2 tcp      6 431994 ESTABLISHED src=10.1.3.5 dst=10.1.2.50 sport=76543 dport=22 src=10.1.2.50 dst=10.1.3.5 sport=22 dport=76543 [ASSURED] mark=20 use=1
+ipv4     2 udp     17 29 src=10.1.3.15 dst=10.1.2.100 sport=87654 dport=161 src=10.1.2.100 dst=10.1.3.15 sport=161 dport=87654 use=1
+ipv4     2 tcp      6 431993 ESTABLISHED src=10.1.3.20 dst=8.8.8.8 sport=98765 dport=25 src=8.8.8.8 dst=10.1.2.3 sport=25 dport=98765 [ASSURED] mark=100 use=1
+ipv4     2 icmp     1 29 src=10.1.3.12 dst=10.1.1.100 type=8 code=0 id=10987 src=10.1.1.100 dst=10.1.3.12 type=0 code=0 id=10987 use=1
+ipv4     2 tcp      6 431992 ESTABLISHED src=10.1.1.25 dst=10.1.3.11 sport=21098 dport=443 src=10.1.3.11 dst=10.1.1.25 sport=443 dport=21098 [ASSURED] mark=10 use=1
+ipv4     2 tcp      6 86395 TIME_WAIT src=10.1.3.30 dst=10.1.2.200 sport=32109 dport=3306 src=10.1.2.200 dst=10.1.3.30 sport=3306 dport=32109 [ASSURED] mark=40 use=1
+ipv4     2 udp     17 28 src=10.1.2.75 dst=10.1.3.16 sport=43210 dport=53 src=10.1.3.16 dst=10.1.2.75 sport=53 dport=43210 mark=30 use=1
+ipv4     2 tcp      6 431991 ESTABLISHED src=10.1.3.31 dst=10.1.2.200 sport=54321 dport=1433 src=10.1.2.200 dst=10.1.3.31 sport=1433 dport=54321 [ASSURED] mark=40 use=1
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:conntrack ===
+
+=== TSIM_SECTION_START:netfilter_modules ===
+TITLE: Loaded Netfilter Modules
+COMMAND: /bin/lsmod | /bin/grep -E '(iptable|netfilter|conntrack|nf_)'
+TIMESTAMP: 2025-06-21 14:42:18
+---
+nf_conntrack_netlink    49152  0
+nf_conntrack           139264  1 nf_conntrack_netlink
+nf_defrag_ipv4         16384  1 nf_conntrack
+libcrc32c              16384  1 nf_conntrack
+iptable_mangle         16384  1
+iptable_nat            16384  1
+iptable_filter         16384  1
+ip_tables              32768  3 iptable_filter,iptable_mangle,iptable_nat
+nf_nat                 45056  1 iptable_nat
+nf_log_syslog          20480  1
+nf_log_common          16384  1 nf_log_syslog
+xt_multiport           20480  25
+xt_conntrack           16384  18
+xt_mark                16384  8
+xt_MARK                16384  8
+xt_set                 16384  15
+xt_DSCP                16384  6
+xt_TOS                 16384  3
+xt_LOG                 16384  6
+xt_limit               16384  12
+xt_tcpudp              20480  35
+xt_SNAT                20480  2
+xt_DNAT                20480  5
+xt_MASQUERADE          20480  2
+xt_REJECT              16384  2
+xt_recent              20480  4
+xt_statistic           16384  4
+xt_NFQUEUE             16384  1
+xt_CONNMARK            16384  2
+xt_CLASSIFY            16384  3
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:netfilter_modules ===
+
+=== TSIM_FACTS_COLLECTION_COMPLETE ===
+TIMESTAMP: 2025-06-21 14:42:18
+HOSTNAME: hq-dmz
+SECTIONS_COLLECTED: routing_table,policy_rules,interfaces,interface_stats,ip_forwarding,kernel_version,hostname,iptables_*,ipset_*,conntrack,netfilter_modules

@@ -1,8 +1,0 @@
-{
-  "linux": true,
-  "type": "access",
-  "location": "hq",
-  "role": "lab",
-  "vendor": "linux",
-  "manageable": true
-}

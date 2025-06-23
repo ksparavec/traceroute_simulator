@@ -1,9 +1,0 @@
-{
-  "linux": true,
-  "type": "access",
-  "location": "hq",
-  "role": "dmz",
-  "vendor": "linux",
-  "manageable": true,
-  "ansible_controller": true
-}

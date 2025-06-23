@@ -10,10 +10,22 @@ The script makes intelligent decisions about parsing:
 - Stores iptables and ipset information as structured text blocks for later parsing
 - Processes basic system information into structured format
 - Maintains section metadata for debugging and validation
+- Handles multiple text encodings gracefully (UTF-8, Latin-1, ISO-8859-1, CP1252)
 
 Usage:
     python3 process_facts.py input_facts.txt output_facts.json
+    python3 process_facts.py --verbose input_facts.txt output_facts.json
+    python3 process_facts.py --raw input_facts.txt output_facts.json
+    python3 process_facts.py --pretty input_facts.txt output_facts.json
     python3 process_facts.py --help
+
+Text Encoding Support:
+    The script automatically detects and handles various text encodings commonly
+    found in different Linux distributions and system configurations:
+    - UTF-8 (preferred)
+    - Latin-1/ISO-8859-1 (common in European systems)
+    - CP1252 (Windows systems)
+    - Falls back to UTF-8 with character replacement as last resort
 """
 
 import json
@@ -42,11 +54,13 @@ class FactsProcessor:
     parsing by specific Python modules.
     """
     
-    def __init__(self):
+    def __init__(self, verbose: bool = False, store_raw: bool = False):
         """Initialize the facts processor."""
         self.ip_parser = IPCommandParser() if IP_WRAPPER_AVAILABLE else None
         self.facts = {}
         self.sections = {}
+        self.verbose = verbose
+        self.store_raw = store_raw
         
     def parse_facts_file(self, facts_file: str) -> Dict[str, Any]:
         """
@@ -58,8 +72,50 @@ class FactsProcessor:
         Returns:
             Dictionary containing parsed facts in structured format
         """
-        with open(facts_file, 'r') as f:
-            content = f.read()
+        # Try multiple encodings to handle different character sets
+        encodings_to_try = ['utf-8', 'latin-1', 'iso-8859-1', 'cp1252', 'utf-8-sig']
+        content = None
+        encoding_used = None
+        
+        for encoding in encodings_to_try:
+            try:
+                with open(facts_file, 'r', encoding=encoding) as f:
+                    content = f.read()
+                encoding_used = encoding
+                break
+            except UnicodeDecodeError:
+                continue
+        
+        if content is None:
+            # Last resort: read as binary and replace problematic characters
+            try:
+                with open(facts_file, 'rb') as f:
+                    raw_content = f.read()
+                content = raw_content.decode('utf-8', errors='replace')
+                encoding_used = 'utf-8-with-replacement'
+            except Exception as e:
+                raise ValueError(f"Could not read facts file with any encoding: {e}")
+        
+        # Log encoding used for debugging
+        if self.verbose:
+            print(f"Successfully read {facts_file} using encoding: {encoding_used}")
+            if encoding_used in ['utf-8-with-replacement']:
+                print(f"Warning: Some characters were replaced due to encoding issues")
+        
+        # Initialize facts structure - conditionally include raw fields
+        iptables_data = {
+            'available': False,
+            'filter_table': '',
+            'nat_table': '',
+            'mangle_table': ''
+        }
+        if self.store_raw:
+            iptables_data['raw_config'] = ''
+        
+        ipset_data = {
+            'available': False,
+            'lists': ''
+        }
         
         self.facts = {
             'metadata': {
@@ -79,17 +135,8 @@ class FactsProcessor:
                 'ip_forwarding_enabled': False
             },
             'firewall': {
-                'iptables': {
-                    'available': False,
-                    'filter_table': '',
-                    'nat_table': '',
-                    'mangle_table': '',
-                    'raw_config': ''
-                },
-                'ipset': {
-                    'available': False,
-                    'lists': ''
-                }
+                'iptables': iptables_data,
+                'ipset': ipset_data
             },
             'system': {
                 'netfilter_modules': [],
@@ -182,16 +229,20 @@ class FactsProcessor:
                     self.facts['routing']['tables'] = self.ip_parser.parse_route_output(section['output'])
                 except Exception as e:
                     # Fallback to text storage if parsing fails
-                    self.facts['routing']['tables'] = {
-                        'parsing_error': str(e),
-                        'raw_output': section['output']
+                    fallback_data = {
+                        'parsing_error': str(e)
                     }
+                    if self.store_raw:
+                        fallback_data['raw_output'] = section['output']
+                    self.facts['routing']['tables'] = fallback_data
             else:
-                self.facts['routing']['tables'] = {
+                error_data = {
                     'error': 'Command failed or IP wrapper not available',
-                    'exit_code': section['exit_code'],
-                    'raw_output': section['output']
+                    'exit_code': section['exit_code']
                 }
+                if self.store_raw:
+                    error_data['raw_output'] = section['output']
+                self.facts['routing']['tables'] = error_data
         
         # Process policy rules
         if 'policy_rules' in self.sections:
@@ -201,16 +252,20 @@ class FactsProcessor:
                     self.facts['routing']['rules'] = self.ip_parser.parse_rule_output(section['output'])
                 except Exception as e:
                     # Fallback to text storage if parsing fails
-                    self.facts['routing']['rules'] = {
-                        'parsing_error': str(e),
-                        'raw_output': section['output']
+                    fallback_data = {
+                        'parsing_error': str(e)
                     }
+                    if self.store_raw:
+                        fallback_data['raw_output'] = section['output']
+                    self.facts['routing']['rules'] = fallback_data
             else:
-                self.facts['routing']['rules'] = {
+                error_data = {
                     'error': 'Command failed or IP wrapper not available',
-                    'exit_code': section['exit_code'],
-                    'raw_output': section['output']
+                    'exit_code': section['exit_code']
                 }
+                if self.store_raw:
+                    error_data['raw_output'] = section['output']
+                self.facts['routing']['rules'] = error_data
     
     def _process_network_sections(self):
         """Process network-related sections."""
@@ -224,23 +279,27 @@ class FactsProcessor:
                 except:
                     self.facts['network']['ip_forwarding_enabled'] = False
         
-        # Process interfaces - store as structured text for later parsing
+        # Process interfaces - conditionally store raw data
         if 'interfaces' in self.sections:
             section = self.sections['interfaces']
-            self.facts['network']['interfaces'] = {
+            interface_data = {
                 'command': section['command'],
-                'exit_code': section['exit_code'],
-                'raw_output': section['output']
+                'exit_code': section['exit_code']
             }
+            if self.store_raw:
+                interface_data['raw_output'] = section['output']
+            self.facts['network']['interfaces'] = interface_data
         
-        # Process interface statistics - store as structured text
+        # Process interface statistics - conditionally store raw data
         if 'interface_stats' in self.sections:
             section = self.sections['interface_stats']
-            self.facts['network']['interface_stats'] = {
+            stats_data = {
                 'command': section['command'],
-                'exit_code': section['exit_code'],
-                'raw_output': section['output']
+                'exit_code': section['exit_code']
             }
+            if self.store_raw:
+                stats_data['raw_output'] = section['output']
+            self.facts['network']['interface_stats'] = stats_data
     
     def _process_firewall_sections(self):
         """Process firewall-related sections."""
@@ -258,28 +317,55 @@ class FactsProcessor:
                 # Fallback to raw text if parsing fails
                 self.facts['firewall']['iptables']['parsing_error'] = str(e)
                 
-                # Store raw tables as fallback
-                if 'iptables_filter' in self.sections:
-                    self.facts['firewall']['iptables']['filter_table_raw'] = self.sections['iptables_filter']['output']
-                if 'iptables_nat' in self.sections:
-                    self.facts['firewall']['iptables']['nat_table_raw'] = self.sections['iptables_nat']['output']
-                if 'iptables_mangle' in self.sections:
-                    self.facts['firewall']['iptables']['mangle_table_raw'] = self.sections['iptables_mangle']['output']
-                if 'iptables_save' in self.sections:
-                    self.facts['firewall']['iptables']['raw_config'] = self.sections['iptables_save']['output']
+                # Store raw tables as fallback only if --raw specified
+                if self.store_raw:
+                    if 'iptables_filter' in self.sections:
+                        self.facts['firewall']['iptables']['filter_table_raw'] = self.sections['iptables_filter']['output']
+                    if 'iptables_nat' in self.sections:
+                        self.facts['firewall']['iptables']['nat_table_raw'] = self.sections['iptables_nat']['output']
+                    if 'iptables_mangle' in self.sections:
+                        self.facts['firewall']['iptables']['mangle_table_raw'] = self.sections['iptables_mangle']['output']
+                    if 'iptables_save' in self.sections:
+                        self.facts['firewall']['iptables']['raw_config'] = self.sections['iptables_save']['output']
         
-        # Process ipset information
-        if 'ipset_list' in self.sections:
+        # Process ipset information - prefer ipset_save over ipset_list
+        if 'ipset_save' in self.sections:
+            section = self.sections['ipset_save']
+            self.facts['firewall']['ipset']['available'] = True
+            try:
+                self.facts['firewall']['ipset']['lists'] = self._parse_ipset_save_output(section['output'])
+            except Exception as e:
+                # Fallback to ipset_list if save parsing fails
+                if 'ipset_list' in self.sections:
+                    try:
+                        self.facts['firewall']['ipset']['lists'] = self._parse_ipset_output(self.sections['ipset_list']['output'])
+                    except:
+                        fallback_data = {
+                            'parsing_error': f"Both ipset_save and ipset_list parsing failed: {str(e)}"
+                        }
+                        if self.store_raw:
+                            fallback_data['raw_output'] = section['output']
+                        self.facts['firewall']['ipset']['lists'] = fallback_data
+                else:
+                    fallback_data = {
+                        'parsing_error': str(e)
+                    }
+                    if self.store_raw:
+                        fallback_data['raw_output'] = section['output']
+                    self.facts['firewall']['ipset']['lists'] = fallback_data
+        elif 'ipset_list' in self.sections:
             section = self.sections['ipset_list']
             self.facts['firewall']['ipset']['available'] = True
             try:
                 self.facts['firewall']['ipset']['lists'] = self._parse_ipset_output(section['output'])
             except Exception as e:
                 # Fallback to raw text if parsing fails
-                self.facts['firewall']['ipset']['lists'] = {
-                    'parsing_error': str(e),
-                    'raw_output': section['output']
+                fallback_data = {
+                    'parsing_error': str(e)
                 }
+                if self.store_raw:
+                    fallback_data['raw_output'] = section['output']
+                self.facts['firewall']['ipset']['lists'] = fallback_data
         else:
             self.facts['firewall']['ipset']['available'] = False
             self.facts['firewall']['ipset']['lists'] = []
@@ -302,7 +388,11 @@ class FactsProcessor:
         # Process connection tracking
         if 'conntrack' in self.sections:
             section = self.sections['conntrack']
-            self.facts['system']['connection_tracking'] = section['output']
+            if self.store_raw:
+                self.facts['system']['connection_tracking'] = section['output']
+            else:
+                # Only store basic status when not storing raw
+                self.facts['system']['connection_tracking'] = 'available' if section['exit_code'] == 0 else 'unavailable'
     
     def _extract_custom_chains(self, iptables_output: str) -> set:
         """
@@ -385,7 +475,7 @@ class FactsProcessor:
                     chain_references.update(refs)
         
         # Also parse iptables-save if available for additional validation
-        if 'iptables_save' in self.sections:
+        if 'iptables_save' in self.sections and self.store_raw:
             section = self.sections['iptables_save']
             if section['exit_code'] == 0:
                 parsed_tables['raw_config'] = section['output']
@@ -593,6 +683,10 @@ class FactsProcessor:
         if comment:
             rule_data["comment"] = comment
         
+        # Store raw rule text if requested
+        if self.store_raw:
+            rule_data["raw_rule_text"] = rule_text
+        
         # Parse remaining extensions and matches
         remaining_parts = parts[offset:]
         i = 0
@@ -639,21 +733,74 @@ class FactsProcessor:
                 rule_data['state'] = states
                 i += 2
                 
-            # Match sets (ipset integration)
+            # Match sets (ipset integration) - handle both formats from iptables -L
             elif part == 'match-set' and i + 2 < len(remaining_parts):
                 set_name = remaining_parts[i + 1]
                 direction = remaining_parts[i + 2]
                 
-                # Replace source or destination with match-set name based on direction
-                if direction == 'src':
-                    # Replace source field with match-set name
-                    rule_data['source'] = set_name
-                elif direction == 'dst':
-                    # Replace destination field with match-set name
-                    rule_data['destination'] = set_name
-                # Note: Other directions like 'src,dst' could be handled here if needed
+                # Parse match-set direction arguments (can be complex like src,dst or src,src)
+                directions = direction.split(',')
+                
+                # Store match-set information in extensions for proper handling
+                if 'match_sets' not in rule_data['extensions']:
+                    rule_data['extensions']['match_sets'] = []
+                
+                match_set_info = {
+                    'set_name': set_name,
+                    'direction': direction,
+                    'parsed_directions': directions
+                }
+                rule_data['extensions']['match_sets'].append(match_set_info)
+                
+                # Note: We do NOT replace source/destination fields with set names
+                # The analyzer needs to check ipset membership, not string matching
+                # All match-set logic is handled via the extensions.match_sets data
                 
                 i += 3
+                
+            # Alternative match-set format that might appear in some iptables outputs
+            elif (part.startswith('match-set') or part == 'set') and i + 2 < len(remaining_parts):
+                # Handle cases where match-set appears as a single word or as 'set'
+                if part == 'set':
+                    # Format: "set SET_NAME direction"
+                    set_name = remaining_parts[i + 1] 
+                    direction = remaining_parts[i + 2]
+                else:
+                    # Could be match-set:SET_NAME:direction or similar variants
+                    if ':' in part:
+                        # Parse match-set:SET_NAME:direction format
+                        parts_split = part.split(':')
+                        if len(parts_split) >= 3:
+                            set_name = parts_split[1]
+                            direction = parts_split[2]
+                            # Skip the next parts since they're included in this one
+                            i += 1
+                        else:
+                            # Fallback to normal parsing
+                            set_name = remaining_parts[i + 1] if i + 1 < len(remaining_parts) else ''
+                            direction = remaining_parts[i + 2] if i + 2 < len(remaining_parts) else ''
+                            i += 3
+                    else:
+                        set_name = remaining_parts[i + 1] if i + 1 < len(remaining_parts) else ''
+                        direction = remaining_parts[i + 2] if i + 2 < len(remaining_parts) else ''
+                        i += 3
+                
+                if set_name and direction:
+                    # Parse directions
+                    directions = direction.split(',')
+                    
+                    # Store match-set information in extensions
+                    if 'match_sets' not in rule_data['extensions']:
+                        rule_data['extensions']['match_sets'] = []
+                    
+                    match_set_info = {
+                        'set_name': set_name,
+                        'direction': direction,
+                        'parsed_directions': directions
+                    }
+                    rule_data['extensions']['match_sets'].append(match_set_info)
+                else:
+                    i += 1
                 
             # Multiport
             elif part == 'multiport' and i + 1 < len(remaining_parts):
@@ -844,6 +991,56 @@ class FactsProcessor:
             elif part == 'PKTTYPE':
                 # Skip malformed PKTTYPE to avoid generic parsing
                 i += 1
+            
+            # Handle IP ranges in source/destination
+            elif part == 'source' and i + 3 < len(remaining_parts) and remaining_parts[i + 1] == 'IP' and remaining_parts[i + 2] == 'range':
+                # Format: "source IP range 10.1.1.1-10.1.1.10"
+                ip_range = remaining_parts[i + 3]
+                rule_data['source'] = ip_range
+                i += 4
+                
+            elif part == 'destination' and i + 3 < len(remaining_parts) and remaining_parts[i + 1] == 'IP' and remaining_parts[i + 2] == 'range':
+                # Format: "destination IP range 10.1.1.1-10.1.1.10"
+                ip_range = remaining_parts[i + 3]
+                rule_data['destination'] = ip_range
+                i += 4
+                
+            # Handle complex multiport expressions directly
+            elif part == 'dpt:' or part.startswith('dpt:'):
+                # Handle destination port
+                if part == 'dpt:' and i + 1 < len(remaining_parts):
+                    rule_data['dport'] = remaining_parts[i + 1]
+                    i += 2
+                else:
+                    rule_data['dport'] = part[4:]  # Remove 'dpt:' prefix
+                    i += 1
+                    
+            elif part == 'spt:' or part.startswith('spt:'):
+                # Handle source port  
+                if part == 'spt:' and i + 1 < len(remaining_parts):
+                    rule_data['sport'] = remaining_parts[i + 1]
+                    i += 2
+                else:
+                    rule_data['sport'] = part[4:]  # Remove 'spt:' prefix
+                    i += 1
+                    
+            elif part == 'dpts:' or part.startswith('dpts:'):
+                # Handle destination ports (multiport)
+                if part == 'dpts:' and i + 1 < len(remaining_parts):
+                    rule_data['dports'] = remaining_parts[i + 1]
+                    i += 2
+                else:
+                    rule_data['dports'] = part[5:]  # Remove 'dpts:' prefix
+                    i += 1
+                    
+            elif part == 'spts:' or part.startswith('spts:'):
+                # Handle source ports (multiport)
+                if part == 'spts:' and i + 1 < len(remaining_parts):
+                    rule_data['sports'] = remaining_parts[i + 1]
+                    i += 2
+                else:
+                    rule_data['sports'] = part[5:]  # Remove 'spts:' prefix
+                    i += 1
                     
             else:
                 # Unknown extension, store rest of rule as unparsed definition
@@ -855,6 +1052,9 @@ class FactsProcessor:
                     break
                 i += 1
         
+        # Post-process complex unparsed extensions (for rules that were already incorrectly parsed)
+        self._post_process_complex_extensions(rule_data)
+        
         # Clean up empty sections
         if not rule_data['state']:
             del rule_data['state']
@@ -862,6 +1062,64 @@ class FactsProcessor:
             del rule_data['extensions']
         
         return rule_data
+    
+    def _post_process_complex_extensions(self, rule_data: Dict[str, Any]):
+        """
+        Post-process complex unparsed extensions to extract IP ranges, multiport, and state information.
+        
+        This handles cases where complex text like "destination IP range 10.1.1.1-10.1.1.10 multiport dports 80,443 state NEW"
+        was stored as an unparsed extension and needs to be properly parsed.
+        """
+        if 'extensions' not in rule_data:
+            return
+            
+        extensions = rule_data['extensions']
+        
+        # Look for complex unparsed destination or source extensions
+        for key, value in list(extensions.items()):
+            if isinstance(value, str) and ('IP range' in value or 'multiport' in value or 'state ' in value):
+                # Parse complex extension text
+                parts = value.split()
+                i = 0
+                
+                while i < len(parts):
+                    # Handle IP range parsing
+                    if i + 3 < len(parts) and parts[i] == 'IP' and parts[i+1] == 'range':
+                        ip_range = parts[i+2]
+                        # Update the appropriate field based on extension key
+                        if key in ['destination', 'dest']:
+                            rule_data['destination'] = ip_range
+                        elif key in ['source', 'src']:
+                            rule_data['source'] = ip_range
+                        i += 3
+                        
+                    # Handle multiport parsing
+                    elif i + 2 < len(parts) and parts[i] == 'multiport':
+                        port_type = parts[i+1]  # dports, sports, ports
+                        ports = parts[i+2] if i+2 < len(parts) else ''
+                        
+                        # Store multiport information
+                        if port_type == 'dports':
+                            rule_data['dports'] = ports
+                        elif port_type == 'sports':
+                            rule_data['sports'] = ports
+                        elif port_type == 'ports':
+                            # Both source and destination ports
+                            rule_data['ports'] = ports
+                            
+                        i += 3
+                        
+                    # Handle state parsing
+                    elif i + 1 < len(parts) and parts[i] == 'state':
+                        states = parts[i+1].split(',')
+                        rule_data['state'] = states
+                        i += 2
+                        
+                    else:
+                        i += 1
+                
+                # Remove the unparsed extension since we've processed it
+                del extensions[key]
     
     def _parse_ipset_output(self, ipset_output: str) -> List[Dict[str, Dict[str, Any]]]:
         """
@@ -954,6 +1212,73 @@ class FactsProcessor:
         
         return ipsets
 
+    def _parse_ipset_save_output(self, ipset_save_output: str) -> List[Dict[str, Dict[str, Any]]]:
+        """
+        Parse ipset save output into structured JSON format.
+        
+        Args:
+            ipset_save_output: Raw output from 'ipset save' command
+            
+        Returns:
+            List of dictionaries where each element has:
+            - Key: ipset name
+            - Value: Dictionary with properties (type, members, etc.)
+            
+        Example input:
+            create SET_NAME hash:ip family inet hashsize 1024 maxelem 65536
+            add SET_NAME 192.168.1.1
+            add SET_NAME 192.168.1.2
+            
+        Example output:
+        [
+            {
+                "SET_NAME": {
+                    "type": "hash:ip",
+                    "header": "family inet hashsize 1024 maxelem 65536",
+                    "members": ["192.168.1.1", "192.168.1.2"]
+                }
+            }
+        ]
+        """
+        ipsets = {}
+        
+        for line in ipset_save_output.split('\n'):
+            line = line.strip()
+            
+            if not line:
+                continue
+                
+            if line.startswith('create '):
+                # Parse create line: create SET_NAME hash:ip family inet hashsize 1024 maxelem 65536
+                parts = line.split(' ', 3)  # Split into max 4 parts: ['create', 'SET_NAME', 'hash:ip', 'family inet hashsize 1024 maxelem 65536']
+                if len(parts) >= 3:
+                    set_name = parts[1]
+                    set_type = parts[2]
+                    header = parts[3] if len(parts) > 3 else ""
+                    
+                    ipsets[set_name] = {
+                        'type': set_type,
+                        'header': header,
+                        'members': []
+                    }
+                    
+            elif line.startswith('add '):
+                # Parse add line: add SET_NAME 192.168.1.1
+                parts = line.split(' ', 2)  # Split into max 3 parts: ['add', 'SET_NAME', '192.168.1.1']
+                if len(parts) >= 3:
+                    set_name = parts[1]
+                    member = parts[2]
+                    
+                    if set_name in ipsets:
+                        ipsets[set_name]['members'].append(member)
+        
+        # Convert to the expected format (list of single-key dictionaries)
+        result = []
+        for set_name, set_data in ipsets.items():
+            result.append({set_name: set_data})
+        
+        return result
+
 
 def main():
     """Main entry point for the facts processor."""
@@ -962,7 +1287,22 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
+    # Basic processing (compact JSON output)
     python3 process_facts.py facts.txt facts.json
+    
+    # Include original rule text (compact JSON)
+    python3 process_facts.py --raw facts.txt facts.json
+    
+    # Human-readable formatting (without raw text)
+    python3 process_facts.py --pretty facts.txt facts.json
+    
+    # Include original rule text with pretty formatting
+    python3 process_facts.py --raw --pretty facts.txt facts.json
+    
+    # Debug encoding issues
+    python3 process_facts.py --verbose facts.txt facts.json
+    
+    # Validate existing JSON file
     python3 process_facts.py --validate facts.json
         """
     )
@@ -973,6 +1313,10 @@ Examples:
                         help='Validate existing JSON file instead of processing facts')
     parser.add_argument('--pretty', action='store_true',
                         help='Pretty-print JSON output with indentation')
+    parser.add_argument('--verbose', action='store_true',
+                        help='Enable verbose output for debugging encoding issues')
+    parser.add_argument('--raw', action='store_true',
+                        help='Store all raw/unparsed data (rule text, raw_output, raw_config, etc.) in JSON output (significantly increases file size)')
     
     args = parser.parse_args()
     
@@ -997,15 +1341,15 @@ Examples:
         print("Warning: IP JSON wrapper not available - routing data will be stored as raw text")
     
     try:
-        processor = FactsProcessor()
+        processor = FactsProcessor(verbose=args.verbose, store_raw=args.raw)
         facts = processor.parse_facts_file(args.input_file)
         
-        # Write JSON output
+        # Write JSON output (compact by default, pretty only when requested)
         with open(args.output_file, 'w') as f:
             if args.pretty:
                 json.dump(facts, f, indent=2, sort_keys=True)
             else:
-                json.dump(facts, f)
+                json.dump(facts, f, separators=(',', ':'))  # Most compact format
         
         print(f"Successfully processed facts from {args.input_file}")
         print(f"Output written to {args.output_file}")
@@ -1014,8 +1358,18 @@ Examples:
         
         return 0
         
+    except UnicodeDecodeError as e:
+        print(f"Error: Text encoding issue - {e}")
+        print(f"Try using --verbose to see encoding details, or convert the file to UTF-8:")
+        print(f"  iconv -f iso-8859-1 -t utf-8 {args.input_file} > {args.input_file}.utf8")
+        print(f"  Or use dos2unix if it's a Windows line ending issue:")
+        print(f"  dos2unix {args.input_file}")
+        return 1
     except Exception as e:
         print(f"Error processing facts: {e}")
+        if args.verbose:
+            import traceback
+            traceback.print_exc()
         return 1
 
 

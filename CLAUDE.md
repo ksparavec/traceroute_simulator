@@ -7,15 +7,20 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ### Automated Make Targets (Recommended)
 - **Check dependencies**: `make check-deps` (validates all Python modules with installation hints)
 - **Run all tests**: `make test` (comprehensive test suite with environment validation)
+- **Run namespace tests**: `sudo make test-namespace` (namespace simulation tests requiring root)
 - **Clean artifacts**: `make clean` (removes cache files while preserving routing data)
 - **Collect routing data**: `make fetch-routing-data OUTPUT_DIR=data INVENTORY_FILE=hosts.ini`
 - **Show help**: `make help` (displays all available targets and examples)
 
 ### Direct Testing Commands
-- **Run comprehensive test suite**: `cd tests && python3 test_traceroute_simulator.py`
-- **Test IP JSON wrapper**: `cd tests && python3 test_ip_json_comparison.py`
-- **Test MTR integration**: `cd tests && python3 test_mtr_integration.py`
-- **Test facts processing and analyzer**: `cd tests && python3 test_comprehensive_facts_processing.py`
+
+**Important**: When running test scripts directly (not via make), always use the `-B` flag to prevent bytecode generation:
+
+- **Run comprehensive test suite**: `cd tests && python3 -B test_traceroute_simulator.py`
+- **Test IP JSON wrapper**: `cd tests && python3 -B test_ip_json_comparison.py`
+- **Test MTR integration**: `cd tests && python3 -B test_mtr_integration.py`
+- **Test iptables analyzer standalone**: `cd tests && python3 -B test_comprehensive_facts_processing.py` (analyzer tests only)
+- **Test namespace simulation**: `sudo python3 -B tests/test_namespace_simulation.py` (requires root)
 - **Test specific functionality**: `make tsim ARGS="-s 10.1.1.1 -d 10.2.1.1"`
 - **Test complex routing**: `make tsim ARGS="-s 10.1.10.1 -d 10.3.20.1"`
 - **Test JSON output**: `make tsim ARGS="-j -s 10.100.1.1 -d 10.100.1.3"`
@@ -29,7 +34,41 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **Test verbose levels**: `make tsim ARGS="-s 10.1.1.1 -d 10.2.1.1 -v"` (basic), `ARGS="-vv"` (debug), `ARGS="-vvv"` (config)
 - **Test metadata loading**: `make tsim ARGS="-s 10.1.1.1 -d 10.2.1.1 -vvv"` (shows router types)
 - **Test iptables analyzer**: `make ifa ARGS="--router hq-gw -s 10.1.1.1 -d 10.2.1.1 -p tcp -vv"`
-- **Generate network topology diagram**: `cd docs && python3 network_topology_diagram.py`
+- **Generate network topology diagram**: `cd docs && python3 -B network_topology_diagram.py`
+
+### Linux Namespace Network Simulation
+
+The project includes a complete Linux namespace-based network simulation system that creates real network infrastructure for testing:
+
+#### **Namespace Network Commands**
+- **Setup simulation**: `sudo make netsetup` (creates 10 router namespaces with full connectivity)
+- **Test connectivity**: `sudo make nettest ARGS="-s 10.1.1.1 -d 10.2.1.1 -p icmp"` (real packet testing)
+- **Show network status**: `sudo make netshow ROUTER=hq-gw FUNC=interfaces` (displays config with original names)
+- **Cleanup simulation**: `sudo make netclean` (removes all namespaces and veth pairs)
+
+#### **Network Status Viewing**
+- **Show all routers summary**: `sudo make netshow ROUTER=all FUNC=summary`
+- **Show interface configuration**: `sudo make netshow ROUTER=hq-gw FUNC=interfaces`
+- **Show routing table**: `sudo make netshow ROUTER=br-core FUNC=routes`
+- **Show policy rules**: `sudo make netshow ROUTER=dc-srv FUNC=rules`
+- **Show complete configuration**: `sudo make netshow ROUTER=hq-dmz FUNC=all`
+
+#### **Network Testing Examples**
+- **ICMP ping test**: `sudo make nettest ARGS="-s 10.1.1.1 -d 10.2.1.1 -p icmp"`
+- **TCP connectivity test**: `sudo make nettest ARGS="-s 10.1.1.1 -d 10.2.1.1 -p tcp --dport 80"`
+- **UDP connectivity test**: `sudo make nettest ARGS="-s 10.1.1.1 -d 10.2.1.1 -p udp --dport 53"`
+- **Cross-location test**: `sudo make nettest ARGS="-s 10.1.1.1 -d 10.3.1.1 -p icmp"` (HQ to DC)
+- **VPN mesh test**: `sudo make nettest ARGS="-s 10.100.1.1 -d 10.100.1.2 -p icmp"` (WireGuard)
+
+#### **Connectivity and Path Testing**
+- **Ping connectivity test all routers**: `sudo python3 -B src/simulators/network_namespace_tester.py --all`
+- **MTR traceroute test all routers**: `sudo python3 -B src/simulators/network_namespace_tester.py --all --test-type mtr`
+- **Combined ping and MTR testing**: `sudo python3 -B src/simulators/network_namespace_tester.py --all --test-type both`
+- **Test specific router pair with ping**: `sudo python3 -B src/simulators/network_namespace_tester.py -s 10.3.2.3 -d 10.1.1.1`
+- **Test path to public IP with MTR**: `sudo python3 -B src/simulators/network_namespace_tester.py -s 10.3.2.3 -d 1.1.1.1 --test-type mtr -vv`
+- **Test external connectivity**: `sudo python3 -B src/simulators/network_namespace_tester.py -s 10.1.1.1 -d 8.8.8.8 --test-type both -v`
+- **Test with verbose output**: `sudo python3 -B src/simulators/network_namespace_tester.py -s 10.2.2.3 -d 10.3.1.1 -vv`
+- **Test blackholed destinations**: `sudo python3 -B src/simulators/network_namespace_tester.py -s 10.1.1.1 -d 10.2.6.2 --test-type mtr -vv`
 
 ### Data Collection and Validation
 
@@ -43,15 +82,20 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **Run comprehensive test suite**: `make test` (auto-generates fresh test facts and runs all tests)
 
 #### **Individual Testing Commands**
-- **Process raw facts**: `python3 ansible/process_facts.py tests/raw_facts/router_facts.txt output.json --verbose`
-- **Validate facts processing**: `python3 ansible/process_facts.py --validate output.json`
-- **Test with generated facts**: `TRACEROUTE_SIMULATOR_FACTS=/tmp/traceroute_test_output python3 tests/test_comprehensive_facts_processing.py`
+- **Process raw facts**: `python3 -B ansible/process_facts.py tests/raw_facts/router_facts.txt output.json --verbose`
+- **Validate facts processing**: `python3 -B ansible/process_facts.py --validate output.json`
+- **Test with generated facts**: `TRACEROUTE_SIMULATOR_FACTS=/tmp/traceroute_test_output python3 -B tests/test_comprehensive_facts_processing.py`
 - **Test simulator**: `TRACEROUTE_SIMULATOR_FACTS=/tmp/traceroute_test_output make tsim ARGS="-s 10.1.1.1 -d 10.2.1.1"`
 - **Test iptables analyzer**: `TRACEROUTE_SIMULATOR_FACTS=/tmp/traceroute_test_output make ifa ARGS="--router hq-gw -s 10.1.1.1 -d 8.8.8.8 -p tcp -vv"`
 
 #### **Data Validation**
 - **Validate collected JSON**: `python3 -m json.tool /tmp/traceroute_test_output/*.json`
-- **Test IP wrapper compatibility**: `python3 ansible/ip_json_wrapper.py route show`
+- **Test IP wrapper compatibility**: `python3 -B ansible/ip_json_wrapper.py route show`
+
+#### **Utility Scripts**
+- **Update interface data in JSON facts**: `python3 -B src/utils/update_tsim_facts.py` (extracts interfaces from routing tables)
+- **Verify namespace setup**: `sudo python3 -B src/utils/verify_network_setup.py` (comprehensive configuration verification)
+- **Verify specific namespace**: `TRACEROUTE_SIMULATOR_FACTS=/tmp/traceroute_test_output sudo python3 -B src/utils/verify_network_setup.py`
 
 ## Test Network Environment
 
@@ -213,11 +257,11 @@ router.is_ansible_controller()  # Boolean: controller status
 - **Performance considerations**: Note any optimization decisions
 
 ### Testing Standards
-- **Comprehensive coverage**: 95+ total test cases providing near-complete code coverage
+- **Comprehensive coverage**: 85+ total test cases providing near-complete code coverage
   - **Main simulator tests**: 63 test cases (100% pass rate)
   - **MTR integration tests**: 8 test cases (87.5% pass rate)
   - **IP wrapper tests**: 7 test cases (validation and compatibility)
-  - **Facts processing tests**: 18 test cases (100% pass rate) covering shell output parsing and JSON generation
+  - **Namespace simulation tests**: 10 test cases (real network testing with Linux namespaces)
 - **Network topology testing**: Tests for intra-location, inter-location, and multi-hop routing
 - **Facts processing validation**: Comprehensive testing of raw shell output to structured JSON conversion
 - **Iptables analysis testing**: Complete coverage of forward analyzer with complex rulesets, ipsets, multiport scenarios
@@ -230,6 +274,7 @@ router.is_ansible_controller()  # Boolean: controller status
 - **Performance validation**: Ensure all tests complete within reasonable time
 - **Data integrity**: Validate JSON structure and routing table consistency
 - **Facts processing reliability**: 100% success rate for all 10 routers with comprehensive ipset parsing
+- **Test workflow integrity**: Facts files persist in `/tmp/traceroute_test_output` after `make test` for namespace testing
 
 ## Project Structure Standards
 - **Separation of concerns**: Keep routing logic, testing, and data collection separate
@@ -246,11 +291,19 @@ traceroute_simulator/
 │   ├── core/                             # Main simulator components
 │   │   ├── traceroute_simulator.py          # Main application
 │   │   ├── route_formatter.py               # Output formatting for simulation and MTR results
-│   │   └── reverse_path_tracer.py           # Reverse path tracing functionality
+│   │   ├── reverse_path_tracer.py           # Reverse path tracing functionality
+│   │   └── create_final_json.py             # Final JSON consolidation for build system
 │   ├── analyzers/                        # Analysis tools  
 │   │   └── iptables_forward_analyzer.py     # Packet forwarding analysis using iptables rules
-│   └── executors/                        # External command executors
-│       └── mtr_executor.py                  # MTR execution and SSH management
+│   ├── executors/                        # External command executors
+│   │   └── mtr_executor.py                  # MTR execution and SSH management
+│   ├── simulators/                       # Network simulation tools
+│   │   ├── network_namespace_tester.py      # Multi-protocol connectivity and path testing (ping/MTR)
+│   │   ├── network_namespace_setup.py       # Network namespace creation and configuration
+│   │   └── network_namespace_status.py      # Network namespace status monitoring
+│   └── utils/                            # Utility scripts for maintenance and debugging
+│       ├── update_tsim_facts.py             # Update existing JSON facts files with interface data
+│       └── verify_network_setup.py          # Comprehensive namespace configuration verification
 ├── Makefile                              # Build system with dependency checking
 ├── tests/                                # Complete test environment
 │   ├── test_traceroute_simulator.py         # Main test suite (63 cases, 100% pass rate)
@@ -295,11 +348,14 @@ The traceroute simulator provides comprehensive network path simulation:
 
 ### Test Coverage
 Comprehensive test suite covering all functionality:
-- **95+ total test cases**: 63 main simulator + 8 MTR integration + 7 IP wrapper + 18 facts processing tests
+- **85+ total test cases**: 63 main simulator + 8 MTR integration + 7 IP wrapper + 10 namespace simulation + connectivity testing
 - **100% pass rate**: All critical tests consistently pass with thorough validation
 - **Complete coverage**: Intra-location, inter-location, multi-hop routing, error conditions, edge cases
-- **Facts processing validation**: Shell output parsing, JSON generation, ipset extraction, iptables analysis
+- **Facts processing validation**: Ansible-based shell output parsing with proper data structure merging
 - **Forward analyzer testing**: Complex rulesets, match-set rules, multiport scenarios, protocol variations
+- **Namespace simulation testing**: Real packet testing with Linux namespaces, setup/teardown, connectivity validation
+- **Multi-protocol testing**: ICMP ping and MTR traceroute testing with public IP simulation
+- **Connectivity validation**: Comprehensive router-to-router testing with flexible destination handling
 - **Automation testing**: All command-line options, output formats, and exit codes validated
 - **Integration testing**: End-to-end workflows from raw facts collection to network analysis
 
@@ -321,6 +377,25 @@ Compatibility tool for legacy systems without native `ip --json` support:
 - **Complete subcommand support**: Handles route, addr, link, and rule subcommands
 - **Automatic detection**: Uses native JSON when available, falls back to parsing when needed
 - **Complex parsing**: Handles MAC addresses, VPN interfaces, network namespaces, bridge masters
+
+### Namespace Simulation Testing
+Comprehensive Linux namespace-based network simulation for real packet testing:
+- **Real network simulation**: Creates actual Linux namespaces with full network topology
+- **Complete infrastructure**: Routing tables, iptables rules, ipsets, and interface configuration
+- **Multi-protocol testing**: ICMP ping and MTR traceroute testing with configurable test types
+- **Real packet testing**: Uses netcat servers/clients to verify end-to-end connectivity
+- **Protocol coverage**: TCP, UDP, and ICMP connectivity testing with port-specific validation
+- **Firewall validation**: Verifies iptables rules properly block or allow traffic as expected
+- **Flexible destination handling**: Supports any destination IP (internal, external, public) following routing tables
+- **Public IP simulation**: Automatic public IP setup on gateway routers for realistic internet connectivity testing
+- **Metadata-driven gateway detection**: Uses JSON metadata.type field for accurate gateway identification
+- **MTR path analysis**: Comprehensive traceroute testing with hop-by-hop analysis and blackhole detection
+- **Sequential testing**: One-router-at-a-time testing to avoid network congestion
+- **Setup/teardown automation**: Complete lifecycle management with proper resource cleanup
+- **Status monitoring**: Comprehensive namespace status display with interface and routing information
+- **Root privilege handling**: Automatic privilege detection with graceful fallback for non-root execution
+- **Integration with facts**: Uses consolidated JSON facts from `/tmp/traceroute_test_output` exclusively
+- **Test scenarios**: Intra-location, inter-location, VPN mesh, public IP access, and firewall blocking scenarios
 
 ### Build System
 Comprehensive Makefile for automated development workflows:
@@ -417,9 +492,15 @@ Advanced bidirectional path discovery:
 - **MTR executor**: `src/executors/mtr_executor.py` - Real MTR execution via SSH
 - **Route formatter**: `src/core/route_formatter.py` - Unified output formatting
 - **Reverse tracer**: `src/core/reverse_path_tracer.py` - Bidirectional path discovery
+- **JSON consolidator**: `src/core/create_final_json.py` - Final JSON consolidation for build system
 - **Iptables analyzer**: `src/analyzers/iptables_forward_analyzer.py` - Packet forwarding analysis with comprehensive ipset support
+- **Namespace tester**: `src/simulators/network_namespace_tester.py` - Multi-protocol connectivity and path testing with MTR support
+- **Namespace setup**: `src/simulators/network_namespace_setup.py` - Complete network simulation infrastructure creation
+- **Namespace status**: `src/simulators/network_namespace_status.py` - Real-time network namespace monitoring and status display
+- **Facts updater**: `src/utils/update_tsim_facts.py` - Update existing JSON facts files with interface data from routing tables
+- **Setup verifier**: `src/utils/verify_network_setup.py` - Comprehensive namespace configuration verification and debugging
 - **Facts processor**: `ansible/process_facts.py` - Enhanced shell output parsing with dual ipset format support
 - **Build system**: `Makefile` - Automated development workflows with integrated comprehensive testing
 - **Data collection**: `ansible/get_tsim_facts.yml`, `ansible/get_facts.sh` - Dual-mode facts collection with secure script deployment
 - **IP wrapper**: `ansible/ip_json_wrapper.py` - Legacy system compatibility
-- **Comprehensive tests**: `tests/test_comprehensive_facts_processing.py` - 18 test cases covering facts processing and analyzer functionality
+- **Standalone analyzer tests**: `tests/test_comprehensive_facts_processing.py` - 18 test cases for iptables analyzer (run independently)

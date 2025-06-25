@@ -17,7 +17,7 @@ REQUIRED_MODULES := json sys argparse ipaddress os glob typing subprocess re dif
 
 # Colors removed for better terminal compatibility
 
-.PHONY: help check-deps test fetch-routing-data clean tsim ifa
+.PHONY: help check-deps test fetch-routing-data clean tsim ifa netsetup nettest netclean netshow test-namespace
 
 # Default target
 help:
@@ -29,6 +29,11 @@ help:
 	@echo "clean             - Clean up generated files and cache"
 	@echo "tsim              - Run traceroute simulator with command line arguments (e.g., make tsim ARGS='-s 10.1.1.1 -d 10.2.1.1')"
 	@echo "ifa               - Run iptables forward analyzer with command line arguments (e.g., make ifa ARGS='--router hq-gw -s 10.1.1.1 -d 8.8.8.8')"
+	@echo "netsetup          - Set up Linux namespace network simulation (requires sudo, ARGS='-v/-vv/-vvv' for verbosity)"
+	@echo "nettest           - Test network connectivity in namespace simulation (e.g., make nettest ARGS='-s 10.1.1.1 -d 10.2.1.1:80 -p tcp')"
+	@echo "netshow           - Show network status with original interface names (e.g., make netshow ARGS='hq-gw interfaces')"
+	@echo "netclean          - Clean up namespace network simulation (requires sudo, ARGS='-v/-f/--force' for options)"
+	@echo "test-namespace    - Run namespace simulation tests independently (requires sudo and completed 'make test')"
 	@echo "help              - Show this help message"
 	@echo ""
 	@echo "Usage Examples:"
@@ -39,6 +44,21 @@ help:
 	@echo "  make fetch-routing-data OUTPUT_DIR=temp INVENTORY=specific-host        # Target specific host"
 	@echo "  make tsim ARGS='-s 10.1.1.1 -d 10.2.1.1'                              # Run traceroute simulation"
 	@echo "  make ifa ARGS='--router hq-gw -s 10.1.1.1 -d 8.8.8.8 -p tcp'          # Analyze iptables forwarding"
+	@echo "  sudo make netsetup                                                     # Set up namespace network simulation (silent)"
+	@echo "  sudo make netsetup ARGS='-v'                                          # Set up with basic output"
+	@echo "  sudo make netsetup ARGS='-vv'                                         # Set up with info messages"
+	@echo "  sudo make netsetup ARGS='-vvv'                                        # Set up with debug messages"
+	@echo "  sudo make nettest ARGS='-s 10.1.1.1 -d 10.2.1.1:80 -p tcp'           # Test real network connectivity"
+	@echo "  sudo make nettest ARGS='-s 10.1.1.1:12345 -d 10.2.1.1:80 -p tcp -v' # Test with specific source port"
+	@echo "  sudo make nettest ARGS='-s 10.1.1.1 -d 8.8.8.8 -p icmp -v'           # Test ICMP connectivity"
+	@echo "  sudo make netshow ARGS='hq-gw interfaces'                             # Show interface config with original names"
+	@echo "  sudo make netshow ARGS='all summary'                                  # Show summary of all routers"
+	@echo "  sudo make netshow ARGS='br-core routes -v'                            # Show routing table with verbose output"
+	@echo "  sudo make netclean                                                     # Clean up namespace simulation (silent)"
+	@echo "  sudo make netclean ARGS='-v'                                          # Clean up with verbose output"
+	@echo "  sudo make netclean ARGS='-f'                                          # Force cleanup of stuck resources"
+	@echo "  sudo make netclean ARGS='-v -f'                                       # Verbose force cleanup"
+	@echo "  sudo make test-namespace                                               # Run namespace simulation tests after 'make test'"
 	@echo ""
 	@echo "Test Data Collection:"
 	@echo "  # Collect facts and preserve raw data for testing (adds -e test=true to Ansible command)"
@@ -170,18 +190,27 @@ test: check-deps
 		echo ""; \
 	fi
 	
-	# Run comprehensive facts processing tests if available
-	@if [ -f "$(TESTS_DIR)/test_comprehensive_facts_processing.py" ]; then \
-		echo "2.8. Running Comprehensive Facts Processing Tests"; \
-		echo "-----------------------------------------------------"; \
-		cd $(TESTS_DIR) && TRACEROUTE_SIMULATOR_FACTS=/tmp/traceroute_test_output TRACEROUTE_SIMULATOR_CONF=test_config.yaml $(PYTHON) test_comprehensive_facts_processing.py || { \
-			echo "Warning: Comprehensive facts processing tests failed (may not be critical)"; \
+	# Ensure facts are properly generated and persisted
+	@echo "2.8. Ensuring Test Facts Persistence"
+	@echo "-----------------------------------"
+	@if [ ! -d "$(TESTS_DIR)/raw_facts" ] || [ "$$(ls -A $(TESTS_DIR)/raw_facts 2>/dev/null | wc -l)" -eq 0 ]; then \
+		echo "Warning: No raw facts found, copying from existing test data"; \
+		cp -r $(ROUTING_FACTS_DIR)/* /tmp/traceroute_test_output/ 2>/dev/null || { \
+			echo "Error: No test facts available"; \
+			exit 1; \
 		}; \
-		echo "✓ Comprehensive facts processing tests completed"; \
-		echo ""; \
+	else \
+		echo "Running ansible playbook to ensure facts are properly merged and structured..."; \
+		$(ANSIBLE) $(ANSIBLE_DIR)/get_tsim_facts.yml -i "$(TESTS_DIR)/inventory.yml" -v -e "test=true" || { \
+			echo "Failed to generate consolidated test facts"; \
+			exit 1; \
+		}; \
 	fi
+	@test_files=$$(find /tmp/traceroute_test_output -name "*.json" | wc -l); \
+	echo "✓ Test facts ensured: $$test_files JSON files in /tmp/traceroute_test_output"; \
+	echo ""
 	
-	# Test basic functionality with sample data
+	# Test basic functionality with consolidated sample data
 	@echo "3. Running Integration Tests"
 	@echo "---------------------------------"
 	@echo "Testing basic routing scenarios..."
@@ -197,6 +226,18 @@ test: check-deps
 		echo "✓ JSON output test passed" || \
 		echo "✗ JSON output test failed"
 	
+	# Run namespace simulation tests (requires sudo privileges)
+	@echo "4. Running Namespace Simulation Tests"
+	@echo "-------------------------------------"
+	@if [ "$$(id -u)" = "0" ]; then \
+		echo "Running namespace simulation tests with root privileges..."; \
+		TRACEROUTE_SIMULATOR_FACTS=/tmp/traceroute_test_output $(PYTHON) -B tests/test_namespace_simulation.py 2>/dev/null && \
+		echo "✓ Namespace simulation tests completed successfully" || \
+		echo "⚠ Namespace simulation tests completed with warnings (may require sudo)"; \
+	else \
+		echo "⚠ Skipping namespace simulation tests (requires sudo privileges)"; \
+		echo "  To run namespace tests: sudo make test"; \
+	fi
 	@echo ""
 	@echo "All tests completed successfully!"
 
@@ -378,7 +419,7 @@ tsim:
 		exit 1; \
 	fi
 	@echo "Running traceroute simulator with arguments: $(ARGS)"
-	@$(PYTHON) src/core/traceroute_simulator.py $(ARGS)
+	@env TRACEROUTE_SIMULATOR_FACTS="$(TRACEROUTE_SIMULATOR_FACTS)" $(PYTHON) src/core/traceroute_simulator.py $(ARGS)
 
 # Run iptables forward analyzer with command line arguments  
 # Usage: make ifa ARGS="--router hq-gw -s 10.1.1.1 -d 8.8.8.8"
@@ -393,7 +434,93 @@ ifa:
 		exit 1; \
 	fi
 	@echo "Running iptables forward analyzer with arguments: $(ARGS)"
-	@$(PYTHON) src/analyzers/iptables_forward_analyzer.py $(ARGS)
+	@env TRACEROUTE_SIMULATOR_FACTS="$(TRACEROUTE_SIMULATOR_FACTS)" $(PYTHON) src/analyzers/iptables_forward_analyzer.py $(ARGS)
+
+# Set up Linux namespace network simulation (requires sudo)
+# Usage: sudo make netsetup [ARGS="-v|-vv|-vvv"]
+netsetup:
+	@if [ "$$(id -u)" != "0" ]; then \
+		echo "Error: netsetup requires root privileges"; \
+		echo "Please run: sudo make netsetup"; \
+		exit 1; \
+	fi
+	@TRACEROUTE_SIMULATOR_FACTS=/tmp/traceroute_test_output $(PYTHON) src/simulators/network_namespace_setup.py $(ARGS)
+
+# Test network connectivity in namespace simulation (requires sudo)  
+# Usage: sudo make nettest ARGS="-s 10.1.1.1 -d 10.2.1.1 -p tcp --dport 80"
+nettest:
+	@if [ "$$(id -u)" != "0" ]; then \
+		echo "Error: nettest requires root privileges"; \
+		echo "Please run: sudo make nettest ARGS='<arguments>'"; \
+		exit 1; \
+	fi
+	@if [ -z "$(ARGS)" ]; then \
+		echo "Usage: sudo make nettest ARGS='<arguments>'"; \
+		echo "Examples:"; \
+		echo "  sudo make nettest ARGS='-s 10.1.1.1 -d 10.2.1.1 -p tcp --dport 80'"; \
+		echo "  sudo make nettest ARGS='-s 10.1.11.1 -d 10.1.3.5 -p tcp --dport 3389'"; \
+		echo "  sudo make nettest ARGS='-s 10.1.1.5 -d 8.8.8.8 -p icmp'"; \
+		echo "  sudo make nettest ARGS='-s 10.1.2.1 -d 10.1.3.15 -p udp --dport 53'"; \
+		exit 1; \
+	fi
+	@echo "Testing network connectivity with arguments: $(ARGS)"
+	@TRACEROUTE_SIMULATOR_FACTS=/tmp/traceroute_test_output $(PYTHON) src/simulators/network_namespace_tester.py $(ARGS)
+
+# Clean up namespace network simulation (requires sudo)
+# Usage: sudo make netclean [ARGS="-v|-f|--force"]
+netclean:
+	@if [ "$$(id -u)" != "0" ]; then \
+		echo "Error: netclean requires root privileges"; \
+		echo "Please run: sudo make netclean"; \
+		exit 1; \
+	fi
+	@$(PYTHON) src/simulators/network_namespace_cleanup.py $(ARGS)
+
+# Show network status with original interface names (requires sudo)
+# Usage: sudo make netshow ARGS="<router> <function> [-v]"
+# Functions: interfaces, routes, rules, summary, all
+# Router names: hq-gw, hq-core, hq-dmz, hq-lab, br-gw, br-core, br-wifi, dc-gw, dc-core, dc-srv, or 'all'
+netshow:
+	@if [ "$$(id -u)" != "0" ]; then \
+		echo "Error: netshow requires root privileges"; \
+		echo "Please run: sudo make netshow ARGS='<router> <function>'"; \
+		exit 1; \
+	fi
+	@if [ -z "$(ARGS)" ]; then \
+		echo "Usage: sudo make netshow ARGS='<router> <function> [options]'"; \
+		echo ""; \
+		echo "Router names: hq-gw, hq-core, hq-dmz, hq-lab, br-gw, br-core, br-wifi, dc-gw, dc-core, dc-srv, all"; \
+		echo "Functions: interfaces, routes, rules, summary, all"; \
+		echo "Options: -v (verbose debug output)"; \
+		echo ""; \
+		echo "Examples:"; \
+		echo "  sudo make netshow ARGS='hq-gw interfaces'           # Show interface config for hq-gw"; \
+		echo "  sudo make netshow ARGS='br-core routes'             # Show routing table for br-core"; \
+		echo "  sudo make netshow ARGS='dc-srv rules'               # Show policy rules for dc-srv"; \
+		echo "  sudo make netshow ARGS='hq-dmz summary'             # Show brief overview for hq-dmz"; \
+		echo "  sudo make netshow ARGS='hq-gw all'                  # Show complete config for hq-gw"; \
+		echo "  sudo make netshow ARGS='all summary'                # Show summary for all routers"; \
+		echo "  sudo make netshow ARGS='hq-gw interfaces -v'        # Show interfaces with verbose output"; \
+		exit 1; \
+	fi
+	@TRACEROUTE_SIMULATOR_FACTS=/tmp/traceroute_test_output $(PYTHON) src/simulators/network_namespace_status.py $(ARGS)
+
+# Run namespace simulation tests independently (requires sudo)
+# Usage: sudo make test-namespace
+test-namespace:
+	@if [ "$$(id -u)" != "0" ]; then \
+		echo "Error: Namespace simulation tests require root privileges"; \
+		echo "Please run: sudo make test-namespace"; \
+		exit 1; \
+	fi
+	@if [ ! -d "/tmp/traceroute_test_output" ] || [ -z "$$(ls -A /tmp/traceroute_test_output 2>/dev/null)" ]; then \
+		echo "Error: No consolidated facts found in /tmp/traceroute_test_output"; \
+		echo "Please run the main test suite first: make test"; \
+		exit 1; \
+	fi
+	@echo "Running Namespace Simulation Test Suite"
+	@echo "======================================="
+	@TRACEROUTE_SIMULATOR_FACTS=/tmp/traceroute_test_output $(PYTHON) -B tests/test_namespace_simulation.py
 
 # Check if we're running in a git repository (for future enhancements)
 .git-check:

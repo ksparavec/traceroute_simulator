@@ -28,9 +28,22 @@ def create_network_diagram():
         'text': '#2D3436'        # Dark gray for text
     }
     
+    # Load router data from tsim_facts
+    def load_router_data():
+        facts_dir = "../tests/tsim_facts"
+        routers = {}
+        
+        for facts_file in os.listdir(facts_dir):
+            if facts_file.endswith('.json') and '_metadata' not in facts_file:
+                router_name = facts_file.replace('.json', '')
+                with open(os.path.join(facts_dir, facts_file), 'r') as f:
+                    routers[router_name] = json.load(f)
+        
+        return routers
+    
     # Load router metadata to determine Linux vs non-Linux
     def is_linux_router(router_name):
-        metadata_path = f"../tests/routing_facts/{router_name}_metadata.json"
+        metadata_path = f"../tests/tsim_facts/{router_name}_metadata.json"
         if os.path.exists(metadata_path):
             try:
                 with open(metadata_path, 'r') as f:
@@ -39,6 +52,31 @@ def create_network_diagram():
             except:
                 pass
         return True  # Default to Linux if metadata not found
+    
+    # Extract interface information from router facts
+    def get_router_interfaces(router_data):
+        interfaces = []
+        routing_data = router_data.get('routing', {})
+        routes = routing_data.get('tables', [])
+        
+        # Extract unique interface:IP combinations
+        interface_ips = {}
+        for route in routes:
+            if 'prefsrc' in route and 'dev' in route:
+                interface = route['dev']
+                ip_addr = route['prefsrc']
+                if ip_addr.startswith('127.'):
+                    continue
+                interface_ips[interface] = ip_addr
+        
+        # Format as interface: IP
+        for interface, ip in sorted(interface_ips.items()):
+            interfaces.append(f"{interface}: {ip}")
+        
+        return interfaces
+    
+    # Load all router data
+    router_data = load_router_data()
     
     # Title - moved higher to create more space
     ax.text(11, 15, 'Network Topology - 10 Routers Across 3 Locations', 
@@ -60,24 +98,24 @@ def create_network_diagram():
     
     # Gateway routers - positioned closer to location headers
     gateways = [
-        {'name': 'hq-gw', 'pos': (4, 11.5), 'interfaces': ['eth0: 203.0.113.10', 'eth1: 10.1.1.1', 'wg0: 10.100.1.1']},
-        {'name': 'br-gw', 'pos': (11, 11.5), 'interfaces': ['eth0: 198.51.100.10', 'eth1: 10.2.1.1', 'wg0: 10.100.1.2']},
-        {'name': 'dc-gw', 'pos': (18, 11.5), 'interfaces': ['eth0: 192.0.2.10', 'eth1: 10.3.1.1', 'wg0: 10.100.1.3']}
+        {'name': 'hq-gw', 'pos': (4, 11.5), 'interfaces': get_router_interfaces(router_data['hq-gw'])},
+        {'name': 'br-gw', 'pos': (11, 11.5), 'interfaces': get_router_interfaces(router_data['br-gw'])},
+        {'name': 'dc-gw', 'pos': (18, 11.5), 'interfaces': get_router_interfaces(router_data['dc-gw'])}
     ]
     
     # Core routers - positioned proportionally
     cores = [
-        {'name': 'hq-core', 'pos': (4, 9), 'interfaces': ['eth0: 10.1.1.2', 'eth1: 10.1.2.1']},
-        {'name': 'br-core', 'pos': (11, 9), 'interfaces': ['eth0: 10.2.1.2', 'eth1: 10.2.2.1']},
-        {'name': 'dc-core', 'pos': (18, 9), 'interfaces': ['eth0: 10.3.1.2', 'eth1: 10.3.2.1']}
+        {'name': 'hq-core', 'pos': (4, 9), 'interfaces': get_router_interfaces(router_data['hq-core'])},
+        {'name': 'br-core', 'pos': (11, 9), 'interfaces': get_router_interfaces(router_data['br-core'])},
+        {'name': 'dc-core', 'pos': (18, 9), 'interfaces': get_router_interfaces(router_data['dc-core'])}
     ]
     
     # Access routers - positioned proportionally
     access = [
-        {'name': 'hq-dmz', 'pos': (1.8, 6.5), 'interfaces': ['eth0: 10.1.2.3', 'eth1: 10.1.3.1']},
-        {'name': 'hq-lab', 'pos': (6.2, 6.5), 'interfaces': ['eth0: 10.1.2.4', 'eth1: 10.1.10.1', 'eth2: 10.1.11.1']},
-        {'name': 'br-wifi', 'pos': (11, 6.5), 'interfaces': ['eth0: 10.2.2.3', 'wlan0: 10.2.5.1', 'wlan1: 10.2.6.1']},
-        {'name': 'dc-srv', 'pos': (18, 6.5), 'interfaces': ['eth0: 10.3.2.3', 'eth1: 10.3.10.1', 'eth2: 10.3.20.1', 'eth3: 10.3.21.1']}
+        {'name': 'hq-dmz', 'pos': (1.8, 6.5), 'interfaces': get_router_interfaces(router_data['hq-dmz'])},
+        {'name': 'hq-lab', 'pos': (6.2, 6.5), 'interfaces': get_router_interfaces(router_data['hq-lab'])},
+        {'name': 'br-wifi', 'pos': (11, 6.5), 'interfaces': get_router_interfaces(router_data['br-wifi'])},
+        {'name': 'dc-srv', 'pos': (18, 6.5), 'interfaces': get_router_interfaces(router_data['dc-srv'])}
     ]
     
     # Draw routers with minimal size based on content

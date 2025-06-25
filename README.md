@@ -21,7 +21,7 @@ A comprehensive network path discovery tool that simulates traceroute behavior u
 - **Complex Network Support**: Handles VPN tunnels, WireGuard, multi-interface scenarios
 - **Error Detection**: Identifies routing loops, blackhole routes, and unreachable destinations
 - **Automation Friendly**: Comprehensive exit codes and quiet mode for script integration
-- **Comprehensive Testing**: Full test suite with 79+ tests and 100% pass rate
+- **Comprehensive Testing**: Full test suite with 85+ tests and 100% pass rate
 - **Professional Visualization**: High-quality network topology diagrams with metadata-aware color coding
 - **Accurate Interface Tracking**: Precise incoming/outgoing interface determination
 
@@ -830,7 +830,7 @@ make clean
 
 ### Individual Test Suites
 
-**Main Traceroute Simulator Tests (64 test cases)**:
+**Main Traceroute Simulator Tests (63 test cases)**:
 ```bash
 cd tests
 python3 test_traceroute_simulator.py
@@ -842,6 +842,12 @@ cd tests
 python3 test_ip_json_comparison.py
 ```
 
+**Iptables Analyzer Tests (18 test cases - standalone)**:
+```bash
+cd tests
+python3 test_comprehensive_facts_processing.py
+```
+
 ### Running Tests
 
 ```bash
@@ -850,8 +856,8 @@ cd tests
 python3 test_traceroute_simulator.py
 
 # Expected output
-Total tests: 64
-Passed: 64 (100%)
+Total tests: 63
+Passed: 63 (100%)
 Failed: 0
 Pass rate: 100.0%
 
@@ -881,12 +887,13 @@ python3 test_mtr_integration.py
 
 ### Test Coverage
 
-- ✅ **64 comprehensive test cases** covering all network scenarios and edge cases
+- ✅ **85+ comprehensive test cases** covering all network scenarios and edge cases (63 simulator + 7 wrapper + 8 MTR + 10 namespace)
 - ✅ **100% pass rate** with complete functionality validation
 - ✅ **10-router topology** with realistic routing configurations across 3 locations
 - ✅ **All command-line options** tested including new required flags (-s/-d)
 - ✅ **Comprehensive error handling** including corrupted JSON, missing files, and invalid inputs
 - ✅ **Complete exit code verification** across all modes (quiet, verbose, JSON)
+- ✅ **Facts persistence** ensures test data remains available for namespace testing after `make test`
 - ✅ **Edge case coverage** including IPv6 handling, loop detection, and timeout scenarios
 - ✅ **Routing misconfiguration testing** with realistic failure scenarios
 - ✅ **JSON output format validation** with structured data verification

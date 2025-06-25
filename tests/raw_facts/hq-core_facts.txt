@@ -18,15 +18,17 @@ TITLE: IP Routing Table
 COMMAND: /sbin/ip route show
 TIMESTAMP: 2025-06-21 15:15:42
 ---
-default via 10.1.1.1 dev eth0 metric 100
+default via 10.1.1.1 dev eth0 metric 1
 10.1.1.0/24 dev eth0 proto kernel scope link src 10.1.1.2
 10.1.2.0/24 dev eth1 proto kernel scope link src 10.1.2.1
 10.1.3.0/24 via 10.1.2.3 dev eth1 metric 1
 10.1.10.0/24 via 10.1.2.4 dev eth1 metric 1
 10.1.11.0/24 via 10.1.2.4 dev eth1 metric 1
-10.2.0.0/16 via 10.1.1.1 dev eth0 metric 1
-10.3.0.0/16 via 10.1.1.1 dev eth0 metric 1
-10.100.1.0/24 via 10.1.1.1 dev eth0 metric 1
+10.2.0.0/16 via 10.1.1.1 dev eth0 metric 10
+10.3.0.0/16 via 10.1.1.1 dev eth0 metric 10
+192.0.2.0/24 via 10.1.1.1 dev eth0 metric 1
+198.51.100.0/24 via 10.1.1.1 dev eth0 metric 1
+203.0.113.0/24 via 10.1.1.1 dev eth0 metric 1
 
 EXIT_CODE: 0
 === TSIM_SECTION_END:routing_table ===

@@ -74,7 +74,8 @@
         cd {{ playbook_dir }} && 
         python3 {{ processor_script }} 
         "{{ item.path }}" 
-        "{{ facts_dir }}/{{ item.path | basename | regex_replace('_facts\\.txt$', '.json') }}"
+        "{{ facts_dir }}/{{ item.path | basename | replace('_facts.txt', '.json') }}"
+        --merge-with "{{ existing_facts_dir }}/{{ item.path | basename | replace('_facts.txt', '.json') }}"
       loop: "{{ raw_facts_files.files }}"
       register: json_conversions_test
       when: test_mode
@@ -204,23 +205,7 @@
       when: not processor_script_stat.stat.exists
       run_once: true
 
-    # TEST MODE - Copy existing test facts to complete the dataset
-    - name: Find existing test facts files (test mode)
-      find:
-        paths: "{{ existing_facts_dir }}"
-        patterns: "*.json"
-      register: existing_test_facts
-      when: test_mode
-      run_once: true
-
-    - name: Copy missing test facts files (test mode)
-      copy:
-        src: "{{ item.path }}"
-        dest: "{{ facts_dir }}/{{ item.path | basename }}"
-        mode: '0644'
-      loop: "{{ existing_test_facts.files }}"
-      when: test_mode
-      run_once: true
+    # Note: Test mode merging is now handled by process_facts.py --merge-with option
 
     - name: Validate all JSON files (test mode)
       shell: "for file in {{ facts_dir }}/*.json; do python3 -m json.tool \"$file\" > /dev/null; done"

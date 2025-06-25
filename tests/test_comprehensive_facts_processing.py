@@ -34,6 +34,9 @@ class TestFactsProcessing(unittest.TestCase):
         cls.test_output_dir = Path("/tmp/traceroute_test_output")
         cls.test_output_dir.mkdir(exist_ok=True)
         
+        # Create temporary directory for intermediate test files
+        cls.temp_test_dir = Path(tempfile.mkdtemp(prefix="tsim_test_"))
+        
         cls.raw_facts_dir = PROJECT_ROOT / "tests" / "raw_facts"
         cls.process_facts_script = PROJECT_ROOT / "ansible" / "process_facts.py"
         
@@ -60,12 +63,26 @@ class TestFactsProcessing(unittest.TestCase):
         
         print(f"Found {len(cls.available_files)} router facts files for testing")
     
+    @classmethod
+    def tearDownClass(cls):
+        """Clean up test environment."""
+        # Note: Final consolidated JSON files are created by the Makefile after all tests complete
+        # This ensures they persist and are not cleaned up by other test classes
+        
+        # Clean up temporary directory only
+        if hasattr(cls, 'temp_test_dir') and cls.temp_test_dir.exists():
+            shutil.rmtree(cls.temp_test_dir)
+            
+        print("Temporary test files cleaned up")
+        print("Note: Final consolidated JSON files will be created by Makefile after all tests complete")
+    
+    
     def test_facts_processing_basic_functionality(self):
         """Test basic facts processing for each router."""
         for filename in self.available_files:
             with self.subTest(router_file=filename):
                 input_file = self.raw_facts_dir / filename
-                output_file = self.test_output_dir / f"{filename.replace('.txt', '.json')}"
+                output_file = self.temp_test_dir / f"{filename.replace('.txt', '_basic.json')}"
                 
                 # Run process_facts.py
                 result = subprocess.run([
@@ -110,7 +127,7 @@ class TestFactsProcessing(unittest.TestCase):
         # Test with one complex router (hq-core has extensive rules)
         if "hq-core_facts.txt" in self.available_files:
             input_file = self.raw_facts_dir / "hq-core_facts.txt"
-            output_file = self.test_output_dir / "hq-core_raw.json"
+            output_file = self.temp_test_dir / "hq-core_raw.json"
             
             # Run with --raw flag
             result = subprocess.run([
@@ -135,7 +152,7 @@ class TestFactsProcessing(unittest.TestCase):
         """Test facts processing with --pretty flag for human-readable output."""
         if "br-gw_facts.txt" in self.available_files:
             input_file = self.raw_facts_dir / "br-gw_facts.txt"
-            output_file = self.test_output_dir / "br-gw_pretty.json"
+            output_file = self.temp_test_dir / "br-gw_pretty.json"
             
             # Run with --pretty flag
             result = subprocess.run([
@@ -159,7 +176,7 @@ class TestFactsProcessing(unittest.TestCase):
         """Test facts processing with --verbose flag."""
         if "dc-gw_facts.txt" in self.available_files:
             input_file = self.raw_facts_dir / "dc-gw_facts.txt"
-            output_file = self.test_output_dir / "dc-gw_verbose.json"
+            output_file = self.temp_test_dir / "dc-gw_verbose.json"
             
             # Run with --verbose flag
             result = subprocess.run([
@@ -181,7 +198,7 @@ class TestFactsProcessing(unittest.TestCase):
         # First generate a JSON file
         if "hq-dmz_facts.txt" in self.available_files:
             input_file = self.raw_facts_dir / "hq-dmz_facts.txt"
-            output_file = self.test_output_dir / "hq-dmz_for_validation.json"
+            output_file = self.temp_test_dir / "hq-dmz_for_validation.json"
             
             # Generate JSON
             result = subprocess.run([
@@ -213,7 +230,7 @@ class TestFactsProcessing(unittest.TestCase):
             if filename in self.available_files:
                 with self.subTest(router_file=filename):
                     input_file = self.raw_facts_dir / filename
-                    output_file = self.test_output_dir / f"{filename.replace('.txt', '_complex.json')}"
+                    output_file = self.temp_test_dir / f"{filename.replace('.txt', '_complex.json')}"
                     
                     result = subprocess.run([
                         sys.executable, str(self.process_facts_script),
@@ -254,7 +271,7 @@ class TestFactsProcessing(unittest.TestCase):
             if filename in self.available_files:
                 with self.subTest(router_file=filename):
                     input_file = self.raw_facts_dir / filename
-                    output_file = self.test_output_dir / f"{filename.replace('.txt', '_ipsets.json')}"
+                    output_file = self.temp_test_dir / f"{filename.replace('.txt', '_ipsets.json')}"
                     
                     result = subprocess.run([
                         sys.executable, str(self.process_facts_script),
@@ -727,9 +744,23 @@ class TestIntegrationScenarios(unittest.TestCase):
     def setUpClass(cls):
         """Set up integration test environment."""
         cls.test_output_dir = Path("/tmp/traceroute_test_output")
+        cls.test_output_dir.mkdir(exist_ok=True)
+        
+        # Create temporary directory for integration test files
+        cls.temp_test_dir = Path(tempfile.mkdtemp(prefix="tsim_integration_"))
+        
         cls.raw_facts_dir = PROJECT_ROOT / "tests" / "raw_facts"
         cls.process_facts_script = PROJECT_ROOT / "ansible" / "process_facts.py"
         cls.analyzer_script = PROJECT_ROOT / "src" / "analyzers" / "iptables_forward_analyzer.py"
+    
+    @classmethod
+    def tearDownClass(cls):
+        """Clean up integration test environment."""
+        # Clean up temporary integration directory only - leave final output files
+        if hasattr(cls, 'temp_test_dir') and cls.temp_test_dir.exists():
+            shutil.rmtree(cls.temp_test_dir)
+            print(f"Integration test temporary files cleaned up")
+        # Note: Final JSON files in test_output_dir are preserved for post-test use
     
     def test_end_to_end_workflow(self):
         """Test complete end-to-end workflow from raw facts to forward analysis."""
@@ -738,7 +769,7 @@ class TestIntegrationScenarios(unittest.TestCase):
         facts_file = self.raw_facts_dir / f"{router_name}_facts.txt"
         
         if facts_file.exists():
-            json_file = self.test_output_dir / f"{router_name}_e2e.json"
+            json_file = self.temp_test_dir / f"{router_name}_e2e.json"
             
             # Step 1: Process facts
             result = subprocess.run([
@@ -756,7 +787,11 @@ class TestIntegrationScenarios(unittest.TestCase):
             self.assertIn('firewall', facts_data)
             self.assertTrue(facts_data['firewall']['iptables']['available'])
             
-            # Step 3: Run forward analysis
+            # Step 3: Copy JSON to main output directory for analysis
+            final_json_file = self.test_output_dir / f"{router_name}.json"
+            shutil.copy2(json_file, final_json_file)
+            
+            # Step 4: Run forward analysis
             env = os.environ.copy()
             env['TRACEROUTE_SIMULATOR_FACTS'] = str(self.test_output_dir)
             
@@ -773,6 +808,9 @@ class TestIntegrationScenarios(unittest.TestCase):
             self.assertNotEqual(result.returncode, 2,
                 f"Forward analysis failed: {result.stderr}")
             
+            # Clean up temporary final file
+            final_json_file.unlink(missing_ok=True)
+            
             print(f"✓ End-to-end workflow completed successfully for {router_name}")
     
     def test_batch_processing_all_routers(self):
@@ -782,7 +820,7 @@ class TestIntegrationScenarios(unittest.TestCase):
         
         for facts_file in router_files:
             router_name = facts_file.stem.replace("_facts", "")
-            json_file = self.test_output_dir / f"{router_name}_batch.json"
+            json_file = self.temp_test_dir / f"{router_name}_batch.json"
             
             # Process facts
             result = subprocess.run([
@@ -792,6 +830,10 @@ class TestIntegrationScenarios(unittest.TestCase):
             
             if result.returncode == 0:
                 processed_count += 1
+                
+                # Copy JSON for quick forward analysis test
+                final_json_file = self.test_output_dir / f"{router_name}.json"
+                shutil.copy2(json_file, final_json_file)
                 
                 # Quick forward analysis test
                 env = os.environ.copy()
@@ -808,6 +850,9 @@ class TestIntegrationScenarios(unittest.TestCase):
                 # Should not fail with missing files error
                 self.assertNotEqual(result2.returncode, 2,
                     f"Forward analysis failed for {router_name}")
+                
+                # Clean up temporary final file
+                final_json_file.unlink(missing_ok=True)
         
         self.assertGreater(processed_count, 0,
             "No router facts files were successfully processed")

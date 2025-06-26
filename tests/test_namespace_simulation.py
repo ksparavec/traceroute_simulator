@@ -2,15 +2,15 @@
 """
 Network Namespace Simulation Test Suite
 
-Comprehensive tests for the Linux namespace-based network simulation infrastructure.
-Tests namespace setup, teardown, status monitoring, and real packet connectivity.
+Basic tests for the Linux namespace-based network simulation infrastructure.
+Tests namespace setup, teardown, status monitoring, and basic resource validation.
 
 This test suite verifies:
 - Namespace creation and configuration
 - Network interface setup and IP assignment
 - Routing table and iptables rule installation
-- Real packet connectivity testing between hosts
 - Status monitoring and information display
+- Basic resource validation
 - Cleanup and resource management
 
 Test Requirements:
@@ -46,12 +46,12 @@ logger = logging.getLogger(__name__)
 
 class NamespaceSimulationTestSuite(unittest.TestCase):
     """
-    Comprehensive test suite for Linux namespace network simulation.
+    Basic test suite for Linux namespace network simulation.
     
-    Tests the complete lifecycle of namespace-based network simulation including:
+    Tests the essential functionality of namespace-based network simulation including:
     - Setup and configuration
     - Status monitoring and information display  
-    - Real packet connectivity testing
+    - Basic resource validation
     - Cleanup and resource management
     """
     
@@ -83,7 +83,6 @@ class NamespaceSimulationTestSuite(unittest.TestCase):
         # Load router names and validate facts
         cls.router_names = []
         cls.router_ips = {}  # router -> list of IPs
-        cls.test_scenarios = []
         
         for router_file in cls.router_files:
             router_name = router_file.stem
@@ -107,92 +106,12 @@ class NamespaceSimulationTestSuite(unittest.TestCase):
         
         print(f"Loaded router data for: {', '.join(sorted(cls.router_names))}")
         
-        # Define test scenarios based on topology
-        cls._define_test_scenarios()
-        
         # Ensure clean state before testing
         cls._ensure_clean_state()
         
         # Track whether namespace is set up
         cls.namespace_setup = False
         cls.setup_failed = False
-    
-    @classmethod
-    def _define_test_scenarios(cls):
-        """Define comprehensive test scenarios based on network topology."""
-        cls.test_scenarios = [
-            # Intra-location connectivity tests
-            {
-                'name': 'HQ Gateway to Core',
-                'source': '10.1.1.1',
-                'destination': '10.1.2.1', 
-                'protocol': 'icmp',
-                'expected': 'PASS',
-                'description': 'HQ internal routing'
-            },
-            {
-                'name': 'Branch Gateway to WiFi',
-                'source': '10.2.1.1',
-                'destination': '10.2.2.2',
-                'protocol': 'icmp', 
-                'expected': 'PASS',
-                'description': 'Branch internal routing'
-            },
-            {
-                'name': 'DC Gateway to Servers',
-                'source': '10.3.1.1',
-                'destination': '10.3.2.1',
-                'protocol': 'icmp',
-                'expected': 'PASS', 
-                'description': 'DC internal routing'
-            },
-            
-            # Inter-location connectivity tests
-            {
-                'name': 'HQ to Branch via VPN',
-                'source': '10.1.1.1',
-                'destination': '10.2.1.1',
-                'protocol': 'icmp',
-                'expected': 'PASS',
-                'description': 'WireGuard mesh connectivity'
-            },
-            {
-                'name': 'HQ to DC via VPN', 
-                'source': '10.1.1.1',
-                'destination': '10.3.1.1',
-                'protocol': 'icmp',
-                'expected': 'PASS',
-                'description': 'Cross-location VPN routing'
-            },
-            {
-                'name': 'Branch to DC via VPN',
-                'source': '10.2.1.1', 
-                'destination': '10.3.1.1',
-                'protocol': 'icmp',
-                'expected': 'PASS',
-                'description': 'Branch-DC VPN connectivity'
-            },
-            
-            # TCP connectivity tests (same network segment)
-            {
-                'name': 'TCP connectivity test',
-                'source': '10.1.1.1',
-                'destination': '10.1.1.2:8080',
-                'protocol': 'tcp',
-                'expected': 'PASS',
-                'description': 'TCP service connectivity on same segment'
-            },
-            
-            # UDP connectivity tests (same network segment)
-            {
-                'name': 'UDP connectivity test',
-                'source': '10.1.1.1',
-                'destination': '10.1.1.2:8081',
-                'protocol': 'udp',
-                'expected': 'PASS',
-                'description': 'UDP service connectivity on same segment'
-            }
-        ]
     
     @classmethod 
     def _ensure_clean_state(cls):
@@ -359,167 +278,7 @@ class NamespaceSimulationTestSuite(unittest.TestCase):
                 except subprocess.TimeoutExpired:
                     self.fail(f"Status function {func} timed out for {test_router}")
     
-    def test_04_network_connectivity_basic(self):
-        """Test basic network connectivity in namespaces."""
-        print("\n" + "-" * 60)
-        print("TEST: Basic Network Connectivity")
-        print("-" * 60)
-        
-        if not self.namespace_setup:
-            self.skipTest("Namespace setup not completed")
-        
-        # Test basic ICMP connectivity scenarios
-        basic_tests = [scenario for scenario in self.test_scenarios 
-                      if scenario['protocol'] == 'icmp' and scenario['expected'] == 'PASS']
-        
-        for scenario in basic_tests[:3]:  # Test first 3 basic scenarios
-            with self.subTest(scenario=scenario['name']):
-                try:
-                    env = os.environ.copy()
-                    env['TRACEROUTE_SIMULATOR_FACTS'] = self.facts_dir
-                    result = subprocess.run([
-                        'python3', 'src/simulators/network_namespace_tester.py',
-                        '-s', scenario['source'],
-                        '-d', scenario['destination'], 
-                        '-p', scenario['protocol'],
-                        '-v'
-                    ], capture_output=True, text=True, cwd=Path.cwd(), timeout=20, env=env)
-                    
-                    # For ICMP tests, expect success (exit code 0)
-                    self.assertEqual(result.returncode, 0,
-                                   f"Connectivity test failed for {scenario['name']}: {result.stderr}")
-                    
-                    # Verify output indicates success
-                    output = result.stdout.lower()
-                    self.assertTrue('pass' in output or 'success' in output or 'connected' in output,
-                                  f"Test output doesn't indicate success for {scenario['name']}: {result.stdout}")
-                    
-                    print(f"✓ {scenario['name']}: {scenario['description']}")
-                    
-                except subprocess.TimeoutExpired:
-                    self.fail(f"Connectivity test timed out for {scenario['name']}")
-    
-    def test_05_network_connectivity_tcp(self):
-        """Test TCP connectivity in namespaces."""
-        print("\n" + "-" * 60) 
-        print("TEST: TCP Network Connectivity")
-        print("-" * 60)
-        
-        if not self.namespace_setup:
-            self.skipTest("Namespace setup not completed")
-        
-        # Test TCP connectivity scenarios
-        tcp_tests = [scenario for scenario in self.test_scenarios 
-                    if scenario['protocol'] == 'tcp' and scenario['expected'] == 'PASS']
-        
-        for scenario in tcp_tests:
-            with self.subTest(scenario=scenario['name']):
-                try:
-                    env = os.environ.copy()
-                    env['TRACEROUTE_SIMULATOR_FACTS'] = self.facts_dir
-                    result = subprocess.run([
-                        'python3', 'src/simulators/network_namespace_tester.py',
-                        '-s', scenario['source'],
-                        '-d', scenario['destination'],
-                        '-p', scenario['protocol'],
-                        '-v'
-                    ], capture_output=True, text=True, cwd=Path.cwd(), timeout=25, env=env)
-                    
-                    # For expected PASS scenarios, expect success
-                    self.assertEqual(result.returncode, 0,
-                                   f"TCP connectivity test failed for {scenario['name']}: {result.stderr}")
-                    
-                    print(f"✓ {scenario['name']}: {scenario['description']}")
-                    
-                except subprocess.TimeoutExpired:
-                    self.fail(f"TCP connectivity test timed out for {scenario['name']}")
-    
-    def test_06_network_connectivity_udp(self):
-        """Test UDP connectivity in namespaces.""" 
-        print("\n" + "-" * 60)
-        print("TEST: UDP Network Connectivity")
-        print("-" * 60)
-        
-        if not self.namespace_setup:
-            self.skipTest("Namespace setup not completed")
-        
-        # Test UDP connectivity scenarios
-        udp_tests = [scenario for scenario in self.test_scenarios
-                    if scenario['protocol'] == 'udp' and scenario['expected'] == 'PASS']
-        
-        for scenario in udp_tests:
-            with self.subTest(scenario=scenario['name']):
-                try:
-                    env = os.environ.copy()
-                    env['TRACEROUTE_SIMULATOR_FACTS'] = self.facts_dir
-                    args = [
-                        'python3', 'src/simulators/network_namespace_tester.py',
-                        '-s', scenario['source'],
-                        '-d', scenario['destination'],
-                        '-p', scenario['protocol'],
-                        '-v'
-                    ]
-                    
-                    if 'port' in scenario:
-                        args.extend(['--dport', str(scenario['port'])])
-                    
-                    result = subprocess.run(args, capture_output=True, text=True,
-                                          cwd=Path.cwd(), timeout=25, env=env)
-                    
-                    # For expected PASS scenarios, expect success
-                    self.assertEqual(result.returncode, 0,
-                                   f"UDP connectivity test failed for {scenario['name']}: {result.stderr}")
-                    
-                    print(f"✓ {scenario['name']}: {scenario['description']}")
-                    
-                except subprocess.TimeoutExpired:
-                    self.fail(f"UDP connectivity test timed out for {scenario['name']}")
-    
-    def test_07_firewall_blocking(self):
-        """Test that iptables rules properly block traffic."""
-        print("\n" + "-" * 60)
-        print("TEST: Firewall Traffic Blocking")
-        print("-" * 60)
-        
-        if not self.namespace_setup:
-            self.skipTest("Namespace setup not completed")
-        
-        # Test scenarios that should be blocked
-        blocked_tests = [scenario for scenario in self.test_scenarios
-                        if scenario['expected'] == 'FAIL']
-        
-        if not blocked_tests:
-            self.skipTest("No firewall blocking scenarios defined")
-        
-        for scenario in blocked_tests:
-            with self.subTest(scenario=scenario['name']):
-                try:
-                    env = os.environ.copy()
-                    env['TRACEROUTE_SIMULATOR_FACTS'] = self.facts_dir
-                    args = [
-                        'python3', 'src/simulators/network_namespace_tester.py',
-                        '-s', scenario['source'],
-                        '-d', scenario['destination'],
-                        '-p', scenario['protocol'],
-                        '-v'
-                    ]
-                    
-                    if 'port' in scenario:
-                        args.extend(['--dport', str(scenario['port'])])
-                    
-                    result = subprocess.run(args, capture_output=True, text=True,
-                                          cwd=Path.cwd(), timeout=25, env=env)
-                    
-                    # For expected FAIL scenarios, expect non-zero exit code
-                    self.assertNotEqual(result.returncode, 0,
-                                      f"Traffic should have been blocked for {scenario['name']}: {result.stdout}")
-                    
-                    print(f"✓ {scenario['name']}: Traffic properly blocked - {scenario['description']}")
-                    
-                except subprocess.TimeoutExpired:
-                    self.fail(f"Firewall blocking test timed out for {scenario['name']}")
-    
-    def test_08_namespace_resource_validation(self):
+    def test_04_namespace_resource_validation(self):
         """Test that namespaces have proper network resources."""
         print("\n" + "-" * 60)
         print("TEST: Namespace Resource Validation")
@@ -555,7 +314,7 @@ class NamespaceSimulationTestSuite(unittest.TestCase):
                 except subprocess.TimeoutExpired:
                     self.fail(f"Interface check timed out for namespace {router_name}")
     
-    def test_09_namespace_routing_tables(self):
+    def test_05_namespace_routing_tables(self):
         """Test that namespaces have proper routing tables."""
         print("\n" + "-" * 60)
         print("TEST: Namespace Routing Tables")
@@ -589,7 +348,7 @@ class NamespaceSimulationTestSuite(unittest.TestCase):
                 except subprocess.TimeoutExpired:
                     self.fail(f"Routing table check timed out for namespace {router_name}")
     
-    def test_10_cleanup_verification(self):
+    def test_06_cleanup_verification(self):
         """Test namespace cleanup verification (prepare for teardown)."""
         print("\n" + "-" * 60)
         print("TEST: Cleanup Verification (Dry Run)")

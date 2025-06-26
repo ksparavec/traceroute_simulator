@@ -41,21 +41,24 @@
         "dst": "10.1.1.0/24",
         "prefsrc": "10.1.1.1",
         "protocol": "kernel",
-        "scope": "link"
+        "scope": "link",
+        "latency_ms": 0.1
       },
       {
         "dev": "wg0",
         "dst": "10.100.1.0/24",
         "prefsrc": "10.100.1.1",
         "protocol": "kernel",
-        "scope": "link"
+        "scope": "link",
+        "latency_ms": 10
       },
       {
         "dev": "eth0",
         "dst": "203.0.113.0/24",
         "prefsrc": "203.0.113.10",
         "protocol": "kernel",
-        "scope": "link"
+        "scope": "link",
+        "latency_ms": 10
       }
     ],
     "ip_forwarding_enabled": true

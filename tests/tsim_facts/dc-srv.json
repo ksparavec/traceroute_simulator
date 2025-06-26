@@ -41,28 +41,32 @@
         "dst": "10.3.2.0/24",
         "prefsrc": "10.3.2.3",
         "protocol": "kernel",
-        "scope": "link"
+        "scope": "link",
+        "latency_ms": 0.1
       },
       {
         "dev": "eth1",
         "dst": "10.3.10.0/24",
         "prefsrc": "10.3.10.1",
         "protocol": "kernel",
-        "scope": "link"
+        "scope": "link",
+        "latency_ms": 0.1
       },
       {
         "dev": "eth2",
         "dst": "10.3.20.0/24",
         "prefsrc": "10.3.20.1",
         "protocol": "kernel",
-        "scope": "link"
+        "scope": "link",
+        "latency_ms": 0.1
       },
       {
         "dev": "eth3",
         "dst": "10.3.21.0/24",
         "prefsrc": "10.3.21.1",
         "protocol": "kernel",
-        "scope": "link"
+        "scope": "link",
+        "latency_ms": 0.1
       }
     ],
     "ip_forwarding_enabled": true

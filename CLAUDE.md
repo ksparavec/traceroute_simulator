@@ -6,8 +6,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ### Automated Make Targets (Recommended)
 - **Check dependencies**: `make check-deps` (validates all Python modules with installation hints)
-- **Run all tests**: `make test` (comprehensive test suite with environment validation)
+- **Run all tests**: `make test` (comprehensive test suite including namespace make targets tests)
 - **Run namespace tests**: `sudo make test-namespace` (namespace simulation tests requiring root)
+- **Run network tests**: `sudo make test-network` (comprehensive network connectivity tests, 3-5 min)
 - **Clean artifacts**: `make clean` (removes cache files while preserving routing data)
 - **Collect routing data**: `make fetch-routing-data OUTPUT_DIR=data INVENTORY_FILE=hosts.ini`
 - **Show help**: `make help` (displays all available targets and examples)

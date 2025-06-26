@@ -44,7 +44,7 @@ import sys
 import time
 import ipaddress
 from pathlib import Path
-from typing import Dict, List, Tuple, Set
+from typing import Dict, List, Tuple, Set, Optional
 
 
 class SequentialConnectivityTester:
@@ -58,9 +58,11 @@ class SequentialConnectivityTester:
         
         self.routers = {}
         self.router_ips = {}  # router_name -> [list of IPs]
-        self.ip_to_router = {}  # IP -> router_name
+        self.ip_to_router = {}  # IP -> router_name (includes hosts)
         self.gateway_routers = set()  # Gateway routers that can handle public IPs
-        self.added_dummy_ips = set()  # Track IPs added to dummy interfaces
+        self.hosts = {}  # host_name -> host_config
+        self.host_registry_file = Path("/tmp/traceroute_hosts_registry.json")
+        self.added_public_ip_hosts = set()  # Track temporarily added public IP hosts
         
         self.total_tests = 0
         self.passed_tests = 0
@@ -103,12 +105,52 @@ class SequentialConnectivityTester:
                 if metadata.get('type') == 'gateway':
                     self.gateway_routers.add(router_name)
                     
+        # Load host information
+        self.load_hosts()
+                    
         if self.verbose >= 1:
             print(f"Loaded {len(self.routers)} routers:")
             for router, ips in self.router_ips.items():
                 location = "HQ" if router.startswith('hq-') else "Branch" if router.startswith('br-') else "DC"
                 gateway_marker = " [GATEWAY]" if router in self.gateway_routers else ""
                 print(f"  {router} ({location}): {', '.join(ips)}{gateway_marker}")
+                
+    def load_hosts(self):
+        """Load host information from host registry."""
+        if not self.host_registry_file.exists():
+            return  # No hosts registered
+            
+        try:
+            with open(self.host_registry_file, 'r') as f:
+                host_registry = json.load(f)
+                
+            for host_name, host_config in host_registry.items():
+                self.hosts[host_name] = host_config
+                
+                # Extract primary IP from host config
+                primary_ip = host_config.get('primary_ip', '')
+                if primary_ip and '/' in primary_ip:
+                    # Extract IP address without prefix
+                    ip = primary_ip.split('/')[0]
+                    self.ip_to_router[ip] = host_name
+                    
+                # Extract secondary IPs
+                secondary_ips = host_config.get('secondary_ips', [])
+                for secondary_ip in secondary_ips:
+                    if secondary_ip and '/' in secondary_ip:
+                        ip = secondary_ip.split('/')[0]
+                        self.ip_to_router[ip] = host_name
+                        
+            if self.verbose >= 1 and self.hosts:
+                print(f"\nLoaded {len(self.hosts)} hosts:")
+                for host_name, host_config in self.hosts.items():
+                    primary_ip = host_config.get('primary_ip', 'unknown')
+                    connected_to = host_config.get('connected_to', 'unknown')
+                    print(f"  {host_name}: {primary_ip} -> {connected_to} [HOST]")
+                    
+        except (json.JSONDecodeError, IOError) as e:
+            if self.verbose >= 2:
+                print(f"Warning: Could not load host registry: {e}")
                 
     def is_public_routable_ip(self, ip_str: str) -> bool:
         """Check if an IP address is publicly routable (not RFC 1918 or other private ranges)."""
@@ -142,65 +184,253 @@ class SequentialConnectivityTester:
         except ipaddress.AddressValueError:
             return False
             
-    def add_public_ip_to_gateways(self, public_ip: str):
-        """Add public IP to gateways - simple approach that works."""
+    def find_gateway_subnet(self, gateway_router: str) -> Optional[dict]:
+        """Find a suitable subnet on a gateway router for adding public IP hosts."""
+        if gateway_router not in self.routers:
+            return None
+            
+        facts = self.routers[gateway_router]
+        interfaces = facts.get('network', {}).get('interfaces', [])
+        
+        # Look for external/public interfaces (single-router subnets)
+        for iface in interfaces:
+            if (iface.get('protocol') == 'kernel' and 
+                iface.get('scope') == 'link' and
+                iface.get('prefsrc') and iface.get('dev') and iface.get('dst')):
+                
+                subnet = iface['dst']
+                dev = iface['dev']
+                
+                # Check if this is a single-router subnet (external interface)
+                subnet_members = []
+                for subnet_key, members in [(s, m) for s, m in self.load_facts_subnets().items()]:
+                    if subnet_key == subnet:
+                        subnet_members = members
+                        break
+                
+                if len(subnet_members) == 1:
+                    # This is an external interface, good for public IP hosts
+                    try:
+                        network = ipaddress.IPv4Network(subnet, strict=False)
+                        router_ip = iface['prefsrc']
+                        return {
+                            'interface': dev,
+                            'subnet': subnet,
+                            'prefix': network.prefixlen,
+                            'router_ip': router_ip
+                        }
+                    except ipaddress.AddressValueError:
+                        continue
+        
+        # Fallback: use any suitable interface
+        for iface in interfaces:
+            if (iface.get('protocol') == 'kernel' and 
+                iface.get('scope') == 'link' and
+                iface.get('prefsrc') and iface.get('dev') and iface.get('dst')):
+                
+                subnet = iface['dst']
+                dev = iface['dev']
+                
+                try:
+                    network = ipaddress.IPv4Network(subnet, strict=False)
+                    router_ip = iface['prefsrc']
+                    return {
+                        'interface': dev,
+                        'subnet': subnet,
+                        'prefix': network.prefixlen,
+                        'router_ip': router_ip
+                    }
+                except ipaddress.AddressValueError:
+                    continue
+                    
+        return None
+        
+    def load_facts_subnets(self) -> Dict[str, List[tuple]]:
+        """Load subnet mappings from facts (similar to network setup logic)."""
+        subnets = {}
+        for router_name, facts in self.routers.items():
+            interfaces = facts.get('network', {}).get('interfaces', [])
+            for iface in interfaces:
+                if (iface.get('protocol') == 'kernel' and 
+                    iface.get('scope') == 'link' and
+                    iface.get('prefsrc') and iface.get('dev') and iface.get('dst')):
+                    
+                    subnet = iface['dst']
+                    router_iface = iface['dev'] 
+                    ip = iface['prefsrc']
+                    
+                    if subnet not in subnets:
+                        subnets[subnet] = []
+                    subnets[subnet].append((router_name, router_iface, ip))
+                    
+        return subnets
+    def add_public_ip_host_to_gateways(self, public_ip: str):
+        """Add a temporary host with public IP to each gateway router using host_namespace_setup.py."""
         if not self.is_public_routable_ip(public_ip):
             return
             
-        if public_ip in self.added_dummy_ips:
+        # Generate a unique host name for this public IP (use shorter format)
+        # Convert IP to a short hash to avoid interface name length limits
+        import hashlib
+        ip_hash = hashlib.md5(public_ip.encode()).hexdigest()[:4]
+        host_name = f"p{ip_hash}"
+        
+        if host_name in self.added_public_ip_hosts:
             return  # Already added
             
         if self.verbose >= 2:
-            print(f"Setting up public IP {public_ip} on gateways...")
+            print(f"Setting up temporary host '{host_name}' with IP {public_ip} on gateway routers...")
             
-        # Simple approach: Add the public IP to all gateway routers
-        # This simulates that the public IP is reachable from any internet gateway
+        # Add the host to each gateway router using the host management script
         for gateway_router in self.gateway_routers:
             try:
-                dummy_name = f"dummy-{public_ip.replace('.', '-')}"
-                subprocess.run(f"ip netns exec {gateway_router} ip link add {dummy_name} type dummy", 
-                             shell=True, check=True, capture_output=True)
-                subprocess.run(f"ip netns exec {gateway_router} ip addr add {public_ip}/32 dev {dummy_name}", 
-                             shell=True, check=True, capture_output=True)
-                subprocess.run(f"ip netns exec {gateway_router} ip link set {dummy_name} up", 
-                             shell=True, check=True, capture_output=True)
-                             
+                # Find a suitable subnet on this gateway router
+                gateway_subnet = self.find_gateway_subnet(gateway_router)
+                if not gateway_subnet:
+                    if self.verbose >= 1:
+                        print(f"Warning: No suitable subnet found on {gateway_router}")
+                    continue
+                
+                # Use host_namespace_setup.py to add the host in the gateway's subnet
+                # Use a free IP in the gateway's subnet, then add the public IP as secondary
+                gateway_ip = gateway_subnet['router_ip']
+                gateway_network = ipaddress.IPv4Network(gateway_subnet['subnet'])
+                
+                # Find a free IP in the gateway subnet
+                free_ip = None
+                for ip in gateway_network.hosts():
+                    if str(ip) != gateway_ip and str(ip) not in [router_ip for _, _, router_ip in self.load_facts_subnets().get(gateway_subnet['subnet'], [])]:
+                        free_ip = str(ip)
+                        break
+                        
+                if not free_ip:
+                    if self.verbose >= 1:
+                        print(f"Warning: No free IP found in subnet {gateway_subnet['subnet']} on {gateway_router}")
+                    continue
+                
+                host_name_for_router = f"{host_name}-{gateway_router}"
+                cmd = [
+                    "python3", "src/simulators/host_namespace_setup.py",
+                    "--host", host_name_for_router,
+                    "--primary-ip", f"{free_ip}/{gateway_subnet['prefix']}",
+                    "--secondary-ips", f"{public_ip}/32",
+                    "--connect-to", gateway_router,
+                    "--router-interface", gateway_subnet['interface']
+                ]
+                
+                # Add verbosity flag if needed
                 if self.verbose >= 2:
-                    print(f"  Added {public_ip} to {gateway_router}")
+                    cmd.append("-vv")
+                elif self.verbose >= 1:
+                    cmd.append("-v")
+                
+                # Set environment variable for facts directory
+                env = os.environ.copy()
+                env['TRACEROUTE_SIMULATOR_FACTS'] = str(self.facts_dir)
+                
+                result = subprocess.run(cmd, capture_output=True, text=True, check=True, env=env)
+                
+                # Add direct route to the public IP on this gateway router's external interface
+                route_cmd = f"ip netns exec {gateway_router} ip route add {public_ip}/32 dev {gateway_subnet['interface']}"
+                route_result = subprocess.run(route_cmd, shell=True, capture_output=True, text=True, check=False)
+                
+                if route_result.returncode == 0:
+                    if self.verbose >= 2:
+                        print(f"  Added temporary host '{host_name_for_router}' to {gateway_router}")
+                        print(f"  Added route: {public_ip}/32 dev {gateway_subnet['interface']} on {gateway_router}")
+                else:
+                    if self.verbose >= 1:
+                        print(f"Warning: Failed to add route for {public_ip} on {gateway_router}: {route_result.stderr}")
                     
             except subprocess.CalledProcessError as e:
                 if self.verbose >= 1:
-                    print(f"Warning: Failed to add {public_ip} to {gateway_router}: {e}")
+                    print(f"Warning: Failed to add temporary host to {gateway_router}: {e}")
+                    if self.verbose >= 2:
+                        print(f"  Error output: {e.stderr}")
                     
-        self.added_dummy_ips.add(public_ip)
+        self.added_public_ip_hosts.add(host_name)
         
-    def remove_public_ip_from_gateways(self, public_ip: str):
-        """Remove public IP dummy interfaces from gateways."""
-        if public_ip not in self.added_dummy_ips:
+    def remove_public_ip_host_from_gateways(self, public_ip: str):
+        """Remove temporary host with public IP from all gateway routers using host_namespace_setup.py."""
+        # Generate the same host name format as in add_public_ip_host_to_gateways
+        import hashlib
+        ip_hash = hashlib.md5(public_ip.encode()).hexdigest()[:4]
+        host_name = f"p{ip_hash}"
+        
+        if host_name not in self.added_public_ip_hosts:
             return
             
         if self.verbose >= 2:
-            print(f"Cleaning up public IP {public_ip} from gateways...")
+            print(f"Cleaning up temporary host '{host_name}' from gateway routers...")
             
-        # Remove dummy interfaces from all gateways
+        # Remove from each gateway router using the host management script
         for gateway_router in self.gateway_routers:
             try:
-                dummy_name = f"dummy-{public_ip.replace('.', '-')}"
-                subprocess.run(f"ip netns exec {gateway_router} ip link del {dummy_name}", 
-                             shell=True, check=False, capture_output=True)
-                             
+                # Use host_namespace_setup.py to remove the host
+                host_name_for_router = f"{host_name}-{gateway_router}"
+                cmd = [
+                    "python3", "src/simulators/host_namespace_setup.py",
+                    "--host", host_name_for_router,
+                    "--remove"
+                ]
+                
+                # Add verbosity flag if needed
                 if self.verbose >= 2:
-                    print(f"  Removed {public_ip} from {gateway_router}")
+                    cmd.append("-vv")
+                elif self.verbose >= 1:
+                    cmd.append("-v")
+                
+                # Set environment variable for facts directory
+                env = os.environ.copy()
+                env['TRACEROUTE_SIMULATOR_FACTS'] = str(self.facts_dir)
+                
+                result = subprocess.run(cmd, capture_output=True, text=True, check=False, env=env)
+                
+                # Also remove the route to the public IP from this gateway router
+                route_cmd = f"ip netns exec {gateway_router} ip route del {public_ip}/32"
+                route_result = subprocess.run(route_cmd, shell=True, capture_output=True, text=True, check=False)
+                
+                if self.verbose >= 2:
+                    print(f"  Removed temporary host '{host_name_for_router}' from {gateway_router}")
+                    if route_result.returncode == 0:
+                        print(f"  Removed route: {public_ip}/32 from {gateway_router}")
                     
-            except subprocess.CalledProcessError:
+            except Exception:
                 pass  # Ignore errors during cleanup
                 
-        self.added_dummy_ips.discard(public_ip)
+        self.added_public_ip_hosts.discard(host_name)
         
-    def cleanup_all_added_ips(self):
-        """Remove all added public IP dummy interfaces."""
-        for public_ip in list(self.added_dummy_ips):
-            self.remove_public_ip_from_gateways(public_ip)
+    def cleanup_all_public_ip_hosts(self):
+        """Remove all temporarily added public IP hosts."""
+        for host_name in list(self.added_public_ip_hosts):
+            # Extract public IP from host name
+            clean_ip = host_name.replace('pub', '')
+            # Reconstruct the IP by adding dots every 3 digits
+            if len(clean_ip) >= 4:
+                # Handle common patterns like "1111" -> "1.1.1.1"
+                parts = []
+                i = 0
+                while i < len(clean_ip):
+                    if i + 3 <= len(clean_ip) and clean_ip[i:i+3].isdigit():
+                        # Three digit part
+                        part = str(int(clean_ip[i:i+3]))
+                        parts.append(part)
+                        i += 3
+                    elif i + 2 <= len(clean_ip) and clean_ip[i:i+2].isdigit():
+                        # Two digit part
+                        part = str(int(clean_ip[i:i+2]))
+                        parts.append(part)
+                        i += 2
+                    elif i + 1 <= len(clean_ip) and clean_ip[i].isdigit():
+                        # Single digit part
+                        parts.append(clean_ip[i])
+                        i += 1
+                    else:
+                        i += 1
+                        
+                if len(parts) == 4:
+                    public_ip = '.'.join(parts)
+                    self.remove_public_ip_host_from_gateways(public_ip)
                 
     def ping_test(self, source_ip: str, dest_ip: str, timeout: int = 3) -> Tuple[bool, str, str]:
         """Perform ping test from source IP to destination IP.
@@ -480,9 +710,9 @@ class SequentialConnectivityTester:
                 print(f"✗ Source IP {source_ip} not found in any router")
             return False
             
-        # Add public IP to gateways if needed
+        # Add temporary host with public IP to gateway routers if needed
         if self.is_public_routable_ip(dest_ip):
-            self.add_public_ip_to_gateways(dest_ip)
+            self.add_public_ip_host_to_gateways(dest_ip)
             
         try:
             if self.verbose >= 1:
@@ -550,10 +780,14 @@ class SequentialConnectivityTester:
             
             return overall_success
             
+        except Exception as e:
+            if self.verbose >= 1:
+                print(f"✗ Test failed: {e}")
+            return False
         finally:
-            # Clean up public IP if we added it
+            # Clean up temporary public IP host if we added it
             if self.is_public_routable_ip(dest_ip):
-                self.remove_public_ip_from_gateways(dest_ip)
+                self.remove_public_ip_host_from_gateways(dest_ip)
             
     def test_all_connectivity(self):
         """Test all routers sequentially."""
@@ -572,23 +806,24 @@ class SequentialConnectivityTester:
             
     def print_final_summary(self):
         """Print final test summary."""
-        print("\n" + "="*60)
-        print("FINAL CONNECTIVITY TEST SUMMARY")
-        print("="*60)
-        
-        print(f"Total ping tests: {self.total_tests}")
-        print(f"Passed: {self.passed_tests}")
-        print(f"Failed: {self.failed_tests}")
-        
-        if self.total_tests > 0:
-            success_rate = (self.passed_tests / self.total_tests) * 100
-            print(f"Overall success rate: {success_rate:.1f}%")
+        if self.verbose >= 1:
+            print("\n" + "="*60)
+            print("FINAL CONNECTIVITY TEST SUMMARY")
+            print("="*60)
+            
+            print(f"Total ping tests: {self.total_tests}")
+            print(f"Passed: {self.passed_tests}")
+            print(f"Failed: {self.failed_tests}")
+            
+            if self.total_tests > 0:
+                success_rate = (self.passed_tests / self.total_tests) * 100
+                print(f"Overall success rate: {success_rate:.1f}%")
             
         if self.failed_tests > 0:
-            print(f"\n⚠ CRITICAL: {self.failed_tests} connectivity failures detected!")
-            
-            # Only show detailed failures in verbose mode
             if self.verbose >= 1:
+                print(f"\n⚠ CRITICAL: {self.failed_tests} connectivity failures detected!")
+                
+                # Show detailed failures in verbose mode
                 print(f"\nFailed connections:")
                 
                 # Group failures by router pair
@@ -603,15 +838,14 @@ class SequentialConnectivityTester:
                     print(f"\n  {pair}:")
                     for failure in failures:
                         print(f"    ✗ {failure}")
-            else:
-                print(f"(Run with -v to see detailed failure information)")
-                    
-            print(f"\n⚠ Network has routing or configuration issues that must be fixed!")
-            print(f"⚠ Every router must be able to ping every other router for proper functionality.")
+                        
+                print(f"\n⚠ Network has routing or configuration issues that must be fixed!")
+                print(f"⚠ Every router must be able to ping every other router for proper functionality.")
             return False
         else:
-            print(f"\n✓ SUCCESS: All routers can reach all other routers!")
-            print(f"✓ Network connectivity is fully functional.")
+            if self.verbose >= 1:
+                print(f"\n✓ SUCCESS: All routers can reach all other routers!")
+                print(f"✓ Network connectivity is fully functional.")
             return True
             
     def run_tests(self, source_ip: str = None, dest_ip: str = None, test_all: bool = False):
@@ -634,8 +868,8 @@ class SequentialConnectivityTester:
             traceback.print_exc()
             return False
         finally:
-            # Always clean up any remaining dummy IPs
-            self.cleanup_all_added_ips()
+            # Always clean up any remaining temporary public IP hosts
+            self.cleanup_all_public_ip_hosts()
 
 
 def main():

@@ -7,6 +7,9 @@ created by the network namespace simulation system.
 
 Features:
 - Identifies and removes all simulation-related namespaces
+- Cleans up router namespaces (hq-*, br-*, dc-*)
+- Removes temporary hosts (test*, web*, db*, app*, etc.)
+- Removes temporary public IP hosts (pub*, p*)
 - Cleans up orphaned veth interfaces
 - Handles cleanup even if setup was incomplete
 - Provides safe, idempotent cleanup operation
@@ -16,7 +19,8 @@ Usage:
     python3 network_namespace_cleanup.py [--force] [--verbose]
     
 Safety:
-- Only removes namespaces that match expected router naming patterns
+- Only removes namespaces that match expected simulation patterns
+- Includes router namespaces, test hosts, and temporary hosts
 - Preserves system namespaces and other network configurations
 - Can be run multiple times safely (idempotent)
 """
@@ -51,16 +55,28 @@ class NetworkNamespaceCleanup:
         self.verbose = verbose
         self.setup_logging()
         
-        # Expected router name patterns from the test network
-        self.router_patterns = [
+        # Expected namespace patterns from the test network
+        self.namespace_patterns = [
             r'^hq-\w+$',      # hq-gw, hq-core, hq-dmz, hq-lab
             r'^br-\w+$',      # br-gw, br-core, br-wifi  
-            r'^dc-\w+$'       # dc-gw, dc-core, dc-srv
+            r'^dc-\w+$',      # dc-gw, dc-core, dc-srv
+            r'^netsim$',      # Simulation namespace
+            r'^pub[a-f0-9]+-.*$',  # Temporary public IP hosts (pub{hash}-{router})
+            r'^p[a-f0-9]+$',  # Temporary public IP hosts (shortened format)
+            r'^h[a-f0-9]+$',  # Temporary dynamic hosts
+            r'^web\d*$',      # Test web hosts
+            r'^db\d*$',       # Test database hosts  
+            r'^app\d*$',      # Test application hosts
+            r'^srv\d*$',      # Test server hosts
+            r'^client\d*$',   # Test client hosts
+            r'^test\d*$',     # Generic test hosts
+            r'^test-.*$'      # Test hosts with descriptive names
         ]
         
         # Track what we find and clean up
         self.found_namespaces: Set[str] = set()
         self.found_veths: Set[str] = set()
+        self.found_mesh_bridges: Set[str] = set()
         self.cleanup_errors: List[str] = []
         
     def setup_logging(self):
@@ -136,7 +152,7 @@ class NetworkNamespaceCleanup:
         Returns:
             True if namespace is part of our simulation
         """
-        for pattern in self.router_patterns:
+        for pattern in self.namespace_patterns:
             if re.match(pattern, namespace):
                 return True
         return False
@@ -205,10 +221,11 @@ class NetworkNamespaceCleanup:
                     if bridge_match:
                         interface = bridge_match.group(1)
                         # Check if it looks like a simulation bridge
-                        # New patterns: br100, br101, etc. (our clean setup creates these)
-                        if (re.match(r'^br1\d{2}$', interface) or  # br100, br101, etc.
-                            interface == 'wg-mesh' or              # WireGuard mesh bridge
-                            re.match(r'^v\d{3}$', interface)):      # old pattern for backward compatibility
+                        # New patterns: sim-bridge and legacy patterns
+                        if (interface == 'sim-bridge' or              # Host-to-simulation bridge
+                            re.match(r'^br1\d{2}$', interface) or     # br100, br101, etc. (legacy)
+                            interface == 'wg-mesh' or                 # WireGuard mesh bridge (legacy)
+                            re.match(r'^v\d{3}$', interface)):        # old pattern for backward compatibility
                             self.found_veths.add(interface)  # Add to same cleanup list
                             self.logger.debug(f"Found simulation bridge: {interface}")
             else:
@@ -218,6 +235,55 @@ class NetworkNamespaceCleanup:
             self.logger.error(f"Error discovering veth/bridge interfaces: {e}")
             
         self.logger.info(f"Found {len(self.found_veths)} simulation veth/bridge interfaces")
+        
+    def discover_mesh_bridges(self):
+        """Discover mesh bridges created by the unified mesh architecture."""
+        self.logger.debug("Discovering mesh bridges in host namespace")
+        
+        try:
+            # List all interfaces in the main namespace
+            result = self.run_command("ip link show", check=False)
+            if result.returncode != 0:
+                self.logger.warning("Could not list interfaces in main namespace")
+                return
+                
+            for line in result.stdout.split('\n'):
+                # Look for mesh bridge pattern: m100, m101, m102, etc.
+                match = re.match(r'^\d+:\s+(m\d+):', line)
+                if match:
+                    mesh_bridge = match.group(1)
+                    self.found_mesh_bridges.add(mesh_bridge)
+                    self.logger.debug(f"Found mesh bridge: {mesh_bridge}")
+                    
+        except Exception as e:
+            self.logger.error(f"Error discovering mesh bridges: {e}")
+            
+        self.logger.info(f"Found {len(self.found_mesh_bridges)} mesh bridges")
+        
+    def cleanup_mesh_bridge(self, bridge: str) -> bool:
+        """
+        Clean up a mesh bridge from the host namespace.
+        
+        Args:
+            bridge: Bridge name to clean up
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            self.logger.debug(f"Removing mesh bridge: {bridge}")
+            self.run_command(f"ip link del {bridge}", check=True)
+            if self.verbose >= 2:
+                print(f"  Removed mesh bridge: {bridge}")
+            return True
+            
+        except subprocess.CalledProcessError as e:
+            error_msg = f"Failed to remove mesh bridge {bridge}: {e}"
+            self.logger.error(error_msg)
+            self.cleanup_errors.append(error_msg)
+            if self.verbose >= 1:
+                print(f"  Error removing mesh bridge {bridge}: {e}")
+            return False
         
     def cleanup_namespace(self, namespace: str) -> bool:
         """
@@ -345,6 +411,7 @@ class NetworkNamespaceCleanup:
         # Discover what needs cleanup
         self.discover_namespaces()
         self.discover_veth_interfaces()
+        self.discover_mesh_bridges()
         
         cleanup_count = 0
         
@@ -360,6 +427,13 @@ class NetworkNamespaceCleanup:
             self.logger.info(f"Cleaning up {len(self.found_veths)} veth interfaces")
             for interface in self.found_veths:
                 if self.cleanup_veth_interface(interface):
+                    cleanup_count += 1
+                    
+        # Clean up mesh bridges from host namespace
+        if self.found_mesh_bridges:
+            self.logger.info(f"Cleaning up {len(self.found_mesh_bridges)} mesh bridges")
+            for bridge in self.found_mesh_bridges:
+                if self.cleanup_mesh_bridge(bridge):
                     cleanup_count += 1
                     
         # Clean up ipsets (only if ipset is available)
@@ -419,6 +493,11 @@ class NetworkNamespaceCleanup:
         if self.found_veths:
             for veth in sorted(self.found_veths):
                 print(f"  - {veth}")
+                
+        print(f"Found mesh bridges: {len(self.found_mesh_bridges)}")
+        if self.found_mesh_bridges:
+            for bridge in sorted(self.found_mesh_bridges):
+                print(f"  - {bridge}")
                 
         print(f"\nSuccessfully cleaned up: {cleanup_count} items")
         

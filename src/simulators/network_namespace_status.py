@@ -2,36 +2,37 @@
 """
 Network Namespace Status Tool
 
-Displays the current state of the namespace-based network simulation with
-original interface names restored using the reversible hash function.
-
-Shows IP configuration, routing tables, and policy rules for any router
-in the simulation, making it easy to debug and verify the network setup.
+Displays the current LIVE status of running network namespaces only.
+Shows what's actually running in the system without referencing static facts.
 
 Features:
-- Displays IP addresses and interface configuration
-- Shows routing tables with original interface names
-- Shows policy routing rules
-- Supports querying specific routers or all routers
+- Displays live IP addresses and interface configuration
+- Shows live routing tables with original interface names
+- Shows live policy routing rules
+- Supports querying specific namespaces or all running namespaces
 - Uses reversible hash function to display original names
-- Comprehensive network status overview
+- Live namespace status overview only
 
 Usage:
-    python3 network_namespace_status.py <router_name> <function>
+    python3 network_namespace_status.py <namespace_name> <function>
     python3 network_namespace_status.py all summary
     python3 network_namespace_status.py hq-gw interfaces
     python3 network_namespace_status.py br-core routes
+    python3 network_namespace_status.py web1 summary
     python3 network_namespace_status.py dc-srv rules
 
 Functions:
-    interfaces  - Show IP configuration (ip addr show equivalent)
-    routes      - Show routing table (ip route show equivalent) 
-    rules       - Show policy rules (ip rule show equivalent)
-    summary     - Show brief overview of all configuration
-    all         - Show complete configuration
+    interfaces  - Show live IP configuration (ip addr show equivalent)
+    routes      - Show live routing table (ip route show equivalent) 
+    rules       - Show live policy rules (ip rule show equivalent)
+    summary     - Show brief overview of live configuration
+    all         - Show complete live configuration
 
 Environment Variables:
-    TRACEROUTE_SIMULATOR_FACTS - Directory containing router JSON facts files
+    TRACEROUTE_SIMULATOR_FACTS - Directory containing router JSON facts files (for interface name mapping only)
+    
+Note:
+    Only shows data from LIVE running namespaces. For static topology, use network_topology_viewer.py
 """
 
 import argparse
@@ -47,10 +48,11 @@ from typing import Dict, List, Optional, Set, Any
 
 class NetworkNamespaceStatus:
     """
-    Displays status of namespace network simulation with original interface names.
+    Displays LIVE status of running network namespaces only.
     
-    Provides comprehensive view of network configuration including interfaces,
+    Provides view of actual running network configuration including interfaces,
     routing tables, and policy rules with proper name translation.
+    Does NOT show static topology - only what's currently running.
     """
     
     def __init__(self, facts_dir: str, verbose: int = 0):
@@ -65,11 +67,12 @@ class NetworkNamespaceStatus:
         self.verbose = verbose
         self.setup_logging()
         
-        # Network state tracking
-        self.routers: Dict[str, Dict] = {}
+        # Live namespace state tracking only
+        self.hosts: Dict[str, Dict] = {}  # host registry data
         self.available_namespaces: Set[str] = set()
+        self.host_registry_file = Path("/tmp/traceroute_hosts_registry.json")
         
-        # Reversible name mapping reconstruction
+        # Reversible name mapping reconstruction (from facts for display purposes only)
         self.name_map: Dict[str, str] = {}  # short_name -> original_name
         self.reverse_name_map: Dict[str, str] = {}  # original_name -> short_name
         self.interface_counter = 0
@@ -78,10 +81,10 @@ class NetworkNamespaceStatus:
         if not self.check_command_availability("ip"):
             raise RuntimeError("Error: 'ip' command not available - required for namespace operations. Install with: sudo apt-get install iproute2")
         
-        # Load router facts and rebuild name mapping
-        self.load_router_facts()
+        # Load minimal data for live status only
+        self.load_host_registry()
         self.discover_namespaces()
-        self.rebuild_name_mapping()
+        self.rebuild_name_mapping_from_facts()
         
     def setup_logging(self):
         """Configure logging based on verbosity level."""
@@ -102,34 +105,54 @@ class NetworkNamespaceStatus:
         )
         self.logger = logging.getLogger(__name__)
         
-    def load_router_facts(self):
-        """Load network facts from all router JSON files."""
-        self.logger.info(f"Loading router facts from {self.facts_dir}")
+    def load_router_facts_for_naming(self):
+        """Load minimal router facts for interface name mapping only."""
+        self.logger.debug(f"Loading router facts for name mapping from {self.facts_dir}")
         
         if not self.facts_dir.exists():
-            raise FileNotFoundError(f"Facts directory not found: {self.facts_dir}")
+            self.logger.warning(f"Facts directory not found: {self.facts_dir} - interface name mapping disabled")
+            return {}
             
         facts_files = list(self.facts_dir.glob("*.json"))
         if not facts_files:
-            raise FileNotFoundError(f"No JSON facts files found in {self.facts_dir}")
+            self.logger.warning(f"No JSON facts files found in {self.facts_dir} - interface name mapping disabled")
+            return {}
             
+        routers = {}
         for facts_file in facts_files:
             # Skip metadata files and test variations
             if "_metadata.json" in facts_file.name or "_" in facts_file.stem:
                 continue
                 
             router_name = facts_file.stem
-            self.logger.debug(f"Loading facts for router: {router_name}")
             
             try:
                 with open(facts_file, 'r') as f:
                     facts = json.load(f)
-                    self.routers[router_name] = facts
+                    routers[router_name] = facts
             except (json.JSONDecodeError, IOError) as e:
-                self.logger.error(f"Failed to load {facts_file}: {e}")
+                self.logger.warning(f"Failed to load {facts_file}: {e}")
                 continue
                 
-        self.logger.info(f"Loaded facts for {len(self.routers)} routers")
+        self.logger.debug(f"Loaded facts for {len(routers)} routers for name mapping")
+        return routers
+        
+    def load_host_registry(self):
+        """Load host registry data from host registry file."""
+        self.logger.debug("Loading host registry data")
+        
+        if not self.host_registry_file.exists():
+            self.logger.debug("No host registry file found")
+            return
+            
+        try:
+            with open(self.host_registry_file, 'r') as f:
+                host_registry = json.load(f)
+                self.hosts = host_registry
+                
+            self.logger.info(f"Loaded registry for {len(self.hosts)} hosts")
+        except (json.JSONDecodeError, IOError) as e:
+            self.logger.warning(f"Failed to load host registry: {e}")
         
     def discover_namespaces(self):
         """Discover available network namespaces."""
@@ -141,7 +164,7 @@ class NetworkNamespaceStatus:
                 self.logger.warning("Failed to list namespaces")
                 return
                 
-            # Parse namespace list
+            # Parse namespace list - include ALL namespaces found
             for line in result.stdout.split('\n'):
                 line = line.strip()
                 if not line:
@@ -151,22 +174,30 @@ class NetworkNamespaceStatus:
                 ns_match = re.match(r'^([^\s(]+)', line)
                 if ns_match:
                     namespace = ns_match.group(1)
-                    if namespace in self.routers:
-                        self.available_namespaces.add(namespace)
+                    self.available_namespaces.add(namespace)
                         
         except Exception as e:
             self.logger.error(f"Error discovering namespaces: {e}")
             
-        self.logger.info(f"Found {len(self.available_namespaces)} available router namespaces")
+        host_count = len([ns for ns in self.available_namespaces if ns in self.hosts])
+        router_count = len(self.available_namespaces) - host_count
+        self.logger.info(f"Found {router_count} router namespaces and {host_count} host namespaces")
         
-    def rebuild_name_mapping(self):
-        """Rebuild the interface name mapping by analyzing current network topology."""
-        self.logger.debug("Rebuilding interface name mapping")
+    def rebuild_name_mapping_from_facts(self):
+        """Rebuild interface name mapping from facts for display purposes only."""
+        self.logger.debug("Rebuilding interface name mapping from facts")
         
-        # Parse interface information from each router to recreate the mapping
+        # Load minimal facts for name mapping
+        routers = self.load_router_facts_for_naming()
+        
+        if not routers:
+            self.logger.warning("No router facts available - interface name mapping disabled")
+            return
+        
+        # Build name mapping using same logic as setup
         subnet_routers: Dict[str, List[tuple]] = {}
         
-        for router_name, facts in self.routers.items():
+        for router_name, facts in routers.items():
             network_data = facts.get('network', {})
             interfaces_list = network_data.get('interfaces', [])
             
@@ -222,6 +253,7 @@ class NetworkNamespaceStatus:
                     
         self.logger.debug(f"Rebuilt mapping for {len(self.name_map)} interface names")
         
+        
     def _get_short_name(self, original_name: str) -> str:
         """Generate short name using same logic as setup script."""
         if original_name in self.reverse_name_map:
@@ -238,6 +270,14 @@ class NetworkNamespaceStatus:
     def get_original_name(self, short_name: str) -> str:
         """Get original interface name from short name."""
         return self.name_map.get(short_name, short_name)
+        
+    def is_host(self, namespace: str) -> bool:
+        """Check if a namespace is a host."""
+        return namespace in self.hosts
+        
+    def is_router(self, namespace: str) -> bool:
+        """Check if a namespace is a router (any namespace that's not a host)."""
+        return namespace not in self.hosts and namespace in self.available_namespaces
         
     def check_command_availability(self, command: str) -> bool:
         """Check if a command is available on the system."""
@@ -276,14 +316,20 @@ class NetworkNamespaceStatus:
                 raise
             return e
             
-    def show_interfaces(self, router: str) -> str:
+    def show_interfaces(self, namespace: str) -> str:
         """Show interface configuration with original names."""
-        if router not in self.available_namespaces:
-            return f"Router {router} namespace not found"
+        if namespace not in self.available_namespaces:
+            # For non-existent namespaces, we can't determine the type, so use generic term
+            if namespace in self.hosts:
+                return f"Host {namespace} namespace not found"
+            elif namespace in self.routers:
+                return f"Router {namespace} namespace not found"
+            else:
+                return f"Namespace {namespace} not found"
             
-        result = self.run_command("ip addr show", namespace=router, check=False)
+        result = self.run_command("ip addr show", namespace=namespace, check=False)
         if result.returncode != 0:
-            return f"Failed to get interface information for {router}"
+            return f"Failed to get interface information for {namespace}"
             
         # Parse and translate interface names
         output_lines = []
@@ -308,14 +354,20 @@ class NetworkNamespaceStatus:
                 
         return '\n'.join(output_lines)
         
-    def show_routes(self, router: str) -> str:
+    def show_routes(self, namespace: str) -> str:
         """Show routing table with original interface names."""
-        if router not in self.available_namespaces:
-            return f"Router {router} namespace not found"
+        if namespace not in self.available_namespaces:
+            # For non-existent namespaces, we can't determine the type, so use generic term
+            if namespace in self.hosts:
+                return f"Host {namespace} namespace not found"
+            elif namespace in self.routers:
+                return f"Router {namespace} namespace not found"
+            else:
+                return f"Namespace {namespace} not found"
             
-        result = self.run_command("ip route show", namespace=router, check=False)
+        result = self.run_command("ip route show", namespace=namespace, check=False)
         if result.returncode != 0:
-            return f"Failed to get routing information for {router}"
+            return f"Failed to get routing information for {namespace}"
             
         # Parse and translate interface names in routes
         output_lines = []
@@ -339,26 +391,56 @@ class NetworkNamespaceStatus:
             
         return '\n'.join(output_lines)
         
-    def show_rules(self, router: str) -> str:
+    def show_rules(self, namespace: str) -> str:
         """Show policy routing rules."""
-        if router not in self.available_namespaces:
-            return f"Router {router} namespace not found"
+        if namespace not in self.available_namespaces:
+            # For non-existent namespaces, we can't determine the type, so use generic term
+            if namespace in self.hosts:
+                return f"Host {namespace} namespace not found"
+            elif namespace in self.routers:
+                return f"Router {namespace} namespace not found"
+            else:
+                return f"Namespace {namespace} not found"
             
-        result = self.run_command("ip rule show", namespace=router, check=False)
+        result = self.run_command("ip rule show", namespace=namespace, check=False)
         if result.returncode != 0:
-            return f"Failed to get policy rules for {router}"
+            return f"Failed to get policy rules for {namespace}"
             
         return result.stdout
         
-    def show_summary(self, router: str) -> str:
-        """Show brief summary of router configuration."""
-        if router not in self.available_namespaces:
-            return f"Router {router} namespace not found"
+    def show_summary(self, namespace: str) -> str:
+        """Show brief summary of namespace configuration."""
+        if namespace not in self.available_namespaces:
+            # For non-existent namespaces, we can't determine the type, so use generic term
+            if namespace in self.hosts:
+                return f"Host {namespace} namespace not found"
+            elif namespace in self.routers:
+                return f"Router {namespace} namespace not found"
+            else:
+                return f"Namespace {namespace} not found"
             
-        summary_lines = [f"=== {router} SUMMARY ==="]
+        entity_type = "HOST" if self.is_host(namespace) else "ROUTER"
+        summary_lines = [f"=== {namespace} {entity_type} SUMMARY ==="]
+        
+        # Add host-specific information if this is a host
+        if self.is_host(namespace):
+            host_config = self.hosts[namespace]
+            primary_ip = host_config.get('primary_ip', 'unknown')
+            connected_to = host_config.get('connected_to', 'unknown')
+            gateway_ip = host_config.get('gateway_ip', 'unknown')
+            secondary_ips = host_config.get('secondary_ips', [])
+            
+            summary_lines.append(f"  Type: Host")
+            summary_lines.append(f"  Primary IP: {primary_ip}")
+            summary_lines.append(f"  Connected to: {connected_to} (gateway: {gateway_ip})")
+            if secondary_ips:
+                summary_lines.append(f"  Secondary IPs: {', '.join(secondary_ips)}")
+            summary_lines.append(f"  Created: {host_config.get('created_at', 'unknown')}")
+        else:
+            summary_lines.append(f"  Type: Router")
         
         # Get interface count and IPs
-        addr_result = self.run_command("ip addr show", namespace=router, check=False)
+        addr_result = self.run_command("ip addr show", namespace=namespace, check=False)
         if addr_result.returncode == 0:
             interfaces = []
             current_if = None
@@ -384,47 +466,77 @@ class NetworkNamespaceStatus:
                     summary_lines.append(f"  {display_name}: {ip_addr}/{prefix}")
                     
         # Get route count
-        route_result = self.run_command("ip route show", namespace=router, check=False)
+        route_result = self.run_command("ip route show", namespace=namespace, check=False)
         if route_result.returncode == 0:
             route_count = len([line for line in route_result.stdout.split('\n') if line.strip()])
             summary_lines.append(f"  Routes: {route_count}")
             
         return '\n'.join(summary_lines)
         
-    def show_all_configuration(self, router: str) -> str:
-        """Show complete configuration for router."""
-        if router not in self.available_namespaces:
-            return f"Router {router} namespace not found"
+    def show_all_configuration(self, namespace: str) -> str:
+        """Show complete configuration for namespace."""
+        if namespace not in self.available_namespaces:
+            # For non-existent namespaces, we can't determine the type, so use generic term
+            if namespace in self.hosts:
+                return f"Host {namespace} namespace not found"
+            elif namespace in self.routers:
+                return f"Router {namespace} namespace not found"
+            else:
+                return f"Namespace {namespace} not found"
             
+        entity_type = "HOST" if self.is_host(namespace) else "ROUTER"
         sections = []
         
         # Interfaces
-        sections.append(f"=== {router} INTERFACES ===")
-        sections.append(self.show_interfaces(router))
+        sections.append(f"=== {namespace} {entity_type} INTERFACES ===")
+        sections.append(self.show_interfaces(namespace))
         
         # Routes
-        sections.append(f"\n=== {router} ROUTES ===")
-        sections.append(self.show_routes(router))
+        sections.append(f"\n=== {namespace} {entity_type} ROUTES ===")
+        sections.append(self.show_routes(namespace))
         
         # Rules
-        sections.append(f"\n=== {router} RULES ===")
-        sections.append(self.show_rules(router))
+        sections.append(f"\n=== {namespace} {entity_type} RULES ===")
+        sections.append(self.show_rules(namespace))
         
         return '\n'.join(sections)
         
-    def show_all_routers_summary(self) -> str:
-        """Show summary for all available routers."""
+        
+    def show_all_summary(self) -> str:
+        """Show summary for all available namespaces (routers and hosts)."""
         if not self.available_namespaces:
-            return "No router namespaces found"
+            return "No live namespaces found"
             
-        sections = ["=== NETWORK SIMULATION STATUS ==="]
-        sections.append(f"Available routers: {len(self.available_namespaces)}")
-        sections.append(f"Interface mappings: {len(self.name_map)}")
+        router_count = len([ns for ns in self.available_namespaces if self.is_router(ns)])
+        host_count = len([ns for ns in self.available_namespaces if self.is_host(ns)])
+        
+        sections = ["=== LIVE NAMESPACE STATUS ==="]
+        sections.append(f"Running namespaces: {len(self.available_namespaces)}")
+        sections.append(f"  Routers: {router_count}")
+        sections.append(f"  Hosts: {host_count}")
+        sections.append(f"Interface name mappings: {len(self.name_map)}")
         sections.append("")
         
-        for router in sorted(self.available_namespaces):
-            sections.append(self.show_summary(router))
+        if self.available_namespaces:
+            sections.append("Running namespaces:")
+            # Show routers first, then hosts
+            routers = sorted([ns for ns in self.available_namespaces if self.is_router(ns)])
+            hosts = sorted([ns for ns in self.available_namespaces if self.is_host(ns)])
+            
+            for namespace in routers:
+                sections.append(f"  {namespace} [ROUTER]")
+            for namespace in hosts:
+                sections.append(f"  {namespace} [HOST]")
             sections.append("")
+            
+            # Show detailed summary for each namespace
+            for namespace in routers + hosts:
+                sections.append(self.show_summary(namespace))
+                sections.append("")
+        else:
+            sections.append("No namespaces are currently running.")
+            sections.append("Use 'sudo make netsetup' to create router namespaces.")
+            sections.append("Use 'sudo make hostadd' to create host namespaces.")
             
         return '\n'.join(sections)
 
@@ -432,25 +544,27 @@ class NetworkNamespaceStatus:
 def main():
     """Main entry point for network status tool."""
     parser = argparse.ArgumentParser(
-        description="Show network namespace simulation status with original interface names",
+        description="Show LIVE network namespace status with original interface names",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  %(prog)s all summary                    # Overview of all routers
-  %(prog)s hq-gw interfaces              # Interface config for hq-gw
-  %(prog)s br-core routes                # Routing table for br-core
-  %(prog)s dc-srv rules                  # Policy rules for dc-srv
-  %(prog)s hq-dmz all                    # Complete config for hq-dmz
-  %(prog)s hq-gw interfaces -v           # Interface config with basic verbosity
-  %(prog)s all summary -vv               # Overview with info messages
-  %(prog)s br-core routes -vvv           # Routing table with debug output
+  %(prog)s all summary                    # Overview of all live namespaces
+  %(prog)s hq-gw interfaces              # Live interface config for hq-gw
+  %(prog)s br-core routes                # Live routing table for br-core
+  %(prog)s web1 summary                  # Live host summary for web1
+  %(prog)s web1 interfaces               # Live interface config for host web1
+  %(prog)s dc-srv rules                  # Live policy rules for dc-srv
+  %(prog)s hq-dmz all                    # Complete live config for hq-dmz
+  %(prog)s hq-gw interfaces -v           # Live interface config with basic verbosity
+  %(prog)s all summary -vv               # Live overview with info messages
+  %(prog)s br-core routes -vvv           # Live routing table with debug output
   
 Functions:
-  interfaces  - IP configuration (ip addr show equivalent)
-  routes      - Routing table (ip route show equivalent)
-  rules       - Policy rules (ip rule show equivalent)  
-  summary     - Brief overview
-  all         - Complete configuration
+  interfaces  - Live IP configuration (ip addr show equivalent)
+  routes      - Live routing table (ip route show equivalent)
+  rules       - Live policy rules (ip rule show equivalent)  
+  summary     - Brief live overview
+  all         - Complete live configuration
   
 Verbosity Levels:
   (none)  - Silent mode: minimal output
@@ -459,21 +573,21 @@ Verbosity Levels:
   -vvv    - Debug mode: info + DEBUG level messages
   
 Environment Variables:
-  TRACEROUTE_SIMULATOR_FACTS - Required facts directory path
+  TRACEROUTE_SIMULATOR_FACTS - Facts directory path (for interface name mapping only)
         """
     )
     
     parser.add_argument(
-        'router',
+        'namespace',
         type=str,
-        help='Router name (e.g., hq-gw, br-core, dc-srv) or "all" for all routers'
+        help='Namespace name (e.g., hq-gw, br-core, dc-srv, web1) or "all" for all namespaces'
     )
     
     parser.add_argument(
         'function',
         type=str,
         choices=['interfaces', 'routes', 'rules', 'summary', 'all'],
-        help='Information to display'
+        help='Live information to display'
     )
     
     parser.add_argument(
@@ -502,37 +616,38 @@ Environment Variables:
     try:
         status_tool = NetworkNamespaceStatus(facts_dir, args.verbose)
         
-        if args.router == 'all' and args.function == 'summary':
-            output = status_tool.show_all_routers_summary()
-        elif args.router == 'all':
-            # Show function for all routers
+        if args.namespace == 'all' and args.function == 'summary':
+            output = status_tool.show_all_summary()
+        elif args.namespace == 'all':
+            # Show function for all namespaces
             output_sections = []
-            for router in sorted(status_tool.available_namespaces):
+            for namespace in sorted(status_tool.available_namespaces):
+                entity_type = "HOST" if status_tool.is_host(namespace) else "ROUTER"
                 if args.function == 'interfaces':
-                    output_sections.append(f"=== {router} INTERFACES ===")
-                    output_sections.append(status_tool.show_interfaces(router))
+                    output_sections.append(f"=== {namespace} {entity_type} LIVE INTERFACES ===")
+                    output_sections.append(status_tool.show_interfaces(namespace))
                 elif args.function == 'routes':
-                    output_sections.append(f"=== {router} ROUTES ===")
-                    output_sections.append(status_tool.show_routes(router))
+                    output_sections.append(f"=== {namespace} {entity_type} LIVE ROUTES ===")
+                    output_sections.append(status_tool.show_routes(namespace))
                 elif args.function == 'rules':
-                    output_sections.append(f"=== {router} RULES ===")
-                    output_sections.append(status_tool.show_rules(router))
+                    output_sections.append(f"=== {namespace} {entity_type} LIVE RULES ===")
+                    output_sections.append(status_tool.show_rules(namespace))
                 elif args.function == 'all':
-                    output_sections.append(status_tool.show_all_configuration(router))
+                    output_sections.append(status_tool.show_all_configuration(namespace))
                 output_sections.append("")
             output = '\n'.join(output_sections)
         else:
-            # Show specific function for specific router
+            # Show specific function for specific namespace
             if args.function == 'interfaces':
-                output = status_tool.show_interfaces(args.router)
+                output = status_tool.show_interfaces(args.namespace)
             elif args.function == 'routes':
-                output = status_tool.show_routes(args.router)
+                output = status_tool.show_routes(args.namespace)
             elif args.function == 'rules':
-                output = status_tool.show_rules(args.router)
+                output = status_tool.show_rules(args.namespace)
             elif args.function == 'summary':
-                output = status_tool.show_summary(args.router)
+                output = status_tool.show_summary(args.namespace)
             elif args.function == 'all':
-                output = status_tool.show_all_configuration(args.router)
+                output = status_tool.show_all_configuration(args.namespace)
             else:
                 print(f"Unknown function: {args.function}")
                 sys.exit(1)

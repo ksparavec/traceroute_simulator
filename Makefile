@@ -17,23 +17,30 @@ REQUIRED_MODULES := json sys argparse ipaddress os glob typing subprocess re dif
 
 # Colors removed for better terminal compatibility
 
-.PHONY: help check-deps test fetch-routing-data clean tsim ifa netsetup nettest netclean netshow test-namespace
+.PHONY: help check-deps test test-network fetch-routing-data clean tsim ifa netsetup nettest netclean netshow netstatus test-namespace hostadd hostdel hostlist hostclean netnsclean
 
 # Default target
 help:
 	@echo "Traceroute Simulator - Available Make Targets"
 	@echo "=============================================="
 	@echo "check-deps        - Check for required Python modules and provide installation hints"
-	@echo "test              - Execute all test scripts with test setup and report results"
+	@echo "test              - Execute all test scripts with test setup and report results (includes make targets tests)"
 	@echo "fetch-routing-data - Run Ansible playbook to collect routing facts (requires OUTPUT_DIR and INVENTORY_FILE or INVENTORY)"
 	@echo "clean             - Clean up generated files and cache"
 	@echo "tsim              - Run traceroute simulator with command line arguments (e.g., make tsim ARGS='-s 10.1.1.1 -d 10.2.1.1')"
 	@echo "ifa               - Run iptables forward analyzer with command line arguments (e.g., make ifa ARGS='--router hq-gw -s 10.1.1.1 -d 8.8.8.8')"
 	@echo "netsetup          - Set up Linux namespace network simulation (requires sudo, ARGS='-v/-vv/-vvv' for verbosity)"
-	@echo "nettest           - Test network connectivity in namespace simulation (e.g., make nettest ARGS='-s 10.1.1.1 -d 10.2.1.1:80 -p tcp')"
-	@echo "netshow           - Show network status with original interface names (e.g., make netshow ARGS='hq-gw interfaces')"
+	@echo "nettest           - Test network connectivity in namespace simulation (e.g., make nettest ARGS='-s 10.1.1.1 -d 10.2.1.1 --test-type ping')"
+	@echo "netshow           - Show static network topology from facts (e.g., make netshow ARGS='hq-gw interfaces' or 'all hosts')"
+	@echo "netstatus         - Show live namespace status (e.g., make netstatus ARGS='hq-gw interfaces' or 'all summary')"
 	@echo "netclean          - Clean up namespace network simulation (requires sudo, ARGS='-v/-f/--force' for options)"
 	@echo "test-namespace    - Run namespace simulation tests independently (requires sudo and completed 'make test')"
+	@echo "test-network      - Run comprehensive network connectivity tests (requires sudo, takes 3-5 minutes)"
+	@echo "hostadd           - Add dynamic host to network (e.g., make hostadd ARGS='--host web1 --primary-ip 10.1.1.100/24 --connect-to hq-gw')"
+	@echo "hostdel           - Remove host from network (e.g., make hostdel ARGS='--host web1')"
+	@echo "hostlist          - List all registered hosts (sudo make hostlist)"
+	@echo "hostclean         - Remove all registered hosts (sudo make hostclean)"
+	@echo "netnsclean        - Clean up both routers and hosts (sudo make netnsclean)"
 	@echo "help              - Show this help message"
 	@echo ""
 	@echo "Usage Examples:"
@@ -48,17 +55,33 @@ help:
 	@echo "  sudo make netsetup ARGS='-v'                                          # Set up with basic output"
 	@echo "  sudo make netsetup ARGS='-vv'                                         # Set up with info messages"
 	@echo "  sudo make netsetup ARGS='-vvv'                                        # Set up with debug messages"
-	@echo "  sudo make nettest ARGS='-s 10.1.1.1 -d 10.2.1.1:80 -p tcp'           # Test real network connectivity"
-	@echo "  sudo make nettest ARGS='-s 10.1.1.1:12345 -d 10.2.1.1:80 -p tcp -v' # Test with specific source port"
-	@echo "  sudo make nettest ARGS='-s 10.1.1.1 -d 8.8.8.8 -p icmp -v'           # Test ICMP connectivity"
-	@echo "  sudo make netshow ARGS='hq-gw interfaces'                             # Show interface config with original names"
-	@echo "  sudo make netshow ARGS='all summary'                                  # Show summary of all routers"
-	@echo "  sudo make netshow ARGS='br-core routes -v'                            # Show routing table with verbose output"
+	@echo "  sudo make nettest ARGS='-s 10.1.1.1 -d 10.2.1.1 --test-type ping'    # Test ICMP connectivity"
+	@echo "  sudo make nettest ARGS='-s 10.1.1.1 -d 10.2.1.1 --test-type mtr'     # Test with MTR traceroute"
+	@echo "  sudo make nettest ARGS='-s 10.1.1.1 -d 8.8.8.8 --test-type both -v'  # Test external IP with both ping and MTR"
+	@echo "  make netshow ARGS='hq-gw interfaces'                                  # Show static interface config from facts"
+	@echo "  make netshow ARGS='all summary'                                       # Show static summary of all routers and hosts from facts"
+	@echo "  make netshow ARGS='all topology'                                      # Show complete network topology from facts"
+	@echo "  make netshow ARGS='all hosts'                                         # Show all registered hosts from registry"
+	@echo "  make netshow ARGS='hq-gw topology'                                    # Show network connections for hq-gw from facts"
+	@echo "  make netshow ARGS='hq-gw hosts'                                       # Show hosts connected to hq-gw from registry"
+	@echo "  make netshow ARGS='web1 summary'                                      # Show host summary for web1 from registry"
+	@echo "  make netshow ARGS='br-core routes -v'                                 # Show static routing table from facts"
+	@echo "  sudo make netstatus ARGS='hq-gw interfaces'                           # Show live interface config"
+	@echo "  sudo make netstatus ARGS='web1 summary'                               # Show live host summary"
+	@echo "  sudo make netstatus ARGS='all summary'                                # Show live status of all namespaces"
 	@echo "  sudo make netclean                                                     # Clean up namespace simulation (silent)"
 	@echo "  sudo make netclean ARGS='-v'                                          # Clean up with verbose output"
 	@echo "  sudo make netclean ARGS='-f'                                          # Force cleanup of stuck resources"
 	@echo "  sudo make netclean ARGS='-v -f'                                       # Verbose force cleanup"
 	@echo "  sudo make test-namespace                                               # Run namespace simulation tests after 'make test'"
+	@echo "  sudo make test-network                                                 # Run comprehensive network connectivity tests (3-5 min)"
+	@echo "  sudo make hostadd ARGS='--host web1 --primary-ip 10.1.1.100/24 --connect-to hq-gw'      # Add host to bridge"
+	@echo "  sudo make hostadd ARGS='--host srv1 --primary-ip 10.1.11.100/24 --connect-to hq-lab --router-interface eth2'  # Connect to specific bridge"
+	@echo "  sudo make hostadd ARGS='--host db1 --primary-ip 10.2.1.100/24 --secondary-ips 192.168.1.1/24'  # Add host with secondary IP"
+	@echo "  sudo make hostdel ARGS='--host web1 --remove'                         # Remove host from network"
+	@echo "  sudo make hostlist                                                     # List all registered hosts"
+	@echo "  sudo make hostclean                                                    # Remove all registered hosts"
+	@echo "  sudo make netnsclean                                                   # Clean up both routers and hosts"
 	@echo ""
 	@echo "Test Data Collection:"
 	@echo "  # Collect facts and preserve raw data for testing (adds -e test=true to Ansible command)"
@@ -236,8 +259,32 @@ test: check-deps
 	@echo "✓ Comprehensive facts processing tests passed"
 	@echo ""
 	
+	# Run namespace make targets tests (requires sudo privileges)
+	@echo "5. Running Namespace Make Targets Tests"
+	@echo "---------------------------------------"
+	@if [ "$$(id -u)" = "0" ]; then \
+		echo "Running namespace make targets tests with root privileges..."; \
+		echo "  5a. Basic functionality tests..."; \
+		TRACEROUTE_SIMULATOR_FACTS=/tmp/traceroute_test_output $(PYTHON) -B tests/test_make_targets_basic.py > /dev/null && \
+		echo "  ✓ Basic tests passed" || { echo "  ✗ Basic tests failed"; exit 1; }; \
+		echo "  5b. Host management tests..."; \
+		TRACEROUTE_SIMULATOR_FACTS=/tmp/traceroute_test_output $(PYTHON) -B tests/test_make_targets_hosts.py > /dev/null && \
+		echo "  ✓ Host tests passed" || { echo "  ✗ Host tests failed"; exit 1; }; \
+		echo "  5c. Error handling tests..."; \
+		TRACEROUTE_SIMULATOR_FACTS=/tmp/traceroute_test_output $(PYTHON) -B tests/test_make_targets_errors.py > /dev/null && \
+		echo "  ✓ Error tests passed" || { echo "  ✗ Error tests failed"; exit 1; }; \
+		echo "  5d. Integration tests..."; \
+		TRACEROUTE_SIMULATOR_FACTS=/tmp/traceroute_test_output $(PYTHON) -B tests/test_make_targets_integration.py > /dev/null && \
+		echo "  ✓ Integration tests passed" || { echo "  ✗ Integration tests failed"; exit 1; }; \
+		echo "✓ All namespace make targets tests completed successfully"; \
+	else \
+		echo "⚠ Skipping namespace make targets tests (requires sudo privileges)"; \
+		echo "  To run make targets tests: sudo make test"; \
+	fi
+	@echo ""
+	
 	# Run namespace simulation tests (requires sudo privileges)
-	@echo "5. Running Namespace Simulation Tests"
+	@echo "6. Running Namespace Simulation Tests"
 	@echo "-------------------------------------"
 	@if [ "$$(id -u)" = "0" ]; then \
 		echo "Running namespace simulation tests with root privileges..."; \
@@ -428,7 +475,6 @@ tsim:
 		echo "  make tsim ARGS='-s 10.1.1.1 -d 10.2.1.1 -v --reverse-trace'"; \
 		exit 1; \
 	fi
-	@echo "Running traceroute simulator with arguments: $(ARGS)"
 	@env TRACEROUTE_SIMULATOR_FACTS="$(TRACEROUTE_SIMULATOR_FACTS)" $(PYTHON) src/core/traceroute_simulator.py $(ARGS)
 
 # Run iptables forward analyzer with command line arguments  
@@ -443,7 +489,6 @@ ifa:
 		echo "  make ifa ARGS='--router hq-gw -s 10.1.1.0/24 -d 8.8.8.8 -p all'"; \
 		exit 1; \
 	fi
-	@echo "Running iptables forward analyzer with arguments: $(ARGS)"
 	@env TRACEROUTE_SIMULATOR_FACTS="$(TRACEROUTE_SIMULATOR_FACTS)" $(PYTHON) src/analyzers/iptables_forward_analyzer.py $(ARGS)
 
 # Set up Linux namespace network simulation (requires sudo)
@@ -466,14 +511,24 @@ nettest:
 	fi
 	@if [ -z "$(ARGS)" ]; then \
 		echo "Usage: sudo make nettest ARGS='<arguments>'"; \
+		echo ""; \
+		echo "Required arguments:"; \
+		echo "  Either: -s <source_ip> -d <destination_ip>  # Test specific connection"; \
+		echo "  Or:     --all                              # Test all routers to all others"; \
+		echo ""; \
+		echo "Optional arguments:"; \
+		echo "  --test-type {ping,mtr,both}    # Test type (default: ping)"; \
+		echo "  -v, -vv                        # Verbosity levels"; \
+		echo "  --wait <seconds>               # Wait time between tests (default: 0.1)"; \
+		echo ""; \
 		echo "Examples:"; \
-		echo "  sudo make nettest ARGS='-s 10.1.1.1 -d 10.2.1.1 -p tcp --dport 80'"; \
-		echo "  sudo make nettest ARGS='-s 10.1.11.1 -d 10.1.3.5 -p tcp --dport 3389'"; \
-		echo "  sudo make nettest ARGS='-s 10.1.1.5 -d 8.8.8.8 -p icmp'"; \
-		echo "  sudo make nettest ARGS='-s 10.1.2.1 -d 10.1.3.15 -p udp --dport 53'"; \
+		echo "  sudo make nettest ARGS='-s 10.1.1.1 -d 10.2.1.1'                      # Basic ping test"; \
+		echo "  sudo make nettest ARGS='-s 10.1.1.1 -d 10.2.1.1 --test-type mtr'     # MTR traceroute test"; \
+		echo "  sudo make nettest ARGS='-s 10.1.1.1 -d 8.8.8.8 --test-type both -v'  # Both ping and MTR with verbosity"; \
+		echo "  sudo make nettest ARGS='--all'                                        # Test all routers (ping)"; \
+		echo "  sudo make nettest ARGS='--all --test-type mtr -v'                     # Test all routers (MTR, verbose)"; \
 		exit 1; \
 	fi
-	@echo "Testing network connectivity with arguments: $(ARGS)"
 	@TRACEROUTE_SIMULATOR_FACTS=/tmp/traceroute_test_output $(PYTHON) src/simulators/network_namespace_tester.py $(ARGS)
 
 # Clean up namespace network simulation (requires sudo)
@@ -486,31 +541,63 @@ netclean:
 	fi
 	@$(PYTHON) src/simulators/network_namespace_cleanup.py $(ARGS)
 
-# Show network status with original interface names (requires sudo)
-# Usage: sudo make netshow ARGS="<router> <function> [-v]"
-# Functions: interfaces, routes, rules, summary, all
+# Show static network topology from facts files (no root required)
+# Usage: make netshow ARGS="<router> <function> [-v]"
+# Functions: interfaces, routes, rules, summary, topology, all
 # Router names: hq-gw, hq-core, hq-dmz, hq-lab, br-gw, br-core, br-wifi, dc-gw, dc-core, dc-srv, or 'all'
 netshow:
+	@if [ -z "$(ARGS)" ]; then \
+		echo "Usage: make netshow ARGS='<router> <function> [options]'"; \
+		echo ""; \
+		echo "Shows STATIC network topology from facts files (no live namespace inspection)"; \
+		echo ""; \
+		echo "Entity names: hq-gw, hq-core, hq-dmz, hq-lab, br-gw, br-core, br-wifi, dc-gw, dc-core, dc-srv, web1, all"; \
+		echo "Functions: interfaces, routes, rules, summary, topology, hosts, all"; \
+		echo "Options: -v (verbose debug output)"; \
+		echo ""; \
+		echo "Examples:"; \
+		echo "  make netshow ARGS='hq-gw interfaces'                # Show static interface config from facts"; \
+		echo "  make netshow ARGS='br-core routes'                  # Show static routing table from facts"; \
+		echo "  make netshow ARGS='dc-srv rules'                    # Show static policy rules from facts"; \
+		echo "  make netshow ARGS='hq-dmz summary'                  # Show static overview from facts"; \
+		echo "  make netshow ARGS='all topology'                    # Show complete network topology from facts"; \
+		echo "  make netshow ARGS='all hosts'                       # Show all registered hosts from registry"; \
+		echo "  make netshow ARGS='hq-gw topology'                  # Show network connections for hq-gw from facts"; \
+		echo "  make netshow ARGS='hq-gw hosts'                     # Show hosts connected to hq-gw from registry"; \
+		echo "  make netshow ARGS='web1 summary'                    # Show host summary for web1 from registry"; \
+		echo "  make netshow ARGS='hq-gw all'                       # Show complete static config from facts"; \
+		echo "  make netshow ARGS='all summary'                     # Show summary for all routers and hosts from facts"; \
+		echo "  make netshow ARGS='hq-gw interfaces -v'             # Show static interfaces with verbose output"; \
+		exit 1; \
+	fi
+	@TRACEROUTE_SIMULATOR_FACTS=/tmp/traceroute_test_output $(PYTHON) src/simulators/network_topology_viewer.py $(ARGS)
+
+# Show live network namespace status (requires sudo)
+# Usage: sudo make netstatus ARGS="<namespace> <function> [-v]"
+# Functions: interfaces, routes, rules, summary, all
+# Namespace names: any running namespace (routers or hosts) or 'all'
+netstatus:
 	@if [ "$$(id -u)" != "0" ]; then \
-		echo "Error: netshow requires root privileges"; \
-		echo "Please run: sudo make netshow ARGS='<router> <function>'"; \
+		echo "Error: netstatus requires root privileges to access namespaces"; \
+		echo "Please run: sudo make netstatus ARGS='<namespace> <function>'"; \
 		exit 1; \
 	fi
 	@if [ -z "$(ARGS)" ]; then \
-		echo "Usage: sudo make netshow ARGS='<router> <function> [options]'"; \
+		echo "Usage: sudo make netstatus ARGS='<namespace> <function> [options]'"; \
 		echo ""; \
-		echo "Router names: hq-gw, hq-core, hq-dmz, hq-lab, br-gw, br-core, br-wifi, dc-gw, dc-core, dc-srv, all"; \
+		echo "Shows LIVE status of running namespaces only (no static facts)"; \
+		echo ""; \
+		echo "Namespace names: any running router or host namespace, or 'all'"; \
 		echo "Functions: interfaces, routes, rules, summary, all"; \
 		echo "Options: -v (verbose debug output)"; \
 		echo ""; \
 		echo "Examples:"; \
-		echo "  sudo make netshow ARGS='hq-gw interfaces'           # Show interface config for hq-gw"; \
-		echo "  sudo make netshow ARGS='br-core routes'             # Show routing table for br-core"; \
-		echo "  sudo make netshow ARGS='dc-srv rules'               # Show policy rules for dc-srv"; \
-		echo "  sudo make netshow ARGS='hq-dmz summary'             # Show brief overview for hq-dmz"; \
-		echo "  sudo make netshow ARGS='hq-gw all'                  # Show complete config for hq-gw"; \
-		echo "  sudo make netshow ARGS='all summary'                # Show summary for all routers"; \
-		echo "  sudo make netshow ARGS='hq-gw interfaces -v'        # Show interfaces with verbose output"; \
+		echo "  sudo make netstatus ARGS='hq-gw interfaces'         # Show live interface config"; \
+		echo "  sudo make netstatus ARGS='br-core routes'           # Show live routing table"; \
+		echo "  sudo make netstatus ARGS='web1 summary'             # Show live host summary"; \
+		echo "  sudo make netstatus ARGS='all summary'              # Show live status of all namespaces"; \
+		echo "  sudo make netstatus ARGS='hq-gw all'                # Show complete live config"; \
+		echo "  sudo make netstatus ARGS='dc-srv rules -v'          # Show live rules with verbose output"; \
 		exit 1; \
 	fi
 	@TRACEROUTE_SIMULATOR_FACTS=/tmp/traceroute_test_output $(PYTHON) src/simulators/network_namespace_status.py $(ARGS)
@@ -531,6 +618,111 @@ test-namespace:
 	@echo "Running Namespace Simulation Test Suite"
 	@echo "======================================="
 	@TRACEROUTE_SIMULATOR_FACTS=/tmp/traceroute_test_output $(PYTHON) -B tests/test_namespace_simulation.py
+
+# Run comprehensive network connectivity tests (requires sudo)
+# Usage: sudo make test-network
+test-network:
+	@if [ "$$(id -u)" != "0" ]; then \
+		echo "Error: Network connectivity tests require root privileges"; \
+		echo "Please run: sudo make test-network"; \
+		exit 1; \
+	fi
+	@if [ ! -d "/tmp/traceroute_test_output" ] || [ -z "$$(ls -A /tmp/traceroute_test_output 2>/dev/null)" ]; then \
+		echo "Error: No consolidated facts found in /tmp/traceroute_test_output"; \
+		echo "Please run the main test suite first: make test"; \
+		exit 1; \
+	fi
+	@echo "Running Comprehensive Network Connectivity Test Suite"
+	@echo "===================================================="
+	@echo "Testing complex routing scenarios with ping and MTR:"
+	@echo "  - Multi-hop paths across all locations"
+	@echo "  - VPN mesh connectivity testing"
+	@echo "  - Internal network segment routing"
+	@echo "  - External IP connectivity via gateways"
+	@echo "  - Complex enterprise network scenarios"
+	@echo ""
+	@echo "⚠ Note: This test suite takes 3-5 minutes to complete"
+	@echo ""
+	@TRACEROUTE_SIMULATOR_FACTS=/tmp/traceroute_test_output $(PYTHON) -B tests/test_make_targets_network.py
+
+# Add dynamic host to network using bridge infrastructure (requires sudo)
+# Usage: sudo make hostadd ARGS="--host <name> --primary-ip <ip/prefix> [--secondary-ips <ips>] [--connect-to <router>]"
+hostadd:
+	@if [ "$$(id -u)" != "0" ]; then \
+		echo "Error: hostadd requires root privileges"; \
+		echo "Please run: sudo make hostadd ARGS='<arguments>'"; \
+		exit 1; \
+	fi
+	@if [ -z "$(ARGS)" ]; then \
+		echo "Usage: sudo make hostadd ARGS='--host <name> --primary-ip <ip/prefix> [options]'"; \
+		echo ""; \
+		echo "Required arguments:"; \
+		echo "  --host <name>               Host name"; \
+		echo "  --primary-ip <ip/prefix>    Primary IP with prefix (e.g., 10.1.1.100/24)"; \
+		echo ""; \
+		echo "Optional arguments:"; \
+		echo "  --secondary-ips <ips>       Comma-separated secondary IPs with prefixes"; \
+		echo "  --connect-to <router>       Router to connect to (auto-detect if not specified)"; \
+		echo "  --router-interface <iface>  Specific router interface bridge to connect to"; \
+		echo "  -v                          Verbose output (-vv for debug)"; \
+		echo ""; \
+		echo "Examples:"; \
+		echo "  sudo make hostadd ARGS='--host web1 --primary-ip 10.1.1.100/24 --connect-to hq-gw'"; \
+		echo "  sudo make hostadd ARGS='--host srv1 --primary-ip 10.1.11.100/24 --connect-to hq-lab --router-interface eth2'"; \
+		echo "  sudo make hostadd ARGS='--host db1 --primary-ip 10.2.1.100/24 --secondary-ips 192.168.1.1/24,172.16.1.1/24'"; \
+		echo "  sudo make hostadd ARGS='--host client1 --primary-ip 10.3.1.100/24 -v'"; \
+		exit 1; \
+	fi
+	@TRACEROUTE_SIMULATOR_FACTS=/tmp/traceroute_test_output $(PYTHON) src/simulators/host_namespace_setup.py $(ARGS)
+
+# Remove host from network (requires sudo)
+# Usage: sudo make hostdel ARGS="--host <name> --remove"
+hostdel:
+	@if [ "$$(id -u)" != "0" ]; then \
+		echo "Error: hostdel requires root privileges"; \
+		echo "Please run: sudo make hostdel ARGS='--host <name> --remove'"; \
+		exit 1; \
+	fi
+	@if [ -z "$(ARGS)" ]; then \
+		echo "Usage: sudo make hostdel ARGS='--host <name> --remove'"; \
+		echo ""; \
+		echo "Examples:"; \
+		echo "  sudo make hostdel ARGS='--host web1 --remove'"; \
+		echo "  sudo make hostdel ARGS='--host db1 --remove -v'"; \
+		exit 1; \
+	fi
+	@TRACEROUTE_SIMULATOR_FACTS=/tmp/traceroute_test_output $(PYTHON) src/simulators/host_namespace_setup.py $(ARGS)
+
+# List all registered hosts (requires sudo)
+# Usage: sudo make hostlist
+hostlist:
+	@if [ "$$(id -u)" != "0" ]; then \
+		echo "Error: hostlist requires root privileges to check namespace status"; \
+		echo "Please run: sudo make hostlist"; \
+		exit 1; \
+	fi
+	@TRACEROUTE_SIMULATOR_FACTS=/tmp/traceroute_test_output $(PYTHON) src/simulators/host_namespace_setup.py --list-hosts
+
+# Clean up all registered hosts (requires sudo)
+# Usage: sudo make hostclean [ARGS="-v|-vv"]
+hostclean:
+	@if [ "$$(id -u)" != "0" ]; then \
+		echo "Error: hostclean requires root privileges"; \
+		echo "Please run: sudo make hostclean"; \
+		exit 1; \
+	fi
+	@$(PYTHON) src/utils/host_cleanup.py $(ARGS)
+
+# Clean up both network namespaces and hosts (requires sudo)
+# Usage: sudo make netnsclean [ARGS="-v|-f|--force"]
+netnsclean:
+	@if [ "$$(id -u)" != "0" ]; then \
+		echo "Error: netnsclean requires root privileges"; \
+		echo "Please run: sudo make netnsclean"; \
+		exit 1; \
+	fi
+	@$(PYTHON) src/utils/host_cleanup.py $(ARGS)
+	@TRACEROUTE_SIMULATOR_FACTS=/tmp/traceroute_test_output $(PYTHON) src/simulators/network_namespace_cleanup.py $(ARGS)
 
 # Check if we're running in a git repository (for future enhancements)
 .git-check:

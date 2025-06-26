@@ -41,21 +41,24 @@
         "dst": "10.2.2.0/24",
         "prefsrc": "10.2.2.3",
         "protocol": "kernel",
-        "scope": "link"
+        "scope": "link",
+        "latency_ms": 0.1
       },
       {
         "dev": "wlan0",
         "dst": "10.2.5.0/24",
         "prefsrc": "10.2.5.1",
         "protocol": "kernel",
-        "scope": "link"
+        "scope": "link",
+        "latency_ms": 0.1
       },
       {
         "dev": "wlan1",
         "dst": "10.2.6.0/24",
         "prefsrc": "10.2.6.1",
         "protocol": "kernel",
-        "scope": "link"
+        "scope": "link",
+        "latency_ms": 0.1
       }
     ],
     "ip_forwarding_enabled": true

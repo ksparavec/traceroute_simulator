@@ -47,6 +47,10 @@ class CompleteNetworkSetup:
         self.created_veths: Set[str] = set()
         self.created_bridges: Set[str] = set()
         
+        # Simulation namespace for scalability
+        self.sim_namespace = "netsim"
+        self.host_bridge = "sim-bridge"
+        
     def setup_logging(self):
         """Configure logging based on verbosity level."""
         if self.verbose == 0:
@@ -124,6 +128,7 @@ class CompleteNetworkSetup:
     def check_command_availability(self, command: str) -> bool:
         """Check if a command is available on the system."""
         try:
+            # First try which
             result = subprocess.run(
                 f"which {command}",
                 shell=True,
@@ -131,13 +136,53 @@ class CompleteNetworkSetup:
                 text=True,
                 check=False
             )
-            return result.returncode == 0
+            if result.returncode == 0:
+                return True
+                
+            # Also check common system directories
+            common_paths = ['/bin', '/sbin', '/usr/bin', '/usr/sbin']
+            for path in common_paths:
+                if os.path.exists(os.path.join(path, command)):
+                    return True
+                    
+            return False
         except Exception:
             return False
         
+    def create_simulation_namespace(self):
+        """Create dedicated simulation namespace for scalability."""
+        self.logger.info(f"Creating simulation namespace: {self.sim_namespace}")
+        
+        # Create simulation namespace
+        self.run_cmd(f"ip netns add {self.sim_namespace}")
+        self.created_namespaces.add(self.sim_namespace)
+        
+        # Enable loopback in simulation namespace
+        self.run_cmd("ip link set lo up", namespace=self.sim_namespace)
+        
+        # Create bridge connection between host and simulation namespace
+        host_veth = "to-netsim"
+        sim_veth = "from-host"
+        
+        self.run_cmd(f"ip link add {host_veth} type veth peer name {sim_veth}")
+        self.created_veths.update([host_veth, sim_veth])
+        
+        # Move simulation side to simulation namespace
+        self.run_cmd(f"ip link set {sim_veth} netns {self.sim_namespace}")
+        self.run_cmd(f"ip link set {sim_veth} up", namespace=self.sim_namespace)
+        
+        # Create bridge in host namespace for simulation connection
+        self.run_cmd(f"ip link add {self.host_bridge} type bridge")
+        self.run_cmd(f"ip link set {host_veth} master {self.host_bridge}")
+        self.run_cmd(f"ip link set {host_veth} up")
+        self.run_cmd(f"ip link set {self.host_bridge} up")
+        self.created_bridges.add(self.host_bridge)
+        
+        self.logger.debug(f"Simulation namespace bridge: {host_veth} <-> {sim_veth}")
+
     def create_namespaces(self):
         """Create network namespaces for each router."""
-        self.logger.info("Creating namespaces")
+        self.logger.info("Creating router namespaces")
         
         for router_name in self.routers.keys():
             self.logger.debug(f"Creating namespace: {router_name}")
@@ -150,96 +195,98 @@ class CompleteNetworkSetup:
             # Enable IP forwarding
             self.run_cmd("echo 1 > /proc/sys/net/ipv4/ip_forward", namespace=router_name)
             
-    def create_point_to_point_links(self):
-        """Create point-to-point veth pairs for subnets with exactly 2 routers."""
-        self.logger.info("Creating point-to-point links")
+    def create_subnet_meshes(self):
+        """Create mesh networks for all subnets with 2 or more routers in simulation namespace."""
+        self.logger.info("Creating subnet mesh networks in simulation namespace")
+        
+        bridge_counter = 100  # Start from m100 to avoid conflicts
         
         for subnet, members in self.subnets.items():
-            if len(members) == 2:
-                (router1, iface1, ip1), (router2, iface2, ip2) = members
-                
-                # Create veth pair with descriptive host-side names but original namespace names
-                veth_host1 = f"{router1}-{iface1}"
-                veth_host2 = f"{router2}-{iface2}"
-                
-                self.logger.debug(f"Creating veth pair: {veth_host1} <-> {veth_host2} for {subnet}")
-                
-                self.run_cmd(f"ip link add {veth_host1} type veth peer name {veth_host2}")
-                self.created_veths.update([veth_host1, veth_host2])
-                
-                # Move to namespaces and rename to original interface names
-                self.run_cmd(f"ip link set {veth_host1} netns {router1}")
-                self.run_cmd(f"ip link set {veth_host2} netns {router2}")
-                self.run_cmd(f"ip link set {veth_host1} name {iface1}", namespace=router1)
-                self.run_cmd(f"ip link set {veth_host2} name {iface2}", namespace=router2)
-                
-                # Configure IP addresses using original interface names
-                prefix_len = ipaddress.IPv4Network(subnet, strict=False).prefixlen
-                self.run_cmd(f"ip addr add {ip1}/{prefix_len} dev {iface1}", namespace=router1)
-                self.run_cmd(f"ip addr add {ip2}/{prefix_len} dev {iface2}", namespace=router2)
-                
-                # Bring up using original interface names
-                self.run_cmd(f"ip link set {iface1} up", namespace=router1)
-                self.run_cmd(f"ip link set {iface2} up", namespace=router2)
-                
-    def create_multi_access_networks(self):
-        """Create bridge networks for subnets with more than 2 routers."""
-        self.logger.info("Creating multi-access networks")
-        
-        bridge_counter = 100  # Start from br100 to avoid conflicts
-        for subnet, members in self.subnets.items():
-            if len(members) > 2:
-                # Create bridge with unique name
-                bridge_name = f"br{bridge_counter}"
+            if len(members) >= 2:  # Handle both 2-member and multi-member subnets uniformly
+                # Create shared mesh bridge with short name IN SIMULATION NAMESPACE
+                bridge_name = f"m{bridge_counter}"
                 bridge_counter += 1
-                self.logger.debug(f"Creating bridge {bridge_name} for {subnet} with {len(members)} members")
                 
-                self.run_cmd(f"ip link add {bridge_name} type bridge")
-                self.run_cmd(f"ip link set {bridge_name} up")
-                self.created_bridges.add(bridge_name)
+                self.logger.debug(f"Creating mesh {bridge_name} in {self.sim_namespace} for {subnet} with {len(members)} members")
                 
-                # Connect each router to bridge
-                router_counter = 0
+                # Create shared mesh bridge in simulation namespace (not host!)
+                self.run_cmd(f"ip link add {bridge_name} type bridge", namespace=self.sim_namespace)
+                self.run_cmd(f"ip link set {bridge_name} up", namespace=self.sim_namespace)
+                
+                prefix_len = ipaddress.IPv4Network(subnet, strict=False).prefixlen
+                
+                # Connect each router to the shared mesh
                 for router, iface, ip in members:
-                    veth_host = f"{router}-{iface}"
-                    veth_bridge = f"b{bridge_counter-1}r{router_counter}"  # Use bridge_counter-1 since we already incremented
-                    router_counter += 1
+                    # Create direct veth interface (Option 2: Simplified Architecture)
+                    # No router bridges - IP goes directly on veth interface
+                    import hashlib
                     
-                    # Create veth pair
-                    self.run_cmd(f"ip link add {veth_host} type veth peer name {veth_bridge}")
-                    self.created_veths.update([veth_host, veth_bridge])
+                    # Create veth pair: router interface <-> simulation mesh connection
+                    # Use short names to avoid 15-character limit
+                    router_num = members.index((router, iface, ip))
+                    router_veth = f"tmp{bridge_counter}{router_num}"  # Short temporary name
+                    sim_veth = f"s{bridge_counter}{router_num}"       # Short simulation name
                     
-                    # Move router side to namespace and rename to original interface name
-                    self.run_cmd(f"ip link set {veth_host} netns {router}")
-                    self.run_cmd(f"ip link set {veth_host} name {iface}", namespace=router)
+                    self.run_cmd(f"ip link add {router_veth} type veth peer name {sim_veth}")
+                    self.created_veths.update([router_veth, sim_veth])
                     
-                    # Connect bridge side to bridge
-                    self.run_cmd(f"ip link set {veth_bridge} master {bridge_name}")
-                    
-                    # Configure IP on router side using original interface name
-                    prefix_len = ipaddress.IPv4Network(subnet, strict=False).prefixlen
+                    # Move router side to router namespace and rename to original interface name
+                    self.run_cmd(f"ip link set {router_veth} netns {router}")
+                    self.run_cmd(f"ip link set {router_veth} name {iface}", namespace=router)  # eth0, eth1, wg0
                     self.run_cmd(f"ip addr add {ip}/{prefix_len} dev {iface}", namespace=router)
-                    
-                    # Bring up both sides
                     self.run_cmd(f"ip link set {iface} up", namespace=router)
-                    self.run_cmd(f"ip link set {veth_bridge} up")
+                    
+                    # Move simulation side to simulation namespace and connect to mesh bridge
+                    self.run_cmd(f"ip link set {sim_veth} netns {self.sim_namespace}")
+                    self.run_cmd(f"ip link set {sim_veth} master {bridge_name}", namespace=self.sim_namespace)
+                    self.run_cmd(f"ip link set {sim_veth} up", namespace=self.sim_namespace)
+                    
                     
     def create_external_interfaces(self):
-        """Create dummy interfaces for subnets with only 1 router (external networks)."""
-        self.logger.info("Creating external interfaces")
+        """Create mesh bridges for subnets with only 1 router (external networks) - enables future expansion."""
+        self.logger.info("Creating external interfaces with expansion capability")
+        
+        bridge_counter = 100
+        # Count existing multi-router meshes to continue numbering
+        for subnet, members in self.subnets.items():
+            if len(members) >= 2:
+                bridge_counter += 1
         
         for subnet, members in self.subnets.items():
             if len(members) == 1:
                 router, iface, ip = members[0]
                 
-                self.logger.debug(f"Creating external interface {router}:{iface} -> {ip} for {subnet}")
+                # Create mesh bridge even for single router (enables future host/router additions)
+                bridge_name = f"m{bridge_counter}"
+                bridge_counter += 1
                 
-                # Create dummy interface with original interface name
+                self.logger.debug(f"Creating expandable mesh {bridge_name} in {self.sim_namespace} for {router}:{iface} -> {ip} ({subnet})")
+                
+                # Create mesh bridge in simulation namespace
+                self.run_cmd(f"ip link add {bridge_name} type bridge", namespace=self.sim_namespace)
+                self.run_cmd(f"ip link set {bridge_name} up", namespace=self.sim_namespace)
+                
                 prefix_len = ipaddress.IPv4Network(subnet, strict=False).prefixlen
                 
-                self.run_cmd(f"ip link add {iface} type dummy", namespace=router)
+                # Create direct veth interface (Option 2: Simplified Architecture)
+                # Use short names to avoid 15-character limit
+                router_veth = f"tmp{bridge_counter}"      # Short temporary name
+                sim_veth = f"s{bridge_counter}"           # Short simulation name
+                
+                self.run_cmd(f"ip link add {router_veth} type veth peer name {sim_veth}")
+                self.created_veths.update([router_veth, sim_veth])
+                
+                # Move router side to router namespace and rename to original interface name
+                self.run_cmd(f"ip link set {router_veth} netns {router}")
+                self.run_cmd(f"ip link set {router_veth} name {iface}", namespace=router)  # eth0, eth1, wg0
                 self.run_cmd(f"ip addr add {ip}/{prefix_len} dev {iface}", namespace=router)
                 self.run_cmd(f"ip link set {iface} up", namespace=router)
+                
+                # Move simulation side to simulation namespace and connect to mesh bridge
+                self.run_cmd(f"ip link set {sim_veth} netns {self.sim_namespace}")
+                self.run_cmd(f"ip link set {sim_veth} master {bridge_name}", namespace=self.sim_namespace)
+                self.run_cmd(f"ip link set {sim_veth} up", namespace=self.sim_namespace)
+                
                 
     def configure_routing(self):
         """Configure routing tables in each namespace."""
@@ -290,8 +337,8 @@ class CompleteNetworkSetup:
                     self.logger.warning(f"Failed to add route in {router_name}: {route_cmd} - {e}")
                     
     def find_namespace_interface(self, router: str, original_iface: str) -> str:
-        """Find the actual interface name in the namespace for the original interface."""
-        # With the new naming scheme, all interfaces keep their original names in namespaces
+        """Find the actual veth interface name in the namespace for the original interface."""
+        # In simplified veth architecture, interfaces keep their original names (eth0, eth1, wg0)
         try:
             result = self.run_cmd(f"ip link show {original_iface}", namespace=router, check=False)
             if result.returncode == 0:
@@ -475,6 +522,61 @@ class CompleteNetworkSetup:
                 cmd = f"iptables -t {current_table} {line}"
                 self.run_cmd(cmd, namespace=router_name, check=False)
                 
+    def configure_interface_latency(self):
+        """Configure realistic latency based on interface metadata from facts."""
+        self.logger.info("Configuring realistic network latency from facts")
+        
+        # Check if tc (traffic control) is available
+        if not self.check_command_availability("tc"):
+            self.logger.warning("tc (traffic control) not available - skipping latency configuration")
+            self.logger.warning("To enable latency simulation, install: sudo apt-get install iproute2")
+            if self.verbose >= 1:
+                print("Warning: tc not available - latency simulation skipped")
+            return
+        
+        for router_name, facts in self.routers.items():
+            self.logger.debug(f"Configuring latency for {router_name}")
+            
+            try:
+                # Get interface facts for this router
+                interfaces = facts.get('network', {}).get('interfaces', [])
+                
+                for iface_facts in interfaces:
+                    interface = iface_facts.get('dev')
+                    latency_ms = iface_facts.get('latency_ms')
+                    
+                    # Skip if no interface name or latency specified
+                    if not interface or latency_ms is None:
+                        continue
+                        
+                    # Skip loopback
+                    if interface == 'lo':
+                        continue
+                    
+                    # Convert latency to string format for tc command
+                    latency_str = f"{latency_ms}ms"
+                    
+                    # Add traffic control latency
+                    # Use netem (network emulation) to add delay
+                    tc_cmd = f"/sbin/tc qdisc add dev {interface} root netem delay {latency_str}"
+                    tc_result = self.run_cmd(tc_cmd, namespace=router_name, check=False)
+                    
+                    if tc_result.returncode == 0:
+                        self.logger.debug(f"Added {latency_str} latency to {router_name}:{interface}")
+                    else:
+                        # Interface might already have qdisc, try to replace
+                        tc_replace_cmd = f"/sbin/tc qdisc replace dev {interface} root netem delay {latency_str}"
+                        tc_replace_result = self.run_cmd(tc_replace_cmd, namespace=router_name, check=False)
+                        if tc_replace_result.returncode == 0:
+                            self.logger.debug(f"Replaced qdisc with {latency_str} latency on {router_name}:{interface}")
+                        else:
+                            self.logger.warning(f"Failed to add latency to {router_name}:{interface}: {tc_result.stderr}")
+                                
+            except Exception as e:
+                self.logger.warning(f"Error configuring latency for {router_name}: {e}")
+                
+        self.logger.info("Interface latency configuration completed")
+        
     def cleanup_on_error(self):
         """Clean up created resources on error."""
         self.logger.info("Cleaning up created resources due to error")
@@ -518,12 +620,13 @@ class CompleteNetworkSetup:
             
         try:
             self.load_facts()
+            self.create_simulation_namespace()  # Create dedicated simulation namespace first
             self.create_namespaces()
-            self.create_point_to_point_links()
-            self.create_multi_access_networks()
+            self.create_subnet_meshes()  # Unified mesh-per-subnet architecture in simulation namespace
             self.create_external_interfaces()
             self.configure_routing()
             self.configure_iptables()  # Add iptables and ipset configuration
+            self.configure_interface_latency()  # Add realistic latency simulation
             
             self.logger.info("Network namespace setup completed successfully")
             
@@ -546,11 +649,11 @@ class CompleteNetworkSetup:
             
     def print_summary(self):
         """Print setup summary."""
-        print(f"\\nCreated {len(self.created_namespaces)} namespaces:")
+        print(f"\nCreated {len(self.created_namespaces)} namespaces:")
         for ns in sorted(self.created_namespaces):
             print(f"  {ns}")
             
-        print(f"\\nSubnet topology:")
+        print(f"\nSubnet topology:")
         for subnet, members in sorted(self.subnets.items()):
             if len(members) == 1:
                 router, iface, ip = members[0]

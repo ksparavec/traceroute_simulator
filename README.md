@@ -21,7 +21,10 @@ A comprehensive network path discovery tool that simulates traceroute behavior u
 - **Complex Network Support**: Handles VPN tunnels, WireGuard, multi-interface scenarios
 - **Error Detection**: Identifies routing loops, blackhole routes, and unreachable destinations
 - **Automation Friendly**: Comprehensive exit codes and quiet mode for script integration
-- **Comprehensive Testing**: Full test suite with 85+ tests and 100% pass rate
+- **Linux Namespace Simulation**: Real packet testing with complete network infrastructure (NEW!)
+- **Comprehensive Make Targets Testing**: All namespace and host management operations validated (NEW!)
+- **Real Network Infrastructure**: Actual Linux namespaces with routing, iptables, and connectivity testing
+- **Comprehensive Testing**: Full test suite with 110+ tests including namespace functionality
 - **Professional Visualization**: High-quality network topology diagrams with metadata-aware color coding
 - **Accurate Interface Tracking**: Precise incoming/outgoing interface determination
 
@@ -39,6 +42,7 @@ A comprehensive network path discovery tool that simulates traceroute behavior u
 - [Reverse Path Tracing](#reverse-path-tracing)
 - [FQDN Resolution](#fqdn-resolution)
 - [Data Collection](#data-collection)
+- [Linux Namespace Simulation](#-linux-namespace-simulation-new)
 - [Network Scenarios](#network-scenarios)
 - [Network Visualization](#network-visualization)
 - [Output Formats](#output-formats)
@@ -630,6 +634,79 @@ python3 ansible/ip_json_wrapper.py --json route show  # Passes through to native
 - **Comprehensive coverage**: Supports route, addr, link, and rule subcommands
 - **Validated compatibility**: 100% test coverage ensures output accuracy
 
+## 🐧 Linux Namespace Simulation (NEW!)
+
+The project includes a comprehensive Linux namespace-based network simulation system that creates real network infrastructure for testing. This enables actual packet testing with real networking components instead of just simulation.
+
+### Namespace Simulation Features
+
+- **Real Network Infrastructure**: Creates actual Linux namespaces with full network topology
+- **Complete Configuration**: Routing tables, iptables rules, ipsets, and interface setup
+- **Multi-Protocol Testing**: ICMP ping, TCP, and UDP connectivity testing
+- **Real Packet Validation**: Uses netcat servers/clients for end-to-end connectivity verification  
+- **Firewall Testing**: Verifies iptables rules properly block or allow traffic as expected
+- **Public IP Simulation**: Automatic setup on gateway routers for realistic internet testing
+- **MTR Integration**: Real traceroute testing with hop-by-hop analysis
+- **Comprehensive Management**: Setup, status monitoring, testing, and cleanup automation
+
+### Namespace Make Targets
+
+```bash
+# Setup complete network simulation (requires sudo)
+sudo make netsetup
+
+# Test connectivity between any two IPs
+sudo make nettest ARGS="-s 10.1.1.1 -d 10.2.1.1 --test-type ping"
+sudo make nettest ARGS="-s 10.1.1.1 -d 8.8.8.8 --test-type mtr -v"
+sudo make nettest ARGS="-s 10.1.1.1 -d 10.2.1.1 --test-type both"
+
+# Show network status and configuration
+sudo make netstatus ARGS="all summary"                    # All namespaces
+sudo make netstatus ARGS="hq-gw interfaces"              # Specific router
+make netshow ARGS="all topology"                         # Static topology from facts
+
+# Host management (dynamic hosts)
+sudo make hostadd ARGS="--host web1 --primary-ip 10.1.1.100/24 --connect-to hq-gw"
+sudo make hostdel ARGS="--host web1"
+sudo make hostlist                                        # List all hosts
+sudo make hostclean                                       # Remove all hosts
+
+# Cleanup simulation
+sudo make netclean                                        # Remove all namespaces
+sudo make netnsclean                                      # Clean both routers and hosts
+```
+
+### Testing Integration
+
+```bash
+# Run basic namespace tests (part of main test suite)
+sudo make test-namespace                                  # 6 basic functionality tests
+
+# Run comprehensive network connectivity tests (separate target)  
+sudo make test-network                                    # Deep connectivity testing (3-5 min)
+```
+
+### Network Architecture
+
+The namespace simulation creates a complete enterprise network topology:
+
+- **10 Router Namespaces**: Each router gets its own network namespace
+- **Real Network Interfaces**: veth pairs connecting namespaces 
+- **Actual Routing Tables**: All routes from router facts installed
+- **Live Iptables Rules**: All firewall rules and ipsets configured
+- **WireGuard VPN**: Real encrypted tunnels between gateway routers
+- **Public IP Access**: Gateway routers can reach external destinations
+- **Dynamic Host Management**: Add/remove hosts connected to any router bridge
+
+### Benefits Over Pure Simulation
+
+1. **Real Packet Testing**: Actual network packets flow through real interfaces
+2. **Firewall Validation**: Iptables rules actually block or allow traffic
+3. **MTR Integration**: Real traceroute testing with timing information
+4. **Protocol Coverage**: Test TCP/UDP services, not just routing logic
+5. **Complex Scenarios**: Multi-hop routing with real network latency
+6. **Production Fidelity**: Network behavior matches real-world conditions
+
 ## 🌐 Network Scenarios
 
 The simulator handles various complex network scenarios using the realistic test topology:
@@ -818,8 +895,14 @@ The project includes comprehensive test suites covering all functionality:
 ### Automated Testing with Make
 
 ```bash
-# Run all tests (recommended)
+# Run all tests (recommended) - includes namespace make targets tests
 make test
+
+# Run namespace simulation tests only (requires sudo)
+sudo make test-namespace
+
+# Run comprehensive network connectivity tests (requires sudo, 3-5 minutes)
+sudo make test-network
 
 # Check dependencies before testing
 make check-deps
@@ -846,6 +929,31 @@ python3 test_ip_json_comparison.py
 ```bash
 cd tests
 python3 test_comprehensive_facts_processing.py
+```
+
+**Namespace Make Targets Tests (NEW - requires sudo)**:
+```bash
+# Basic functionality tests
+sudo python3 -B tests/test_make_targets_basic.py
+
+# Host management tests  
+sudo python3 -B tests/test_make_targets_hosts.py
+
+# Error handling tests
+sudo python3 -B tests/test_make_targets_errors.py
+
+# Integration workflow tests
+sudo python3 -B tests/test_make_targets_integration.py
+```
+
+**Namespace Simulation Tests (6 test cases - requires sudo)**:
+```bash
+sudo python3 -B tests/test_namespace_simulation.py
+```
+
+**Comprehensive Network Connectivity Tests (requires sudo)**:
+```bash
+sudo python3 -B tests/test_make_targets_network.py
 ```
 
 ### Running Tests
@@ -887,10 +995,12 @@ python3 test_mtr_integration.py
 
 ### Test Coverage
 
-- ✅ **85+ comprehensive test cases** covering all network scenarios and edge cases (63 simulator + 7 wrapper + 8 MTR + 10 namespace)
+- ✅ **110+ comprehensive test cases** covering all functionality (63 simulator + 7 wrapper + 8 MTR + 18 facts + 20+ make targets + 6 namespace)
 - ✅ **100% pass rate** with complete functionality validation
+- ✅ **Comprehensive make targets testing** - All namespace and host management operations (NEW!)
+- ✅ **Separated test complexity** - Fast basic tests in main suite, deep network tests in separate target
 - ✅ **10-router topology** with realistic routing configurations across 3 locations
-- ✅ **All command-line options** tested including new required flags (-s/-d)
+- ✅ **All command-line options** tested including new required flags (-s/-d)  
 - ✅ **Comprehensive error handling** including corrupted JSON, missing files, and invalid inputs
 - ✅ **Complete exit code verification** across all modes (quiet, verbose, JSON)
 - ✅ **Facts persistence** ensures test data remains available for namespace testing after `make test`
@@ -899,6 +1009,8 @@ python3 test_mtr_integration.py
 - ✅ **JSON output format validation** with structured data verification
 - ✅ **WireGuard VPN tunnel routing** with full mesh connectivity testing
 - ✅ **Multi-location network testing** covering all inter-site communication paths
+- ✅ **Real packet testing** with Linux namespaces and network connectivity validation
+- ✅ **Enhanced cleanup systems** for comprehensive namespace resource management
 
 ## 🔧 Build System
 
@@ -929,10 +1041,13 @@ make fetch-routing-data OUTPUT_DIR=temp INVENTORY=router-01
 ### Build System Features
 
 - **Dependency validation**: Checks all required Python modules with helpful installation hints
-- **Comprehensive testing**: Runs 64 main tests + 7 wrapper validation tests + integration tests
+- **Comprehensive testing**: Integrated test suite with 110+ tests including namespace make targets
+- **Privileged test management**: Automatic detection and execution of sudo-required tests
+- **Test separation**: Fast core tests in main suite, comprehensive network tests in separate target
 - **Ansible integration**: Automated data collection with inventory validation and error handling
 - **Environment verification**: Validates test data availability and routing facts
 - **Clean builds**: Removes cache files while preserving valuable routing data
+- **Namespace management**: Complete Linux namespace simulation lifecycle with proper cleanup
 
 ## 📝 Examples
 

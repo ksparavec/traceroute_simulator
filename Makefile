@@ -226,8 +226,18 @@ test: check-deps
 		echo "✓ JSON output test passed" || \
 		echo "✗ JSON output test failed"
 	
+	# Run comprehensive facts processing tests
+	@echo "4. Running Comprehensive Facts Processing Tests"
+	@echo "---------------------------------------------"
+	@cd $(TESTS_DIR) && TRACEROUTE_SIMULATOR_FACTS=/tmp/traceroute_test_output $(PYTHON) -B test_comprehensive_facts_processing.py || { \
+		echo "Comprehensive facts processing tests failed!"; \
+		exit 1; \
+	}
+	@echo "✓ Comprehensive facts processing tests passed"
+	@echo ""
+	
 	# Run namespace simulation tests (requires sudo privileges)
-	@echo "4. Running Namespace Simulation Tests"
+	@echo "5. Running Namespace Simulation Tests"
 	@echo "-------------------------------------"
 	@if [ "$$(id -u)" = "0" ]; then \
 		echo "Running namespace simulation tests with root privileges..."; \

@@ -348,11 +348,12 @@ The traceroute simulator provides comprehensive network path simulation:
 
 ### Test Coverage
 Comprehensive test suite covering all functionality:
-- **85+ total test cases**: 63 main simulator + 8 MTR integration + 7 IP wrapper + 10 namespace simulation + connectivity testing
+- **103+ total test cases**: 63 main simulator + 8 MTR integration + 7 IP wrapper + 18 comprehensive facts processing + 10 namespace simulation + connectivity testing
 - **100% pass rate**: All critical tests consistently pass with thorough validation
 - **Complete coverage**: Intra-location, inter-location, multi-hop routing, error conditions, edge cases
 - **Facts processing validation**: Ansible-based shell output parsing with proper data structure merging
 - **Forward analyzer testing**: Complex rulesets, match-set rules, multiport scenarios, protocol variations
+- **Comprehensive facts processing**: Isolated testing of facts processing and iptables analysis with temporary directories
 - **Namespace simulation testing**: Real packet testing with Linux namespaces, setup/teardown, connectivity validation
 - **Multi-protocol testing**: ICMP ping and MTR traceroute testing with public IP simulation
 - **Connectivity validation**: Comprehensive router-to-router testing with flexible destination handling

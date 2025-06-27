@@ -71,6 +71,24 @@ The project includes a complete Linux namespace-based network simulation system 
 - **Test with verbose output**: `sudo python3 -B src/simulators/network_namespace_tester.py -s 10.2.2.3 -d 10.3.1.1 -vv`
 - **Test blackholed destinations**: `sudo python3 -B src/simulators/network_namespace_tester.py -s 10.1.1.1 -d 10.2.6.2 --test-type mtr -vv`
 
+#### **Service Management Commands**
+- **Start TCP service**: `sudo make svcstart ARGS='10.1.1.1:8080'` (silent by default, use -v for output)
+- **Start UDP service**: `sudo make svcstart ARGS='10.2.1.1:53 -p udp --name dns'`
+- **Test service connectivity**: `sudo make svctest ARGS='-s 10.1.1.1 -d 10.2.1.1:8080'`
+- **Test UDP with message**: `sudo make svctest ARGS='-s 10.1.1.1 -d 10.2.1.1:53 -p udp -m "Query"'`
+- **Stop service**: `sudo make svcstop ARGS='10.1.1.1:8080'`
+- **List all services**: `sudo make svclist` (shows separate tables for routers and hosts)
+- **List services as JSON**: `sudo make svclist ARGS='-j'`
+- **Stop all services**: `sudo make svcclean`
+
+#### **Host Management Commands**
+- **Add host to network**: `sudo make hostadd ARGS='--host web1 --primary-ip 10.1.1.100/24 --connect-to hq-gw'`
+- **Add host with secondary IPs**: `sudo make hostadd ARGS='--host db1 --primary-ip 10.3.20.100/24 --connect-to dc-srv --secondary-ips 192.168.1.1/24'`
+- **List all hosts**: `sudo make hostlist`
+- **Remove specific host**: `sudo make hostdel ARGS='--host web1 --remove'`
+- **Remove all hosts**: `sudo make hostclean`
+- **Clean routers and hosts**: `sudo make netnsclean`
+
 ### Data Collection and Validation
 
 #### **Production Data Collection**
@@ -345,11 +363,16 @@ The traceroute simulator provides comprehensive network path simulation:
 - **Professional visualization**: High-quality network topology diagrams with metadata-aware color coding
 - **Command-line interface**: Required `-s`/`--source` and `-d`/`--destination` flags for explicit operation
 - **Multiple output formats**: Text, JSON, and verbose modes with comprehensive information
-- **Robust error handling**: Clear exit codes and error classification for automation integration
+- **Enhanced error handling**: User-friendly messages with progressive verbosity levels
+- **System namespace protection**: Automatic filtering of non-user namespaces
+- **Service management**: TCP/UDP services with IP-based interface and multi-client support
+- **Dynamic host management**: Add/remove hosts to running network simulation
 
 ### Test Coverage
 Comprehensive test suite covering all functionality:
-- **103+ total test cases**: 63 main simulator + 8 MTR integration + 7 IP wrapper + 18 comprehensive facts processing + 10 namespace simulation + connectivity testing
+- **120+ total test cases**: 64 main simulator + 8 MTR integration + 7 IP wrapper + 18 facts processing + 10 namespace simulation + 13 service management
+- **Silent operation support**: Service commands are silent by default for automation
+- **JSON output**: Service listing supports JSON format for programmatic access
 - **100% pass rate**: All critical tests consistently pass with thorough validation
 - **Complete coverage**: Intra-location, inter-location, multi-hop routing, error conditions, edge cases
 - **Facts processing validation**: Ansible-based shell output parsing with proper data structure merging
@@ -496,13 +519,19 @@ Advanced bidirectional path discovery:
 - **Reverse tracer**: `src/core/reverse_path_tracer.py` - Bidirectional path discovery
 - **JSON consolidator**: `src/core/create_final_json.py` - Final JSON consolidation for build system
 - **Iptables analyzer**: `src/analyzers/iptables_forward_analyzer.py` - Packet forwarding analysis with comprehensive ipset support
+- **Service manager**: `src/simulators/service_manager.py` - TCP/UDP service lifecycle management with socat
+- **Service tester**: `src/simulators/service_tester.py` - IP-based service testing with auto namespace detection
+- **Host manager**: `src/simulators/host_namespace_setup.py` - Dynamic host creation and management
 - **Namespace tester**: `src/simulators/network_namespace_tester.py` - Multi-protocol connectivity and path testing with MTR support
 - **Namespace setup**: `src/simulators/network_namespace_setup.py` - Complete network simulation infrastructure creation
-- **Namespace status**: `src/simulators/network_namespace_status.py` - Real-time network namespace monitoring and status display
+- **Namespace status**: `src/simulators/network_namespace_status.py` - Real-time monitoring with JSON output support
+- **Exception hierarchy**: `src/core/exceptions.py` - User-friendly error handling with progressive verbosity
+- **Structured logging**: `src/core/logging.py` - Verbosity-aware logging system
+- **Data models**: `src/core/models.py` - Type-safe data structures with validation
 - **Facts updater**: `src/utils/update_tsim_facts.py` - Update existing JSON facts files with interface data from routing tables
 - **Setup verifier**: `src/utils/verify_network_setup.py` - Comprehensive namespace configuration verification and debugging
 - **Facts processor**: `ansible/process_facts.py` - Enhanced shell output parsing with dual ipset format support
 - **Build system**: `Makefile` - Automated development workflows with integrated comprehensive testing
 - **Data collection**: `ansible/get_tsim_facts.yml`, `ansible/get_facts.sh` - Dual-mode facts collection with secure script deployment
 - **IP wrapper**: `ansible/ip_json_wrapper.py` - Legacy system compatibility
-- **Standalone analyzer tests**: `tests/test_comprehensive_facts_processing.py` - 18 test cases for iptables analyzer (run independently)
+- **Test suites**: Comprehensive test coverage including service management and error handling

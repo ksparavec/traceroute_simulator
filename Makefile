@@ -17,7 +17,7 @@ REQUIRED_MODULES := json sys argparse ipaddress os glob typing subprocess re dif
 
 # Colors removed for better terminal compatibility
 
-.PHONY: help check-deps test test-network fetch-routing-data clean tsim ifa netsetup nettest netclean netshow netstatus test-namespace hostadd hostdel hostlist hostclean netnsclean
+.PHONY: help check-deps test test-network fetch-routing-data clean tsim ifa netsetup nettest netclean netshow netstatus test-namespace hostadd hostdel hostlist hostclean netnsclean service-start service-stop service-restart service-status service-test service-clean test-services svctest svcstart svcstop svclist svcclean
 
 # Default target
 help:
@@ -31,6 +31,11 @@ help:
 	@echo "ifa               - Run iptables forward analyzer with command line arguments (e.g., make ifa ARGS='--router hq-gw -s 10.1.1.1 -d 8.8.8.8')"
 	@echo "netsetup          - Set up Linux namespace network simulation (requires sudo, ARGS='-v/-vv/-vvv' for verbosity)"
 	@echo "nettest           - Test network connectivity in namespace simulation (e.g., make nettest ARGS='-s 10.1.1.1 -d 10.2.1.1 --test-type ping')"
+	@echo "svctest           - Test TCP/UDP services with auto namespace detection (e.g., make svctest ARGS='-s 10.1.1.1 -d 10.2.1.1:8080')"
+	@echo "svcstart          - Start a service on an IP address (e.g., make svcstart ARGS='10.1.1.1:8080')"
+	@echo "svcstop           - Stop a service on an IP address (e.g., make svcstop ARGS='10.1.1.1:8080')"
+	@echo "svclist           - List all services across all namespaces (sudo make svclist [ARGS='-j'])"
+	@echo "svcclean          - Stop all services across all namespaces (sudo make svcclean)"
 	@echo "netshow           - Show static network topology from facts (e.g., make netshow ARGS='hq-gw interfaces' or 'all hosts')"
 	@echo "netstatus         - Show live namespace status (e.g., make netstatus ARGS='hq-gw interfaces' or 'all summary')"
 	@echo "netclean          - Clean up namespace network simulation (requires sudo, ARGS='-v/-f/--force' for options)"
@@ -41,6 +46,8 @@ help:
 	@echo "hostlist          - List all registered hosts (sudo make hostlist)"
 	@echo "hostclean         - Remove all registered hosts (sudo make hostclean)"
 	@echo "netnsclean        - Clean up both routers and hosts (sudo make netnsclean)"
+	@echo "# Service management - use svctest for IP-based interface"
+	@echo "test-services     - Run service manager test suite (requires sudo)"
 	@echo "help              - Show this help message"
 	@echo ""
 	@echo "Usage Examples:"
@@ -82,6 +89,14 @@ help:
 	@echo "  sudo make hostlist                                                     # List all registered hosts"
 	@echo "  sudo make hostclean                                                    # Remove all registered hosts"
 	@echo "  sudo make netnsclean                                                   # Clean up both routers and hosts"
+	@echo "  sudo make svcstart ARGS='10.1.1.1:8080'                                                   # Start TCP echo service on IP"
+	@echo "  sudo make svcstart ARGS='10.2.1.1:53 -p udp --name dns'                                  # Start UDP service on IP with name"
+	@echo "  sudo make svcstop ARGS='10.1.1.1:8080'                                                    # Stop service on IP:port"
+	@echo "  sudo make svctest ARGS='-s 10.1.1.1 -d 10.2.1.1:8080'                                   # Test TCP service (auto-detect namespaces)"
+	@echo "  sudo make svctest ARGS='-s 10.1.1.1 -d 10.2.1.1:53 -p udp -m \"Query\"'                   # Test UDP service with message"
+	@echo "  sudo make svclist                                                                          # List all running services"
+	@echo "  sudo make svclist ARGS='-j'                                                                # List services in JSON format"
+	@echo "  sudo make svcclean                                                                         # Stop all services"
 	@echo ""
 	@echo "Test Data Collection:"
 	@echo "  # Collect facts and preserve raw data for testing (adds -e test=true to Ansible command)"
@@ -531,6 +546,103 @@ nettest:
 	fi
 	@TRACEROUTE_SIMULATOR_FACTS=/tmp/traceroute_test_output $(PYTHON) src/simulators/network_namespace_tester.py $(ARGS)
 
+# Test services with automatic namespace detection (requires sudo)
+# Usage: sudo make svctest ARGS="-s <source_ip[:port]> -d <dest_ip:port> [-p tcp|udp]"
+svctest:
+	@if [ "$$(id -u)" != "0" ]; then \
+		echo "Error: svctest requires root privileges"; \
+		echo "Please run: sudo make svctest ARGS='<arguments>'"; \
+		exit 1; \
+	fi
+	@if [ -z "$(ARGS)" ]; then \
+		echo "Usage: sudo make svctest ARGS='<arguments>'"; \
+		echo ""; \
+		echo "Test service connectivity:"; \
+		echo "  -s <source_ip[:port]>    # Source IP and optional port"; \
+		echo "  -d <dest_ip:port>        # Destination IP and port (port required)"; \
+		echo "  -p tcp|udp               # Protocol (default: tcp)"; \
+		echo "  -m <message>             # Test message (default: Test)"; \
+		echo "  -v, -vv                  # Verbosity levels"; \
+		echo ""; \
+		echo "Start a service:"; \
+		echo "  --start <ip:port>        # Start service at IP:port"; \
+		echo "  -p tcp|udp               # Protocol (default: tcp)"; \
+		echo "  --name <name>            # Service name (optional)"; \
+		echo ""; \
+		echo "Examples:"; \
+		echo "  sudo make svctest ARGS='-s 10.1.1.1 -d 10.2.1.1:80'               # Test TCP service"; \
+		echo "  sudo make svctest ARGS='-s 10.1.1.1:5000 -d 10.2.1.1:80 -p tcp'  # With source port"; \
+		echo "  sudo make svctest ARGS='-s 10.1.1.1 -d 10.2.1.1:53 -p udp'       # Test UDP service"; \
+		echo "  sudo make svctest ARGS='--start 10.1.1.1:8080'                    # Start TCP service"; \
+		echo "  sudo make svctest ARGS='--start 10.2.1.1:53 -p udp --name dns'    # Start UDP service"; \
+		exit 1; \
+	fi
+	@TRACEROUTE_SIMULATOR_FACTS=/tmp/traceroute_test_output $(PYTHON) src/simulators/service_tester.py $(ARGS)
+
+# Start a service on an IP address (requires sudo)
+# Usage: sudo make svcstart ARGS="<ip:port> [-p tcp|udp] [--name <name>]"
+svcstart:
+	@if [ "$$(id -u)" != "0" ]; then \
+		echo "Error: svcstart requires root privileges"; \
+		echo "Please run: sudo make svcstart ARGS='<ip:port>'"; \
+		exit 1; \
+	fi
+	@if [ -z "$(ARGS)" ]; then \
+		echo "Usage: sudo make svcstart ARGS='<ip:port> [options]'"; \
+		echo ""; \
+		echo "Required:"; \
+		echo "  <ip:port>         # IP address and port to bind service"; \
+		echo ""; \
+		echo "Options:"; \
+		echo "  -p tcp|udp        # Protocol (default: tcp)"; \
+		echo "  --name <name>     # Service name (default: auto-generated)"; \
+		echo "  -v, -vv           # Verbosity levels"; \
+		echo ""; \
+		echo "Examples:"; \
+		echo "  sudo make svcstart ARGS='10.1.1.1:8080'                  # Start TCP echo service"; \
+		echo "  sudo make svcstart ARGS='10.2.1.1:53 -p udp --name dns'  # Start UDP service with name"; \
+		exit 1; \
+	fi
+	@TRACEROUTE_SIMULATOR_FACTS=/tmp/traceroute_test_output $(PYTHON) src/simulators/service_tester.py --start $(ARGS)
+
+# Stop a service on an IP address (requires sudo)
+# Usage: sudo make svcstop ARGS="<ip:port>"
+svcstop:
+	@if [ "$$(id -u)" != "0" ]; then \
+		echo "Error: svcstop requires root privileges"; \
+		echo "Please run: sudo make svcstop ARGS='<ip:port>'"; \
+		exit 1; \
+	fi
+	@if [ -z "$(ARGS)" ]; then \
+		echo "Usage: sudo make svcstop ARGS='<ip:port>'"; \
+		echo ""; \
+		echo "Examples:"; \
+		echo "  sudo make svcstop ARGS='10.1.1.1:8080'  # Stop service on port 8080"; \
+		echo "  sudo make svcstop ARGS='10.2.1.1:53'     # Stop service on port 53"; \
+		exit 1; \
+	fi
+	@TRACEROUTE_SIMULATOR_FACTS=/tmp/traceroute_test_output $(PYTHON) src/simulators/service_tester.py --stop $(ARGS)
+
+# List all services across all namespaces (requires sudo)
+# Usage: sudo make svclist [ARGS="-j|--json"]
+svclist:
+	@if [ "$$(id -u)" != "0" ]; then \
+		echo "Error: svclist requires root privileges"; \
+		echo "Please run: sudo make svclist"; \
+		exit 1; \
+	fi
+	@$(PYTHON) src/simulators/service_manager.py status $(ARGS)
+
+# Stop all services across all namespaces (requires sudo)
+# Usage: sudo make svcclean
+svcclean:
+	@if [ "$$(id -u)" != "0" ]; then \
+		echo "Error: svcclean requires root privileges"; \
+		echo "Please run: sudo make svcclean"; \
+		exit 1; \
+	fi
+	@$(PYTHON) src/simulators/service_manager.py cleanup
+
 # Clean up namespace network simulation (requires sudo)
 # Usage: sudo make netclean [ARGS="-v|-f|--force"]
 netclean:
@@ -729,3 +841,128 @@ netnsclean:
 	@if [ ! -d ".git" ]; then \
 		echo "Warning: Not in a git repository"; \
 	fi
+
+# Service management targets
+# Start a service in a namespace
+# Usage: sudo make service-start ARGS="--namespace <ns> --name <name> --port <port> [--protocol tcp|udp] [--bind <ip>]"
+service-start:
+	@if [ "$$(id -u)" != "0" ]; then \
+		echo "Error: service-start requires root privileges"; \
+		echo "Please run: sudo make service-start ARGS='<arguments>'"; \
+		exit 1; \
+	fi
+	@if [ -z "$(ARGS)" ]; then \
+		echo "Usage: sudo make service-start ARGS='--namespace <ns> --name <name> --port <port> [options]'"; \
+		echo ""; \
+		echo "Required arguments:"; \
+		echo "  --namespace <ns>     Namespace to run service in"; \
+		echo "  --name <name>        Service name"; \
+		echo "  --port <port>        Port number"; \
+		echo ""; \
+		echo "Optional arguments:"; \
+		echo "  --protocol tcp|udp   Protocol (default: tcp)"; \
+		echo "  --bind <ip>          Bind address (default: 0.0.0.0)"; \
+		echo "  -v                   Verbose output (-vv for debug)"; \
+		echo ""; \
+		echo "Examples:"; \
+		echo "  sudo make service-start ARGS='--namespace hq-gw --name echo --port 8080'"; \
+		echo "  sudo make service-start ARGS='--namespace br-core --name dns --port 53 --protocol udp'"; \
+		exit 1; \
+	fi
+	@$(PYTHON) src/simulators/service_manager.py start $(ARGS)
+
+# Stop a service
+# Usage: sudo make service-stop ARGS="--namespace <ns> --name <name> --port <port>"
+service-stop:
+	@if [ "$$(id -u)" != "0" ]; then \
+		echo "Error: service-stop requires root privileges"; \
+		echo "Please run: sudo make service-stop ARGS='<arguments>'"; \
+		exit 1; \
+	fi
+	@if [ -z "$(ARGS)" ]; then \
+		echo "Usage: sudo make service-stop ARGS='--namespace <ns> --name <name> --port <port>'"; \
+		echo ""; \
+		echo "Examples:"; \
+		echo "  sudo make service-stop ARGS='--namespace hq-gw --name echo --port 8080'"; \
+		exit 1; \
+	fi
+	@$(PYTHON) src/simulators/service_manager.py stop $(ARGS)
+
+# Restart a service
+# Usage: sudo make service-restart ARGS="--namespace <ns> --name <name> --port <port> [--protocol tcp|udp]"
+service-restart:
+	@if [ "$$(id -u)" != "0" ]; then \
+		echo "Error: service-restart requires root privileges"; \
+		echo "Please run: sudo make service-restart ARGS='<arguments>'"; \
+		exit 1; \
+	fi
+	@if [ -z "$(ARGS)" ]; then \
+		echo "Usage: sudo make service-restart ARGS='--namespace <ns> --name <name> --port <port> [--protocol tcp|udp]'"; \
+		echo ""; \
+		echo "Examples:"; \
+		echo "  sudo make service-restart ARGS='--namespace hq-gw --name echo --port 8080'"; \
+		exit 1; \
+	fi
+	@$(PYTHON) src/simulators/service_manager.py restart $(ARGS)
+
+# Show service status
+# Usage: sudo make service-status [ARGS="--namespace <ns>"]
+service-status:
+	@if [ "$$(id -u)" != "0" ]; then \
+		echo "Error: service-status requires root privileges"; \
+		echo "Please run: sudo make service-status"; \
+		exit 1; \
+	fi
+	@$(PYTHON) src/simulators/service_manager.py status $(ARGS)
+
+# Test a service
+# Usage: sudo make service-test ARGS="--source <ns> --dest <ip> --port <port> [--protocol tcp|udp] [--message <msg>] [--timeout <sec>]"
+service-test:
+	@if [ "$$(id -u)" != "0" ]; then \
+		echo "Error: service-test requires root privileges"; \
+		echo "Please run: sudo make service-test ARGS='<arguments>'"; \
+		exit 1; \
+	fi
+	@if [ -z "$(ARGS)" ]; then \
+		echo "Usage: sudo make service-test ARGS='--source <ns> --dest <ip> --port <port> [options]'"; \
+		echo ""; \
+		echo "Required arguments:"; \
+		echo "  --source <ns>        Source namespace"; \
+		echo "  --dest <ip>          Destination IP address"; \
+		echo "  --port <port>        Destination port"; \
+		echo ""; \
+		echo "Optional arguments:"; \
+		echo "  --protocol tcp|udp   Protocol (default: tcp)"; \
+		echo "  --message <msg>      Test message (default: Hello)"; \
+		echo "  --timeout <sec>      Timeout in seconds (default: 5)"; \
+		echo "  -v                   Verbose output (-vv for debug)"; \
+		echo ""; \
+		echo "Examples:"; \
+		echo "  sudo make service-test ARGS='--source hq-core --dest 10.1.1.1 --port 8080'"; \
+		echo "  sudo make service-test ARGS='--source br-gw --dest 10.2.1.2 --port 53 --protocol udp --message QUERY'"; \
+		exit 1; \
+	fi
+	@$(PYTHON) src/simulators/service_manager.py test $(ARGS)
+
+# Clean up all services
+# Usage: sudo make service-clean
+service-clean:
+	@if [ "$$(id -u)" != "0" ]; then \
+		echo "Error: service-clean requires root privileges"; \
+		echo "Please run: sudo make service-clean"; \
+		exit 1; \
+	fi
+	@echo "Cleaning up all services..."
+	@$(PYTHON) src/simulators/service_manager.py cleanup
+
+# Run service manager test suite
+# Usage: sudo make test-services
+test-services:
+	@if [ "$$(id -u)" != "0" ]; then \
+		echo "Error: Service tests require root privileges"; \
+		echo "Please run: sudo make test-services"; \
+		exit 1; \
+	fi
+	@echo "Running Service Manager Test Suite"
+	@echo "=================================="
+	@$(PYTHON) -B tests/test_service_manager.py

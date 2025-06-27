@@ -21,9 +21,11 @@ A comprehensive network path discovery tool that simulates traceroute behavior u
 - **Complex Network Support**: Handles VPN tunnels, WireGuard, multi-interface scenarios
 - **Error Detection**: Identifies routing loops, blackhole routes, and unreachable destinations
 - **Automation Friendly**: Comprehensive exit codes and quiet mode for script integration
-- **Linux Namespace Simulation**: Real packet testing with complete network infrastructure (NEW!)
-- **Comprehensive Make Targets Testing**: All namespace and host management operations validated (NEW!)
-- **Real Network Infrastructure**: Actual Linux namespaces with routing, iptables, and connectivity testing
+- **Linux Namespace Simulation**: Real packet testing with complete network infrastructure
+- **Service Management**: TCP/UDP echo services with IP-based interface and multi-client support
+- **Dynamic Host Management**: Add/remove hosts to running network simulation
+- **System Namespace Protection**: Automatic filtering of non-user namespaces
+- **Enhanced Error Handling**: User-friendly error messages with progressive verbosity
 - **Comprehensive Testing**: Full test suite with 110+ tests including namespace functionality
 - **Professional Visualization**: High-quality network topology diagrams with metadata-aware color coding
 - **Accurate Interface Tracking**: Precise incoming/outgoing interface determination
@@ -42,7 +44,9 @@ A comprehensive network path discovery tool that simulates traceroute behavior u
 - [Reverse Path Tracing](#reverse-path-tracing)
 - [FQDN Resolution](#fqdn-resolution)
 - [Data Collection](#data-collection)
-- [Linux Namespace Simulation](#-linux-namespace-simulation-new)
+- [Linux Namespace Simulation](#-linux-namespace-simulation)
+- [Service Management](#-service-management)
+- [Host Management](#-host-management)
 - [Network Scenarios](#network-scenarios)
 - [Network Visualization](#network-visualization)
 - [Output Formats](#output-formats)
@@ -634,7 +638,7 @@ python3 ansible/ip_json_wrapper.py --json route show  # Passes through to native
 - **Comprehensive coverage**: Supports route, addr, link, and rule subcommands
 - **Validated compatibility**: 100% test coverage ensures output accuracy
 
-## 🐧 Linux Namespace Simulation (NEW!)
+## 🐧 Linux Namespace Simulation
 
 The project includes a comprehensive Linux namespace-based network simulation system that creates real network infrastructure for testing. This enables actual packet testing with real networking components instead of just simulation.
 
@@ -706,6 +710,112 @@ The namespace simulation creates a complete enterprise network topology:
 4. **Protocol Coverage**: Test TCP/UDP services, not just routing logic
 5. **Complex Scenarios**: Multi-hop routing with real network latency
 6. **Production Fidelity**: Network behavior matches real-world conditions
+
+## 🔧 Service Management
+
+The simulator includes comprehensive TCP/UDP service management with an IP-based interface. Services are implemented using `socat` for reliable multi-client echo functionality.
+
+### Service Features
+
+- **IP-Based Interface**: Work with IP addresses directly, no namespace knowledge required
+- **Multi-Client Support**: Services handle multiple simultaneous connections
+- **TCP and UDP Support**: Both protocols supported for comprehensive testing
+- **Silent Operation**: Commands are silent by default for automation (use -v for output)
+- **Automatic Namespace Detection**: System determines namespace from IP address
+- **System Namespace Protection**: Cannot start services on non-user namespaces
+- **JSON Output**: Service listing supports JSON format for programmatic access
+
+### Service Commands
+
+```bash
+# Start services
+sudo make svcstart ARGS='10.1.1.1:8080'                    # TCP echo service
+sudo make svcstart ARGS='10.2.1.1:53 -p udp --name dns'    # UDP service with name
+
+# Test services
+sudo make svctest ARGS='-s 10.1.1.1 -d 10.2.1.1:8080'      # Test connectivity
+sudo make svctest ARGS='-s 10.1.1.1 -d 10.2.1.1:53 -p udp -m "Query"'  # UDP with message
+
+# Manage services
+sudo make svcstop ARGS='10.1.1.1:8080'                     # Stop specific service
+sudo make svclist                                          # List all services
+sudo make svclist ARGS='-j'                                # JSON output
+sudo make svcclean                                         # Stop all services
+```
+
+### Service Output Format
+
+Services are displayed in separate tables for routers and hosts:
+
+```
+=== Services on Routers ===
+Router          Listen IP            Port     Protocol Status    
+----------------------------------------------------------------------
+hq-gw           10.1.1.1             8080     tcp      running   
+br-gw           10.2.1.1             53       udp      running   
+
+=== Services on Hosts ===
+Host            Listen IP            Port     Protocol Status    
+----------------------------------------------------------------------
+web1            10.1.1.100           80       tcp      running
+```
+
+## 🏠 Host Management
+
+Dynamic host management allows adding and removing hosts to the running network simulation. Hosts are regular namespaces with simplified networking that connect to router bridges.
+
+### Host Features
+
+- **Dynamic Creation**: Add hosts to running network without restart
+- **Bridge Connectivity**: Hosts connect to router bridge interfaces
+- **Multiple IPs**: Support for primary and secondary IP addresses
+- **Persistent Registry**: Hosts survive across commands
+- **Gateway Configuration**: Automatic default route setup
+- **Full Network Access**: Hosts can reach any destination via connected router
+
+### Host Commands
+
+```bash
+# Add hosts
+sudo make hostadd ARGS='--host web1 --primary-ip 10.1.1.100/24 --connect-to hq-gw'
+sudo make hostadd ARGS='--host db1 --primary-ip 10.3.20.100/24 --connect-to dc-srv --secondary-ips 192.168.1.1/24'
+
+# Manage hosts  
+sudo make hostlist                                          # List all hosts
+sudo make hostdel ARGS='--host web1 --remove'              # Remove specific host
+sudo make hostclean                                         # Remove all hosts
+```
+
+### Host Configuration Example
+
+```
+Host: web1 [running]
+  Primary IP: 10.1.1.100/24
+  Connected to: hq-gw (gateway: 10.1.1.1)
+  Created: Fri 27 Jun 2025 18:07:19 CEST
+```
+
+## 🛡️ System Namespace Protection
+
+The simulator automatically distinguishes between user namespaces (routers and hosts) and system namespaces, ensuring clean separation and protection:
+
+### Protection Features
+
+- **Automatic Filtering**: Only known routers (from facts) and registered hosts are shown
+- **Command Protection**: System namespaces cannot be used with user commands
+- **Hidden from Output**: System namespaces don't appear in status or list commands
+- **No Hardcoded Lists**: Dynamic detection based on configuration, not naming patterns
+- **Third-Party Safety**: Any namespace not explicitly configured is considered system
+
+### Examples
+
+```bash
+# System namespaces (test-debug, netsim, etc.) are:
+- Hidden from 'sudo make netstatus ARGS="all summary"'
+- Cannot be used with svcstart, svctest, or nettest
+- Not counted in namespace totals
+- Protected from accidental modification
+```
 
 ## 🌐 Network Scenarios
 
@@ -911,33 +1021,38 @@ make check-deps
 make clean
 ```
 
+### Test Coverage Summary
+
+- **Main Simulator Tests**: 64 test cases covering core routing functionality
+- **MTR Integration Tests**: 8 test cases for MTR fallback functionality  
+- **IP Wrapper Tests**: 7 test cases validating compatibility layer
+- **Facts Processing Tests**: 18 test cases for iptables analyzer
+- **Namespace Simulation Tests**: 10 test cases for real network testing
+- **Service Manager Tests**: 13 test cases for TCP/UDP services
+- **Error Handling Tests**: Comprehensive coverage of all error conditions
+
+**Total**: 120+ test cases with near-complete code coverage
+
 ### Individual Test Suites
 
-**Main Traceroute Simulator Tests (63 test cases)**:
 ```bash
-cd tests
-python3 test_traceroute_simulator.py
-```
+# Main traceroute simulator tests
+cd tests && python3 -B test_traceroute_simulator.py
 
-**IP JSON Wrapper Validation (7 test cases)**:
-```bash
-cd tests  
-python3 test_ip_json_comparison.py
-```
+# MTR integration tests
+cd tests && python3 -B test_mtr_integration.py
 
-**Iptables Analyzer Tests (18 test cases - standalone)**:
-```bash
-cd tests
-python3 test_comprehensive_facts_processing.py
-```
+# IP JSON wrapper validation
+cd tests && python3 -B test_ip_json_comparison.py
 
-**Namespace Make Targets Tests (NEW - requires sudo)**:
-```bash
-# Basic functionality tests
-sudo python3 -B tests/test_make_targets_basic.py
+# Iptables analyzer and facts processing
+cd tests && python3 -B test_comprehensive_facts_processing.py
 
-# Host management tests  
-sudo python3 -B tests/test_make_targets_hosts.py
+# Namespace simulation tests (requires sudo)
+sudo python3 -B tests/test_namespace_simulation.py
+
+# Service manager tests (requires sudo)
+sudo python3 -B tests/test_service_manager.py
 
 # Error handling tests
 sudo python3 -B tests/test_make_targets_errors.py

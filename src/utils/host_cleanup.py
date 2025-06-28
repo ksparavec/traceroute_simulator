@@ -176,6 +176,8 @@ Examples:
     
     parser.add_argument('-v', '--verbose', action='count', default=0,
                        help='Increase verbosity (-v for info, -vv for debug)')
+    parser.add_argument('-f', '--force', action='store_true',
+                       help='Force removal (compatibility flag, always forces)')
     
     args = parser.parse_args()
     

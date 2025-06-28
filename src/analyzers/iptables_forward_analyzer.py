@@ -438,7 +438,12 @@ class IptablesRule:
         
         return criteria
     
-    def matches_packet(self, src_ip: str, src_port: Optional[int], dest_ip: str, dest_port: Optional[int], protocol: str = 'tcp', connection_state: str = 'NEW', verbosity: int = 0, analyzer = None, chain_context: str = "") -> bool:
+    def matches_packet(
+        self, src_ip: str, src_port: Optional[int], dest_ip: str, 
+        dest_port: Optional[int], protocol: str = 'tcp', 
+        connection_state: str = 'NEW', verbosity: int = 0, 
+        analyzer = None, chain_context: str = ""
+    ) -> bool:
         """Check if this rule matches the given packet parameters."""
         
         if verbosity >= 2:
@@ -492,11 +497,15 @@ class IptablesRule:
                 expected_in_interface = analyzer._find_outgoing_interface(src_ip)
                 if expected_in_interface is None:
                     if verbosity >= 2:
-                        print(f"      Input interface check: cannot determine interface for source {src_ip}, skipping interface check")
+                        print(f"      Input interface check: cannot determine interface "
+                              f"for source {src_ip}, skipping interface check")
                 else:
                     match_result = expected_in_interface == self.parsed_criteria['in_interface']
                     if verbosity >= 2:
-                        print(f"      Input interface check: {src_ip} should come via {expected_in_interface} vs rule requires {self.parsed_criteria['in_interface']} = {'MATCH' if match_result else 'NO MATCH'}")
+                        print(f"      Input interface check: {src_ip} should come via "
+                              f"{expected_in_interface} vs rule requires "
+                              f"{self.parsed_criteria['in_interface']} = "
+                              f"{'MATCH' if match_result else 'NO MATCH'}")
                     if not match_result:
                         failed_criteria.append("input interface")
                         if verbosity >= 2:
@@ -514,11 +523,15 @@ class IptablesRule:
                 expected_out_interface = analyzer._find_outgoing_interface(dest_ip)
                 if expected_out_interface is None:
                     if verbosity >= 2:
-                        print(f"      Output interface check: cannot determine interface for destination {dest_ip}, skipping interface check")
+                        print(f"      Output interface check: cannot determine interface "
+                              f"for destination {dest_ip}, skipping interface check")
                 else:
                     match_result = expected_out_interface == self.parsed_criteria['out_interface']
                     if verbosity >= 2:
-                        print(f"      Output interface check: {dest_ip} should go via {expected_out_interface} vs rule requires {self.parsed_criteria['out_interface']} = {'MATCH' if match_result else 'NO MATCH'}")
+                        print(f"      Output interface check: {dest_ip} should go via "
+                              f"{expected_out_interface} vs rule requires "
+                              f"{self.parsed_criteria['out_interface']} = "
+                              f"{'MATCH' if match_result else 'NO MATCH'}")
                     if not match_result:
                         failed_criteria.append("output interface")
                         if verbosity >= 2:
@@ -1414,7 +1427,11 @@ class IptablesForwardAnalyzer:
                 print(f"Decision: {self.default_policy} (default) - {reason}")
             return False, reason
     
-    def _analyze_custom_chain(self, chain_name: str, src_ip: str, src_port: Optional[int], dest_ip: str, dest_port: Optional[int], protocol: str, connection_state: str = 'NEW', parent_chain: str = "FORWARD") -> Tuple[Optional[bool], str]:
+    def _analyze_custom_chain(
+        self, chain_name: str, src_ip: str, src_port: Optional[int], 
+        dest_ip: str, dest_port: Optional[int], protocol: str, 
+        connection_state: str = 'NEW', parent_chain: str = "FORWARD"
+    ) -> Tuple[Optional[bool], str]:
         """Analyze rules in a custom chain."""
         if chain_name not in self.custom_chains:
             return None, f"Custom chain {chain_name} not found"

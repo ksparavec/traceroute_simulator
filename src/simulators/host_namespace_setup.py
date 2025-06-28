@@ -428,6 +428,10 @@ class HostNamespaceManager:
             return False
             
         # Validate primary IP format
+        if '/' not in primary_ip:
+            self.logger.error("Primary IP must include prefix length (e.g., 10.1.1.100/24)")
+            return False
+            
         try:
             primary_network = ipaddress.IPv4Network(primary_ip, strict=False)
             primary_addr = str(primary_network.network_address)
@@ -486,6 +490,10 @@ class HostNamespaceManager:
             # Create dummy interfaces for secondary IPs
             dummy_configs = []
             for i, secondary_ip in enumerate(secondary_ips):
+                if '/' not in secondary_ip:
+                    self.logger.error(f"Secondary IP must include prefix length: {secondary_ip}")
+                    raise Exception(f"Invalid secondary IP format: {secondary_ip}")
+                    
                 try:
                     ipaddress.IPv4Network(secondary_ip, strict=False)
                     dummy_name = f"dummy{i}"

@@ -174,7 +174,7 @@ class IntegrationMakeTargetsTest(unittest.TestCase):
         # Test setup with different verbosity
         result = self.run_make("netsetup", ["-v"], timeout=60)
         self.assertEqual(result.returncode, 0)
-        self.assertIn("INFO:", result.stdout)
+        self.assertIn("INFO:", result.stderr)
         
         # Clean and test debug verbosity
         self.run_make("netclean", ["-f"], check=False)
@@ -187,7 +187,7 @@ class IntegrationMakeTargetsTest(unittest.TestCase):
             "--connect-to", "hq-gw", "-v"
         ])
         self.assertEqual(result.returncode, 0)
-        self.assertIn("INFO:", result.stdout)
+        self.assertIn("INFO:", result.stderr)
 
 
 def main():

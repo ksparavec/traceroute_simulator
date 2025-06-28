@@ -26,7 +26,7 @@ A comprehensive network path discovery tool that simulates traceroute behavior u
 - **Dynamic Host Management**: Add/remove hosts to running network simulation
 - **System Namespace Protection**: Automatic filtering of non-user namespaces
 - **Enhanced Error Handling**: User-friendly error messages with progressive verbosity
-- **Comprehensive Testing**: Full test suite with 110+ tests including namespace functionality
+- **Comprehensive Testing**: Full test suite with 228 tests across all modules
 - **Professional Visualization**: High-quality network topology diagrams with metadata-aware color coding
 - **Accurate Interface Tracking**: Precise incoming/outgoing interface determination
 
@@ -1023,15 +1023,28 @@ make clean
 
 ### Test Coverage Summary
 
-- **Main Simulator Tests**: 64 test cases covering core routing functionality
-- **MTR Integration Tests**: 8 test cases for MTR fallback functionality  
-- **IP Wrapper Tests**: 7 test cases validating compatibility layer
-- **Facts Processing Tests**: 18 test cases for iptables analyzer
-- **Namespace Simulation Tests**: 10 test cases for real network testing
-- **Service Manager Tests**: 13 test cases for TCP/UDP services
-- **Error Handling Tests**: Comprehensive coverage of all error conditions
+- **Namespace & Network Tests**: 103 test cases
+  - Namespace make targets: 55 tests
+  - Network make targets: 26 tests  
+  - Bridge architecture: 7 tests
+  - Host management: 7 tests
+  - Namespace simulation: 6 tests
+  - Basic/quick tests: 8 tests
+- **Core Functionality Tests**: 27 test cases
+  - Main simulator: 9 tests
+  - Reverse path tracing: 18 tests
+- **Error Handling Tests**: 35 test cases
+  - Error handling: 29 tests
+  - Make targets errors: 6 tests
+- **Integration & Services Tests**: 47 test cases
+  - Facts processing: 18 tests
+  - Service manager: 14 tests
+  - Make targets focused: 13 tests
+  - Integration tests: 3 tests
+- **MTR Integration Tests**: 8 test scenarios (script-based)
+- **IP Wrapper Tests**: 1 test method (runs 5-6 internal cases)
 
-**Total**: 120+ test cases with near-complete code coverage
+**Total**: 228 test cases with near-complete code coverage
 
 ### Individual Test Suites
 
@@ -1079,8 +1092,8 @@ cd tests
 python3 test_traceroute_simulator.py
 
 # Expected output
-Total tests: 63
-Passed: 63 (100%)
+Total tests: 9
+Passed: 9 (100%)
 Failed: 0
 Pass rate: 100.0%
 
@@ -1099,18 +1112,17 @@ python3 test_mtr_integration.py
 
 ### Test Categories
 
-1. **Intra-Location Routing**: Communication within each location through distribution layers (11 tests)
-2. **Inter-Location Routing**: Cross-site communication via WireGuard VPN tunnels (12 tests)
-3. **Network Segment Routing**: Host-to-host communication across different subnets (9 tests)
-4. **Command Line Options**: All flags and output formats (4 tests)
-5. **Error Conditions**: Invalid inputs, missing files, network errors (14 tests)
-6. **Exit Codes**: Verification of all return codes in quiet mode (4 tests)
-7. **Edge Cases**: Comprehensive coverage of error handling and boundary conditions (6 tests)
-8. **Complex Scenarios**: Multi-hop routing and advanced network paths (8 tests)
+The test suite includes 228 tests across multiple modules:
+- **Namespace & Network**: 103 tests for namespace operations, network setup, and bridge architecture
+- **Core Functionality**: 27 tests (simulator: 9, reverse path tracing: 18)
+- **Error Handling**: 35 tests for exception scenarios and error conditions
+- **Integration & Services**: 47 tests (facts processing: 18, service manager: 14, make targets: 15)
+- **MTR Integration**: 8 test scenarios for fallback testing
+- **IP Wrapper**: 1 test method with 5-6 internal test cases
 
 ### Test Coverage
 
-- ✅ **110+ comprehensive test cases** covering all functionality (63 simulator + 7 wrapper + 8 MTR + 18 facts + 20+ make targets + 6 namespace)
+- ✅ **228 comprehensive test cases** covering all functionality
 - ✅ **100% pass rate** with complete functionality validation
 - ✅ **Comprehensive make targets testing** - All namespace and host management operations (NEW!)
 - ✅ **Separated test complexity** - Fast basic tests in main suite, deep network tests in separate target
@@ -1156,7 +1168,7 @@ make fetch-routing-data OUTPUT_DIR=temp INVENTORY=router-01
 ### Build System Features
 
 - **Dependency validation**: Checks all required Python modules with helpful installation hints
-- **Comprehensive testing**: Integrated test suite with 110+ tests including namespace make targets
+- **Comprehensive testing**: Integrated test suite with 228 tests across all modules
 - **Privileged test management**: Automatic detection and execution of sudo-required tests
 - **Test separation**: Fast core tests in main suite, comprehensive network tests in separate target
 - **Ansible integration**: Automated data collection with inventory validation and error handling
@@ -1319,24 +1331,46 @@ We welcome contributions to improve the traceroute simulator!
 
 ```
 traceroute_simulator/
-├── traceroute_simulator.py      # Main simulator script
-├── mtr_executor.py              # MTR execution and SSH management
-├── route_formatter.py           # Output formatting for simulation and MTR results
-├── ip_json_wrapper.py           # IP JSON compatibility wrapper for legacy systems
-├── Makefile                     # Comprehensive build system
+├── src/                         # Core application code
+│   ├── core/                    # Main simulator components
+│   │   ├── traceroute_simulator.py  # Main application
+│   │   ├── route_formatter.py       # Output formatting
+│   │   ├── reverse_path_tracer.py   # Reverse path tracing
+│   │   ├── exceptions.py            # Custom exceptions
+│   │   ├── logging.py               # Logging system
+│   │   └── models.py                # Data models
+│   ├── analyzers/               # Analysis tools
+│   │   └── iptables_forward_analyzer.py  # Packet forwarding analysis
+│   ├── executors/               # External command executors
+│   │   └── mtr_executor.py          # MTR execution and SSH management
+│   ├── simulators/              # Network simulation tools
+│   │   ├── __init__.py              # Package init
+│   │   ├── network_namespace_*.py   # Namespace management
+│   │   ├── service_*.py             # Service management
+│   │   └── host_*.py                # Host management
+│   └── utils/                   # Utility scripts
+│       ├── __init__.py              # Package init
+│       ├── update_tsim_facts.py     # Facts updater
+│       └── verify_network_setup.py  # Setup verifier
 ├── tests/                       # Test environment directory
-│   ├── test_traceroute_simulator.py # Main test suite (64 tests)
-│   ├── test_ip_json_comparison.py   # IP wrapper validation (7 tests)
-│   ├── test_mtr_integration.py      # MTR integration tests (8 tests)
-│   ├── test_config.yaml         # Test-specific configuration
-│   └── tsim_facts/              # Test routing data (10 unified JSON files)
+│   ├── test_traceroute_simulator.py # Main test suite (9 tests)
+│   ├── test_ip_json_comparison.py   # IP wrapper validation (1 test)
+│   ├── test_mtr_integration.py      # MTR integration tests (7 scenarios)
+│   ├── test_namespace_*.py          # Namespace tests (6 tests)
+│   ├── test_service_manager.py      # Service tests (13 tests)
+│   ├── test_make_targets_*.py       # Make targets tests (109 tests)
+│   ├── test_config.yaml             # Test-specific configuration
+│   └── tsim_facts/                  # Test routing data (10 unified JSON files)
 ├── docs/                        # Documentation and visualization
-│   ├── NETWORK_TOPOLOGY.md      # Detailed network documentation
+│   ├── NETWORK_TOPOLOGY.md          # Detailed network documentation
 │   ├── network_topology_diagram.py  # Network visualization generator
-│   ├── network_topology.png     # High-resolution network diagram
-│   └── network_topology.pdf     # Vector network diagram
+│   └── network_topology.png         # High-resolution network diagram
 ├── ansible/                     # Data collection automation
-│   └── get_tsim_facts.yml       # Unified facts collection playbook
+│   ├── get_tsim_facts.yml           # Unified facts collection playbook
+│   ├── get_facts.sh                 # Facts collection script
+│   ├── process_facts.py             # Facts processor
+│   └── ip_json_wrapper.py           # IP JSON compatibility wrapper
+├── Makefile                     # Comprehensive build system
 ├── CLAUDE.md                    # Development guidelines
 └── README.md                    # This documentation
 ```
@@ -1374,7 +1408,7 @@ traceroute_simulator/
 
 ### Code Quality and Testing
 - **Comprehensive Tuple Handling**: All code paths now safely handle both 7-tuple (simulation) and 8-tuple (MTR with RTT) formats
-- **100% Test Suite Pass Rate**: All 79 tests continue to pass with enhanced functionality
+- **100% Test Suite Pass Rate**: All 228 tests pass with comprehensive coverage
 - **Improved Error Classification**: Better distinction between routing misconfigurations and unreachable destinations
 - **Enhanced Exit Code Logic**: Consistent exit code behavior across quiet and non-quiet modes
 

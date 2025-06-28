@@ -262,7 +262,10 @@ class MTRExecutor:
             
             # Parse data lines
             if in_data_section and '|--' in line:
-                hop_match = re.match(r'\s*(\d+)\.\|--\s+([^\s]+)\s+([0-9.]+)%\s+\d+\s+([0-9.]+)', line)
+                hop_match = re.match(
+                    r'\s*(\d+)\.\|--\s+([^\s]+)\s+([0-9.]+)%\s+\d+\s+([0-9.]+)', 
+                    line
+                )
                 if hop_match:
                     hop_num = int(hop_match.group(1))
                     ip_or_hostname = hop_match.group(2)
@@ -299,7 +302,8 @@ class MTRExecutor:
                                     ip = ip_or_hostname  # Use hostname as IP placeholder
                             else:
                                 ip = ip_or_hostname  # Use hostname as IP placeholder
-                        except (subprocess.TimeoutExpired, subprocess.CalledProcessError, FileNotFoundError):
+                        except (subprocess.TimeoutExpired, subprocess.CalledProcessError, 
+                                FileNotFoundError):
                             # Can't resolve hostname, but that's okay
                             ip = ip_or_hostname  # Use hostname as IP placeholder
                     
@@ -342,11 +346,14 @@ class MTRExecutor:
                     print(f"Including hop {hop['hop']}: {ip} ({hostname})", file=sys.stderr)
             else:
                 if self.verbose and self.verbose_level >= 3:
-                    print(f"Filtering out hop {hop['hop']}: {ip} ({hostname}) - not a Linux router", file=sys.stderr)
+                    print(f"Filtering out hop {hop['hop']}: {ip} ({hostname}) - "
+                          f"not a Linux router", file=sys.stderr)
         
         return linux_hops
     
-    def execute_and_filter(self, source_router: str, destination_ip: str) -> Tuple[List[Dict], List[Dict]]:
+    def execute_and_filter(
+        self, source_router: str, destination_ip: str
+    ) -> Tuple[List[Dict], List[Dict]]:
         """
         Execute MTR via SSH and return both all hops and filtered Linux router hops.
         

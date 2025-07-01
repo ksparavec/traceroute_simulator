@@ -249,6 +249,96 @@ class TestFactsProcessing(unittest.TestCase):
             
             print(f"✓ Successfully validated generated JSON file")
     
+    def test_ip_address_format_validation(self):
+        """Test that all IP addresses in raw facts conform to IPv4 format."""
+        print("Testing IP address format validation in raw facts...")
+        
+        # Regular expression to find IP addresses that might have invalid format
+        import re
+        
+        # Pattern to detect IP addresses with letters in octets (like 10.h.1.1, 10.b.2.3)
+        invalid_ip_pattern = re.compile(r'\b10\.[a-zA-Z][a-zA-Z0-9]*\.[0-9]+(\.[0-9]+)?\b')
+        # Pattern to detect potentially malformed CIDR notation
+        invalid_cidr_pattern = re.compile(r'\b10\.[a-zA-Z][a-zA-Z0-9]*\.[0-9]+(\.[0-9]+)?/[0-9]+\b')
+        
+        errors_found = []
+        
+        for filename in self.available_files:
+            if filename.endswith('_facts.txt'):
+                input_file = self.raw_facts_dir / filename
+                
+                try:
+                    with open(input_file, 'r') as f:
+                        lines = f.readlines()
+                    
+                    for line_num, line in enumerate(lines, 1):
+                        # Check for invalid IP addresses with letters
+                        invalid_ips = invalid_ip_pattern.findall(line)
+                        if invalid_ips:
+                            errors_found.append({
+                                'file': filename,
+                                'line': line_num,
+                                'content': line.strip(),
+                                'error_type': 'invalid_ip_format',
+                                'invalid_addresses': invalid_ips
+                            })
+                        
+                        # Check for invalid CIDR notation
+                        invalid_cidrs = invalid_cidr_pattern.findall(line)
+                        if invalid_cidrs:
+                            errors_found.append({
+                                'file': filename,
+                                'line': line_num,
+                                'content': line.strip(),
+                                'error_type': 'invalid_cidr_format',
+                                'invalid_addresses': invalid_cidrs
+                            })
+                        
+                        # Also validate any IP addresses that look correct
+                        # Find all potential IP addresses in the line
+                        ip_pattern = re.compile(r'\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b')
+                        potential_ips = ip_pattern.findall(line)
+                        
+                        for ip_str in potential_ips:
+                            try:
+                                # Attempt to parse as IPv4 address
+                                ipaddress.IPv4Address(ip_str)
+                                
+                                # Check for invalid octets (> 255)
+                                octets = ip_str.split('.')
+                                for octet in octets:
+                                    if int(octet) > 255:
+                                        errors_found.append({
+                                            'file': filename,
+                                            'line': line_num,
+                                            'content': line.strip(),
+                                            'error_type': 'invalid_octet_value',
+                                            'invalid_address': ip_str
+                                        })
+                                        
+                            except ValueError:
+                                # Invalid IP address format
+                                errors_found.append({
+                                    'file': filename,
+                                    'line': line_num,
+                                    'content': line.strip(),
+                                    'error_type': 'malformed_ip_address',
+                                    'invalid_address': ip_str
+                                })
+                
+                except Exception as e:
+                    self.fail(f"Error reading file {filename}: {e}")
+        
+        # Report any errors found
+        if errors_found:
+            error_summary = "\n".join([
+                f"  {error['file']}:{error['line']} - {error['error_type']}: {error.get('invalid_address', error.get('invalid_addresses', 'unknown'))}"
+                for error in errors_found
+            ])
+            self.fail(f"IP address format errors found in raw facts files:\n{error_summary}")
+        
+        print(f"✓ All IP addresses in {len(self.available_files)} raw facts files are valid IPv4 format")
+    
     def test_iptables_parsing_completeness(self):
         """Test that iptables parsing handles complex rule structures."""
         # Test with routers that have complex iptables rules

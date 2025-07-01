@@ -468,12 +468,12 @@ TIMESTAMP: 2025-07-01 10:00:00
 create hq_10_1_11_0_24_hosts bitmap:ip range 10.1.11.0/24 timeout 3600 counters comment
 create hq_mgmt_networks bitmap:ip range 10.1.2.0-10.1.5.255 counters comment
 create hq_admin_workstations bitmap:ip range 10.1.3.10-10.1.3.20 timeout 7200
-create hq_access_clients bitmap:ip range 10.h.20.0/24 timeout 1800
+create hq_access_clients bitmap:ip range 10.1.20.0/24 timeout 1800
 create hq_guest_range bitmap:ip range 192.168.100.0/24 timeout 900
 create hq_10_1_11_0_24_secure_clients bitmap:ip,mac range 10.1.11.0/24 timeout 7200 counters comment
-create hq_trusted_devices bitmap:ip,mac range 10.h.1.0/24 counters comment
-create hq_dhcp_reservations bitmap:ip,mac range 10.h.20.0/24 timeout 86400
-create hq_static_assignments bitmap:ip,mac range 10.h.10.0/24
+create hq_trusted_devices bitmap:ip,mac range 10.1.1.0/24 counters comment
+create hq_dhcp_reservations bitmap:ip,mac range 10.1.20.0/24 timeout 86400
+create hq_static_assignments bitmap:ip,mac range 10.1.10.0/24
 create hq_guest_devices bitmap:ip,mac range 192.168.100.0/24 timeout 1800
 create hq_temp_access bitmap:ip,mac range 192.168.101.0/24 timeout 900
 create hq_web_ports bitmap:port range 80-8080 timeout 1800 comment
@@ -537,18 +537,18 @@ create hq_routing_matrix hash:net,port,net family inet counters comment
 add hq_10_1_1_0_24_hosts 10.1.1.10
 add hq_10_1_1_0_24_hosts 10.1.1.11
 add hq_10_1_1_0_24_hosts 10.1.1.12
-add hq_management_ips 10.h.10.5
-add hq_management_ips 10.h.10.6
+add hq_management_ips 10.1.10.5
+add hq_management_ips 10.1.10.6
 add hq_trusted_sources 8.8.8.8
 add hq_trusted_sources 1.1.1.1
-add hq_internal_networks 10.h.0.0/16
+add hq_internal_networks 10.1.0.0/16
 add hq_vpn_networks 10.100.1.0/24
 add hq_trusted_devices 10.1.1.10,52:54:00:12:34:56
 add hq_trusted_devices 10.1.1.11,52:54:00:12:34:57
-add hq_web_services 10.h.3.10,80
-add hq_web_services 10.h.3.10,443
-add hq_database_access 10.h.20.5,3306
-add hq_database_access 10.h.20.5,5432
+add hq_web_services 10.1.3.10,80
+add hq_web_services 10.1.3.10,443
+add hq_database_access 10.1.20.5,3306
+add hq_database_access 10.1.20.5,5432
 add hq_web_ports 80
 add hq_web_ports 443
 add hq_web_ports 8080
@@ -597,7 +597,7 @@ Members:
 Name: hq_access_clients
 Type: bitmap:ip
 Revision: 3
-Header: bitmap:ip range 10.h.20.0/24 timeout 1800
+Header: bitmap:ip range 10.1.20.0/24 timeout 1800
 Size in memory: 1048
 References: 1
 Default binding: 
@@ -627,7 +627,7 @@ Members:
 Name: hq_trusted_devices
 Type: bitmap:ip,mac
 Revision: 3
-Header: bitmap:ip,mac range 10.h.1.0/24 counters comment
+Header: bitmap:ip,mac range 10.1.1.0/24 counters comment
 Size in memory: 1048
 References: 1
 Default binding: 
@@ -637,7 +637,7 @@ Members:
 Name: hq_dhcp_reservations
 Type: bitmap:ip,mac
 Revision: 3
-Header: bitmap:ip,mac range 10.h.20.0/24 timeout 86400
+Header: bitmap:ip,mac range 10.1.20.0/24 timeout 86400
 Size in memory: 1048
 References: 1
 Default binding: 
@@ -647,7 +647,7 @@ Members:
 Name: hq_static_assignments
 Type: bitmap:ip,mac
 Revision: 3
-Header: bitmap:ip,mac range 10.h.10.0/24
+Header: bitmap:ip,mac range 10.1.10.0/24
 Size in memory: 1048
 References: 1
 Default binding: 

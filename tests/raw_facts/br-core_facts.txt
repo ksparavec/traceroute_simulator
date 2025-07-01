@@ -546,14 +546,14 @@ create branch_10_2_2_0_24_hosts bitmap:ip range 10.2.2.0/24 timeout 3600 counter
 create branch_10_2_10_0_24_hosts bitmap:ip range 10.2.10.0/24 timeout 3600 counters comment
 create br_mgmt_networks bitmap:ip range 10.2.2.0-10.2.5.255 counters
 create br_admin_workstations bitmap:ip range 10.2.10.10-10.2.10.20 timeout 7200
-create branch_core_services bitmap:ip range 10.b.10.0/24 timeout 3600
-create branch_load_balancers bitmap:ip range 10.b.1.10-10.b.1.20
+create branch_core_services bitmap:ip range 10.2.10.0/24 timeout 3600
+create branch_load_balancers bitmap:ip range 10.2.1.10-10.2.1.20
 create branch_10_2_1_0_24_secure_clients bitmap:ip,mac range 10.2.1.0/24 timeout 7200 counters comment
 create branch_10_2_2_0_24_secure_clients bitmap:ip,mac range 10.2.2.0/24 timeout 7200 counters comment
 create branch_10_2_10_0_24_secure_clients bitmap:ip,mac range 10.2.10.0/24 timeout 7200 counters comment
-create branch_trusted_devices bitmap:ip,mac range 10.b.1.0/24 counters comment
-create branch_infrastructure_devices bitmap:ip,mac range 10.b.1.0/24 comment
-create branch_switch_management bitmap:ip,mac range 10.b.10.0/24 timeout 3600
+create branch_trusted_devices bitmap:ip,mac range 10.2.1.0/24 counters comment
+create branch_infrastructure_devices bitmap:ip,mac range 10.2.1.0/24 comment
+create branch_switch_management bitmap:ip,mac range 10.2.10.0/24 timeout 3600
 create branch_web_ports bitmap:port range 80-8080 timeout 1800 comment
 create branch_database_ports bitmap:port range 3306-5432 counters comment
 create branch_management_ports bitmap:port range 22-443 comment
@@ -624,18 +624,18 @@ create branch_vlan_rules hash:net,port,net family inet timeout 1800
 add branch_10_1_1_0_24_hosts 10.1.1.10
 add branch_10_1_1_0_24_hosts 10.1.1.11
 add branch_10_1_1_0_24_hosts 10.1.1.12
-add branch_management_ips 10.b.10.5
-add branch_management_ips 10.b.10.6
+add branch_management_ips 10.2.10.5
+add branch_management_ips 10.2.10.6
 add branch_trusted_sources 8.8.8.8
 add branch_trusted_sources 1.1.1.1
-add branch_internal_networks 10.b.0.0/16
+add branch_internal_networks 10.2.0.0/16
 add branch_vpn_networks 10.100.1.0/24
 add branch_trusted_devices 10.2.1.10,52:54:00:ab:cd:01
 add branch_trusted_devices 10.2.1.11,52:54:00:ab:cd:02
-add branch_web_services 10.b.3.10,80
-add branch_web_services 10.b.3.10,443
-add branch_database_access 10.b.20.5,3306
-add branch_database_access 10.b.20.5,5432
+add branch_web_services 10.2.3.10,80
+add branch_web_services 10.2.3.10,443
+add branch_database_access 10.2.20.5,3306
+add branch_database_access 10.2.20.5,5432
 add branch_web_ports 80
 add branch_web_ports 443
 add branch_web_ports 8080
@@ -704,7 +704,7 @@ Members:
 Name: branch_core_services
 Type: bitmap:ip
 Revision: 3
-Header: bitmap:ip range 10.b.10.0/24 timeout 3600
+Header: bitmap:ip range 10.2.10.0/24 timeout 3600
 Size in memory: 1048
 References: 1
 Default binding: 
@@ -714,7 +714,7 @@ Members:
 Name: branch_load_balancers
 Type: bitmap:ip
 Revision: 3
-Header: bitmap:ip range 10.b.1.10-10.b.1.20
+Header: bitmap:ip range 10.2.1.10-10.2.1.20
 Size in memory: 1048
 References: 1
 Default binding: 
@@ -754,7 +754,7 @@ Members:
 Name: branch_trusted_devices
 Type: bitmap:ip,mac
 Revision: 3
-Header: bitmap:ip,mac range 10.b.1.0/24 counters comment
+Header: bitmap:ip,mac range 10.2.1.0/24 counters comment
 Size in memory: 1048
 References: 1
 Default binding: 
@@ -764,7 +764,7 @@ Members:
 Name: branch_infrastructure_devices
 Type: bitmap:ip,mac
 Revision: 3
-Header: bitmap:ip,mac range 10.b.1.0/24 comment
+Header: bitmap:ip,mac range 10.2.1.0/24 comment
 Size in memory: 1048
 References: 1
 Default binding: 
@@ -774,7 +774,7 @@ Members:
 Name: branch_switch_management
 Type: bitmap:ip,mac
 Revision: 3
-Header: bitmap:ip,mac range 10.b.10.0/24 timeout 3600
+Header: bitmap:ip,mac range 10.2.10.0/24 timeout 3600
 Size in memory: 1048
 References: 1
 Default binding: 

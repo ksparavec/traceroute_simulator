@@ -483,15 +483,15 @@ create datacenter_10_3_10_0_24_hosts bitmap:ip range 10.3.10.0/24 timeout 3600 c
 create datacenter_10_3_20_0_24_hosts bitmap:ip range 10.3.20.0/24 timeout 3600 counters comment
 create dc_mgmt_networks bitmap:ip range 10.3.1.0-10.3.5.255 counters comment
 create dc_admin_workstations bitmap:ip range 10.3.10.10-10.3.10.20 timeout 3600
-create datacenter_core_services bitmap:ip range 10.d.10.0/24 timeout 3600
-create datacenter_load_balancers bitmap:ip range 10.d.1.10-10.d.1.20
+create datacenter_core_services bitmap:ip range 10.3.10.0/24 timeout 3600
+create datacenter_load_balancers bitmap:ip range 10.3.1.10-10.3.1.20
 create datacenter_10_3_1_0_24_secure_clients bitmap:ip,mac range 10.3.1.0/24 timeout 7200 counters comment
 create datacenter_10_3_2_0_24_secure_clients bitmap:ip,mac range 10.3.2.0/24 timeout 7200 counters comment
 create datacenter_10_3_10_0_24_secure_clients bitmap:ip,mac range 10.3.10.0/24 timeout 7200 counters comment
 create datacenter_10_3_20_0_24_secure_clients bitmap:ip,mac range 10.3.20.0/24 timeout 7200 counters comment
-create datacenter_trusted_devices bitmap:ip,mac range 10.d.1.0/24 counters comment
-create datacenter_infrastructure_devices bitmap:ip,mac range 10.d.1.0/24 comment
-create datacenter_switch_management bitmap:ip,mac range 10.d.10.0/24 timeout 3600
+create datacenter_trusted_devices bitmap:ip,mac range 10.3.1.0/24 counters comment
+create datacenter_infrastructure_devices bitmap:ip,mac range 10.3.1.0/24 comment
+create datacenter_switch_management bitmap:ip,mac range 10.3.10.0/24 timeout 3600
 create datacenter_web_ports bitmap:port range 80-8080 timeout 1800 comment
 create datacenter_database_ports bitmap:port range 3306-5432 counters comment
 create datacenter_management_ports bitmap:port range 22-443 comment
@@ -562,18 +562,18 @@ create datacenter_vlan_rules hash:net,port,net family inet timeout 1800
 add datacenter_10_1_1_0_24_hosts 10.1.1.10
 add datacenter_10_1_1_0_24_hosts 10.1.1.11
 add datacenter_10_1_1_0_24_hosts 10.1.1.12
-add datacenter_management_ips 10.d.10.5
-add datacenter_management_ips 10.d.10.6
+add datacenter_management_ips 10.3.10.5
+add datacenter_management_ips 10.3.10.6
 add datacenter_trusted_sources 8.8.8.8
 add datacenter_trusted_sources 1.1.1.1
-add datacenter_internal_networks 10.d.0.0/16
+add datacenter_internal_networks 10.3.0.0/16
 add datacenter_vpn_networks 10.100.1.0/24
 add datacenter_trusted_devices 10.3.1.10,52:54:00:ef:12:01
 add datacenter_trusted_devices 10.3.1.11,52:54:00:ef:12:02
-add datacenter_web_services 10.d.3.10,80
-add datacenter_web_services 10.d.3.10,443
-add datacenter_database_access 10.d.20.5,3306
-add datacenter_database_access 10.d.20.5,5432
+add datacenter_web_services 10.3.3.10,80
+add datacenter_web_services 10.3.3.10,443
+add datacenter_database_access 10.3.20.5,3306
+add datacenter_database_access 10.3.20.5,5432
 add datacenter_web_ports 80
 add datacenter_web_ports 443
 add datacenter_web_ports 8080
@@ -652,7 +652,7 @@ Members:
 Name: datacenter_core_services
 Type: bitmap:ip
 Revision: 3
-Header: bitmap:ip range 10.d.10.0/24 timeout 3600
+Header: bitmap:ip range 10.3.10.0/24 timeout 3600
 Size in memory: 1048
 References: 1
 Default binding: 
@@ -662,7 +662,7 @@ Members:
 Name: datacenter_load_balancers
 Type: bitmap:ip
 Revision: 3
-Header: bitmap:ip range 10.d.1.10-10.d.1.20
+Header: bitmap:ip range 10.3.1.10-10.3.1.20
 Size in memory: 1048
 References: 1
 Default binding: 
@@ -712,7 +712,7 @@ Members:
 Name: datacenter_trusted_devices
 Type: bitmap:ip,mac
 Revision: 3
-Header: bitmap:ip,mac range 10.d.1.0/24 counters comment
+Header: bitmap:ip,mac range 10.3.1.0/24 counters comment
 Size in memory: 1048
 References: 1
 Default binding: 
@@ -722,7 +722,7 @@ Members:
 Name: datacenter_infrastructure_devices
 Type: bitmap:ip,mac
 Revision: 3
-Header: bitmap:ip,mac range 10.d.1.0/24 comment
+Header: bitmap:ip,mac range 10.3.1.0/24 comment
 Size in memory: 1048
 References: 1
 Default binding: 
@@ -732,7 +732,7 @@ Members:
 Name: datacenter_switch_management
 Type: bitmap:ip,mac
 Revision: 3
-Header: bitmap:ip,mac range 10.d.10.0/24 timeout 3600
+Header: bitmap:ip,mac range 10.3.10.0/24 timeout 3600
 Size in memory: 1048
 References: 1
 Default binding: 

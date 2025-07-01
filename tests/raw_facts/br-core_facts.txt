@@ -166,18 +166,6 @@ TIMESTAMP: 2025-06-21 15:18:34
     link/ether 52:54:00:62:24:02 brd ff:ff:ff:ff:ff:ff
     inet 10.2.2.1/24 brd 10.2.2.255 scope global eth1
        valid_lft forever preferred_lft forever
-4: eth2: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
-    link/ether 52:54:00:62:24:03 brd ff:ff:ff:ff:ff:ff
-    inet 10.2.3.1/24 brd 10.2.3.255 scope global eth2
-       valid_lft forever preferred_lft forever
-5: eth3: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
-    link/ether 52:54:00:62:24:04 brd ff:ff:ff:ff:ff:ff
-    inet 10.2.5.1/24 brd 10.2.5.255 scope global eth3
-       valid_lft forever preferred_lft forever
-6: eth4: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
-    link/ether 52:54:00:62:24:05 brd ff:ff:ff:ff:ff:ff
-    inet 10.2.6.1/24 brd 10.2.6.255 scope global eth4
-       valid_lft forever preferred_lft forever
 
 EXIT_CODE: 0
 === TSIM_SECTION_END:interfaces ===
@@ -192,9 +180,6 @@ Inter-|   Receive                                                |  Transmit
     lo:   12345      123    0    0    0     0          0         0    12345      123    0    0    0     0       0          0
   eth0: 9876543     9876    0    0    0     0          0         0  8765432     8765    0    0    0     0       0          0
   eth1: 7654321     7654    0    0    0     0          0         0  6543210     6543    0    0    0     0       0          0
-  eth2: 5432109     5432    0    0    0     0          0         0  4321098     4321    0    0    0     0       0          0
-  eth3: 3210987     3210    0    0    0     0          0         0  2109876     2109    0    0    0     0       0          0
-  eth4: 1098765     1098    0    0    0     0          0         0   987654      987    0    0    0     0       0          0
 
 EXIT_CODE: 0
 === TSIM_SECTION_END:interface_stats ===
@@ -295,8 +280,10 @@ TIMESTAMP: 2025-07-01 10:00:00
 :INPUT DROP [0:0]
 :FORWARD DROP [0:0]
 :OUTPUT ACCEPT [0:0]
+:ALLOW_BASIC_TRAFFIC - [0:0]
 :BR_CORE_MGMT_ACCESS - [0:0]
 :BR_CORE_LAN_FORWARD - [0:0]
+-A INPUT -j ALLOW_BASIC_TRAFFIC
 -A INPUT -i lo -j LOG --log-prefix "IN-ALLOW: " --log-level 4
 -A INPUT -i lo -j ACCEPT
 -A INPUT -m conntrack --ctstate INVALID -j LOG --log-prefix "IN-DROP: " --log-level 4
@@ -426,6 +413,7 @@ TIMESTAMP: 2025-07-01 10:00:00
 -A INPUT -j LOG --log-prefix "INPUT-DROP: "
 -A INPUT -j LOG --log-prefix "IN-DROP: " --log-level 4
 -A INPUT -j DROP
+-A FORWARD -j ALLOW_BASIC_TRAFFIC
 -A FORWARD -i lo -j LOG --log-prefix "FWD-ALLOW: " --log-level 4
 -A FORWARD -i lo -j ACCEPT
 -A FORWARD -m conntrack --ctstate RELATED,ESTABLISHED -j LOG --log-prefix "FWD-ALLOW: " --log-level 4
@@ -502,6 +490,13 @@ TIMESTAMP: 2025-07-01 10:00:00
 -A FORWARD -s 10.100.1.0/24 -d 10.3.0.0/16 -p udp --dport 33434:33534 -j LOG --log-prefix "FWD-MTR-10_100_1_0-10_3_0_0: "
 -A FORWARD -s 10.100.1.0/24 -d 10.3.0.0/16 -p udp --dport 33434:33534 -j LOG --log-prefix "FWD-ALLOW: " --log-level 4
 -A FORWARD -s 10.100.1.0/24 -d 10.3.0.0/16 -p udp --dport 33434:33534 -j ACCEPT
+-A ALLOW_BASIC_TRAFFIC -p icmp -j LOG --log-prefix "ALLOW-ICMP: "
+-A ALLOW_BASIC_TRAFFIC -p icmp -j ACCEPT
+-A ALLOW_BASIC_TRAFFIC -p tcp --dport 10000 -j LOG --log-prefix "ALLOW-TCP-10000: "
+-A ALLOW_BASIC_TRAFFIC -p tcp --dport 10000 -j ACCEPT
+-A ALLOW_BASIC_TRAFFIC -p udp --dport 10000 -j LOG --log-prefix "ALLOW-UDP-10000: "
+-A ALLOW_BASIC_TRAFFIC -p udp --dport 10000 -j ACCEPT
+-A ALLOW_BASIC_TRAFFIC -j RETURN
 -A FORWARD -j LOG --log-prefix "FORWARD-DROP: "
 -A FORWARD -j LOG --log-prefix "FWD-DROP: " --log-level 4
 -A FORWARD -j DROP

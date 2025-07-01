@@ -320,7 +320,7 @@ class HostNamespaceManager:
         return None
         
     def find_shared_mesh_bridge(self, primary_ip: str) -> Optional[str]:
-        """Find the shared mesh bridge for the host's subnet in simulation namespace."""
+        """Find the shared mesh bridge for the host's subnet in hidden-mesh namespace."""
         try:
             host_network = ipaddress.IPv4Network(primary_ip, strict=False)
             
@@ -338,36 +338,46 @@ class HostNamespaceManager:
             if not target_subnet:
                 return None
                 
-            # Now find which mesh bridge was created for this specific subnet
-            # We need to recreate the bridge creation logic from setup script
-            bridge_counter = 100
+            # Convert subnet to bridge name using same logic as network setup
+            # Use abbreviated bridge naming to fit 15 character limit
+            bridge_name = self._generate_bridge_name(target_subnet)
             
-            # First count multi-router subnets
-            for subnet, members in self.router_subnets.items():
-                if len(members) >= 2:  # Multi-router subnets get mesh bridges first
-                    bridge_name = f"m{bridge_counter}"
-                    if subnet == target_subnet:
-                        # Check if this bridge exists in simulation namespace
-                        result = self.run_command(f"ip netns exec netsim ip link show {bridge_name}", check=False)
-                        if result.returncode == 0:
-                            return bridge_name
-                    bridge_counter += 1
-            
-            # Then count single-router subnets (external interfaces)
-            for subnet, members in self.router_subnets.items():
-                if len(members) == 1:  # Single-router subnets get expandable mesh bridges
-                    bridge_name = f"m{bridge_counter}"
-                    if subnet == target_subnet:
-                        # Check if this bridge exists in simulation namespace
-                        result = self.run_command(f"ip netns exec netsim ip link show {bridge_name}", check=False)
-                        if result.returncode == 0:
-                            return bridge_name
-                    bridge_counter += 1
+            # Check if this bridge exists in hidden-mesh namespace
+            result = self.run_command(f"ip netns exec hidden-mesh ip link show {bridge_name}", check=False)
+            if result.returncode == 0:
+                return bridge_name
                     
             return None
         except Exception:
             return None
 
+    def _generate_bridge_name(self, subnet: str) -> str:
+        """Generate abbreviated bridge name that fits 15 character limit."""
+        # Convert subnet like "10.100.1.0/24" to abbreviated form
+        # Examples: 10.1.1.0/24 -> br111024, 10.100.1.0/24 -> br1001024
+        ip_part, prefix = subnet.split('/')
+        octets = ip_part.split('.')
+        
+        # Remove trailing zeros and compress
+        compressed_octets = []
+        for octet in octets:
+            if octet == '0':
+                compressed_octets.append('')  # Skip trailing zeros
+            else:
+                compressed_octets.append(octet)
+        
+        # Join and create compact name
+        ip_compressed = ''.join(compressed_octets)
+        bridge_name = f"br{ip_compressed}{prefix}"
+        
+        # Ensure it fits in 15 characters
+        if len(bridge_name) > 15:
+            # Fallback: use hash for very long names
+            import hashlib
+            subnet_hash = hashlib.md5(subnet.encode()).hexdigest()[:8]
+            bridge_name = f"br{subnet_hash}"
+        
+        return bridge_name
 
     def create_mesh_connection(self, host_name: str, primary_ip: str) -> Tuple[bool, Dict]:
         """Connect host directly to specific mesh bridge in simulation namespace."""
@@ -378,9 +388,9 @@ class HostNamespaceManager:
             self.logger.error(f"No shared mesh bridge found for IP {primary_ip}. Run netsetup first.")
             return False, {}
         
-        self.logger.info(f"Connecting host {host_name} directly to mesh {mesh_bridge} in simulation namespace")
+        self.logger.info(f"Connecting host {host_name} directly to mesh {mesh_bridge} in hidden-mesh namespace")
         
-        # Create veth pair: host namespace <-> specific mesh bridge in simulation namespace
+        # Create veth pair: host namespace <-> specific mesh bridge in hidden-mesh namespace
         # Use shorter names to avoid Linux 15-character interface name limit
         import hashlib
         name_hash = hashlib.md5(host_name.encode()).hexdigest()[:6]
@@ -393,10 +403,10 @@ class HostNamespaceManager:
         self.run_command(f"ip link set {host_veth} netns {host_name}")
         self.run_command(f"ip link set {host_veth} name eth0", namespace=host_name)
         
-        # Move mesh side to simulation namespace and connect to specific mesh bridge
-        self.run_command(f"ip link set {mesh_veth} netns netsim")
-        self.run_command(f"ip link set {mesh_veth} master {mesh_bridge}", namespace="netsim")
-        self.run_command(f"ip link set {mesh_veth} up", namespace="netsim")
+        # Move mesh side to hidden-mesh namespace and connect to specific mesh bridge
+        self.run_command(f"ip link set {mesh_veth} netns hidden-mesh")
+        self.run_command(f"ip link set {mesh_veth} master {mesh_bridge}", namespace="hidden-mesh")
+        self.run_command(f"ip link set {mesh_veth} up", namespace="hidden-mesh")
         
         # Configure host IP
         self.run_command(f"ip addr add {primary_ip} dev eth0", namespace=host_name)
@@ -576,6 +586,26 @@ class HostNamespaceManager:
             self.logger.error(f"Failed to remove host {host_name}: {e}")
             return False
             
+    def _recreate_host_namespace(self, host_name: str, host_config: Dict) -> bool:
+        """Recreate host namespace from existing registry config without updating registry."""
+        # Extract parameters from registry
+        primary_ip = host_config.get('primary_ip', '')
+        secondary_ips = host_config.get('secondary_ips', [])
+        connected_to = host_config.get('connected_to', '')
+        
+        if not primary_ip or not connected_to:
+            self.logger.error(f"Invalid host config for {host_name}")
+            return False
+            
+        # Call the full add_host method with skip_registry=True
+        return self.add_host(
+            host_name=host_name,
+            primary_ip=primary_ip, 
+            secondary_ips=secondary_ips,
+            connect_to=connected_to,
+            skip_registry=True
+        )
+            
     def cleanup_host_resources(self, host_name: str, host_config: Dict):
         """Clean up all resources associated with a host."""
         try:
@@ -586,10 +616,10 @@ class HostNamespaceManager:
             connection_type = host_config.get("connection_type", "")
             
             if connection_type == "sim_mesh_direct":
-                # Remove mesh veth from simulation namespace (direct mesh connection)
+                # Remove mesh veth from hidden-mesh namespace (direct mesh connection)
                 mesh_veth = host_config.get("mesh_veth")
                 if mesh_veth:
-                    self.run_command(f"ip netns exec netsim ip link del {mesh_veth}", check=False)
+                    self.run_command(f"ip netns exec hidden-mesh ip link del {mesh_veth}", check=False)
             elif connection_type == "sim_namespace":
                 # Remove sim veth from host namespace (simulation bridge connection) - legacy
                 sim_veth = host_config.get("sim_veth")

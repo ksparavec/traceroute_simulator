@@ -29,6 +29,7 @@ help:
 	@echo "clean             - Clean up generated files and cache"
 	@echo "tsim              - Run traceroute simulator with command line arguments (e.g., make tsim ARGS='-s 10.1.1.1 -d 10.2.1.1')"
 	@echo "ifa               - Run iptables forward analyzer with command line arguments (e.g., make ifa ARGS='--router hq-gw -s 10.1.1.1 -d 8.8.8.8')"
+	@echo "netlog            - Analyze iptables logs with filtering and correlation (e.g., make netlog ARGS='--source 10.1.1.1 --dest 10.2.1.1')"
 	@echo "netsetup          - Set up Linux namespace network simulation (requires sudo, ARGS='-v/-vv/-vvv' for verbosity)"
 	@echo "nettest           - Test network connectivity in namespace simulation (e.g., make nettest ARGS='-s 10.1.1.1 -d 10.2.1.1 --test-type ping')"
 	@echo "svctest           - Test TCP/UDP services with auto namespace detection (e.g., make svctest ARGS='-s 10.1.1.1 -d 10.2.1.1:8080')"
@@ -62,6 +63,7 @@ help:
 	@echo "  make fetch-routing-data OUTPUT_DIR=temp INVENTORY=specific-host        # Target specific host"
 	@echo "  make tsim ARGS='-s 10.1.1.1 -d 10.2.1.1'                              # Run traceroute simulation"
 	@echo "  make ifa ARGS='--router hq-gw -s 10.1.1.1 -d 8.8.8.8 -p tcp'          # Analyze iptables forwarding"
+	@echo "  make netlog ARGS='--source 10.1.1.1 --dest 10.2.1.1 --format json'    # Analyze iptables logs"
 	@echo "  sudo make netsetup                                                     # Set up namespace network simulation (silent)"
 	@echo "  sudo make netsetup ARGS='-v'                                          # Set up with basic output"
 	@echo "  sudo make netsetup ARGS='-vv'                                         # Set up with info messages"
@@ -509,6 +511,21 @@ ifa:
 		exit 1; \
 	fi
 	@env TRACEROUTE_SIMULATOR_FACTS="$(TRACEROUTE_SIMULATOR_FACTS)" $(PYTHON) src/analyzers/iptables_forward_analyzer.py $(ARGS)
+
+# Analyze iptables logs with filtering and correlation
+# Usage: make netlog ARGS="<arguments>"
+netlog:
+	@if [ -z "$(ARGS)" ]; then \
+		echo "Usage: make netlog ARGS='<arguments>'"; \
+		echo "Examples:"; \
+		echo "  make netlog ARGS='--source 10.1.1.1 --dest 10.2.1.1'"; \
+		echo "  make netlog ARGS='--router hq-gw --port 80 --last 100'"; \
+		echo "  make netlog ARGS='--all-routers --protocol icmp --format json'"; \
+		echo "  make netlog ARGS='--source 10.1.1.0/24 --action DROP --verbose'"; \
+		echo "  make netlog ARGS='--time-range \"10:00-11:00\" --dest 8.8.8.8'"; \
+		exit 1; \
+	fi
+	@$(PYTHON) scripts/netlog $(ARGS)
 
 # Set up Linux namespace network simulation (requires sudo)
 # Usage: sudo make netsetup [ARGS="-v|-vv|-vvv"]

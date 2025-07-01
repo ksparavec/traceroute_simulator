@@ -35,17 +35,121 @@ EXIT_CODE: 0
 === TSIM_SECTION_START:policy_rules ===
 TITLE: IP Policy Rules
 COMMAND: /sbin/ip rule show
-TIMESTAMP: 2025-06-21 15:27:12
+TIMESTAMP: 2025-07-01 10:00:00
 ---
 0:	from all lookup local
-50:	from 10.2.4.0/24 lookup wifi_guest_priority
+50:	from 10.2.1.0/24 lookup priority_table
+51:	from 10.2.2.0/24 lookup priority_table
+52:	from 10.2.10.0/24 lookup priority_table
+53:	from 10.2.20.0/24 lookup priority_table
+54:	dport 3306 lookup database_table
+55:	dport 5432 lookup database_table
+56:	sport 3306 lookup database_table
+57:	dport 80 lookup web_table
+58:	dport 443 lookup web_table
+59:	sport 80 lookup web_table
+60:	dport 22 lookup priority_table
+61:	dport 161 lookup priority_table
+62:	dport 443 lookup priority_table
+63:	fwmark 0x1 lookup priority_table
+64:	fwmark 0x2 lookup service_table
+65:	fwmark 0x3 lookup backup_table
+66:	tos 0x10 lookup priority_table
+67:	tos 0x08 lookup qos_table
+68:	to 10.1.0.0/16 lookup priority_table
+69:	to 10.3.0.0/16 lookup backup_table
+70:	from 10.2.2.3/32 lookup management_table
+71:	from 10.2.20.0/24 lookup qos_table
+72:	from 192.168.1.0/24 lookup emergency_table
+73:	ipproto icmp lookup priority_table
+74:	ipproto udp lookup qos_table
 32766:	from all lookup main
 32767:	from all lookup default
 
 EXIT_CODE: 0
 === TSIM_SECTION_END:policy_rules ===
 
-=== TSIM_SECTION_START:interfaces ===
+
+=== TSIM_SECTION_START:routing_table_priority_table ===
+TITLE: IP Routing Table Priority Table (100)
+COMMAND: /sbin/ip route show table 100
+TIMESTAMP: 2025-07-01 10:00:00
+---
+10.2.2.0/24 dev eth0 proto kernel scope link metric 1\n10.2.20.0/24 dev eth0 proto kernel scope link metric 1\n10.1.0.0/16 via 10.2.1.1 dev eth0 metric 5\n10.3.0.0/16 via 10.2.1.1 dev eth0 metric 10
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:routing_table_priority_table ===
+\n
+=== TSIM_SECTION_START:routing_table_service_table ===
+TITLE: IP Routing Table Service Table (200)
+COMMAND: /sbin/ip route show table 200
+TIMESTAMP: 2025-07-01 10:00:00
+---
+10.2.2.0/24 dev eth1 proto kernel scope link metric 10\n10.2.20.0/24 dev eth1 proto kernel scope link metric 10
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:routing_table_service_table ===
+\n
+=== TSIM_SECTION_START:routing_table_backup_table ===
+TITLE: IP Routing Table Backup Table (300)
+COMMAND: /sbin/ip route show table 300
+TIMESTAMP: 2025-07-01 10:00:00
+---
+10.2.2.0/24 dev eth1 proto kernel scope link metric 20\n10.2.20.0/24 dev eth1 proto kernel scope link metric 20\n10.1.0.0/16 via 10.100.1.1 dev wg0 metric 25\n10.3.0.0/16 via 10.100.1.3 dev wg0 metric 25
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:routing_table_backup_table ===
+\n
+=== TSIM_SECTION_START:routing_table_qos_table ===
+TITLE: IP Routing Table Qos Table (400)
+COMMAND: /sbin/ip route show table 400
+TIMESTAMP: 2025-07-01 10:00:00
+---
+10.2.2.0/24 dev eth1 proto kernel scope link metric 8\n10.2.20.0/24 dev eth1 proto kernel scope link metric 8\n10.1.0.0/16 via 10.2.1.1 dev eth0 metric 8\n10.3.0.0/16 via 10.2.1.1 dev eth0 metric 12
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:routing_table_qos_table ===
+\n
+=== TSIM_SECTION_START:routing_table_management_table ===
+TITLE: IP Routing Table Management Table (500)
+COMMAND: /sbin/ip route show table 500
+TIMESTAMP: 2025-07-01 10:00:00
+---
+10.2.2.0/24 dev eth0 proto kernel scope link metric 1\n10.2.20.0/24 dev eth0 proto kernel scope link metric 1
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:routing_table_management_table ===
+\n
+=== TSIM_SECTION_START:routing_table_database_table ===
+TITLE: IP Routing Table Database Table (600)
+COMMAND: /sbin/ip route show table 600
+TIMESTAMP: 2025-07-01 10:00:00
+---
+10.1.0.0/16 via 10.3.1.1 dev eth0 metric 5\n10.2.0.0/16 via 10.3.1.1 dev eth0 metric 10
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:routing_table_database_table ===
+\n
+=== TSIM_SECTION_START:routing_table_web_table ===
+TITLE: IP Routing Table Web Table (700)
+COMMAND: /sbin/ip route show table 700
+TIMESTAMP: 2025-07-01 10:00:00
+---
+10.2.2.0/24 dev eth1 proto kernel scope link metric 5\n10.2.20.0/24 dev eth1 proto kernel scope link metric 5
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:routing_table_web_table ===
+\n
+=== TSIM_SECTION_START:routing_table_emergency_table ===
+TITLE: IP Routing Table Emergency Table (800)
+COMMAND: /sbin/ip route show table 800
+TIMESTAMP: 2025-07-01 10:00:00
+---
+192.168.1.0/24 dev eth0 proto kernel scope link metric 1\n10.2.2.0/24 dev eth1 proto kernel scope link metric 1\n10.2.20.0/24 dev eth1 proto kernel scope link metric 1
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:routing_table_emergency_table ===
+\n=== TSIM_SECTION_START:interfaces ===
 TITLE: Network Interfaces
 COMMAND: /sbin/ip addr show
 TIMESTAMP: 2025-06-21 15:27:12
@@ -185,673 +289,1001 @@ EXIT_CODE: 0
 === TSIM_SECTION_END:iptables_info ===
 
 === TSIM_SECTION_START:iptables_save ===
-TITLE: Complete Iptables Configuration
+TITLE: Iptables Save Output
 COMMAND: /sbin/iptables-save
-TIMESTAMP: 2025-06-21 15:27:12
+TIMESTAMP: 2025-07-01 10:00:00
 ---
-# Generated by iptables-save v1.8.7 on Fri Jun 21 15:27:12 2025
+# Generated by iptables-save v1.8.7 on Mon Jul  1 10:00:00 2025
 *filter
-:INPUT ACCEPT [456:89012]
+:INPUT DROP [0:0]
 :FORWARD DROP [0:0]
-:OUTPUT ACCEPT [345:78901]
-:WIFI_FORWARD - [0:0]
-:WIFI_ACCESS_CONTROL - [0:0]
-:WIFI_DEVICE_MANAGEMENT - [0:0]
-:WIFI_GUEST_ISOLATION - [0:0]
-:WIFI_BANDWIDTH_CONTROL - [0:0]
-:WIFI_SECURITY_SCANNING - [0:0]
-:WIFI_CONTENT_FILTERING - [0:0]
-:WIFI_CAPTIVE_PORTAL - [0:0]
-:WIFI_ROAMING_CONTROL - [0:0]
-:WIFI_QOS_MANAGEMENT - [0:0]
-:WIFI_MESH_CONTROL - [0:0]
-:WIFI_ENTERPRISE_AUTH - [0:0]
-:WIFI_ROGUE_AP_DETECTION - [0:0]
-:WIFI_INTERFERENCE_MITIGATION - [0:0]
-:WIFI_LOAD_BALANCING - [0:0]
-:WIFI_PERFORMANCE_MONITORING - [0:0]
-:WIFI_SECURITY_MONITORING - [0:0]
-:WIFI_CLIENT_ISOLATION - [0:0]
-:WIFI_PARENTAL_CONTROLS - [0:0]
-:WIFI_TIME_RESTRICTIONS - [0:0]
-:WIFI_MAC_FILTERING - [0:0]
-:RATE_LIMIT - [0:0]
-:LOG_AND_DROP - [0:0]
-:ACCEPT_WITH_LOG - [0:0]
-
-# Main FORWARD chain - WiFi access point forwarding logic
--A FORWARD -i br-wifi -o eth0 -m set --match-set WIFI_CORPORATE_CLIENTS src -j WIFI_ACCESS_CONTROL
--A FORWARD -i br-wifi -o eth1 -m set --match-set WIFI_GUEST_CLIENTS src -j WIFI_GUEST_ISOLATION
--A FORWARD -i eth0 -o br-wifi -m set --match-set WIFI_ALLOWED_INBOUND dst -j WIFI_ACCESS_CONTROL
--A FORWARD -i eth1 -o br-wifi -m set --match-set WIFI_GUEST_INBOUND dst -j WIFI_GUEST_ISOLATION
--A FORWARD -i br-wifi -o br-wifi -m set --match-set WIFI_CLIENT_TO_CLIENT src,dst -j WIFI_CLIENT_ISOLATION
--A FORWARD -m state --state RELATED,ESTABLISHED -j ACCEPT
--A FORWARD -j WIFI_SECURITY_SCANNING
-
-# WIFI_FORWARD - Main WiFi distribution logic
--A WIFI_FORWARD -m set --match-set WIFI_CRITICAL_SERVICES src,dst -j ACCEPT_WITH_LOG
--A WIFI_FORWARD -m set --match-set WIFI_HIGH_PRIORITY src,dst,dst -j WIFI_QOS_MANAGEMENT
--A WIFI_FORWARD -m set --match-set WIFI_ENTERPRISE_USERS src -j WIFI_ENTERPRISE_AUTH
--A WIFI_FORWARD -m set --match-set WIFI_GUEST_USERS src -j WIFI_GUEST_ISOLATION
--A WIFI_FORWARD -m set --match-set WIFI_BLOCKED_DEVICES src -j LOG_AND_DROP
--A WIFI_FORWARD -m hashlimit --hashlimit-above 100/sec --hashlimit-burst 200 --hashlimit-mode srcip --hashlimit-name wifi_flood_protect -j LOG_AND_DROP
--A WIFI_FORWARD -j WIFI_ACCESS_CONTROL
-
-# WIFI_ACCESS_CONTROL - Wireless access control and authentication
--A WIFI_ACCESS_CONTROL -m set --match-set WIFI_AUTHENTICATED_DEVICES src -j WIFI_DEVICE_MANAGEMENT
--A WIFI_ACCESS_CONTROL -m set --match-set WIFI_PENDING_AUTH src -j WIFI_CAPTIVE_PORTAL
--A WIFI_ACCESS_CONTROL -m set --match-set WIFI_ENTERPRISE_SSID src -j WIFI_ENTERPRISE_AUTH
--A WIFI_ACCESS_CONTROL -m set --match-set WIFI_GUEST_SSID src -j WIFI_GUEST_ISOLATION
--A WIFI_ACCESS_CONTROL -m set --match-set WIFI_ADMIN_DEVICES src -j ACCEPT
--A WIFI_ACCESS_CONTROL -j WIFI_MAC_FILTERING
-
-# WIFI_DEVICE_MANAGEMENT - Device lifecycle and management
--A WIFI_DEVICE_MANAGEMENT -m set --match-set WIFI_MANAGED_DEVICES src -j WIFI_BANDWIDTH_CONTROL
--A WIFI_DEVICE_MANAGEMENT -m set --match-set WIFI_BYOD_DEVICES src -j WIFI_SECURITY_SCANNING
--A WIFI_DEVICE_MANAGEMENT -m set --match-set WIFI_IOT_DEVICES src -j WIFI_CLIENT_ISOLATION
--A WIFI_DEVICE_MANAGEMENT -m set --match-set WIFI_CORPORATE_DEVICES src -j ACCEPT
--A WIFI_DEVICE_MANAGEMENT -j WIFI_ROAMING_CONTROL
-
-# WIFI_GUEST_ISOLATION - Guest network isolation and control
--A WIFI_GUEST_ISOLATION -m set --match-set WIFI_GUEST_ALLOWED_SERVICES dst,dst -j ACCEPT
--A WIFI_GUEST_ISOLATION -p tcp -m multiport --dports 80,443 -j ACCEPT
--A WIFI_GUEST_ISOLATION -p udp -m multiport --dports 53,123 -j ACCEPT
--A WIFI_GUEST_ISOLATION -p icmp --icmp-type 8 -j ACCEPT
--A WIFI_GUEST_ISOLATION -m set --match-set WIFI_LOCAL_NETWORKS dst -j LOG_AND_DROP
--A WIFI_GUEST_ISOLATION -m set --match-set WIFI_CORPORATE_NETWORKS dst -j LOG_AND_DROP
--A WIFI_GUEST_ISOLATION -j WIFI_TIME_RESTRICTIONS
-
-# WIFI_BANDWIDTH_CONTROL - QoS and bandwidth management
--A WIFI_BANDWIDTH_CONTROL -m set --match-set WIFI_PRIORITY_USERS src -j CLASSIFY --set-class 1:10
--A WIFI_BANDWIDTH_CONTROL -m set --match-set WIFI_STANDARD_USERS src -j CLASSIFY --set-class 1:20
--A WIFI_BANDWIDTH_CONTROL -m set --match-set WIFI_LIMITED_USERS src -j CLASSIFY --set-class 1:30
--A WIFI_BANDWIDTH_CONTROL -m set --match-set WIFI_BULK_TRAFFIC src,dst,dst -j CLASSIFY --set-class 1:40
--A WIFI_BANDWIDTH_CONTROL -p tcp -m multiport --dports 80,443 -j CLASSIFY --set-class 1:15
--A WIFI_BANDWIDTH_CONTROL -p udp -m multiport --dports 53,123 -j CLASSIFY --set-class 1:5
--A WIFI_BANDWIDTH_CONTROL -j ACCEPT
-
-# WIFI_SECURITY_SCANNING - Security scanning and threat detection
--A WIFI_SECURITY_SCANNING -m set --match-set WIFI_KNOWN_THREATS src -j LOG_AND_DROP
--A WIFI_SECURITY_SCANNING -m set --match-set WIFI_SUSPICIOUS_BEHAVIOR src -j WIFI_SECURITY_MONITORING
--A WIFI_SECURITY_SCANNING -m recent --name wifi_scan_detect --set --rsource
--A WIFI_SECURITY_SCANNING -m recent --name wifi_scan_detect --rcheck --seconds 60 --hitcount 30 --rsource -j LOG_AND_DROP
--A WIFI_SECURITY_SCANNING -p tcp --tcp-flags SYN,RST SYN,RST -j LOG_AND_DROP
--A WIFI_SECURITY_SCANNING -p tcp --tcp-flags FIN,SYN,RST,PSH,ACK,URG NONE -j LOG_AND_DROP
--A WIFI_SECURITY_SCANNING -j WIFI_ROGUE_AP_DETECTION
-
-# WIFI_CONTENT_FILTERING - Content filtering and web protection
--A WIFI_CONTENT_FILTERING -m set --match-set WIFI_BLOCKED_DOMAINS dst -j LOG_AND_DROP
--A WIFI_CONTENT_FILTERING -m set --match-set WIFI_BLOCKED_CATEGORIES dst -j LOG_AND_DROP
--A WIFI_CONTENT_FILTERING -m string --string "malware" --algo bm --icase -j LOG_AND_DROP
--A WIFI_CONTENT_FILTERING -m string --string "phishing" --algo bm --icase -j LOG_AND_DROP
--A WIFI_CONTENT_FILTERING -m u32 --u32 "0x0>>22&0x3C@0x0>>24=0x50" -j ACCEPT
--A WIFI_CONTENT_FILTERING -j ACCEPT
-
-# WIFI_CAPTIVE_PORTAL - Captive portal and guest registration
--A WIFI_CAPTIVE_PORTAL -m set --match-set WIFI_PORTAL_SERVERS dst -j ACCEPT
--A WIFI_CAPTIVE_PORTAL -p tcp --dport 80 -j REDIRECT --to-port 8080
--A WIFI_CAPTIVE_PORTAL -p tcp --dport 443 -j REDIRECT --to-port 8443
--A WIFI_CAPTIVE_PORTAL -p tcp -m multiport --dports 8080,8443 -j ACCEPT
--A WIFI_CAPTIVE_PORTAL -p udp --dport 53 -j ACCEPT
--A WIFI_CAPTIVE_PORTAL -j LOG_AND_DROP
-
-# WIFI_ROAMING_CONTROL - Seamless roaming and handoff
--A WIFI_ROAMING_CONTROL -m set --match-set WIFI_ROAMING_CLIENTS src -j ACCEPT_WITH_LOG
--A WIFI_ROAMING_CONTROL -m set --match-set WIFI_FAST_ROAMING src -j ACCEPT
--A WIFI_ROAMING_CONTROL -m set --match-set WIFI_MESH_NODES src,dst -j WIFI_MESH_CONTROL
--A WIFI_ROAMING_CONTROL -j ACCEPT
-
-# WIFI_QOS_MANAGEMENT - Quality of Service management
--A WIFI_QOS_MANAGEMENT -m set --match-set WIFI_VOICE_TRAFFIC src,dst -j DSCP --set-dscp-class EF
--A WIFI_QOS_MANAGEMENT -m set --match-set WIFI_VIDEO_TRAFFIC src,dst -j DSCP --set-dscp-class AF31
--A WIFI_QOS_MANAGEMENT -m set --match-set WIFI_DATA_TRAFFIC src,dst -j DSCP --set-dscp-class AF21
--A WIFI_QOS_MANAGEMENT -m set --match-set WIFI_BACKGROUND_TRAFFIC src,dst -j DSCP --set-dscp-class AF13
--A WIFI_QOS_MANAGEMENT -p tcp -m multiport --dports 22,3389 -j DSCP --set-dscp-class AF22
--A WIFI_QOS_MANAGEMENT -p udp -m multiport --dports 53,123 -j DSCP --set-dscp-class CS6
--A WIFI_QOS_MANAGEMENT -j ACCEPT
-
-# WIFI_MESH_CONTROL - Mesh networking and backhaul
--A WIFI_MESH_CONTROL -m set --match-set WIFI_MESH_ALLOWED src,dst -j ACCEPT
--A WIFI_MESH_CONTROL -m set --match-set WIFI_MESH_ENCRYPTED src,dst,dst -j ACCEPT
--A WIFI_MESH_CONTROL -p tcp -m multiport --dports 1900,4500,500 -j ACCEPT
--A WIFI_MESH_CONTROL -p udp -m multiport --dports 1900,4500,500 -j ACCEPT
--A WIFI_MESH_CONTROL -j ACCEPT
-
-# WIFI_ENTERPRISE_AUTH - Enterprise authentication (802.1X)
--A WIFI_ENTERPRISE_AUTH -m set --match-set WIFI_RADIUS_SERVERS dst -j ACCEPT
--A WIFI_ENTERPRISE_AUTH -m set --match-set WIFI_LDAP_SERVERS dst,dst -j ACCEPT
--A WIFI_ENTERPRISE_AUTH -m set --match-set WIFI_CERT_AUTHORITIES dst -j ACCEPT
--A WIFI_ENTERPRISE_AUTH -p tcp -m multiport --dports 1812,1813,636,389 -j ACCEPT
--A WIFI_ENTERPRISE_AUTH -p udp -m multiport --dports 1812,1813 -j ACCEPT
--A WIFI_ENTERPRISE_AUTH -j ACCEPT
-
-# WIFI_ROGUE_AP_DETECTION - Rogue access point detection
--A WIFI_ROGUE_AP_DETECTION -m set --match-set WIFI_AUTHORIZED_APS src -j ACCEPT
--A WIFI_ROGUE_AP_DETECTION -m set --match-set WIFI_ROGUE_AP_SIGNATURES src -j LOG_AND_DROP
--A WIFI_ROGUE_AP_DETECTION -m recent --name wifi_rogue_detect --set --rsource
--A WIFI_ROGUE_AP_DETECTION -m recent --name wifi_rogue_detect --rcheck --seconds 300 --hitcount 5 --rsource -j LOG --log-prefix "WIFI_ROGUE_AP: "
--A WIFI_ROGUE_AP_DETECTION -j ACCEPT
-
-# WIFI_INTERFERENCE_MITIGATION - RF interference mitigation
--A WIFI_INTERFERENCE_MITIGATION -m set --match-set WIFI_INTERFERENCE_SOURCES src -j LOG --log-prefix "WIFI_INTERFERENCE: " --log-level 4
--A WIFI_INTERFERENCE_MITIGATION -m set --match-set WIFI_CHANNEL_CONFLICTS src -j LOG --log-prefix "WIFI_CHANNEL_CONFLICT: " --log-level 4
--A WIFI_INTERFERENCE_MITIGATION -j ACCEPT
-
-# WIFI_LOAD_BALANCING - Client load balancing across APs
--A WIFI_LOAD_BALANCING -m set --match-set WIFI_LB_TARGETS src,dst -m statistic --mode nth --every 2 --packet 0 -j MARK --set-mark 0x1
--A WIFI_LOAD_BALANCING -m set --match-set WIFI_LB_TARGETS src,dst -m statistic --mode nth --every 2 --packet 1 -j MARK --set-mark 0x2
--A WIFI_LOAD_BALANCING -m set --match-set WIFI_HIGH_CAPACITY_APS dst -j MARK --set-mark 0x10
--A WIFI_LOAD_BALANCING -j ACCEPT
-
-# WIFI_PERFORMANCE_MONITORING - Performance monitoring and optimization
--A WIFI_PERFORMANCE_MONITORING -m set --match-set WIFI_MONITOR_TARGETS src -j LOG --log-prefix "WIFI_PERF: " --log-level 6
--A WIFI_PERFORMANCE_MONITORING -m conntrack --ctstate NEW -j LOG --log-prefix "WIFI_NEW_CONN: " --log-level 6
--A WIFI_PERFORMANCE_MONITORING -m limit --limit 50/sec --limit-burst 100 -j LOG --log-prefix "WIFI_RATE: " --log-level 6
--A WIFI_PERFORMANCE_MONITORING -j ACCEPT
-
-# WIFI_SECURITY_MONITORING - Security event monitoring
--A WIFI_SECURITY_MONITORING -m set --match-set WIFI_SECURITY_EVENTS src -j LOG --log-prefix "WIFI_SECURITY: " --log-level 4
--A WIFI_SECURITY_MONITORING -m set --match-set WIFI_FAILED_AUTH src -j LOG --log-prefix "WIFI_AUTH_FAIL: " --log-level 4
--A WIFI_SECURITY_MONITORING -m recent --name wifi_security_events --set --rsource
--A WIFI_SECURITY_MONITORING -m recent --name wifi_security_events --rcheck --seconds 600 --hitcount 10 --rsource -j LOG_AND_DROP
--A WIFI_SECURITY_MONITORING -j ACCEPT
-
-# WIFI_CLIENT_ISOLATION - Client-to-client isolation
--A WIFI_CLIENT_ISOLATION -m set --match-set WIFI_ISOLATED_CLIENTS src,dst -j LOG_AND_DROP
--A WIFI_CLIENT_ISOLATION -m set --match-set WIFI_ALLOW_P2P src,dst,dst -j ACCEPT
--A WIFI_CLIENT_ISOLATION -m set --match-set WIFI_SAME_VLAN src,dst -j ACCEPT
--A WIFI_CLIENT_ISOLATION -j LOG_AND_DROP
-
-# WIFI_PARENTAL_CONTROLS - Parental control and content filtering
--A WIFI_PARENTAL_CONTROLS -m set --match-set WIFI_CHILD_DEVICES src -j WIFI_TIME_RESTRICTIONS
--A WIFI_PARENTAL_CONTROLS -m set --match-set WIFI_ADULT_CONTENT dst -m set --match-set WIFI_CHILD_DEVICES src -j LOG_AND_DROP
--A WIFI_PARENTAL_CONTROLS -m set --match-set WIFI_EDUCATIONAL_SITES dst -m set --match-set WIFI_CHILD_DEVICES src -j ACCEPT
--A WIFI_PARENTAL_CONTROLS -j ACCEPT
-
-# WIFI_TIME_RESTRICTIONS - Time-based access control
--A WIFI_TIME_RESTRICTIONS -m set --match-set WIFI_BUSINESS_HOURS_ONLY src -m time --timestart 09:00 --timestop 17:00 --weekdays Mon,Tue,Wed,Thu,Fri -j ACCEPT
--A WIFI_TIME_RESTRICTIONS -m set --match-set WIFI_AFTER_HOURS_ALLOWED src -j ACCEPT
--A WIFI_TIME_RESTRICTIONS -m set --match-set WIFI_WEEKEND_RESTRICTED src -m time --weekdays Sat,Sun -j LOG_AND_DROP
--A WIFI_TIME_RESTRICTIONS -j ACCEPT
-
-# WIFI_MAC_FILTERING - MAC address filtering and validation
--A WIFI_MAC_FILTERING -m set --match-set WIFI_AUTHORIZED_MACS src -j ACCEPT
--A WIFI_MAC_FILTERING -m set --match-set WIFI_BLOCKED_MACS src -j LOG_AND_DROP
--A WIFI_MAC_FILTERING -m set --match-set WIFI_RANDOMIZED_MACS src -j WIFI_DEVICE_MANAGEMENT
--A WIFI_MAC_FILTERING -j LOG_AND_DROP
-
-# RATE_LIMIT - Generic rate limiting
--A RATE_LIMIT -m limit --limit 50/sec --limit-burst 100 -j ACCEPT
--A RATE_LIMIT -j DROP
-
-# LOG_AND_DROP - Logging and dropping
--A LOG_AND_DROP -j LOG --log-prefix "WIFI_DROPPED: " --log-level 4
--A LOG_AND_DROP -j DROP
-
-# ACCEPT_WITH_LOG - Logging and accepting
--A ACCEPT_WITH_LOG -j LOG --log-prefix "WIFI_ACCEPTED: " --log-level 6
--A ACCEPT_WITH_LOG -j ACCEPT
-
+:OUTPUT ACCEPT [0:0]
+:BR_WIFI_MGMT_ACCESS - [0:0]
+:BR_WIFI_LAN_FORWARD - [0:0]
+-A INPUT -i lo -j ACCEPT
+-A INPUT -m conntrack --ctstate INVALID -j DROP
+-A INPUT -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
+-A INPUT -s 10.1.0.0/16 -p icmp --icmp-type 0 -j LOG --log-prefix "INPUT-ICMP-0: "
+-A INPUT -s 10.1.0.0/16 -p icmp --icmp-type 0 -j ACCEPT
+-A INPUT -s 10.1.0.0/16 -p icmp --icmp-type 3 -j LOG --log-prefix "INPUT-ICMP-3: "
+-A INPUT -s 10.1.0.0/16 -p icmp --icmp-type 3 -j ACCEPT
+-A INPUT -s 10.1.0.0/16 -p icmp --icmp-type 8 -j LOG --log-prefix "INPUT-ICMP-8: "
+-A INPUT -s 10.1.0.0/16 -p icmp --icmp-type 8 -j ACCEPT
+-A INPUT -s 10.1.0.0/16 -p icmp --icmp-type 11 -j LOG --log-prefix "INPUT-ICMP-11: "
+-A INPUT -s 10.1.0.0/16 -p icmp --icmp-type 11 -j ACCEPT
+-A INPUT -s 10.2.0.0/16 -p icmp --icmp-type 0 -j LOG --log-prefix "INPUT-ICMP-0: "
+-A INPUT -s 10.2.0.0/16 -p icmp --icmp-type 0 -j ACCEPT
+-A INPUT -s 10.2.0.0/16 -p icmp --icmp-type 3 -j LOG --log-prefix "INPUT-ICMP-3: "
+-A INPUT -s 10.2.0.0/16 -p icmp --icmp-type 3 -j ACCEPT
+-A INPUT -s 10.2.0.0/16 -p icmp --icmp-type 8 -j LOG --log-prefix "INPUT-ICMP-8: "
+-A INPUT -s 10.2.0.0/16 -p icmp --icmp-type 8 -j ACCEPT
+-A INPUT -s 10.2.0.0/16 -p icmp --icmp-type 11 -j LOG --log-prefix "INPUT-ICMP-11: "
+-A INPUT -s 10.2.0.0/16 -p icmp --icmp-type 11 -j ACCEPT
+-A INPUT -s 10.3.0.0/16 -p icmp --icmp-type 0 -j LOG --log-prefix "INPUT-ICMP-0: "
+-A INPUT -s 10.3.0.0/16 -p icmp --icmp-type 0 -j ACCEPT
+-A INPUT -s 10.3.0.0/16 -p icmp --icmp-type 3 -j LOG --log-prefix "INPUT-ICMP-3: "
+-A INPUT -s 10.3.0.0/16 -p icmp --icmp-type 3 -j ACCEPT
+-A INPUT -s 10.3.0.0/16 -p icmp --icmp-type 8 -j LOG --log-prefix "INPUT-ICMP-8: "
+-A INPUT -s 10.3.0.0/16 -p icmp --icmp-type 8 -j ACCEPT
+-A INPUT -s 10.3.0.0/16 -p icmp --icmp-type 11 -j LOG --log-prefix "INPUT-ICMP-11: "
+-A INPUT -s 10.3.0.0/16 -p icmp --icmp-type 11 -j ACCEPT
+-A INPUT -s 10.100.1.0/24 -p icmp --icmp-type 0 -j LOG --log-prefix "INPUT-ICMP-0: "
+-A INPUT -s 10.100.1.0/24 -p icmp --icmp-type 0 -j ACCEPT
+-A INPUT -s 10.100.1.0/24 -p icmp --icmp-type 3 -j LOG --log-prefix "INPUT-ICMP-3: "
+-A INPUT -s 10.100.1.0/24 -p icmp --icmp-type 3 -j ACCEPT
+-A INPUT -s 10.100.1.0/24 -p icmp --icmp-type 8 -j LOG --log-prefix "INPUT-ICMP-8: "
+-A INPUT -s 10.100.1.0/24 -p icmp --icmp-type 8 -j ACCEPT
+-A INPUT -s 10.100.1.0/24 -p icmp --icmp-type 11 -j LOG --log-prefix "INPUT-ICMP-11: "
+-A INPUT -s 10.100.1.0/24 -p icmp --icmp-type 11 -j ACCEPT
+-A INPUT -s 10.1.0.0/16 -p tcp --dport 22 -m conntrack --ctstate NEW -j LOG --log-prefix "INPUT-MGMT-22: "
+-A INPUT -s 10.1.0.0/16 -p tcp --dport 22 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
+-A INPUT -s 10.1.0.0/16 -p tcp --dport 161 -m conntrack --ctstate NEW -j LOG --log-prefix "INPUT-MGMT-161: "
+-A INPUT -s 10.1.0.0/16 -p tcp --dport 161 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
+-A INPUT -s 10.1.0.0/16 -p tcp --dport 443 -m conntrack --ctstate NEW -j LOG --log-prefix "INPUT-MGMT-443: "
+-A INPUT -s 10.1.0.0/16 -p tcp --dport 443 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
+-A INPUT -s 10.1.0.0/16 -p tcp --dport 8080 -m conntrack --ctstate NEW -j LOG --log-prefix "INPUT-MGMT-8080: "
+-A INPUT -s 10.1.0.0/16 -p tcp --dport 8080 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
+-A INPUT -s 10.1.0.0/16 -p tcp --dport 514 -m conntrack --ctstate NEW -j LOG --log-prefix "INPUT-MGMT-514: "
+-A INPUT -s 10.1.0.0/16 -p tcp --dport 514 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
+-A INPUT -s 10.2.0.0/16 -p tcp --dport 22 -m conntrack --ctstate NEW -j LOG --log-prefix "INPUT-MGMT-22: "
+-A INPUT -s 10.2.0.0/16 -p tcp --dport 22 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
+-A INPUT -s 10.2.0.0/16 -p tcp --dport 161 -m conntrack --ctstate NEW -j LOG --log-prefix "INPUT-MGMT-161: "
+-A INPUT -s 10.2.0.0/16 -p tcp --dport 161 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
+-A INPUT -s 10.2.0.0/16 -p tcp --dport 443 -m conntrack --ctstate NEW -j LOG --log-prefix "INPUT-MGMT-443: "
+-A INPUT -s 10.2.0.0/16 -p tcp --dport 443 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
+-A INPUT -s 10.2.0.0/16 -p tcp --dport 8080 -m conntrack --ctstate NEW -j LOG --log-prefix "INPUT-MGMT-8080: "
+-A INPUT -s 10.2.0.0/16 -p tcp --dport 8080 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
+-A INPUT -s 10.2.0.0/16 -p tcp --dport 514 -m conntrack --ctstate NEW -j LOG --log-prefix "INPUT-MGMT-514: "
+-A INPUT -s 10.2.0.0/16 -p tcp --dport 514 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
+-A INPUT -s 10.3.0.0/16 -p tcp --dport 22 -m conntrack --ctstate NEW -j LOG --log-prefix "INPUT-MGMT-22: "
+-A INPUT -s 10.3.0.0/16 -p tcp --dport 22 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
+-A INPUT -s 10.3.0.0/16 -p tcp --dport 161 -m conntrack --ctstate NEW -j LOG --log-prefix "INPUT-MGMT-161: "
+-A INPUT -s 10.3.0.0/16 -p tcp --dport 161 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
+-A INPUT -s 10.3.0.0/16 -p tcp --dport 443 -m conntrack --ctstate NEW -j LOG --log-prefix "INPUT-MGMT-443: "
+-A INPUT -s 10.3.0.0/16 -p tcp --dport 443 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
+-A INPUT -s 10.3.0.0/16 -p tcp --dport 8080 -m conntrack --ctstate NEW -j LOG --log-prefix "INPUT-MGMT-8080: "
+-A INPUT -s 10.3.0.0/16 -p tcp --dport 8080 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
+-A INPUT -s 10.3.0.0/16 -p tcp --dport 514 -m conntrack --ctstate NEW -j LOG --log-prefix "INPUT-MGMT-514: "
+-A INPUT -s 10.3.0.0/16 -p tcp --dport 514 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
+-A INPUT -s 10.100.1.0/24 -p tcp --dport 22 -m conntrack --ctstate NEW -j LOG --log-prefix "INPUT-MGMT-22: "
+-A INPUT -s 10.100.1.0/24 -p tcp --dport 22 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
+-A INPUT -s 10.100.1.0/24 -p tcp --dport 161 -m conntrack --ctstate NEW -j LOG --log-prefix "INPUT-MGMT-161: "
+-A INPUT -s 10.100.1.0/24 -p tcp --dport 161 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
+-A INPUT -s 10.100.1.0/24 -p tcp --dport 443 -m conntrack --ctstate NEW -j LOG --log-prefix "INPUT-MGMT-443: "
+-A INPUT -s 10.100.1.0/24 -p tcp --dport 443 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
+-A INPUT -s 10.100.1.0/24 -p tcp --dport 8080 -m conntrack --ctstate NEW -j LOG --log-prefix "INPUT-MGMT-8080: "
+-A INPUT -s 10.100.1.0/24 -p tcp --dport 8080 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
+-A INPUT -s 10.100.1.0/24 -p tcp --dport 514 -m conntrack --ctstate NEW -j LOG --log-prefix "INPUT-MGMT-514: "
+-A INPUT -s 10.100.1.0/24 -p tcp --dport 514 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
+-A INPUT -s 10.1.0.0/16 -p udp --dport 33434:33534 -j LOG --log-prefix "INPUT-MTR-UDP: "
+-A INPUT -s 10.1.0.0/16 -p udp --dport 33434:33534 -j ACCEPT
+-A INPUT -s 10.2.0.0/16 -p udp --dport 33434:33534 -j LOG --log-prefix "INPUT-MTR-UDP: "
+-A INPUT -s 10.2.0.0/16 -p udp --dport 33434:33534 -j ACCEPT
+-A INPUT -s 10.3.0.0/16 -p udp --dport 33434:33534 -j LOG --log-prefix "INPUT-MTR-UDP: "
+-A INPUT -s 10.3.0.0/16 -p udp --dport 33434:33534 -j ACCEPT
+-A INPUT -s 10.100.1.0/24 -p udp --dport 33434:33534 -j LOG --log-prefix "INPUT-MTR-UDP: "
+-A INPUT -s 10.100.1.0/24 -p udp --dport 33434:33534 -j ACCEPT
+-A INPUT -j LOG --log-prefix "INPUT-DROP: "
+-A INPUT -j DROP
+-A FORWARD -i lo -j ACCEPT
+-A FORWARD -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
+-A FORWARD -s 10.1.0.0/16 -d 10.2.0.0/16 -p icmp -j LOG --log-prefix "FWD-ICMP-10_1_0_0-10_2_0_0: "
+-A FORWARD -s 10.1.0.0/16 -d 10.2.0.0/16 -p icmp -j ACCEPT
+-A FORWARD -s 10.1.0.0/16 -d 10.3.0.0/16 -p icmp -j LOG --log-prefix "FWD-ICMP-10_1_0_0-10_3_0_0: "
+-A FORWARD -s 10.1.0.0/16 -d 10.3.0.0/16 -p icmp -j ACCEPT
+-A FORWARD -s 10.1.0.0/16 -d 10.100.1.0/24 -p icmp -j LOG --log-prefix "FWD-ICMP-10_1_0_0-10_100_1_0: "
+-A FORWARD -s 10.1.0.0/16 -d 10.100.1.0/24 -p icmp -j ACCEPT
+-A FORWARD -s 10.2.0.0/16 -d 10.1.0.0/16 -p icmp -j LOG --log-prefix "FWD-ICMP-10_2_0_0-10_1_0_0: "
+-A FORWARD -s 10.2.0.0/16 -d 10.1.0.0/16 -p icmp -j ACCEPT
+-A FORWARD -s 10.2.0.0/16 -d 10.3.0.0/16 -p icmp -j LOG --log-prefix "FWD-ICMP-10_2_0_0-10_3_0_0: "
+-A FORWARD -s 10.2.0.0/16 -d 10.3.0.0/16 -p icmp -j ACCEPT
+-A FORWARD -s 10.2.0.0/16 -d 10.100.1.0/24 -p icmp -j LOG --log-prefix "FWD-ICMP-10_2_0_0-10_100_1_0: "
+-A FORWARD -s 10.2.0.0/16 -d 10.100.1.0/24 -p icmp -j ACCEPT
+-A FORWARD -s 10.3.0.0/16 -d 10.1.0.0/16 -p icmp -j LOG --log-prefix "FWD-ICMP-10_3_0_0-10_1_0_0: "
+-A FORWARD -s 10.3.0.0/16 -d 10.1.0.0/16 -p icmp -j ACCEPT
+-A FORWARD -s 10.3.0.0/16 -d 10.2.0.0/16 -p icmp -j LOG --log-prefix "FWD-ICMP-10_3_0_0-10_2_0_0: "
+-A FORWARD -s 10.3.0.0/16 -d 10.2.0.0/16 -p icmp -j ACCEPT
+-A FORWARD -s 10.3.0.0/16 -d 10.100.1.0/24 -p icmp -j LOG --log-prefix "FWD-ICMP-10_3_0_0-10_100_1_0: "
+-A FORWARD -s 10.3.0.0/16 -d 10.100.1.0/24 -p icmp -j ACCEPT
+-A FORWARD -s 10.100.1.0/24 -d 10.1.0.0/16 -p icmp -j LOG --log-prefix "FWD-ICMP-10_100_1_0-10_1_0_0: "
+-A FORWARD -s 10.100.1.0/24 -d 10.1.0.0/16 -p icmp -j ACCEPT
+-A FORWARD -s 10.100.1.0/24 -d 10.2.0.0/16 -p icmp -j LOG --log-prefix "FWD-ICMP-10_100_1_0-10_2_0_0: "
+-A FORWARD -s 10.100.1.0/24 -d 10.2.0.0/16 -p icmp -j ACCEPT
+-A FORWARD -s 10.100.1.0/24 -d 10.3.0.0/16 -p icmp -j LOG --log-prefix "FWD-ICMP-10_100_1_0-10_3_0_0: "
+-A FORWARD -s 10.100.1.0/24 -d 10.3.0.0/16 -p icmp -j ACCEPT
+-A FORWARD -s 10.1.0.0/16 -d 10.2.0.0/16 -p udp --dport 33434:33534 -j LOG --log-prefix "FWD-MTR-10_1_0_0-10_2_0_0: "
+-A FORWARD -s 10.1.0.0/16 -d 10.2.0.0/16 -p udp --dport 33434:33534 -j ACCEPT
+-A FORWARD -s 10.1.0.0/16 -d 10.3.0.0/16 -p udp --dport 33434:33534 -j LOG --log-prefix "FWD-MTR-10_1_0_0-10_3_0_0: "
+-A FORWARD -s 10.1.0.0/16 -d 10.3.0.0/16 -p udp --dport 33434:33534 -j ACCEPT
+-A FORWARD -s 10.1.0.0/16 -d 10.100.1.0/24 -p udp --dport 33434:33534 -j LOG --log-prefix "FWD-MTR-10_1_0_0-10_100_1_0: "
+-A FORWARD -s 10.1.0.0/16 -d 10.100.1.0/24 -p udp --dport 33434:33534 -j ACCEPT
+-A FORWARD -s 10.2.0.0/16 -d 10.1.0.0/16 -p udp --dport 33434:33534 -j LOG --log-prefix "FWD-MTR-10_2_0_0-10_1_0_0: "
+-A FORWARD -s 10.2.0.0/16 -d 10.1.0.0/16 -p udp --dport 33434:33534 -j ACCEPT
+-A FORWARD -s 10.2.0.0/16 -d 10.3.0.0/16 -p udp --dport 33434:33534 -j LOG --log-prefix "FWD-MTR-10_2_0_0-10_3_0_0: "
+-A FORWARD -s 10.2.0.0/16 -d 10.3.0.0/16 -p udp --dport 33434:33534 -j ACCEPT
+-A FORWARD -s 10.2.0.0/16 -d 10.100.1.0/24 -p udp --dport 33434:33534 -j LOG --log-prefix "FWD-MTR-10_2_0_0-10_100_1_0: "
+-A FORWARD -s 10.2.0.0/16 -d 10.100.1.0/24 -p udp --dport 33434:33534 -j ACCEPT
+-A FORWARD -s 10.3.0.0/16 -d 10.1.0.0/16 -p udp --dport 33434:33534 -j LOG --log-prefix "FWD-MTR-10_3_0_0-10_1_0_0: "
+-A FORWARD -s 10.3.0.0/16 -d 10.1.0.0/16 -p udp --dport 33434:33534 -j ACCEPT
+-A FORWARD -s 10.3.0.0/16 -d 10.2.0.0/16 -p udp --dport 33434:33534 -j LOG --log-prefix "FWD-MTR-10_3_0_0-10_2_0_0: "
+-A FORWARD -s 10.3.0.0/16 -d 10.2.0.0/16 -p udp --dport 33434:33534 -j ACCEPT
+-A FORWARD -s 10.3.0.0/16 -d 10.100.1.0/24 -p udp --dport 33434:33534 -j LOG --log-prefix "FWD-MTR-10_3_0_0-10_100_1_0: "
+-A FORWARD -s 10.3.0.0/16 -d 10.100.1.0/24 -p udp --dport 33434:33534 -j ACCEPT
+-A FORWARD -s 10.100.1.0/24 -d 10.1.0.0/16 -p udp --dport 33434:33534 -j LOG --log-prefix "FWD-MTR-10_100_1_0-10_1_0_0: "
+-A FORWARD -s 10.100.1.0/24 -d 10.1.0.0/16 -p udp --dport 33434:33534 -j ACCEPT
+-A FORWARD -s 10.100.1.0/24 -d 10.2.0.0/16 -p udp --dport 33434:33534 -j LOG --log-prefix "FWD-MTR-10_100_1_0-10_2_0_0: "
+-A FORWARD -s 10.100.1.0/24 -d 10.2.0.0/16 -p udp --dport 33434:33534 -j ACCEPT
+-A FORWARD -s 10.100.1.0/24 -d 10.3.0.0/16 -p udp --dport 33434:33534 -j LOG --log-prefix "FWD-MTR-10_100_1_0-10_3_0_0: "
+-A FORWARD -s 10.100.1.0/24 -d 10.3.0.0/16 -p udp --dport 33434:33534 -j ACCEPT
+-A FORWARD -j LOG --log-prefix "FORWARD-DROP: "
+-A FORWARD -j DROP
 COMMIT
-# Completed on Fri Jun 21 15:27:12 2025
+# Completed on Mon Jul  1 10:00:00 2025
+# Generated by iptables-save v1.8.7 on Mon Jul  1 10:00:00 2025
+*nat
+:PREROUTING ACCEPT [0:0]
+:INPUT ACCEPT [0:0]
+:OUTPUT ACCEPT [0:0]
+:POSTROUTING ACCEPT [0:0]
+COMMIT
+# Completed on Mon Jul  1 10:00:00 2025
+# Generated by iptables-save v1.8.7 on Mon Jul  1 10:00:00 2025
+*mangle
+:PREROUTING ACCEPT [0:0]
+:INPUT ACCEPT [0:0]
+:FORWARD ACCEPT [0:0]
+:OUTPUT ACCEPT [0:0]
+:POSTROUTING ACCEPT [0:0]
+-A PREROUTING -p icmp -j LOG --log-prefix "MANGLE-MARK-ICMP: "
+-A PREROUTING -p icmp -j MARK --set-mark 0x1
+-A PREROUTING -p tcp --dport 22 -j LOG --log-prefix "MANGLE-MARK-22: "
+-A PREROUTING -p tcp --dport 22 -j MARK --set-mark 0x1
+-A PREROUTING -p tcp --dport 161 -j LOG --log-prefix "MANGLE-MARK-161: "
+-A PREROUTING -p tcp --dport 161 -j MARK --set-mark 0x1
+-A PREROUTING -p tcp --dport 443 -j LOG --log-prefix "MANGLE-MARK-443: "
+-A PREROUTING -p tcp --dport 443 -j MARK --set-mark 0x1
+COMMIT
+# Completed on Mon Jul  1 10:00:00 2025
 
 EXIT_CODE: 0
 === TSIM_SECTION_END:iptables_save ===
 
 === TSIM_SECTION_START:ipset_save ===
-TITLE: Complete Ipset Configuration
+TITLE: Ipset Save Output
 COMMAND: /sbin/ipset save
-TIMESTAMP: 2025-06-21 15:27:12
+TIMESTAMP: 2025-07-01 10:00:00
 ---
-create WIFI_CORPORATE_CLIENTS hash:ip family inet hashsize 1024 maxelem 65536
-add WIFI_CORPORATE_CLIENTS 192.168.10.10
-add WIFI_CORPORATE_CLIENTS 192.168.10.11
-add WIFI_CORPORATE_CLIENTS 192.168.10.12
-add WIFI_CORPORATE_CLIENTS 192.168.10.13
-add WIFI_CORPORATE_CLIENTS 192.168.10.14
-add WIFI_CORPORATE_CLIENTS 192.168.10.15
-add WIFI_CORPORATE_CLIENTS 192.168.10.16
-add WIFI_CORPORATE_CLIENTS 192.168.10.17
-add WIFI_CORPORATE_CLIENTS 192.168.10.18
-add WIFI_CORPORATE_CLIENTS 192.168.10.19
-add WIFI_CORPORATE_CLIENTS 192.168.10.20
-
-create WIFI_GUEST_CLIENTS hash:ip family inet hashsize 1024 maxelem 65536
-add WIFI_GUEST_CLIENTS 10.2.4.10
-add WIFI_GUEST_CLIENTS 10.2.4.11
-add WIFI_GUEST_CLIENTS 10.2.4.12
-add WIFI_GUEST_CLIENTS 10.2.4.13
-add WIFI_GUEST_CLIENTS 10.2.4.14
-add WIFI_GUEST_CLIENTS 10.2.4.15
-add WIFI_GUEST_CLIENTS 10.2.4.16
-add WIFI_GUEST_CLIENTS 10.2.4.17
-add WIFI_GUEST_CLIENTS 10.2.4.18
-add WIFI_GUEST_CLIENTS 10.2.4.19
-add WIFI_GUEST_CLIENTS 10.2.4.20
-
-create WIFI_ALLOWED_INBOUND hash:ip family inet hashsize 512 maxelem 32768
-add WIFI_ALLOWED_INBOUND 192.168.10.0/24
-add WIFI_ALLOWED_INBOUND 10.2.2.100
-add WIFI_ALLOWED_INBOUND 10.2.2.101
-add WIFI_ALLOWED_INBOUND 10.2.2.102
-
-create WIFI_GUEST_INBOUND hash:ip family inet hashsize 512 maxelem 32768
-add WIFI_GUEST_INBOUND 10.2.4.0/24
-
-create WIFI_CLIENT_TO_CLIENT hash:net,net family inet hashsize 512 maxelem 32768
-add WIFI_CLIENT_TO_CLIENT 192.168.10.0/24,192.168.10.0/24
-add WIFI_CLIENT_TO_CLIENT 10.2.4.0/24,10.2.4.0/24
-
-create WIFI_CRITICAL_SERVICES hash:net,net family inet hashsize 256 maxelem 16384
-add WIFI_CRITICAL_SERVICES 192.168.10.0/24,10.2.2.0/24
-add WIFI_CRITICAL_SERVICES 10.2.4.0/24,8.8.8.8
-add WIFI_CRITICAL_SERVICES 192.168.10.0/24,10.2.1.0/24
-
-create WIFI_HIGH_PRIORITY hash:net,net,port family inet hashsize 256 maxelem 16384
-add WIFI_HIGH_PRIORITY 192.168.10.10,10.2.2.0/24,tcp:443
-add WIFI_HIGH_PRIORITY 192.168.10.11,10.2.2.0/24,tcp:22
-add WIFI_HIGH_PRIORITY 192.168.10.12,10.2.1.0/24,tcp:80
-add WIFI_HIGH_PRIORITY 10.2.4.10,8.8.8.8,udp:53
-
-create WIFI_ENTERPRISE_USERS hash:ip family inet hashsize 512 maxelem 32768
-add WIFI_ENTERPRISE_USERS 192.168.10.10
-add WIFI_ENTERPRISE_USERS 192.168.10.11
-add WIFI_ENTERPRISE_USERS 192.168.10.12
-add WIFI_ENTERPRISE_USERS 192.168.10.13
-add WIFI_ENTERPRISE_USERS 192.168.10.14
-add WIFI_ENTERPRISE_USERS 192.168.10.15
-
-create WIFI_GUEST_USERS hash:ip family inet hashsize 1024 maxelem 65536
-add WIFI_GUEST_USERS 10.2.4.0/24
-
-create WIFI_BLOCKED_DEVICES hash:ip family inet hashsize 256 maxelem 16384
-add WIFI_BLOCKED_DEVICES 192.168.10.200
-add WIFI_BLOCKED_DEVICES 192.168.10.201
-add WIFI_BLOCKED_DEVICES 10.2.4.200
-add WIFI_BLOCKED_DEVICES 10.2.4.201
-
-create WIFI_AUTHENTICATED_DEVICES hash:ip,mac family inet hashsize 1024 maxelem 65536
-add WIFI_AUTHENTICATED_DEVICES 192.168.10.10,aa:bb:cc:dd:ee:10
-add WIFI_AUTHENTICATED_DEVICES 192.168.10.11,aa:bb:cc:dd:ee:11
-add WIFI_AUTHENTICATED_DEVICES 192.168.10.12,aa:bb:cc:dd:ee:12
-add WIFI_AUTHENTICATED_DEVICES 192.168.10.13,aa:bb:cc:dd:ee:13
-add WIFI_AUTHENTICATED_DEVICES 192.168.10.14,aa:bb:cc:dd:ee:14
-add WIFI_AUTHENTICATED_DEVICES 192.168.10.15,aa:bb:cc:dd:ee:15
-
-create WIFI_PENDING_AUTH hash:ip family inet hashsize 256 maxelem 16384
-add WIFI_PENDING_AUTH 192.168.10.100
-add WIFI_PENDING_AUTH 192.168.10.101
-add WIFI_PENDING_AUTH 10.2.4.100
-add WIFI_PENDING_AUTH 10.2.4.101
-
-create WIFI_ENTERPRISE_SSID hash:ip family inet hashsize 512 maxelem 32768
-add WIFI_ENTERPRISE_SSID 192.168.10.0/24
-
-create WIFI_GUEST_SSID hash:ip family inet hashsize 512 maxelem 32768
-add WIFI_GUEST_SSID 10.2.4.0/24
-
-create WIFI_ADMIN_DEVICES hash:ip family inet hashsize 256 maxelem 16384
-add WIFI_ADMIN_DEVICES 192.168.10.2
-add WIFI_ADMIN_DEVICES 192.168.10.3
-add WIFI_ADMIN_DEVICES 10.2.2.10
-add WIFI_ADMIN_DEVICES 10.2.2.11
-
-create WIFI_MANAGED_DEVICES hash:ip family inet hashsize 512 maxelem 32768
-add WIFI_MANAGED_DEVICES 192.168.10.10
-add WIFI_MANAGED_DEVICES 192.168.10.11
-add WIFI_MANAGED_DEVICES 192.168.10.12
-add WIFI_MANAGED_DEVICES 192.168.10.13
-add WIFI_MANAGED_DEVICES 192.168.10.14
-add WIFI_MANAGED_DEVICES 192.168.10.15
-add WIFI_MANAGED_DEVICES 192.168.10.16
-add WIFI_MANAGED_DEVICES 192.168.10.17
-
-create WIFI_BYOD_DEVICES hash:ip family inet hashsize 512 maxelem 32768
-add WIFI_BYOD_DEVICES 192.168.10.50
-add WIFI_BYOD_DEVICES 192.168.10.51
-add WIFI_BYOD_DEVICES 192.168.10.52
-add WIFI_BYOD_DEVICES 192.168.10.53
-add WIFI_BYOD_DEVICES 192.168.10.54
-add WIFI_BYOD_DEVICES 192.168.10.55
-
-create WIFI_IOT_DEVICES hash:ip family inet hashsize 256 maxelem 16384
-add WIFI_IOT_DEVICES 192.168.10.150
-add WIFI_IOT_DEVICES 192.168.10.151
-add WIFI_IOT_DEVICES 192.168.10.152
-add WIFI_IOT_DEVICES 192.168.10.153
-add WIFI_IOT_DEVICES 192.168.10.154
-
-create WIFI_CORPORATE_DEVICES hash:ip family inet hashsize 512 maxelem 32768
-add WIFI_CORPORATE_DEVICES 192.168.10.10
-add WIFI_CORPORATE_DEVICES 192.168.10.11
-add WIFI_CORPORATE_DEVICES 192.168.10.12
-add WIFI_CORPORATE_DEVICES 192.168.10.13
-add WIFI_CORPORATE_DEVICES 192.168.10.14
-add WIFI_CORPORATE_DEVICES 192.168.10.15
-add WIFI_CORPORATE_DEVICES 192.168.10.16
-add WIFI_CORPORATE_DEVICES 192.168.10.17
-add WIFI_CORPORATE_DEVICES 192.168.10.18
-add WIFI_CORPORATE_DEVICES 192.168.10.19
-
-create WIFI_GUEST_ALLOWED_SERVICES hash:ip,port family inet hashsize 256 maxelem 16384
-add WIFI_GUEST_ALLOWED_SERVICES 8.8.8.8,udp:53
-add WIFI_GUEST_ALLOWED_SERVICES 8.8.4.4,udp:53
-add WIFI_GUEST_ALLOWED_SERVICES 1.1.1.1,udp:53
-add WIFI_GUEST_ALLOWED_SERVICES 0.0.0.0/0,tcp:80
-add WIFI_GUEST_ALLOWED_SERVICES 0.0.0.0/0,tcp:443
-
-create WIFI_LOCAL_NETWORKS hash:net family inet hashsize 256 maxelem 16384
-add WIFI_LOCAL_NETWORKS 10.0.0.0/8
-add WIFI_LOCAL_NETWORKS 172.16.0.0/12
-add WIFI_LOCAL_NETWORKS 192.168.0.0/16
-
-create WIFI_CORPORATE_NETWORKS hash:net family inet hashsize 256 maxelem 16384
-add WIFI_CORPORATE_NETWORKS 10.2.1.0/24
-add WIFI_CORPORATE_NETWORKS 10.2.2.0/24
-add WIFI_CORPORATE_NETWORKS 10.2.3.0/24
-add WIFI_CORPORATE_NETWORKS 10.2.5.0/24
-add WIFI_CORPORATE_NETWORKS 10.2.6.0/24
-
-create WIFI_PRIORITY_USERS hash:ip family inet hashsize 256 maxelem 16384
-add WIFI_PRIORITY_USERS 192.168.10.10
-add WIFI_PRIORITY_USERS 192.168.10.11
-add WIFI_PRIORITY_USERS 192.168.10.12
-add WIFI_PRIORITY_USERS 192.168.10.13
-
-create WIFI_STANDARD_USERS hash:ip family inet hashsize 512 maxelem 32768
-add WIFI_STANDARD_USERS 192.168.10.20
-add WIFI_STANDARD_USERS 192.168.10.21
-add WIFI_STANDARD_USERS 192.168.10.22
-add WIFI_STANDARD_USERS 192.168.10.23
-add WIFI_STANDARD_USERS 192.168.10.24
-add WIFI_STANDARD_USERS 192.168.10.25
-add WIFI_STANDARD_USERS 192.168.10.26
-add WIFI_STANDARD_USERS 192.168.10.27
-
-create WIFI_LIMITED_USERS hash:ip family inet hashsize 512 maxelem 32768
-add WIFI_LIMITED_USERS 192.168.10.50
-add WIFI_LIMITED_USERS 192.168.10.51
-add WIFI_LIMITED_USERS 192.168.10.52
-add WIFI_LIMITED_USERS 10.2.4.0/24
-
-create WIFI_BULK_TRAFFIC hash:net,net,port family inet hashsize 256 maxelem 16384
-add WIFI_BULK_TRAFFIC 192.168.10.0/24,0.0.0.0/0,tcp:25
-add WIFI_BULK_TRAFFIC 192.168.10.0/24,0.0.0.0/0,tcp:587
-add WIFI_BULK_TRAFFIC 10.2.4.0/24,0.0.0.0/0,tcp:80
-add WIFI_BULK_TRAFFIC 10.2.4.0/24,0.0.0.0/0,tcp:443
-
-create WIFI_KNOWN_THREATS hash:ip family inet hashsize 256 maxelem 16384
-add WIFI_KNOWN_THREATS 192.168.10.200
-add WIFI_KNOWN_THREATS 192.168.10.201
-add WIFI_KNOWN_THREATS 10.2.4.200
-add WIFI_KNOWN_THREATS 198.51.100.100
-
-create WIFI_SUSPICIOUS_BEHAVIOR hash:ip family inet hashsize 256 maxelem 16384
-add WIFI_SUSPICIOUS_BEHAVIOR 192.168.10.100
-add WIFI_SUSPICIOUS_BEHAVIOR 192.168.10.101
-add WIFI_SUSPICIOUS_BEHAVIOR 10.2.4.100
-add WIFI_SUSPICIOUS_BEHAVIOR 10.2.4.101
-
-create WIFI_BLOCKED_DOMAINS hash:ip family inet hashsize 256 maxelem 16384
-add WIFI_BLOCKED_DOMAINS 198.51.100.50
-add WIFI_BLOCKED_DOMAINS 198.51.100.51
-add WIFI_BLOCKED_DOMAINS 203.0.113.50
-add WIFI_BLOCKED_DOMAINS 203.0.113.51
-
-create WIFI_BLOCKED_CATEGORIES hash:ip family inet hashsize 256 maxelem 16384
-add WIFI_BLOCKED_CATEGORIES 198.51.100.60
-add WIFI_BLOCKED_CATEGORIES 198.51.100.61
-add WIFI_BLOCKED_CATEGORIES 203.0.113.60
-add WIFI_BLOCKED_CATEGORIES 203.0.113.61
-
-create WIFI_PORTAL_SERVERS hash:ip family inet hashsize 256 maxelem 16384
-add WIFI_PORTAL_SERVERS 10.2.2.100
-add WIFI_PORTAL_SERVERS 10.2.2.101
-add WIFI_PORTAL_SERVERS 192.168.10.2
-
-create WIFI_ROAMING_CLIENTS hash:ip family inet hashsize 256 maxelem 16384
-add WIFI_ROAMING_CLIENTS 192.168.10.10
-add WIFI_ROAMING_CLIENTS 192.168.10.11
-add WIFI_ROAMING_CLIENTS 192.168.10.12
-add WIFI_ROAMING_CLIENTS 192.168.10.13
-
-create WIFI_FAST_ROAMING hash:ip family inet hashsize 256 maxelem 16384
-add WIFI_FAST_ROAMING 192.168.10.10
-add WIFI_FAST_ROAMING 192.168.10.11
-add WIFI_FAST_ROAMING 192.168.10.12
-
-create WIFI_MESH_NODES hash:net,net family inet hashsize 256 maxelem 16384
-add WIFI_MESH_NODES 192.168.10.2,192.168.10.3
-add WIFI_MESH_NODES 192.168.10.3,192.168.10.2
-add WIFI_MESH_NODES 10.2.2.1,192.168.10.1
-
-create WIFI_VOICE_TRAFFIC hash:net,net family inet hashsize 256 maxelem 16384
-add WIFI_VOICE_TRAFFIC 192.168.10.0/24,10.2.2.0/24
-add WIFI_VOICE_TRAFFIC 192.168.10.0/24,10.2.1.0/24
-
-create WIFI_VIDEO_TRAFFIC hash:net,net family inet hashsize 256 maxelem 16384
-add WIFI_VIDEO_TRAFFIC 192.168.10.0/24,10.2.2.0/24
-add WIFI_VIDEO_TRAFFIC 192.168.10.0/24,0.0.0.0/0
-
-create WIFI_DATA_TRAFFIC hash:net,net family inet hashsize 256 maxelem 16384
-add WIFI_DATA_TRAFFIC 192.168.10.0/24,10.2.2.0/24
-add WIFI_DATA_TRAFFIC 192.168.10.0/24,10.2.1.0/24
-
-create WIFI_BACKGROUND_TRAFFIC hash:net,net family inet hashsize 256 maxelem 16384
-add WIFI_BACKGROUND_TRAFFIC 10.2.4.0/24,0.0.0.0/0
-add WIFI_BACKGROUND_TRAFFIC 192.168.10.50,0.0.0.0/0
-
-create WIFI_MESH_ALLOWED hash:net,net family inet hashsize 256 maxelem 16384
-add WIFI_MESH_ALLOWED 192.168.10.2,192.168.10.3
-add WIFI_MESH_ALLOWED 192.168.10.3,192.168.10.2
-
-create WIFI_MESH_ENCRYPTED hash:net,net,port family inet hashsize 256 maxelem 16384
-add WIFI_MESH_ENCRYPTED 192.168.10.2,192.168.10.3,udp:4500
-add WIFI_MESH_ENCRYPTED 192.168.10.3,192.168.10.2,udp:500
-
-create WIFI_RADIUS_SERVERS hash:ip family inet hashsize 256 maxelem 16384
-add WIFI_RADIUS_SERVERS 10.2.2.50
-add WIFI_RADIUS_SERVERS 10.2.2.51
-add WIFI_RADIUS_SERVERS 10.2.1.50
-
-create WIFI_LDAP_SERVERS hash:ip,port family inet hashsize 256 maxelem 16384
-add WIFI_LDAP_SERVERS 10.2.2.60,tcp:389
-add WIFI_LDAP_SERVERS 10.2.2.61,tcp:636
-add WIFI_LDAP_SERVERS 10.2.1.60,tcp:389
-
-create WIFI_CERT_AUTHORITIES hash:ip family inet hashsize 256 maxelem 16384
-add WIFI_CERT_AUTHORITIES 10.2.2.70
-add WIFI_CERT_AUTHORITIES 10.2.2.71
-add WIFI_CERT_AUTHORITIES 10.2.1.70
-
-create WIFI_AUTHORIZED_APS hash:ip family inet hashsize 256 maxelem 16384
-add WIFI_AUTHORIZED_APS 192.168.10.1
-add WIFI_AUTHORIZED_APS 192.168.10.2
-add WIFI_AUTHORIZED_APS 192.168.10.3
-add WIFI_AUTHORIZED_APS 10.2.2.1
-
-create WIFI_ROGUE_AP_SIGNATURES hash:ip family inet hashsize 256 maxelem 16384
-add WIFI_ROGUE_AP_SIGNATURES 192.168.1.1
-add WIFI_ROGUE_AP_SIGNATURES 192.168.0.1
-add WIFI_ROGUE_AP_SIGNATURES 10.0.0.1
-
-create WIFI_INTERFERENCE_SOURCES hash:ip family inet hashsize 256 maxelem 16384
-add WIFI_INTERFERENCE_SOURCES 192.168.10.250
-add WIFI_INTERFERENCE_SOURCES 192.168.10.251
-add WIFI_INTERFERENCE_SOURCES 10.2.4.250
-
-create WIFI_CHANNEL_CONFLICTS hash:ip family inet hashsize 256 maxelem 16384
-add WIFI_CHANNEL_CONFLICTS 192.168.10.252
-add WIFI_CHANNEL_CONFLICTS 192.168.10.253
-add WIFI_CHANNEL_CONFLICTS 10.2.4.252
-
-create WIFI_LB_TARGETS hash:net,net family inet hashsize 256 maxelem 16384
-add WIFI_LB_TARGETS 192.168.10.0/24,192.168.10.2
-add WIFI_LB_TARGETS 192.168.10.0/24,192.168.10.3
-add WIFI_LB_TARGETS 10.2.4.0/24,192.168.10.1
-
-create WIFI_HIGH_CAPACITY_APS hash:ip family inet hashsize 256 maxelem 16384
-add WIFI_HIGH_CAPACITY_APS 192.168.10.2
-add WIFI_HIGH_CAPACITY_APS 192.168.10.3
-
-create WIFI_MONITOR_TARGETS hash:ip family inet hashsize 256 maxelem 16384
-add WIFI_MONITOR_TARGETS 192.168.10.10
-add WIFI_MONITOR_TARGETS 192.168.10.11
-add WIFI_MONITOR_TARGETS 192.168.10.12
-add WIFI_MONITOR_TARGETS 10.2.4.10
-
-create WIFI_SECURITY_EVENTS hash:ip family inet hashsize 256 maxelem 16384
-add WIFI_SECURITY_EVENTS 192.168.10.100
-add WIFI_SECURITY_EVENTS 192.168.10.101
-add WIFI_SECURITY_EVENTS 10.2.4.100
-add WIFI_SECURITY_EVENTS 10.2.4.101
-
-create WIFI_FAILED_AUTH hash:ip family inet hashsize 256 maxelem 16384
-add WIFI_FAILED_AUTH 192.168.10.200
-add WIFI_FAILED_AUTH 192.168.10.201
-add WIFI_FAILED_AUTH 10.2.4.200
-add WIFI_FAILED_AUTH 10.2.4.201
-
-create WIFI_ISOLATED_CLIENTS hash:net,net family inet hashsize 256 maxelem 16384
-add WIFI_ISOLATED_CLIENTS 192.168.10.150,192.168.10.0/24
-add WIFI_ISOLATED_CLIENTS 192.168.10.151,192.168.10.0/24
-add WIFI_ISOLATED_CLIENTS 10.2.4.0/24,10.2.4.0/24
-
-create WIFI_ALLOW_P2P hash:net,net,port family inet hashsize 256 maxelem 16384
-add WIFI_ALLOW_P2P 192.168.10.10,192.168.10.11,tcp:22
-add WIFI_ALLOW_P2P 192.168.10.12,192.168.10.13,tcp:443
-
-create WIFI_SAME_VLAN hash:net,net family inet hashsize 256 maxelem 16384
-add WIFI_SAME_VLAN 192.168.10.0/24,192.168.10.0/24
-
-create WIFI_CHILD_DEVICES hash:ip family inet hashsize 256 maxelem 16384
-add WIFI_CHILD_DEVICES 192.168.10.80
-add WIFI_CHILD_DEVICES 192.168.10.81
-add WIFI_CHILD_DEVICES 10.2.4.80
-add WIFI_CHILD_DEVICES 10.2.4.81
-
-create WIFI_ADULT_CONTENT hash:ip family inet hashsize 256 maxelem 16384
-add WIFI_ADULT_CONTENT 198.51.100.80
-add WIFI_ADULT_CONTENT 198.51.100.81
-add WIFI_ADULT_CONTENT 203.0.113.80
-add WIFI_ADULT_CONTENT 203.0.113.81
-
-create WIFI_EDUCATIONAL_SITES hash:ip family inet hashsize 256 maxelem 16384
-add WIFI_EDUCATIONAL_SITES 198.51.100.90
-add WIFI_EDUCATIONAL_SITES 198.51.100.91
-add WIFI_EDUCATIONAL_SITES 203.0.113.90
-add WIFI_EDUCATIONAL_SITES 203.0.113.91
-
-create WIFI_BUSINESS_HOURS_ONLY hash:ip family inet hashsize 256 maxelem 16384
-add WIFI_BUSINESS_HOURS_ONLY 192.168.10.30
-add WIFI_BUSINESS_HOURS_ONLY 192.168.10.31
-add WIFI_BUSINESS_HOURS_ONLY 10.2.4.30
-add WIFI_BUSINESS_HOURS_ONLY 10.2.4.31
-
-create WIFI_AFTER_HOURS_ALLOWED hash:ip family inet hashsize 256 maxelem 16384
-add WIFI_AFTER_HOURS_ALLOWED 192.168.10.10
-add WIFI_AFTER_HOURS_ALLOWED 192.168.10.11
-add WIFI_AFTER_HOURS_ALLOWED 192.168.10.12
-
-create WIFI_WEEKEND_RESTRICTED hash:ip family inet hashsize 256 maxelem 16384
-add WIFI_WEEKEND_RESTRICTED 192.168.10.40
-add WIFI_WEEKEND_RESTRICTED 192.168.10.41
-add WIFI_WEEKEND_RESTRICTED 10.2.4.40
-
-create WIFI_AUTHORIZED_MACS hash:ip,mac family inet hashsize 1024 maxelem 65536
-add WIFI_AUTHORIZED_MACS 192.168.10.10,aa:bb:cc:dd:ee:10
-add WIFI_AUTHORIZED_MACS 192.168.10.11,aa:bb:cc:dd:ee:11
-add WIFI_AUTHORIZED_MACS 192.168.10.12,aa:bb:cc:dd:ee:12
-add WIFI_AUTHORIZED_MACS 192.168.10.13,aa:bb:cc:dd:ee:13
-add WIFI_AUTHORIZED_MACS 192.168.10.14,aa:bb:cc:dd:ee:14
-add WIFI_AUTHORIZED_MACS 192.168.10.15,aa:bb:cc:dd:ee:15
-add WIFI_AUTHORIZED_MACS 192.168.10.16,aa:bb:cc:dd:ee:16
-add WIFI_AUTHORIZED_MACS 192.168.10.17,aa:bb:cc:dd:ee:17
-add WIFI_AUTHORIZED_MACS 192.168.10.18,aa:bb:cc:dd:ee:18
-add WIFI_AUTHORIZED_MACS 192.168.10.19,aa:bb:cc:dd:ee:19
-
-create WIFI_BLOCKED_MACS hash:ip,mac family inet hashsize 256 maxelem 16384
-add WIFI_BLOCKED_MACS 192.168.10.200,aa:bb:cc:dd:ee:ff
-add WIFI_BLOCKED_MACS 192.168.10.201,bb:cc:dd:ee:ff:aa
-add WIFI_BLOCKED_MACS 10.2.4.200,cc:dd:ee:ff:aa:bb
-
-create WIFI_RANDOMIZED_MACS hash:ip,mac family inet hashsize 256 maxelem 16384
-add WIFI_RANDOMIZED_MACS 192.168.10.100,02:00:00:00:00:01
-add WIFI_RANDOMIZED_MACS 192.168.10.101,02:00:00:00:00:02
-add WIFI_RANDOMIZED_MACS 10.2.4.100,02:00:00:00:00:03
+create branch_10_2_2_0_24_hosts bitmap:ip range 10.2.2.0/24 timeout 3600 counters comment
+create branch_10_2_20_0_24_hosts bitmap:ip range 10.2.20.0/24 timeout 3600 counters comment
+create br_mgmt_networks bitmap:ip range 10.2.2.0-10.2.5.255 counters
+create br_admin_workstations bitmap:ip range 10.2.10.10-10.2.10.20 timeout 7200
+create branch_access_clients bitmap:ip range 10.b.20.0/24 timeout 1800
+create branch_guest_range bitmap:ip range 192.168.100.0/24 timeout 900
+create branch_10_2_2_0_24_secure_clients bitmap:ip,mac range 10.2.2.0/24 timeout 7200 counters comment
+create branch_10_2_20_0_24_secure_clients bitmap:ip,mac range 10.2.20.0/24 timeout 7200 counters comment
+create branch_trusted_devices bitmap:ip,mac range 10.b.1.0/24 counters comment
+create branch_dhcp_reservations bitmap:ip,mac range 10.b.20.0/24 timeout 86400
+create branch_static_assignments bitmap:ip,mac range 10.b.10.0/24
+create branch_guest_devices bitmap:ip,mac range 192.168.100.0/24 timeout 1800
+create branch_temp_access bitmap:ip,mac range 192.168.101.0/24 timeout 900
+create branch_web_ports bitmap:port range 80-8080 timeout 1800 comment
+create branch_database_ports bitmap:port range 3306-5432 counters comment
+create branch_management_ports bitmap:port range 22-443 comment
+create branch_monitoring_ports bitmap:port range 161-162 timeout 3600
+create branch_mail_ports bitmap:port range 25-995 timeout 7200
+create branch_file_ports bitmap:port range 445-2049 counters
+create branch_backup_ports bitmap:port range 873-10080 timeout 3600
+create branch_ephemeral_ports bitmap:port range 32768-65535 timeout 300
+create branch_high_ports bitmap:port range 8000-9999 timeout 1800 counters
+create branch_management_ips hash:ip family inet timeout 3600 counters comment
+create branch_trusted_sources hash:ip family inet hashsize 1024 comment
+create branch_monitoring_agents hash:ip family inet timeout 1800 counters
+create branch_admin_workstations hash:ip family inet timeout 7200 comment
+create branch_blacklisted_ips hash:ip family inet comment maxelem 65536
+create branch_suspicious_sources hash:ip family inet timeout 3600 maxelem 4096
+create branch_rate_limited_ips hash:ip family inet timeout 900 counters
+create branch_dns_resolvers hash:ip family inet comment maxelem 256
+create branch_ntp_servers hash:ip family inet timeout 86400
+create branch_log_collectors hash:ip family inet timeout 3600 counters
+create branch_known_devices hash:mac timeout 86400 counters comment
+create branch_infrastructure_macs hash:mac maxelem 1024 comment
+create branch_approved_devices hash:mac timeout 7200 counters
+create branch_wireless_clients hash:mac timeout 3600 comment maxelem 2048
+create branch_guest_devices hash:mac timeout 1800 counters
+create branch_corporate_devices hash:mac timeout 7200 comment
+create branch_quarantined_macs hash:mac timeout 3600 comment
+create branch_blocked_devices hash:mac comment maxelem 4096
+create branch_internal_networks hash:net family inet maxelem 256 comment
+create branch_trusted_networks hash:net family inet timeout 7200 counters
+create branch_management_networks hash:net family inet comment
+create branch_external_partners hash:net family inet timeout 7200 comment
+create branch_cloud_networks hash:net family inet maxelem 1024
+create branch_cdn_ranges hash:net family inet timeout 3600
+create branch_vpn_networks hash:net family inet counters comment
+create branch_site_networks hash:net family inet timeout 1800
+create branch_blocked_networks hash:net family inet comment maxelem 4096
+create branch_quarantine_networks hash:net family inet timeout 3600
+create branch_web_services hash:ip,port family inet timeout 7200 counters comment
+create branch_database_access hash:ip,port family inet counters comment
+create branch_management_access hash:ip,port family inet comment maxelem 1024
+create branch_monitoring_endpoints hash:ip,port family inet timeout 1800
+create branch_api_endpoints hash:ip,port family inet timeout 3600 counters
+create branch_file_services hash:ip,port family inet comment
+create branch_backup_services hash:ip,port family inet timeout 7200
+create branch_auth_services hash:ip,port family inet timeout 1800 counters
+create branch_log_services hash:ip,port family inet comment
+create branch_interface_networks hash:net,iface family inet comment
+create branch_vlan_interfaces hash:net,iface family inet timeout 1800 counters
+create branch_trusted_vlans hash:net,iface family inet comment
+create branch_dmz_interfaces hash:net,iface family inet counters comment
+create branch_secure_zones hash:net,iface family inet timeout 3600
+create branch_client_interfaces hash:net,iface family inet timeout 1800
+create branch_guest_interfaces hash:net,iface family inet timeout 900 comment
+create branch_service_matrix hash:ip,port,net family inet timeout 600 maxelem 2048
+create branch_access_rules hash:ip,port,net family inet counters comment
+create branch_proxy_rules hash:ip,port,ip family inet timeout 1800 counters
+create branch_nat_rules hash:ip,port,ip family inet comment maxelem 4096
+create branch_routing_matrix hash:net,port,net family inet counters comment
+add branch_10_1_1_0_24_hosts 10.1.1.10
+add branch_10_1_1_0_24_hosts 10.1.1.11
+add branch_10_1_1_0_24_hosts 10.1.1.12
+add branch_management_ips 10.b.10.5
+add branch_management_ips 10.b.10.6
+add branch_trusted_sources 8.8.8.8
+add branch_trusted_sources 1.1.1.1
+add branch_internal_networks 10.b.0.0/16
+add branch_vpn_networks 10.100.1.0/24
+add branch_trusted_devices 10.2.1.10,52:54:00:ab:cd:01
+add branch_trusted_devices 10.2.1.11,52:54:00:ab:cd:02
+add branch_web_services 10.b.3.10,80
+add branch_web_services 10.b.3.10,443
+add branch_database_access 10.b.20.5,3306
+add branch_database_access 10.b.20.5,5432
+add branch_web_ports 80
+add branch_web_ports 443
+add branch_web_ports 8080
+add branch_database_ports 3306
+add branch_database_ports 5432
+COMMIT
 
 EXIT_CODE: 0
 === TSIM_SECTION_END:ipset_save ===
 
 === TSIM_SECTION_START:ipset_list ===
-TITLE: Ipset List Summary
-COMMAND: /sbin/ipset list -n
-TIMESTAMP: 2025-06-21 15:27:12
+TITLE: Ipset List Output
+COMMAND: /sbin/ipset list
+TIMESTAMP: 2025-07-01 10:00:00
 ---
-WIFI_CORPORATE_CLIENTS
-WIFI_GUEST_CLIENTS
-WIFI_ALLOWED_INBOUND
-WIFI_GUEST_INBOUND
-WIFI_CLIENT_TO_CLIENT
-WIFI_CRITICAL_SERVICES
-WIFI_HIGH_PRIORITY
-WIFI_ENTERPRISE_USERS
-WIFI_GUEST_USERS
-WIFI_BLOCKED_DEVICES
-WIFI_AUTHENTICATED_DEVICES
-WIFI_PENDING_AUTH
-WIFI_ENTERPRISE_SSID
-WIFI_GUEST_SSID
-WIFI_ADMIN_DEVICES
-WIFI_MANAGED_DEVICES
-WIFI_BYOD_DEVICES
-WIFI_IOT_DEVICES
-WIFI_CORPORATE_DEVICES
-WIFI_GUEST_ALLOWED_SERVICES
-WIFI_LOCAL_NETWORKS
-WIFI_CORPORATE_NETWORKS
-WIFI_PRIORITY_USERS
-WIFI_STANDARD_USERS
-WIFI_LIMITED_USERS
-WIFI_BULK_TRAFFIC
-WIFI_KNOWN_THREATS
-WIFI_SUSPICIOUS_BEHAVIOR
-WIFI_BLOCKED_DOMAINS
-WIFI_BLOCKED_CATEGORIES
-WIFI_PORTAL_SERVERS
-WIFI_ROAMING_CLIENTS
-WIFI_FAST_ROAMING
-WIFI_MESH_NODES
-WIFI_VOICE_TRAFFIC
-WIFI_VIDEO_TRAFFIC
-WIFI_DATA_TRAFFIC
-WIFI_BACKGROUND_TRAFFIC
-WIFI_MESH_ALLOWED
-WIFI_MESH_ENCRYPTED
-WIFI_RADIUS_SERVERS
-WIFI_LDAP_SERVERS
-WIFI_CERT_AUTHORITIES
-WIFI_AUTHORIZED_APS
-WIFI_ROGUE_AP_SIGNATURES
-WIFI_INTERFERENCE_SOURCES
-WIFI_CHANNEL_CONFLICTS
-WIFI_LB_TARGETS
-WIFI_HIGH_CAPACITY_APS
-WIFI_MONITOR_TARGETS
-WIFI_SECURITY_EVENTS
-WIFI_FAILED_AUTH
-WIFI_ISOLATED_CLIENTS
-WIFI_ALLOW_P2P
-WIFI_SAME_VLAN
-WIFI_CHILD_DEVICES
-WIFI_ADULT_CONTENT
-WIFI_EDUCATIONAL_SITES
-WIFI_BUSINESS_HOURS_ONLY
-WIFI_AFTER_HOURS_ALLOWED
-WIFI_WEEKEND_RESTRICTED
-WIFI_AUTHORIZED_MACS
-WIFI_BLOCKED_MACS
-WIFI_RANDOMIZED_MACS
+Name: branch_10_2_2_0_24_hosts
+Type: bitmap:ip
+Revision: 3
+Header: bitmap:ip range 10.2.2.0/24 timeout 3600 counters comment
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: branch_10_2_20_0_24_hosts
+Type: bitmap:ip
+Revision: 3
+Header: bitmap:ip range 10.2.20.0/24 timeout 3600 counters comment
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: br_mgmt_networks
+Type: bitmap:ip
+Revision: 3
+Header: bitmap:ip range 10.2.2.0-10.2.5.255 counters
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: br_admin_workstations
+Type: bitmap:ip
+Revision: 3
+Header: bitmap:ip range 10.2.10.10-10.2.10.20 timeout 7200
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: branch_access_clients
+Type: bitmap:ip
+Revision: 3
+Header: bitmap:ip range 10.b.20.0/24 timeout 1800
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: branch_guest_range
+Type: bitmap:ip
+Revision: 3
+Header: bitmap:ip range 192.168.100.0/24 timeout 900
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: branch_10_2_2_0_24_secure_clients
+Type: bitmap:ip,mac
+Revision: 3
+Header: bitmap:ip,mac range 10.2.2.0/24 timeout 7200 counters comment
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: branch_10_2_20_0_24_secure_clients
+Type: bitmap:ip,mac
+Revision: 3
+Header: bitmap:ip,mac range 10.2.20.0/24 timeout 7200 counters comment
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: branch_trusted_devices
+Type: bitmap:ip,mac
+Revision: 3
+Header: bitmap:ip,mac range 10.b.1.0/24 counters comment
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: branch_dhcp_reservations
+Type: bitmap:ip,mac
+Revision: 3
+Header: bitmap:ip,mac range 10.b.20.0/24 timeout 86400
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: branch_static_assignments
+Type: bitmap:ip,mac
+Revision: 3
+Header: bitmap:ip,mac range 10.b.10.0/24
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: branch_guest_devices
+Type: bitmap:ip,mac
+Revision: 3
+Header: bitmap:ip,mac range 192.168.100.0/24 timeout 1800
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: branch_temp_access
+Type: bitmap:ip,mac
+Revision: 3
+Header: bitmap:ip,mac range 192.168.101.0/24 timeout 900
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: branch_web_ports
+Type: bitmap:port
+Revision: 3
+Header: bitmap:port range 80-8080 timeout 1800 comment
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: branch_database_ports
+Type: bitmap:port
+Revision: 3
+Header: bitmap:port range 3306-5432 counters comment
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: branch_management_ports
+Type: bitmap:port
+Revision: 3
+Header: bitmap:port range 22-443 comment
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: branch_monitoring_ports
+Type: bitmap:port
+Revision: 3
+Header: bitmap:port range 161-162 timeout 3600
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: branch_mail_ports
+Type: bitmap:port
+Revision: 3
+Header: bitmap:port range 25-995 timeout 7200
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: branch_file_ports
+Type: bitmap:port
+Revision: 3
+Header: bitmap:port range 445-2049 counters
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: branch_backup_ports
+Type: bitmap:port
+Revision: 3
+Header: bitmap:port range 873-10080 timeout 3600
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: branch_ephemeral_ports
+Type: bitmap:port
+Revision: 3
+Header: bitmap:port range 32768-65535 timeout 300
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: branch_high_ports
+Type: bitmap:port
+Revision: 3
+Header: bitmap:port range 8000-9999 timeout 1800 counters
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: branch_management_ips
+Type: hash:ip
+Revision: 3
+Header: hash:ip family inet timeout 3600 counters comment
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: branch_trusted_sources
+Type: hash:ip
+Revision: 3
+Header: hash:ip family inet hashsize 1024 comment
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: branch_monitoring_agents
+Type: hash:ip
+Revision: 3
+Header: hash:ip family inet timeout 1800 counters
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: branch_admin_workstations
+Type: hash:ip
+Revision: 3
+Header: hash:ip family inet timeout 7200 comment
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: branch_blacklisted_ips
+Type: hash:ip
+Revision: 3
+Header: hash:ip family inet comment maxelem 65536
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: branch_suspicious_sources
+Type: hash:ip
+Revision: 3
+Header: hash:ip family inet timeout 3600 maxelem 4096
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: branch_rate_limited_ips
+Type: hash:ip
+Revision: 3
+Header: hash:ip family inet timeout 900 counters
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: branch_dns_resolvers
+Type: hash:ip
+Revision: 3
+Header: hash:ip family inet comment maxelem 256
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: branch_ntp_servers
+Type: hash:ip
+Revision: 3
+Header: hash:ip family inet timeout 86400
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: branch_log_collectors
+Type: hash:ip
+Revision: 3
+Header: hash:ip family inet timeout 3600 counters
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: branch_known_devices
+Type: hash:mac
+Revision: 3
+Header: hash:mac timeout 86400 counters comment
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: branch_infrastructure_macs
+Type: hash:mac
+Revision: 3
+Header: hash:mac maxelem 1024 comment
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: branch_approved_devices
+Type: hash:mac
+Revision: 3
+Header: hash:mac timeout 7200 counters
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: branch_wireless_clients
+Type: hash:mac
+Revision: 3
+Header: hash:mac timeout 3600 comment maxelem 2048
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: branch_guest_devices
+Type: hash:mac
+Revision: 3
+Header: hash:mac timeout 1800 counters
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: branch_corporate_devices
+Type: hash:mac
+Revision: 3
+Header: hash:mac timeout 7200 comment
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: branch_quarantined_macs
+Type: hash:mac
+Revision: 3
+Header: hash:mac timeout 3600 comment
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: branch_blocked_devices
+Type: hash:mac
+Revision: 3
+Header: hash:mac comment maxelem 4096
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: branch_internal_networks
+Type: hash:net
+Revision: 3
+Header: hash:net family inet maxelem 256 comment
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: branch_trusted_networks
+Type: hash:net
+Revision: 3
+Header: hash:net family inet timeout 7200 counters
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: branch_management_networks
+Type: hash:net
+Revision: 3
+Header: hash:net family inet comment
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: branch_external_partners
+Type: hash:net
+Revision: 3
+Header: hash:net family inet timeout 7200 comment
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: branch_cloud_networks
+Type: hash:net
+Revision: 3
+Header: hash:net family inet maxelem 1024
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: branch_cdn_ranges
+Type: hash:net
+Revision: 3
+Header: hash:net family inet timeout 3600
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: branch_vpn_networks
+Type: hash:net
+Revision: 3
+Header: hash:net family inet counters comment
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: branch_site_networks
+Type: hash:net
+Revision: 3
+Header: hash:net family inet timeout 1800
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: branch_blocked_networks
+Type: hash:net
+Revision: 3
+Header: hash:net family inet comment maxelem 4096
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: branch_quarantine_networks
+Type: hash:net
+Revision: 3
+Header: hash:net family inet timeout 3600
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: branch_web_services
+Type: hash:ip,port
+Revision: 3
+Header: hash:ip,port family inet timeout 7200 counters comment
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: branch_database_access
+Type: hash:ip,port
+Revision: 3
+Header: hash:ip,port family inet counters comment
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: branch_management_access
+Type: hash:ip,port
+Revision: 3
+Header: hash:ip,port family inet comment maxelem 1024
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: branch_monitoring_endpoints
+Type: hash:ip,port
+Revision: 3
+Header: hash:ip,port family inet timeout 1800
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: branch_api_endpoints
+Type: hash:ip,port
+Revision: 3
+Header: hash:ip,port family inet timeout 3600 counters
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: branch_file_services
+Type: hash:ip,port
+Revision: 3
+Header: hash:ip,port family inet comment
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: branch_backup_services
+Type: hash:ip,port
+Revision: 3
+Header: hash:ip,port family inet timeout 7200
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: branch_auth_services
+Type: hash:ip,port
+Revision: 3
+Header: hash:ip,port family inet timeout 1800 counters
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: branch_log_services
+Type: hash:ip,port
+Revision: 3
+Header: hash:ip,port family inet comment
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: branch_interface_networks
+Type: hash:net,iface
+Revision: 3
+Header: hash:net,iface family inet comment
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: branch_vlan_interfaces
+Type: hash:net,iface
+Revision: 3
+Header: hash:net,iface family inet timeout 1800 counters
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: branch_trusted_vlans
+Type: hash:net,iface
+Revision: 3
+Header: hash:net,iface family inet comment
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: branch_dmz_interfaces
+Type: hash:net,iface
+Revision: 3
+Header: hash:net,iface family inet counters comment
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: branch_secure_zones
+Type: hash:net,iface
+Revision: 3
+Header: hash:net,iface family inet timeout 3600
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: branch_client_interfaces
+Type: hash:net,iface
+Revision: 3
+Header: hash:net,iface family inet timeout 1800
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: branch_guest_interfaces
+Type: hash:net,iface
+Revision: 3
+Header: hash:net,iface family inet timeout 900 comment
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: branch_service_matrix
+Type: hash:ip,port,net
+Revision: 3
+Header: hash:ip,port,net family inet timeout 600 maxelem 2048
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: branch_access_rules
+Type: hash:ip,port,net
+Revision: 3
+Header: hash:ip,port,net family inet counters comment
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: branch_proxy_rules
+Type: hash:ip,port,ip
+Revision: 3
+Header: hash:ip,port,ip family inet timeout 1800 counters
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: branch_nat_rules
+Type: hash:ip,port,ip
+Revision: 3
+Header: hash:ip,port,ip family inet comment maxelem 4096
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: branch_routing_matrix
+Type: hash:net,port,net
+Revision: 3
+Header: hash:net,port,net family inet counters comment
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
 
 EXIT_CODE: 0
 === TSIM_SECTION_END:ipset_list ===

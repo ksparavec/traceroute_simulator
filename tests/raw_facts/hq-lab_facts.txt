@@ -36,18 +36,123 @@ EXIT_CODE: 0
 === TSIM_SECTION_START:policy_rules ===
 TITLE: IP Policy Rules
 COMMAND: /sbin/ip rule show
-TIMESTAMP: 2025-06-21 15:24:45
+TIMESTAMP: 2025-07-01 10:00:00
 ---
 0:	from all lookup local
-100:	from 10.1.10.0/24 lookup dev_priority
-200:	from 10.1.11.0/24 lookup test_priority
+50:	from 10.1.1.0/24 lookup priority_table
+51:	from 10.1.2.0/24 lookup priority_table
+52:	from 10.1.3.0/24 lookup priority_table
+53:	from 10.1.10.0/24 lookup priority_table
+54:	from 10.1.11.0/24 lookup priority_table
+55:	from 10.1.3.0/24 lookup management_table
+56:	from 10.1.3.5/32 lookup priority_table
+57:	dport 3306 lookup database_table
+58:	dport 5432 lookup database_table
+59:	sport 3306 lookup database_table
+60:	dport 80 lookup web_table
+61:	dport 443 lookup web_table
+62:	sport 80 lookup web_table
+63:	dport 22 lookup priority_table
+64:	dport 161 lookup priority_table
+65:	dport 443 lookup priority_table
+66:	fwmark 0x1 lookup priority_table
+67:	fwmark 0x2 lookup service_table
+68:	fwmark 0x3 lookup backup_table
+69:	tos 0x10 lookup priority_table
+70:	tos 0x08 lookup qos_table
+71:	to 10.3.0.0/16 lookup priority_table
+72:	to 10.2.0.0/16 lookup service_table
+73:	from 10.1.11.2/32 lookup management_table
+74:	from 192.168.1.0/24 lookup emergency_table
+75:	ipproto icmp lookup priority_table
+76:	ipproto udp lookup qos_table
 32766:	from all lookup main
 32767:	from all lookup default
 
 EXIT_CODE: 0
 === TSIM_SECTION_END:policy_rules ===
 
-=== TSIM_SECTION_START:interfaces ===
+
+=== TSIM_SECTION_START:routing_table_priority_table ===
+TITLE: IP Routing Table Priority Table (100)
+COMMAND: /sbin/ip route show table 100
+TIMESTAMP: 2025-07-01 10:00:00
+---
+10.1.11.0/24 dev eth0 proto kernel scope link metric 1\n10.2.0.0/16 via 10.1.1.1 dev eth0 metric 5\n10.3.0.0/16 via 10.1.1.1 dev eth0 metric 5
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:routing_table_priority_table ===
+\n
+=== TSIM_SECTION_START:routing_table_service_table ===
+TITLE: IP Routing Table Service Table (200)
+COMMAND: /sbin/ip route show table 200
+TIMESTAMP: 2025-07-01 10:00:00
+---
+10.1.11.0/24 dev eth1 proto kernel scope link metric 10\n10.1.3.0/24 dev eth1 proto kernel scope link metric 5\n10.2.0.0/16 via 10.1.1.1 dev eth0 metric 15\n10.3.0.0/16 via 10.1.1.1 dev eth0 metric 15
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:routing_table_service_table ===
+\n
+=== TSIM_SECTION_START:routing_table_backup_table ===
+TITLE: IP Routing Table Backup Table (300)
+COMMAND: /sbin/ip route show table 300
+TIMESTAMP: 2025-07-01 10:00:00
+---
+10.1.11.0/24 dev eth1 proto kernel scope link metric 20\n10.2.0.0/16 via 10.100.1.2 dev wg0 metric 25\n10.3.0.0/16 via 10.100.1.3 dev wg0 metric 25
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:routing_table_backup_table ===
+\n
+=== TSIM_SECTION_START:routing_table_qos_table ===
+TITLE: IP Routing Table Qos Table (400)
+COMMAND: /sbin/ip route show table 400
+TIMESTAMP: 2025-07-01 10:00:00
+---
+10.1.11.0/24 dev eth1 proto kernel scope link metric 8\n10.2.0.0/16 via 10.1.1.1 dev eth0 metric 8\n10.3.0.0/16 via 10.1.1.1 dev eth0 metric 8
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:routing_table_qos_table ===
+\n
+=== TSIM_SECTION_START:routing_table_management_table ===
+TITLE: IP Routing Table Management Table (500)
+COMMAND: /sbin/ip route show table 500
+TIMESTAMP: 2025-07-01 10:00:00
+---
+10.1.11.0/24 dev eth0 proto kernel scope link metric 1\n10.1.3.0/24 dev eth1 proto kernel scope link metric 1\n10.2.0.0/16 via 10.1.1.1 dev eth0 metric 5\n10.3.0.0/16 via 10.1.1.1 dev eth0 metric 5
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:routing_table_management_table ===
+\n
+=== TSIM_SECTION_START:routing_table_database_table ===
+TITLE: IP Routing Table Database Table (600)
+COMMAND: /sbin/ip route show table 600
+TIMESTAMP: 2025-07-01 10:00:00
+---
+10.1.0.0/16 via 10.3.1.1 dev eth0 metric 5\n10.2.0.0/16 via 10.3.1.1 dev eth0 metric 10
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:routing_table_database_table ===
+\n
+=== TSIM_SECTION_START:routing_table_web_table ===
+TITLE: IP Routing Table Web Table (700)
+COMMAND: /sbin/ip route show table 700
+TIMESTAMP: 2025-07-01 10:00:00
+---
+10.1.3.0/24 dev eth1 proto kernel scope link metric 1\n10.1.11.0/24 dev eth1 proto kernel scope link metric 5\n10.2.0.0/16 via 10.1.1.1 dev eth0 metric 10\n10.3.0.0/16 via 10.1.1.1 dev eth0 metric 10
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:routing_table_web_table ===
+\n
+=== TSIM_SECTION_START:routing_table_emergency_table ===
+TITLE: IP Routing Table Emergency Table (800)
+COMMAND: /sbin/ip route show table 800
+TIMESTAMP: 2025-07-01 10:00:00
+---
+192.168.1.0/24 dev eth0 proto kernel scope link metric 1\n10.1.11.0/24 dev eth1 proto kernel scope link metric 1
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:routing_table_emergency_table ===
+\n=== TSIM_SECTION_START:interfaces ===
 TITLE: Network Interfaces
 COMMAND: /sbin/ip addr show
 TIMESTAMP: 2025-06-21 15:24:45
@@ -176,679 +281,979 @@ EXIT_CODE: 0
 === TSIM_SECTION_END:iptables_info ===
 
 === TSIM_SECTION_START:iptables_save ===
-TITLE: Complete Iptables Configuration
+TITLE: Iptables Save Output
 COMMAND: /sbin/iptables-save
-TIMESTAMP: 2025-06-21 15:24:45
+TIMESTAMP: 2025-07-01 10:00:00
 ---
-# Generated by iptables-save v1.8.7 on Fri Jun 21 15:24:45 2025
+# Generated by iptables-save v1.8.7 on Mon Jul  1 10:00:00 2025
 *filter
-:INPUT ACCEPT [345:67890]
+:INPUT DROP [0:0]
 :FORWARD DROP [0:0]
-:OUTPUT ACCEPT [234:56789]
-:LAB_FORWARD - [0:0]
-:LAB_DEV_ISOLATION - [0:0]
-:LAB_TEST_ISOLATION - [0:0]
-:LAB_DEVELOPMENT_CONTROL - [0:0]
-:LAB_STAGING_CONTROL - [0:0]
-:LAB_TESTING_CONTROL - [0:0]
-:LAB_SECURITY_SANDBOX - [0:0]
-:LAB_CODE_DEPLOYMENT - [0:0]
-:LAB_CI_CD_PIPELINE - [0:0]
-:LAB_VERSION_CONTROL - [0:0]
-:LAB_ARTIFACT_MANAGEMENT - [0:0]
-:LAB_PERFORMANCE_TESTING - [0:0]
-:LAB_SECURITY_TESTING - [0:0]
-:LAB_INTEGRATION_TESTING - [0:0]
-:LAB_LOAD_TESTING - [0:0]
-:LAB_VULNERABILITY_SCAN - [0:0]
-:LAB_CODE_QUALITY - [0:0]
-:LAB_ENVIRONMENT_MANAGEMENT - [0:0]
-:LAB_RESOURCE_QUOTAS - [0:0]
-:LAB_ACCESS_CONTROL - [0:0]
-:LAB_MONITORING - [0:0]
-:RATE_LIMIT - [0:0]
-:LOG_AND_DROP - [0:0]
-:ACCEPT_WITH_LOG - [0:0]
-
-# Main FORWARD chain - Lab environment distribution logic
--A FORWARD -i eth0 -o eth1 -m set --match-set LAB_DEV_ALLOWED src -j LAB_DEVELOPMENT_CONTROL
--A FORWARD -i eth0 -o eth2 -m set --match-set LAB_TEST_ALLOWED src -j LAB_TESTING_CONTROL
--A FORWARD -i eth1 -o eth0 -m set --match-set LAB_DEV_CLIENTS src -j LAB_DEVELOPMENT_CONTROL
--A FORWARD -i eth1 -o eth2 -m set --match-set LAB_DEV_TO_TEST dst -j LAB_CI_CD_PIPELINE
--A FORWARD -i eth2 -o eth0 -m set --match-set LAB_TEST_CLIENTS src -j LAB_TESTING_CONTROL
--A FORWARD -i eth2 -o eth1 -m set --match-set LAB_TEST_TO_DEV dst -j LAB_VERSION_CONTROL
--A FORWARD -m state --state RELATED,ESTABLISHED -j ACCEPT
--A FORWARD -j LAB_SECURITY_SANDBOX
-
-# LAB_FORWARD - Main lab distribution logic
--A LAB_FORWARD -m set --match-set LAB_CRITICAL_SERVICES src,dst -j ACCEPT_WITH_LOG
--A LAB_FORWARD -m set --match-set LAB_DEVELOPMENT_PRIORITY src,dst,dst -j LAB_DEVELOPMENT_CONTROL
--A LAB_FORWARD -m set --match-set LAB_TESTING_PRIORITY src,dst -j LAB_TESTING_CONTROL
--A LAB_FORWARD -m set --match-set LAB_SANDBOX_ONLY src -j LAB_SECURITY_SANDBOX
--A LAB_FORWARD -m hashlimit --hashlimit-above 200/sec --hashlimit-burst 400 --hashlimit-mode srcip --hashlimit-name lab_flood_protect -j LOG_AND_DROP
--A LAB_FORWARD -j LAB_DEV_ISOLATION
-
-# LAB_DEV_ISOLATION - Development environment isolation
--A LAB_DEV_ISOLATION -m set --match-set LAB_DEV_MATRIX src,dst -j ACCEPT
--A LAB_DEV_ISOLATION -m set --match-set LAB_DEV_RESTRICTED src,dst -j LOG_AND_DROP
--A LAB_DEV_ISOLATION -p tcp -m multiport --dports 22,3389 -m set --match-set LAB_DEV_ADMIN_HOSTS src -j ACCEPT
--A LAB_DEV_ISOLATION -p tcp -m multiport --dports 80,443,8080,8443 -j ACCEPT
--A LAB_DEV_ISOLATION -p tcp -m multiport --dports 3000,4000,5000,8000 -j ACCEPT
--A LAB_DEV_ISOLATION -j LAB_TEST_ISOLATION
-
-# LAB_TEST_ISOLATION - Test environment isolation
--A LAB_TEST_ISOLATION -m set --match-set LAB_TEST_MATRIX src,dst -j ACCEPT
--A LAB_TEST_ISOLATION -m set --match-set LAB_TEST_RESTRICTED src,dst -j LOG_AND_DROP
--A LAB_TEST_ISOLATION -p tcp -m multiport --dports 22,3389 -m set --match-set LAB_TEST_ADMIN_HOSTS src -j ACCEPT
--A LAB_TEST_ISOLATION -p tcp -m multiport --dports 80,443,8080,8443 -j ACCEPT
--A LAB_TEST_ISOLATION -p tcp -m multiport --dports 9000,9001,9002,9003 -j ACCEPT
--A LAB_TEST_ISOLATION -j LAB_ACCESS_CONTROL
-
-# LAB_DEVELOPMENT_CONTROL - Development environment management
--A LAB_DEVELOPMENT_CONTROL -m set --match-set LAB_DEV_SANDBOX src,dst -j LAB_SECURITY_SANDBOX
--A LAB_DEVELOPMENT_CONTROL -m set --match-set LAB_DEV_CI_CD src,dst,dst -j LAB_CI_CD_PIPELINE
--A LAB_DEVELOPMENT_CONTROL -m set --match-set LAB_DEV_VCS src,dst -j LAB_VERSION_CONTROL
--A LAB_DEVELOPMENT_CONTROL -p tcp -m multiport --dports 22,80,443 -j ACCEPT
--A LAB_DEVELOPMENT_CONTROL -p tcp -m multiport --dports 3000,4000,5000,8000 -j ACCEPT
--A LAB_DEVELOPMENT_CONTROL -p tcp -m multiport --dports 9418,22222 -j ACCEPT
--A LAB_DEVELOPMENT_CONTROL -j LAB_CODE_DEPLOYMENT
-
-# LAB_STAGING_CONTROL - Staging environment management
--A LAB_STAGING_CONTROL -m set --match-set LAB_STAGING_ALLOWED src,dst -j ACCEPT
--A LAB_STAGING_CONTROL -m set --match-set LAB_STAGING_DEPLOY src,dst,dst -j LAB_CODE_DEPLOYMENT
--A LAB_STAGING_CONTROL -m set --match-set LAB_STAGING_TEST src,dst -j LAB_INTEGRATION_TESTING
--A LAB_STAGING_CONTROL -p tcp -m multiport --dports 80,443,8080 -j ACCEPT
--A LAB_STAGING_CONTROL -p tcp -m multiport --dports 5000,6000,7000 -j ACCEPT
--A LAB_STAGING_CONTROL -j LAB_PERFORMANCE_TESTING
-
-# LAB_TESTING_CONTROL - Testing framework management
--A LAB_TESTING_CONTROL -m set --match-set LAB_TEST_FRAMEWORKS src,dst -j ACCEPT
--A LAB_TESTING_CONTROL -m set --match-set LAB_TEST_AUTOMATION src,dst,dst -j LAB_INTEGRATION_TESTING
--A LAB_TESTING_CONTROL -m set --match-set LAB_LOAD_TEST_TARGETS src,dst -j LAB_LOAD_TESTING
--A LAB_TESTING_CONTROL -p tcp -m multiport --dports 80,443,8080,9000 -j ACCEPT
--A LAB_TESTING_CONTROL -p tcp -m multiport --dports 4444,7055,9515 -j ACCEPT
--A LAB_TESTING_CONTROL -j LAB_SECURITY_TESTING
-
-# LAB_SECURITY_SANDBOX - Security sandbox for untrusted code
--A LAB_SECURITY_SANDBOX -m set --match-set LAB_SANDBOX_ALLOWED src,dst -j ACCEPT
--A LAB_SECURITY_SANDBOX -m set --match-set LAB_SANDBOX_RESTRICTED src -j LOG_AND_DROP
--A LAB_SECURITY_SANDBOX -m connlimit --connlimit-above 10 --connlimit-mask 32 -j LOG_AND_DROP
--A LAB_SECURITY_SANDBOX -p tcp -m multiport --dports 80,443 -j ACCEPT
--A LAB_SECURITY_SANDBOX -p tcp -m multiport --dports 22,3389,1433,3306,5432 -j LOG_AND_DROP
--A LAB_SECURITY_SANDBOX -j LAB_VULNERABILITY_SCAN
-
-# LAB_CODE_DEPLOYMENT - Code deployment and artifact management
--A LAB_CODE_DEPLOYMENT -m set --match-set LAB_DEPLOY_SERVERS src,dst -j ACCEPT_WITH_LOG
--A LAB_CODE_DEPLOYMENT -m set --match-set LAB_ARTIFACT_REPOS src,dst,dst -j LAB_ARTIFACT_MANAGEMENT
--A LAB_CODE_DEPLOYMENT -m set --match-set LAB_BUILD_AGENTS src,dst -j ACCEPT
--A LAB_CODE_DEPLOYMENT -p tcp -m multiport --dports 22,443,8080,8081 -j ACCEPT
--A LAB_CODE_DEPLOYMENT -p tcp -m multiport --dports 9000,9001,9002 -j ACCEPT
--A LAB_CODE_DEPLOYMENT -j RATE_LIMIT
-
-# LAB_CI_CD_PIPELINE - CI/CD pipeline management
--A LAB_CI_CD_PIPELINE -m set --match-set LAB_JENKINS_NODES src,dst -j ACCEPT
--A LAB_CI_CD_PIPELINE -m set --match-set LAB_GITLAB_RUNNERS src,dst,dst -j ACCEPT
--A LAB_CI_CD_PIPELINE -m set --match-set LAB_BUILD_TRIGGERS src,dst -j LAB_CODE_DEPLOYMENT
--A LAB_CI_CD_PIPELINE -p tcp -m multiport --dports 8080,9000,3000 -j ACCEPT
--A LAB_CI_CD_PIPELINE -p tcp -m multiport --dports 50000,50001,50002 -j ACCEPT
--A LAB_CI_CD_PIPELINE -j ACCEPT
-
-# LAB_VERSION_CONTROL - Version control system access
--A LAB_VERSION_CONTROL -m set --match-set LAB_GIT_SERVERS src,dst -j ACCEPT
--A LAB_VERSION_CONTROL -m set --match-set LAB_SVN_SERVERS src,dst,dst -j ACCEPT
--A LAB_VERSION_CONTROL -m set --match-set LAB_VCS_CLIENTS src,dst -j ACCEPT
--A LAB_VERSION_CONTROL -p tcp -m multiport --dports 22,80,443,9418 -j ACCEPT
--A LAB_VERSION_CONTROL -p tcp -m multiport --dports 3690,22222 -j ACCEPT
--A LAB_VERSION_CONTROL -j ACCEPT
-
-# LAB_ARTIFACT_MANAGEMENT - Artifact repository management
--A LAB_ARTIFACT_MANAGEMENT -m set --match-set LAB_MAVEN_REPOS src,dst -j ACCEPT
--A LAB_ARTIFACT_MANAGEMENT -m set --match-set LAB_NPM_REPOS src,dst,dst -j ACCEPT
--A LAB_ARTIFACT_MANAGEMENT -m set --match-set LAB_DOCKER_REGISTRIES src,dst -j ACCEPT
--A LAB_ARTIFACT_MANAGEMENT -p tcp -m multiport --dports 80,443,8080,8081 -j ACCEPT
--A LAB_ARTIFACT_MANAGEMENT -p tcp -m multiport --dports 5000,5001,5002 -j ACCEPT
--A LAB_ARTIFACT_MANAGEMENT -j RATE_LIMIT
-
-# LAB_PERFORMANCE_TESTING - Performance and load testing
--A LAB_PERFORMANCE_TESTING -m set --match-set LAB_PERF_TEST_TARGETS src,dst -j ACCEPT_WITH_LOG
--A LAB_PERFORMANCE_TESTING -m set --match-set LAB_PERF_TEST_AGENTS src,dst,dst -j LAB_LOAD_TESTING
--A LAB_PERFORMANCE_TESTING -m set --match-set LAB_MONITORING_AGENTS src,dst -j LAB_MONITORING
--A LAB_PERFORMANCE_TESTING -p tcp -m multiport --dports 80,443,8080,9000 -j ACCEPT
--A LAB_PERFORMANCE_TESTING -p tcp -m multiport --dports 1099,8888,9999 -j ACCEPT
--A LAB_PERFORMANCE_TESTING -j ACCEPT
-
-# LAB_SECURITY_TESTING - Security testing and vulnerability assessment
--A LAB_SECURITY_TESTING -m set --match-set LAB_VULN_SCANNERS src,dst -j ACCEPT_WITH_LOG
--A LAB_SECURITY_TESTING -m set --match-set LAB_PENTEST_TOOLS src,dst,dst -j LAB_VULNERABILITY_SCAN
--A LAB_SECURITY_TESTING -m set --match-set LAB_SECURITY_TARGETS src,dst -j ACCEPT
--A LAB_SECURITY_TESTING -p tcp -m multiport --dports 80,443,8080,9000 -j ACCEPT
--A LAB_SECURITY_TESTING -p tcp -m multiport --dports 8834,9392,10000 -j ACCEPT
--A LAB_SECURITY_TESTING -j ACCEPT
-
-# LAB_INTEGRATION_TESTING - Integration and API testing
--A LAB_INTEGRATION_TESTING -m set --match-set LAB_API_TEST_TARGETS src,dst -j ACCEPT
--A LAB_INTEGRATION_TESTING -m set --match-set LAB_SERVICE_ENDPOINTS src,dst,dst -j ACCEPT
--A LAB_INTEGRATION_TESTING -m set --match-set LAB_TEST_DATA_SOURCES src,dst -j ACCEPT
--A LAB_INTEGRATION_TESTING -p tcp -m multiport --dports 80,443,8080,9000 -j ACCEPT
--A LAB_INTEGRATION_TESTING -p tcp -m multiport --dports 3000,4000,5000,6000 -j ACCEPT
--A LAB_INTEGRATION_TESTING -j ACCEPT
-
-# LAB_LOAD_TESTING - Load testing and stress testing
--A LAB_LOAD_TESTING -m set --match-set LAB_LOAD_GENERATORS src,dst -j ACCEPT_WITH_LOG
--A LAB_LOAD_TESTING -m set --match-set LAB_STRESS_TEST_TARGETS src,dst,dst -j ACCEPT
--A LAB_LOAD_TESTING -m connlimit --connlimit-above 1000 --connlimit-mask 24 -j LOG --log-prefix "LAB_LOAD_LIMIT: "
--A LAB_LOAD_TESTING -p tcp -m multiport --dports 80,443,8080,9000 -j ACCEPT
--A LAB_LOAD_TESTING -j ACCEPT
-
-# LAB_VULNERABILITY_SCAN - Vulnerability scanning and assessment
--A LAB_VULNERABILITY_SCAN -m set --match-set LAB_SCAN_TARGETS src,dst -j LOG --log-prefix "LAB_VULN_SCAN: " --log-level 6
--A LAB_VULNERABILITY_SCAN -m set --match-set LAB_SCAN_EXCLUSIONS src,dst,dst -j ACCEPT
--A LAB_VULNERABILITY_SCAN -m recent --name lab_scan_detect --set --rsource
--A LAB_VULNERABILITY_SCAN -m recent --name lab_scan_detect --rcheck --seconds 300 --hitcount 100 --rsource -j LOG --log-prefix "LAB_SCAN_DETECTED: "
--A LAB_VULNERABILITY_SCAN -j ACCEPT
-
-# LAB_CODE_QUALITY - Code quality and analysis tools
--A LAB_CODE_QUALITY -m set --match-set LAB_SONAR_SERVERS src,dst -j ACCEPT
--A LAB_CODE_QUALITY -m set --match-set LAB_QUALITY_GATES src,dst,dst -j ACCEPT
--A LAB_CODE_QUALITY -m set --match-set LAB_STATIC_ANALYSIS src,dst -j ACCEPT
--A LAB_CODE_QUALITY -p tcp -m multiport --dports 9000,9001,9002 -j ACCEPT
--A LAB_CODE_QUALITY -p tcp -m multiport --dports 8000,8001,8002 -j ACCEPT
--A LAB_CODE_QUALITY -j ACCEPT
-
-# LAB_ENVIRONMENT_MANAGEMENT - Environment lifecycle management
--A LAB_ENVIRONMENT_MANAGEMENT -m set --match-set LAB_ENV_CONTROLLERS src,dst -j ACCEPT
--A LAB_ENVIRONMENT_MANAGEMENT -m set --match-set LAB_PROVISIONING src,dst,dst -j ACCEPT
--A LAB_ENVIRONMENT_MANAGEMENT -m set --match-set LAB_CONFIGURATION_MGMT src,dst -j ACCEPT
--A LAB_ENVIRONMENT_MANAGEMENT -p tcp -m multiport --dports 22,443,8080 -j ACCEPT
--A LAB_ENVIRONMENT_MANAGEMENT -p tcp -m multiport --dports 4505,4506,8140 -j ACCEPT
--A LAB_ENVIRONMENT_MANAGEMENT -j ACCEPT
-
-# LAB_RESOURCE_QUOTAS - Resource quota and limit enforcement
--A LAB_RESOURCE_QUOTAS -m set --match-set LAB_HIGH_RESOURCE_USERS src -j CLASSIFY --set-class 1:10
--A LAB_RESOURCE_QUOTAS -m set --match-set LAB_MEDIUM_RESOURCE_USERS src -j CLASSIFY --set-class 1:20
--A LAB_RESOURCE_QUOTAS -m set --match-set LAB_LOW_RESOURCE_USERS src -j CLASSIFY --set-class 1:30
--A LAB_RESOURCE_QUOTAS -m connlimit --connlimit-above 50 --connlimit-mask 32 -j LOG_AND_DROP
--A LAB_RESOURCE_QUOTAS -j ACCEPT
-
-# LAB_ACCESS_CONTROL - Access control and authentication
--A LAB_ACCESS_CONTROL -m set --match-set LAB_DEVELOPER_WHITELIST src -j ACCEPT
--A LAB_ACCESS_CONTROL -m set --match-set LAB_ADMIN_ACCESS src,dst -j ACCEPT
--A LAB_ACCESS_CONTROL -m time --timestart 08:00 --timestop 20:00 --weekdays Mon,Tue,Wed,Thu,Fri -j ACCEPT
--A LAB_ACCESS_CONTROL -m set --match-set LAB_EMERGENCY_ACCESS src -j ACCEPT
--A LAB_ACCESS_CONTROL -j LOG_AND_DROP
-
-# LAB_MONITORING - Lab environment monitoring
--A LAB_MONITORING -m set --match-set LAB_MONITORING_TARGETS src -j LOG --log-prefix "LAB_MONITOR: " --log-level 6
--A LAB_MONITORING -m set --match-set LAB_METRICS_COLLECTORS src,dst -j ACCEPT
--A LAB_MONITORING -m conntrack --ctstate NEW -j LOG --log-prefix "LAB_NEW_CONN: " --log-level 6
--A LAB_MONITORING -j ACCEPT
-
-# RATE_LIMIT - Generic rate limiting
--A RATE_LIMIT -m limit --limit 100/sec --limit-burst 200 -j ACCEPT
--A RATE_LIMIT -j DROP
-
-# LOG_AND_DROP - Logging and dropping
--A LOG_AND_DROP -j LOG --log-prefix "LAB_DROPPED: " --log-level 4
--A LOG_AND_DROP -j DROP
-
-# ACCEPT_WITH_LOG - Logging and accepting
--A ACCEPT_WITH_LOG -j LOG --log-prefix "LAB_ACCEPTED: " --log-level 6
--A ACCEPT_WITH_LOG -j ACCEPT
-
+:OUTPUT ACCEPT [0:0]
+:HQ_LAB_MGMT_ACCESS - [0:0]
+:HQ_LAB_LAN_FORWARD - [0:0]
+-A INPUT -i lo -j ACCEPT
+-A INPUT -m conntrack --ctstate INVALID -j DROP
+-A INPUT -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
+-A INPUT -s 10.1.0.0/16 -p icmp --icmp-type 0 -j LOG --log-prefix "INPUT-ICMP-0: "
+-A INPUT -s 10.1.0.0/16 -p icmp --icmp-type 0 -j ACCEPT
+-A INPUT -s 10.1.0.0/16 -p icmp --icmp-type 3 -j LOG --log-prefix "INPUT-ICMP-3: "
+-A INPUT -s 10.1.0.0/16 -p icmp --icmp-type 3 -j ACCEPT
+-A INPUT -s 10.1.0.0/16 -p icmp --icmp-type 8 -j LOG --log-prefix "INPUT-ICMP-8: "
+-A INPUT -s 10.1.0.0/16 -p icmp --icmp-type 8 -j ACCEPT
+-A INPUT -s 10.1.0.0/16 -p icmp --icmp-type 11 -j LOG --log-prefix "INPUT-ICMP-11: "
+-A INPUT -s 10.1.0.0/16 -p icmp --icmp-type 11 -j ACCEPT
+-A INPUT -s 10.2.0.0/16 -p icmp --icmp-type 0 -j LOG --log-prefix "INPUT-ICMP-0: "
+-A INPUT -s 10.2.0.0/16 -p icmp --icmp-type 0 -j ACCEPT
+-A INPUT -s 10.2.0.0/16 -p icmp --icmp-type 3 -j LOG --log-prefix "INPUT-ICMP-3: "
+-A INPUT -s 10.2.0.0/16 -p icmp --icmp-type 3 -j ACCEPT
+-A INPUT -s 10.2.0.0/16 -p icmp --icmp-type 8 -j LOG --log-prefix "INPUT-ICMP-8: "
+-A INPUT -s 10.2.0.0/16 -p icmp --icmp-type 8 -j ACCEPT
+-A INPUT -s 10.2.0.0/16 -p icmp --icmp-type 11 -j LOG --log-prefix "INPUT-ICMP-11: "
+-A INPUT -s 10.2.0.0/16 -p icmp --icmp-type 11 -j ACCEPT
+-A INPUT -s 10.3.0.0/16 -p icmp --icmp-type 0 -j LOG --log-prefix "INPUT-ICMP-0: "
+-A INPUT -s 10.3.0.0/16 -p icmp --icmp-type 0 -j ACCEPT
+-A INPUT -s 10.3.0.0/16 -p icmp --icmp-type 3 -j LOG --log-prefix "INPUT-ICMP-3: "
+-A INPUT -s 10.3.0.0/16 -p icmp --icmp-type 3 -j ACCEPT
+-A INPUT -s 10.3.0.0/16 -p icmp --icmp-type 8 -j LOG --log-prefix "INPUT-ICMP-8: "
+-A INPUT -s 10.3.0.0/16 -p icmp --icmp-type 8 -j ACCEPT
+-A INPUT -s 10.3.0.0/16 -p icmp --icmp-type 11 -j LOG --log-prefix "INPUT-ICMP-11: "
+-A INPUT -s 10.3.0.0/16 -p icmp --icmp-type 11 -j ACCEPT
+-A INPUT -s 10.100.1.0/24 -p icmp --icmp-type 0 -j LOG --log-prefix "INPUT-ICMP-0: "
+-A INPUT -s 10.100.1.0/24 -p icmp --icmp-type 0 -j ACCEPT
+-A INPUT -s 10.100.1.0/24 -p icmp --icmp-type 3 -j LOG --log-prefix "INPUT-ICMP-3: "
+-A INPUT -s 10.100.1.0/24 -p icmp --icmp-type 3 -j ACCEPT
+-A INPUT -s 10.100.1.0/24 -p icmp --icmp-type 8 -j LOG --log-prefix "INPUT-ICMP-8: "
+-A INPUT -s 10.100.1.0/24 -p icmp --icmp-type 8 -j ACCEPT
+-A INPUT -s 10.100.1.0/24 -p icmp --icmp-type 11 -j LOG --log-prefix "INPUT-ICMP-11: "
+-A INPUT -s 10.100.1.0/24 -p icmp --icmp-type 11 -j ACCEPT
+-A INPUT -s 10.1.0.0/16 -p tcp --dport 22 -m conntrack --ctstate NEW -j LOG --log-prefix "INPUT-MGMT-22: "
+-A INPUT -s 10.1.0.0/16 -p tcp --dport 22 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
+-A INPUT -s 10.1.0.0/16 -p tcp --dport 161 -m conntrack --ctstate NEW -j LOG --log-prefix "INPUT-MGMT-161: "
+-A INPUT -s 10.1.0.0/16 -p tcp --dport 161 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
+-A INPUT -s 10.1.0.0/16 -p tcp --dport 443 -m conntrack --ctstate NEW -j LOG --log-prefix "INPUT-MGMT-443: "
+-A INPUT -s 10.1.0.0/16 -p tcp --dport 443 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
+-A INPUT -s 10.1.0.0/16 -p tcp --dport 8080 -m conntrack --ctstate NEW -j LOG --log-prefix "INPUT-MGMT-8080: "
+-A INPUT -s 10.1.0.0/16 -p tcp --dport 8080 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
+-A INPUT -s 10.1.0.0/16 -p tcp --dport 514 -m conntrack --ctstate NEW -j LOG --log-prefix "INPUT-MGMT-514: "
+-A INPUT -s 10.1.0.0/16 -p tcp --dport 514 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
+-A INPUT -s 10.2.0.0/16 -p tcp --dport 22 -m conntrack --ctstate NEW -j LOG --log-prefix "INPUT-MGMT-22: "
+-A INPUT -s 10.2.0.0/16 -p tcp --dport 22 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
+-A INPUT -s 10.2.0.0/16 -p tcp --dport 161 -m conntrack --ctstate NEW -j LOG --log-prefix "INPUT-MGMT-161: "
+-A INPUT -s 10.2.0.0/16 -p tcp --dport 161 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
+-A INPUT -s 10.2.0.0/16 -p tcp --dport 443 -m conntrack --ctstate NEW -j LOG --log-prefix "INPUT-MGMT-443: "
+-A INPUT -s 10.2.0.0/16 -p tcp --dport 443 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
+-A INPUT -s 10.2.0.0/16 -p tcp --dport 8080 -m conntrack --ctstate NEW -j LOG --log-prefix "INPUT-MGMT-8080: "
+-A INPUT -s 10.2.0.0/16 -p tcp --dport 8080 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
+-A INPUT -s 10.2.0.0/16 -p tcp --dport 514 -m conntrack --ctstate NEW -j LOG --log-prefix "INPUT-MGMT-514: "
+-A INPUT -s 10.2.0.0/16 -p tcp --dport 514 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
+-A INPUT -s 10.3.0.0/16 -p tcp --dport 22 -m conntrack --ctstate NEW -j LOG --log-prefix "INPUT-MGMT-22: "
+-A INPUT -s 10.3.0.0/16 -p tcp --dport 22 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
+-A INPUT -s 10.3.0.0/16 -p tcp --dport 161 -m conntrack --ctstate NEW -j LOG --log-prefix "INPUT-MGMT-161: "
+-A INPUT -s 10.3.0.0/16 -p tcp --dport 161 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
+-A INPUT -s 10.3.0.0/16 -p tcp --dport 443 -m conntrack --ctstate NEW -j LOG --log-prefix "INPUT-MGMT-443: "
+-A INPUT -s 10.3.0.0/16 -p tcp --dport 443 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
+-A INPUT -s 10.3.0.0/16 -p tcp --dport 8080 -m conntrack --ctstate NEW -j LOG --log-prefix "INPUT-MGMT-8080: "
+-A INPUT -s 10.3.0.0/16 -p tcp --dport 8080 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
+-A INPUT -s 10.3.0.0/16 -p tcp --dport 514 -m conntrack --ctstate NEW -j LOG --log-prefix "INPUT-MGMT-514: "
+-A INPUT -s 10.3.0.0/16 -p tcp --dport 514 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
+-A INPUT -s 10.100.1.0/24 -p tcp --dport 22 -m conntrack --ctstate NEW -j LOG --log-prefix "INPUT-MGMT-22: "
+-A INPUT -s 10.100.1.0/24 -p tcp --dport 22 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
+-A INPUT -s 10.100.1.0/24 -p tcp --dport 161 -m conntrack --ctstate NEW -j LOG --log-prefix "INPUT-MGMT-161: "
+-A INPUT -s 10.100.1.0/24 -p tcp --dport 161 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
+-A INPUT -s 10.100.1.0/24 -p tcp --dport 443 -m conntrack --ctstate NEW -j LOG --log-prefix "INPUT-MGMT-443: "
+-A INPUT -s 10.100.1.0/24 -p tcp --dport 443 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
+-A INPUT -s 10.100.1.0/24 -p tcp --dport 8080 -m conntrack --ctstate NEW -j LOG --log-prefix "INPUT-MGMT-8080: "
+-A INPUT -s 10.100.1.0/24 -p tcp --dport 8080 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
+-A INPUT -s 10.100.1.0/24 -p tcp --dport 514 -m conntrack --ctstate NEW -j LOG --log-prefix "INPUT-MGMT-514: "
+-A INPUT -s 10.100.1.0/24 -p tcp --dport 514 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
+-A INPUT -s 10.1.0.0/16 -p udp --dport 33434:33534 -j LOG --log-prefix "INPUT-MTR-UDP: "
+-A INPUT -s 10.1.0.0/16 -p udp --dport 33434:33534 -j ACCEPT
+-A INPUT -s 10.2.0.0/16 -p udp --dport 33434:33534 -j LOG --log-prefix "INPUT-MTR-UDP: "
+-A INPUT -s 10.2.0.0/16 -p udp --dport 33434:33534 -j ACCEPT
+-A INPUT -s 10.3.0.0/16 -p udp --dport 33434:33534 -j LOG --log-prefix "INPUT-MTR-UDP: "
+-A INPUT -s 10.3.0.0/16 -p udp --dport 33434:33534 -j ACCEPT
+-A INPUT -s 10.100.1.0/24 -p udp --dport 33434:33534 -j LOG --log-prefix "INPUT-MTR-UDP: "
+-A INPUT -s 10.100.1.0/24 -p udp --dport 33434:33534 -j ACCEPT
+-A INPUT -j LOG --log-prefix "INPUT-DROP: "
+-A INPUT -j DROP
+-A FORWARD -i lo -j ACCEPT
+-A FORWARD -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
+-A FORWARD -s 10.1.0.0/16 -d 10.2.0.0/16 -p icmp -j LOG --log-prefix "FWD-ICMP-10_1_0_0-10_2_0_0: "
+-A FORWARD -s 10.1.0.0/16 -d 10.2.0.0/16 -p icmp -j ACCEPT
+-A FORWARD -s 10.1.0.0/16 -d 10.3.0.0/16 -p icmp -j LOG --log-prefix "FWD-ICMP-10_1_0_0-10_3_0_0: "
+-A FORWARD -s 10.1.0.0/16 -d 10.3.0.0/16 -p icmp -j ACCEPT
+-A FORWARD -s 10.1.0.0/16 -d 10.100.1.0/24 -p icmp -j LOG --log-prefix "FWD-ICMP-10_1_0_0-10_100_1_0: "
+-A FORWARD -s 10.1.0.0/16 -d 10.100.1.0/24 -p icmp -j ACCEPT
+-A FORWARD -s 10.2.0.0/16 -d 10.1.0.0/16 -p icmp -j LOG --log-prefix "FWD-ICMP-10_2_0_0-10_1_0_0: "
+-A FORWARD -s 10.2.0.0/16 -d 10.1.0.0/16 -p icmp -j ACCEPT
+-A FORWARD -s 10.2.0.0/16 -d 10.3.0.0/16 -p icmp -j LOG --log-prefix "FWD-ICMP-10_2_0_0-10_3_0_0: "
+-A FORWARD -s 10.2.0.0/16 -d 10.3.0.0/16 -p icmp -j ACCEPT
+-A FORWARD -s 10.2.0.0/16 -d 10.100.1.0/24 -p icmp -j LOG --log-prefix "FWD-ICMP-10_2_0_0-10_100_1_0: "
+-A FORWARD -s 10.2.0.0/16 -d 10.100.1.0/24 -p icmp -j ACCEPT
+-A FORWARD -s 10.3.0.0/16 -d 10.1.0.0/16 -p icmp -j LOG --log-prefix "FWD-ICMP-10_3_0_0-10_1_0_0: "
+-A FORWARD -s 10.3.0.0/16 -d 10.1.0.0/16 -p icmp -j ACCEPT
+-A FORWARD -s 10.3.0.0/16 -d 10.2.0.0/16 -p icmp -j LOG --log-prefix "FWD-ICMP-10_3_0_0-10_2_0_0: "
+-A FORWARD -s 10.3.0.0/16 -d 10.2.0.0/16 -p icmp -j ACCEPT
+-A FORWARD -s 10.3.0.0/16 -d 10.100.1.0/24 -p icmp -j LOG --log-prefix "FWD-ICMP-10_3_0_0-10_100_1_0: "
+-A FORWARD -s 10.3.0.0/16 -d 10.100.1.0/24 -p icmp -j ACCEPT
+-A FORWARD -s 10.100.1.0/24 -d 10.1.0.0/16 -p icmp -j LOG --log-prefix "FWD-ICMP-10_100_1_0-10_1_0_0: "
+-A FORWARD -s 10.100.1.0/24 -d 10.1.0.0/16 -p icmp -j ACCEPT
+-A FORWARD -s 10.100.1.0/24 -d 10.2.0.0/16 -p icmp -j LOG --log-prefix "FWD-ICMP-10_100_1_0-10_2_0_0: "
+-A FORWARD -s 10.100.1.0/24 -d 10.2.0.0/16 -p icmp -j ACCEPT
+-A FORWARD -s 10.100.1.0/24 -d 10.3.0.0/16 -p icmp -j LOG --log-prefix "FWD-ICMP-10_100_1_0-10_3_0_0: "
+-A FORWARD -s 10.100.1.0/24 -d 10.3.0.0/16 -p icmp -j ACCEPT
+-A FORWARD -s 10.1.0.0/16 -d 10.2.0.0/16 -p udp --dport 33434:33534 -j LOG --log-prefix "FWD-MTR-10_1_0_0-10_2_0_0: "
+-A FORWARD -s 10.1.0.0/16 -d 10.2.0.0/16 -p udp --dport 33434:33534 -j ACCEPT
+-A FORWARD -s 10.1.0.0/16 -d 10.3.0.0/16 -p udp --dport 33434:33534 -j LOG --log-prefix "FWD-MTR-10_1_0_0-10_3_0_0: "
+-A FORWARD -s 10.1.0.0/16 -d 10.3.0.0/16 -p udp --dport 33434:33534 -j ACCEPT
+-A FORWARD -s 10.1.0.0/16 -d 10.100.1.0/24 -p udp --dport 33434:33534 -j LOG --log-prefix "FWD-MTR-10_1_0_0-10_100_1_0: "
+-A FORWARD -s 10.1.0.0/16 -d 10.100.1.0/24 -p udp --dport 33434:33534 -j ACCEPT
+-A FORWARD -s 10.2.0.0/16 -d 10.1.0.0/16 -p udp --dport 33434:33534 -j LOG --log-prefix "FWD-MTR-10_2_0_0-10_1_0_0: "
+-A FORWARD -s 10.2.0.0/16 -d 10.1.0.0/16 -p udp --dport 33434:33534 -j ACCEPT
+-A FORWARD -s 10.2.0.0/16 -d 10.3.0.0/16 -p udp --dport 33434:33534 -j LOG --log-prefix "FWD-MTR-10_2_0_0-10_3_0_0: "
+-A FORWARD -s 10.2.0.0/16 -d 10.3.0.0/16 -p udp --dport 33434:33534 -j ACCEPT
+-A FORWARD -s 10.2.0.0/16 -d 10.100.1.0/24 -p udp --dport 33434:33534 -j LOG --log-prefix "FWD-MTR-10_2_0_0-10_100_1_0: "
+-A FORWARD -s 10.2.0.0/16 -d 10.100.1.0/24 -p udp --dport 33434:33534 -j ACCEPT
+-A FORWARD -s 10.3.0.0/16 -d 10.1.0.0/16 -p udp --dport 33434:33534 -j LOG --log-prefix "FWD-MTR-10_3_0_0-10_1_0_0: "
+-A FORWARD -s 10.3.0.0/16 -d 10.1.0.0/16 -p udp --dport 33434:33534 -j ACCEPT
+-A FORWARD -s 10.3.0.0/16 -d 10.2.0.0/16 -p udp --dport 33434:33534 -j LOG --log-prefix "FWD-MTR-10_3_0_0-10_2_0_0: "
+-A FORWARD -s 10.3.0.0/16 -d 10.2.0.0/16 -p udp --dport 33434:33534 -j ACCEPT
+-A FORWARD -s 10.3.0.0/16 -d 10.100.1.0/24 -p udp --dport 33434:33534 -j LOG --log-prefix "FWD-MTR-10_3_0_0-10_100_1_0: "
+-A FORWARD -s 10.3.0.0/16 -d 10.100.1.0/24 -p udp --dport 33434:33534 -j ACCEPT
+-A FORWARD -s 10.100.1.0/24 -d 10.1.0.0/16 -p udp --dport 33434:33534 -j LOG --log-prefix "FWD-MTR-10_100_1_0-10_1_0_0: "
+-A FORWARD -s 10.100.1.0/24 -d 10.1.0.0/16 -p udp --dport 33434:33534 -j ACCEPT
+-A FORWARD -s 10.100.1.0/24 -d 10.2.0.0/16 -p udp --dport 33434:33534 -j LOG --log-prefix "FWD-MTR-10_100_1_0-10_2_0_0: "
+-A FORWARD -s 10.100.1.0/24 -d 10.2.0.0/16 -p udp --dport 33434:33534 -j ACCEPT
+-A FORWARD -s 10.100.1.0/24 -d 10.3.0.0/16 -p udp --dport 33434:33534 -j LOG --log-prefix "FWD-MTR-10_100_1_0-10_3_0_0: "
+-A FORWARD -s 10.100.1.0/24 -d 10.3.0.0/16 -p udp --dport 33434:33534 -j ACCEPT
+-A FORWARD -j LOG --log-prefix "FORWARD-DROP: "
+-A FORWARD -j DROP
 COMMIT
-# Completed on Fri Jun 21 15:24:45 2025
+# Completed on Mon Jul  1 10:00:00 2025
+# Generated by iptables-save v1.8.7 on Mon Jul  1 10:00:00 2025
+*nat
+:PREROUTING ACCEPT [0:0]
+:INPUT ACCEPT [0:0]
+:OUTPUT ACCEPT [0:0]
+:POSTROUTING ACCEPT [0:0]
+COMMIT
+# Completed on Mon Jul  1 10:00:00 2025
+# Generated by iptables-save v1.8.7 on Mon Jul  1 10:00:00 2025
+*mangle
+:PREROUTING ACCEPT [0:0]
+:INPUT ACCEPT [0:0]
+:FORWARD ACCEPT [0:0]
+:OUTPUT ACCEPT [0:0]
+:POSTROUTING ACCEPT [0:0]
+-A PREROUTING -p icmp -j LOG --log-prefix "MANGLE-MARK-ICMP: "
+-A PREROUTING -p icmp -j MARK --set-mark 0x1
+-A PREROUTING -p tcp --dport 22 -j LOG --log-prefix "MANGLE-MARK-22: "
+-A PREROUTING -p tcp --dport 22 -j MARK --set-mark 0x1
+-A PREROUTING -p tcp --dport 161 -j LOG --log-prefix "MANGLE-MARK-161: "
+-A PREROUTING -p tcp --dport 161 -j MARK --set-mark 0x1
+-A PREROUTING -p tcp --dport 443 -j LOG --log-prefix "MANGLE-MARK-443: "
+-A PREROUTING -p tcp --dport 443 -j MARK --set-mark 0x1
+COMMIT
+# Completed on Mon Jul  1 10:00:00 2025
 
 EXIT_CODE: 0
 === TSIM_SECTION_END:iptables_save ===
 
 === TSIM_SECTION_START:ipset_save ===
-TITLE: Complete Ipset Configuration
+TITLE: Ipset Save Output
 COMMAND: /sbin/ipset save
-TIMESTAMP: 2025-06-21 15:24:45
+TIMESTAMP: 2025-07-01 10:00:00
 ---
-create LAB_DEV_ALLOWED hash:ip family inet hashsize 1024 maxelem 65536
-add LAB_DEV_ALLOWED 10.1.10.0/24
-add LAB_DEV_ALLOWED 10.1.2.10
-add LAB_DEV_ALLOWED 10.1.2.11
-add LAB_DEV_ALLOWED 10.1.2.12
-
-create LAB_TEST_ALLOWED hash:ip family inet hashsize 1024 maxelem 65536
-add LAB_TEST_ALLOWED 10.1.11.0/24
-add LAB_TEST_ALLOWED 10.1.2.20
-add LAB_TEST_ALLOWED 10.1.2.21
-add LAB_TEST_ALLOWED 10.1.2.22
-
-create LAB_DEV_CLIENTS hash:ip family inet hashsize 1024 maxelem 65536
-add LAB_DEV_CLIENTS 10.1.10.10
-add LAB_DEV_CLIENTS 10.1.10.11
-add LAB_DEV_CLIENTS 10.1.10.12
-add LAB_DEV_CLIENTS 10.1.10.13
-add LAB_DEV_CLIENTS 10.1.10.14
-add LAB_DEV_CLIENTS 10.1.10.15
-add LAB_DEV_CLIENTS 10.1.10.16
-add LAB_DEV_CLIENTS 10.1.10.17
-add LAB_DEV_CLIENTS 10.1.10.18
-add LAB_DEV_CLIENTS 10.1.10.19
-add LAB_DEV_CLIENTS 10.1.10.20
-
-create LAB_DEV_TO_TEST hash:ip family inet hashsize 512 maxelem 32768
-add LAB_DEV_TO_TEST 10.1.11.0/24
-
-create LAB_TEST_CLIENTS hash:ip family inet hashsize 1024 maxelem 65536
-add LAB_TEST_CLIENTS 10.1.11.10
-add LAB_TEST_CLIENTS 10.1.11.11
-add LAB_TEST_CLIENTS 10.1.11.12
-add LAB_TEST_CLIENTS 10.1.11.13
-add LAB_TEST_CLIENTS 10.1.11.14
-add LAB_TEST_CLIENTS 10.1.11.15
-add LAB_TEST_CLIENTS 10.1.11.16
-add LAB_TEST_CLIENTS 10.1.11.17
-add LAB_TEST_CLIENTS 10.1.11.18
-add LAB_TEST_CLIENTS 10.1.11.19
-add LAB_TEST_CLIENTS 10.1.11.20
-
-create LAB_TEST_TO_DEV hash:ip family inet hashsize 512 maxelem 32768
-add LAB_TEST_TO_DEV 10.1.10.0/24
-
-create LAB_CRITICAL_SERVICES hash:net,net family inet hashsize 512 maxelem 32768
-add LAB_CRITICAL_SERVICES 10.1.10.0/24,10.1.11.0/24
-add LAB_CRITICAL_SERVICES 10.1.11.0/24,10.1.10.0/24
-add LAB_CRITICAL_SERVICES 10.1.10.0/24,10.1.2.0/24
-add LAB_CRITICAL_SERVICES 10.1.11.0/24,10.1.2.0/24
-
-create LAB_DEVELOPMENT_PRIORITY hash:net,net,port family inet hashsize 512 maxelem 32768
-add LAB_DEVELOPMENT_PRIORITY 10.1.10.10,10.1.2.0/24,tcp:22
-add LAB_DEVELOPMENT_PRIORITY 10.1.10.11,10.1.2.0/24,tcp:80
-add LAB_DEVELOPMENT_PRIORITY 10.1.10.12,10.1.2.0/24,tcp:443
-add LAB_DEVELOPMENT_PRIORITY 10.1.10.13,10.1.11.0/24,tcp:8080
-add LAB_DEVELOPMENT_PRIORITY 10.1.10.14,10.1.11.0/24,tcp:9000
-
-create LAB_TESTING_PRIORITY hash:net,net family inet hashsize 512 maxelem 32768
-add LAB_TESTING_PRIORITY 10.1.11.10,10.1.2.0/24
-add LAB_TESTING_PRIORITY 10.1.11.11,10.1.2.0/24
-add LAB_TESTING_PRIORITY 10.1.11.12,10.1.10.0/24
-add LAB_TESTING_PRIORITY 10.1.11.13,10.1.10.0/24
-
-create LAB_SANDBOX_ONLY hash:ip family inet hashsize 256 maxelem 16384
-add LAB_SANDBOX_ONLY 10.1.10.100
-add LAB_SANDBOX_ONLY 10.1.10.101
-add LAB_SANDBOX_ONLY 10.1.11.100
-add LAB_SANDBOX_ONLY 10.1.11.101
-
-create LAB_DEV_MATRIX hash:net,net family inet hashsize 512 maxelem 32768
-add LAB_DEV_MATRIX 10.1.10.0/24,10.1.2.0/24
-add LAB_DEV_MATRIX 10.1.10.0/24,10.1.11.0/24
-add LAB_DEV_MATRIX 10.1.2.0/24,10.1.10.0/24
-add LAB_DEV_MATRIX 10.1.11.0/24,10.1.10.0/24
-
-create LAB_DEV_RESTRICTED hash:net,net family inet hashsize 256 maxelem 16384
-add LAB_DEV_RESTRICTED 10.1.10.100,10.1.1.0/24
-add LAB_DEV_RESTRICTED 10.1.10.101,10.1.1.0/24
-add LAB_DEV_RESTRICTED 10.1.10.0/24,10.1.3.0/24
-
-create LAB_DEV_ADMIN_HOSTS hash:ip family inet hashsize 256 maxelem 16384
-add LAB_DEV_ADMIN_HOSTS 10.1.2.10
-add LAB_DEV_ADMIN_HOSTS 10.1.2.11
-add LAB_DEV_ADMIN_HOSTS 10.1.2.3
-add LAB_DEV_ADMIN_HOSTS 10.1.1.10
-
-create LAB_TEST_MATRIX hash:net,net family inet hashsize 512 maxelem 32768
-add LAB_TEST_MATRIX 10.1.11.0/24,10.1.2.0/24
-add LAB_TEST_MATRIX 10.1.11.0/24,10.1.10.0/24
-add LAB_TEST_MATRIX 10.1.2.0/24,10.1.11.0/24
-add LAB_TEST_MATRIX 10.1.10.0/24,10.1.11.0/24
-
-create LAB_TEST_RESTRICTED hash:net,net family inet hashsize 256 maxelem 16384
-add LAB_TEST_RESTRICTED 10.1.11.100,10.1.1.0/24
-add LAB_TEST_RESTRICTED 10.1.11.101,10.1.1.0/24
-add LAB_TEST_RESTRICTED 10.1.11.0/24,10.1.3.0/24
-
-create LAB_TEST_ADMIN_HOSTS hash:ip family inet hashsize 256 maxelem 16384
-add LAB_TEST_ADMIN_HOSTS 10.1.2.20
-add LAB_TEST_ADMIN_HOSTS 10.1.2.21
-add LAB_TEST_ADMIN_HOSTS 10.1.2.3
-add LAB_TEST_ADMIN_HOSTS 10.1.1.10
-
-create LAB_DEV_SANDBOX hash:net,net family inet hashsize 256 maxelem 16384
-add LAB_DEV_SANDBOX 10.1.10.100,10.1.10.0/24
-add LAB_DEV_SANDBOX 10.1.10.101,10.1.10.0/24
-add LAB_DEV_SANDBOX 10.1.10.102,10.1.11.0/24
-
-create LAB_DEV_CI_CD hash:net,net,port family inet hashsize 256 maxelem 16384
-add LAB_DEV_CI_CD 10.1.10.0/24,10.1.2.100,tcp:8080
-add LAB_DEV_CI_CD 10.1.10.0/24,10.1.2.101,tcp:9000
-add LAB_DEV_CI_CD 10.1.11.0/24,10.1.2.100,tcp:8080
-add LAB_DEV_CI_CD 10.1.11.0/24,10.1.2.101,tcp:9000
-
-create LAB_DEV_VCS hash:net,net family inet hashsize 256 maxelem 16384
-add LAB_DEV_VCS 10.1.10.0/24,10.1.2.110
-add LAB_DEV_VCS 10.1.11.0/24,10.1.2.110
-add LAB_DEV_VCS 10.1.10.0/24,10.1.2.111
-add LAB_DEV_VCS 10.1.11.0/24,10.1.2.111
-
-create LAB_STAGING_ALLOWED hash:net,net family inet hashsize 256 maxelem 16384
-add LAB_STAGING_ALLOWED 10.1.10.0/24,10.1.11.0/24
-add LAB_STAGING_ALLOWED 10.1.11.0/24,10.1.10.0/24
-add LAB_STAGING_ALLOWED 10.1.2.0/24,10.1.10.0/24
-add LAB_STAGING_ALLOWED 10.1.2.0/24,10.1.11.0/24
-
-create LAB_STAGING_DEPLOY hash:net,net,port family inet hashsize 256 maxelem 16384
-add LAB_STAGING_DEPLOY 10.1.11.10,10.1.10.0/24,tcp:22
-add LAB_STAGING_DEPLOY 10.1.11.11,10.1.10.0/24,tcp:443
-add LAB_STAGING_DEPLOY 10.1.11.12,10.1.10.0/24,tcp:8080
-
-create LAB_STAGING_TEST hash:net,net family inet hashsize 256 maxelem 16384
-add LAB_STAGING_TEST 10.1.11.0/24,10.1.10.0/24
-add LAB_STAGING_TEST 10.1.10.0/24,10.1.11.0/24
-
-create LAB_TEST_FRAMEWORKS hash:net,net family inet hashsize 256 maxelem 16384
-add LAB_TEST_FRAMEWORKS 10.1.11.20,10.1.10.0/24
-add LAB_TEST_FRAMEWORKS 10.1.11.21,10.1.10.0/24
-add LAB_TEST_FRAMEWORKS 10.1.11.22,10.1.2.0/24
-
-create LAB_TEST_AUTOMATION hash:net,net,port family inet hashsize 256 maxelem 16384
-add LAB_TEST_AUTOMATION 10.1.11.0/24,10.1.10.0/24,tcp:4444
-add LAB_TEST_AUTOMATION 10.1.11.0/24,10.1.10.0/24,tcp:7055
-add LAB_TEST_AUTOMATION 10.1.11.0/24,10.1.10.0/24,tcp:9515
-
-create LAB_LOAD_TEST_TARGETS hash:net,net family inet hashsize 256 maxelem 16384
-add LAB_LOAD_TEST_TARGETS 10.1.11.0/24,10.1.10.0/24
-add LAB_LOAD_TEST_TARGETS 10.1.11.0/24,10.1.2.0/24
-
-create LAB_SANDBOX_ALLOWED hash:net,net family inet hashsize 256 maxelem 16384
-add LAB_SANDBOX_ALLOWED 10.1.10.100,8.8.8.8
-add LAB_SANDBOX_ALLOWED 10.1.10.101,8.8.4.4
-add LAB_SANDBOX_ALLOWED 10.1.11.100,1.1.1.1
-add LAB_SANDBOX_ALLOWED 10.1.11.101,1.0.0.1
-
-create LAB_SANDBOX_RESTRICTED hash:ip family inet hashsize 256 maxelem 16384
-add LAB_SANDBOX_RESTRICTED 10.1.10.100
-add LAB_SANDBOX_RESTRICTED 10.1.10.101
-add LAB_SANDBOX_RESTRICTED 10.1.11.100
-add LAB_SANDBOX_RESTRICTED 10.1.11.101
-
-create LAB_DEPLOY_SERVERS hash:net,net family inet hashsize 256 maxelem 16384
-add LAB_DEPLOY_SERVERS 10.1.2.100,10.1.10.0/24
-add LAB_DEPLOY_SERVERS 10.1.2.101,10.1.11.0/24
-add LAB_DEPLOY_SERVERS 10.1.2.102,10.1.10.0/24
-add LAB_DEPLOY_SERVERS 10.1.2.103,10.1.11.0/24
-
-create LAB_ARTIFACT_REPOS hash:net,net,port family inet hashsize 256 maxelem 16384
-add LAB_ARTIFACT_REPOS 10.1.2.120,10.1.10.0/24,tcp:8080
-add LAB_ARTIFACT_REPOS 10.1.2.121,10.1.10.0/24,tcp:8081
-add LAB_ARTIFACT_REPOS 10.1.2.122,10.1.11.0/24,tcp:5000
-add LAB_ARTIFACT_REPOS 10.1.2.123,10.1.11.0/24,tcp:5001
-
-create LAB_BUILD_AGENTS hash:net,net family inet hashsize 256 maxelem 16384
-add LAB_BUILD_AGENTS 10.1.10.30,10.1.2.100
-add LAB_BUILD_AGENTS 10.1.10.31,10.1.2.101
-add LAB_BUILD_AGENTS 10.1.11.30,10.1.2.100
-add LAB_BUILD_AGENTS 10.1.11.31,10.1.2.101
-
-create LAB_JENKINS_NODES hash:net,net family inet hashsize 256 maxelem 16384
-add LAB_JENKINS_NODES 10.1.10.40,10.1.2.100
-add LAB_JENKINS_NODES 10.1.10.41,10.1.2.100
-add LAB_JENKINS_NODES 10.1.11.40,10.1.2.100
-add LAB_JENKINS_NODES 10.1.11.41,10.1.2.100
-
-create LAB_GITLAB_RUNNERS hash:net,net,port family inet hashsize 256 maxelem 16384
-add LAB_GITLAB_RUNNERS 10.1.10.50,10.1.2.110,tcp:443
-add LAB_GITLAB_RUNNERS 10.1.10.51,10.1.2.110,tcp:443
-add LAB_GITLAB_RUNNERS 10.1.11.50,10.1.2.110,tcp:443
-add LAB_GITLAB_RUNNERS 10.1.11.51,10.1.2.110,tcp:443
-
-create LAB_BUILD_TRIGGERS hash:net,net family inet hashsize 256 maxelem 16384
-add LAB_BUILD_TRIGGERS 10.1.2.110,10.1.2.100
-add LAB_BUILD_TRIGGERS 10.1.2.111,10.1.2.101
-add LAB_BUILD_TRIGGERS 10.1.10.0/24,10.1.2.100
-add LAB_BUILD_TRIGGERS 10.1.11.0/24,10.1.2.101
-
-create LAB_GIT_SERVERS hash:net,net family inet hashsize 256 maxelem 16384
-add LAB_GIT_SERVERS 10.1.10.0/24,10.1.2.110
-add LAB_GIT_SERVERS 10.1.11.0/24,10.1.2.110
-add LAB_GIT_SERVERS 10.1.10.0/24,10.1.2.111
-add LAB_GIT_SERVERS 10.1.11.0/24,10.1.2.111
-
-create LAB_SVN_SERVERS hash:net,net,port family inet hashsize 256 maxelem 16384
-add LAB_SVN_SERVERS 10.1.10.0/24,10.1.2.112,tcp:3690
-add LAB_SVN_SERVERS 10.1.11.0/24,10.1.2.112,tcp:3690
-add LAB_SVN_SERVERS 10.1.10.0/24,10.1.2.113,tcp:80
-add LAB_SVN_SERVERS 10.1.11.0/24,10.1.2.113,tcp:80
-
-create LAB_VCS_CLIENTS hash:net,net family inet hashsize 512 maxelem 32768
-add LAB_VCS_CLIENTS 10.1.10.0/24,10.1.2.110
-add LAB_VCS_CLIENTS 10.1.10.0/24,10.1.2.111
-add LAB_VCS_CLIENTS 10.1.10.0/24,10.1.2.112
-add LAB_VCS_CLIENTS 10.1.11.0/24,10.1.2.110
-add LAB_VCS_CLIENTS 10.1.11.0/24,10.1.2.111
-add LAB_VCS_CLIENTS 10.1.11.0/24,10.1.2.112
-
-create LAB_MAVEN_REPOS hash:net,net family inet hashsize 256 maxelem 16384
-add LAB_MAVEN_REPOS 10.1.10.0/24,10.1.2.120
-add LAB_MAVEN_REPOS 10.1.11.0/24,10.1.2.120
-
-create LAB_NPM_REPOS hash:net,net,port family inet hashsize 256 maxelem 16384
-add LAB_NPM_REPOS 10.1.10.0/24,10.1.2.121,tcp:4873
-add LAB_NPM_REPOS 10.1.11.0/24,10.1.2.121,tcp:4873
-
-create LAB_DOCKER_REGISTRIES hash:net,net family inet hashsize 256 maxelem 16384
-add LAB_DOCKER_REGISTRIES 10.1.10.0/24,10.1.2.122
-add LAB_DOCKER_REGISTRIES 10.1.11.0/24,10.1.2.122
-
-create LAB_PERF_TEST_TARGETS hash:net,net family inet hashsize 256 maxelem 16384
-add LAB_PERF_TEST_TARGETS 10.1.11.0/24,10.1.10.0/24
-add LAB_PERF_TEST_TARGETS 10.1.11.60,10.1.10.0/24
-add LAB_PERF_TEST_TARGETS 10.1.11.61,10.1.2.0/24
-
-create LAB_PERF_TEST_AGENTS hash:net,net,port family inet hashsize 256 maxelem 16384
-add LAB_PERF_TEST_AGENTS 10.1.11.60,10.1.10.0/24,tcp:1099
-add LAB_PERF_TEST_AGENTS 10.1.11.61,10.1.10.0/24,tcp:8888
-add LAB_PERF_TEST_AGENTS 10.1.11.62,10.1.10.0/24,tcp:9999
-
-create LAB_MONITORING_AGENTS hash:net,net family inet hashsize 256 maxelem 16384
-add LAB_MONITORING_AGENTS 10.1.2.150,10.1.10.0/24
-add LAB_MONITORING_AGENTS 10.1.2.151,10.1.11.0/24
-add LAB_MONITORING_AGENTS 10.1.2.152,10.1.10.0/24
-
-create LAB_VULN_SCANNERS hash:net,net family inet hashsize 256 maxelem 16384
-add LAB_VULN_SCANNERS 10.1.11.70,10.1.10.0/24
-add LAB_VULN_SCANNERS 10.1.11.71,10.1.10.0/24
-add LAB_VULN_SCANNERS 10.1.11.72,10.1.2.0/24
-
-create LAB_PENTEST_TOOLS hash:net,net,port family inet hashsize 256 maxelem 16384
-add LAB_PENTEST_TOOLS 10.1.11.70,10.1.10.0/24,tcp:8834
-add LAB_PENTEST_TOOLS 10.1.11.71,10.1.10.0/24,tcp:9392
-add LAB_PENTEST_TOOLS 10.1.11.72,10.1.10.0/24,tcp:10000
-
-create LAB_SECURITY_TARGETS hash:net,net family inet hashsize 256 maxelem 16384
-add LAB_SECURITY_TARGETS 10.1.11.0/24,10.1.10.0/24
-add LAB_SECURITY_TARGETS 10.1.11.0/24,10.1.2.0/24
-
-create LAB_API_TEST_TARGETS hash:net,net family inet hashsize 256 maxelem 16384
-add LAB_API_TEST_TARGETS 10.1.11.0/24,10.1.10.0/24
-add LAB_API_TEST_TARGETS 10.1.11.80,10.1.10.0/24
-add LAB_API_TEST_TARGETS 10.1.11.81,10.1.2.0/24
-
-create LAB_SERVICE_ENDPOINTS hash:net,net,port family inet hashsize 256 maxelem 16384
-add LAB_SERVICE_ENDPOINTS 10.1.11.80,10.1.10.0/24,tcp:3000
-add LAB_SERVICE_ENDPOINTS 10.1.11.81,10.1.10.0/24,tcp:4000
-add LAB_SERVICE_ENDPOINTS 10.1.11.82,10.1.10.0/24,tcp:5000
-
-create LAB_TEST_DATA_SOURCES hash:net,net family inet hashsize 256 maxelem 16384
-add LAB_TEST_DATA_SOURCES 10.1.11.0/24,10.1.2.130
-add LAB_TEST_DATA_SOURCES 10.1.11.0/24,10.1.2.131
-add LAB_TEST_DATA_SOURCES 10.1.10.0/24,10.1.2.130
-
-create LAB_LOAD_GENERATORS hash:net,net family inet hashsize 256 maxelem 16384
-add LAB_LOAD_GENERATORS 10.1.11.90,10.1.10.0/24
-add LAB_LOAD_GENERATORS 10.1.11.91,10.1.10.0/24
-add LAB_LOAD_GENERATORS 10.1.11.92,10.1.2.0/24
-
-create LAB_STRESS_TEST_TARGETS hash:net,net,port family inet hashsize 256 maxelem 16384
-add LAB_STRESS_TEST_TARGETS 10.1.11.90,10.1.10.0/24,tcp:80
-add LAB_STRESS_TEST_TARGETS 10.1.11.91,10.1.10.0/24,tcp:443
-add LAB_STRESS_TEST_TARGETS 10.1.11.92,10.1.10.0/24,tcp:8080
-
-create LAB_SCAN_TARGETS hash:net,net family inet hashsize 256 maxelem 16384
-add LAB_SCAN_TARGETS 10.1.11.0/24,10.1.10.0/24
-add LAB_SCAN_TARGETS 10.1.11.0/24,10.1.2.0/24
-
-create LAB_SCAN_EXCLUSIONS hash:net,net,port family inet hashsize 256 maxelem 16384
-add LAB_SCAN_EXCLUSIONS 10.1.11.70,10.1.2.3,tcp:22
-add LAB_SCAN_EXCLUSIONS 10.1.11.71,10.1.2.3,tcp:22
-add LAB_SCAN_EXCLUSIONS 10.1.11.0/24,10.1.2.100,tcp:8080
-
-create LAB_SONAR_SERVERS hash:net,net family inet hashsize 256 maxelem 16384
-add LAB_SONAR_SERVERS 10.1.10.0/24,10.1.2.140
-add LAB_SONAR_SERVERS 10.1.11.0/24,10.1.2.140
-
-create LAB_QUALITY_GATES hash:net,net,port family inet hashsize 256 maxelem 16384
-add LAB_QUALITY_GATES 10.1.10.0/24,10.1.2.140,tcp:9000
-add LAB_QUALITY_GATES 10.1.11.0/24,10.1.2.140,tcp:9000
-
-create LAB_STATIC_ANALYSIS hash:net,net family inet hashsize 256 maxelem 16384
-add LAB_STATIC_ANALYSIS 10.1.10.0/24,10.1.2.141
-add LAB_STATIC_ANALYSIS 10.1.11.0/24,10.1.2.141
-
-create LAB_ENV_CONTROLLERS hash:net,net family inet hashsize 256 maxelem 16384
-add LAB_ENV_CONTROLLERS 10.1.2.160,10.1.10.0/24
-add LAB_ENV_CONTROLLERS 10.1.2.161,10.1.11.0/24
-
-create LAB_PROVISIONING hash:net,net,port family inet hashsize 256 maxelem 16384
-add LAB_PROVISIONING 10.1.2.160,10.1.10.0/24,tcp:22
-add LAB_PROVISIONING 10.1.2.161,10.1.11.0/24,tcp:22
-add LAB_PROVISIONING 10.1.2.162,10.1.10.0/24,tcp:443
-
-create LAB_CONFIGURATION_MGMT hash:net,net family inet hashsize 256 maxelem 16384
-add LAB_CONFIGURATION_MGMT 10.1.2.170,10.1.10.0/24
-add LAB_CONFIGURATION_MGMT 10.1.2.171,10.1.11.0/24
-
-create LAB_HIGH_RESOURCE_USERS hash:ip family inet hashsize 256 maxelem 16384
-add LAB_HIGH_RESOURCE_USERS 10.1.10.10
-add LAB_HIGH_RESOURCE_USERS 10.1.10.11
-add LAB_HIGH_RESOURCE_USERS 10.1.11.10
-add LAB_HIGH_RESOURCE_USERS 10.1.11.11
-
-create LAB_MEDIUM_RESOURCE_USERS hash:ip family inet hashsize 512 maxelem 32768
-add LAB_MEDIUM_RESOURCE_USERS 10.1.10.12
-add LAB_MEDIUM_RESOURCE_USERS 10.1.10.13
-add LAB_MEDIUM_RESOURCE_USERS 10.1.11.12
-add LAB_MEDIUM_RESOURCE_USERS 10.1.11.13
-add LAB_MEDIUM_RESOURCE_USERS 10.1.10.14
-add LAB_MEDIUM_RESOURCE_USERS 10.1.11.14
-
-create LAB_LOW_RESOURCE_USERS hash:ip family inet hashsize 512 maxelem 32768
-add LAB_LOW_RESOURCE_USERS 10.1.10.50
-add LAB_LOW_RESOURCE_USERS 10.1.10.51
-add LAB_LOW_RESOURCE_USERS 10.1.11.50
-add LAB_LOW_RESOURCE_USERS 10.1.11.51
-add LAB_LOW_RESOURCE_USERS 10.1.10.100
-add LAB_LOW_RESOURCE_USERS 10.1.11.100
-
-create LAB_DEVELOPER_WHITELIST hash:ip family inet hashsize 256 maxelem 16384
-add LAB_DEVELOPER_WHITELIST 10.1.2.10
-add LAB_DEVELOPER_WHITELIST 10.1.2.11
-add LAB_DEVELOPER_WHITELIST 10.1.2.12
-add LAB_DEVELOPER_WHITELIST 10.1.2.3
-
-create LAB_ADMIN_ACCESS hash:net,net family inet hashsize 256 maxelem 16384
-add LAB_ADMIN_ACCESS 10.1.2.3,10.1.10.0/24
-add LAB_ADMIN_ACCESS 10.1.2.3,10.1.11.0/24
-add LAB_ADMIN_ACCESS 10.1.2.10,10.1.10.0/24
-add LAB_ADMIN_ACCESS 10.1.2.11,10.1.11.0/24
-
-create LAB_EMERGENCY_ACCESS hash:ip family inet hashsize 256 maxelem 16384
-add LAB_EMERGENCY_ACCESS 10.1.2.3
-add LAB_EMERGENCY_ACCESS 10.1.1.10
-add LAB_EMERGENCY_ACCESS 10.1.2.10
-
-create LAB_MONITORING_TARGETS hash:ip family inet hashsize 256 maxelem 16384
-add LAB_MONITORING_TARGETS 10.1.10.10
-add LAB_MONITORING_TARGETS 10.1.10.11
-add LAB_MONITORING_TARGETS 10.1.11.10
-add LAB_MONITORING_TARGETS 10.1.11.11
-add LAB_MONITORING_TARGETS 10.1.2.100
-add LAB_MONITORING_TARGETS 10.1.2.110
-
-create LAB_METRICS_COLLECTORS hash:net,net family inet hashsize 256 maxelem 16384
-add LAB_METRICS_COLLECTORS 10.1.2.150,10.1.10.0/24
-add LAB_METRICS_COLLECTORS 10.1.2.151,10.1.11.0/24
-add LAB_METRICS_COLLECTORS 10.1.2.152,10.1.2.0/24
+create hq_10_1_11_0_24_hosts bitmap:ip range 10.1.11.0/24 timeout 3600 counters comment
+create hq_mgmt_networks bitmap:ip range 10.1.2.0-10.1.5.255 counters comment
+create hq_admin_workstations bitmap:ip range 10.1.3.10-10.1.3.20 timeout 7200
+create hq_access_clients bitmap:ip range 10.h.20.0/24 timeout 1800
+create hq_guest_range bitmap:ip range 192.168.100.0/24 timeout 900
+create hq_10_1_11_0_24_secure_clients bitmap:ip,mac range 10.1.11.0/24 timeout 7200 counters comment
+create hq_trusted_devices bitmap:ip,mac range 10.h.1.0/24 counters comment
+create hq_dhcp_reservations bitmap:ip,mac range 10.h.20.0/24 timeout 86400
+create hq_static_assignments bitmap:ip,mac range 10.h.10.0/24
+create hq_guest_devices bitmap:ip,mac range 192.168.100.0/24 timeout 1800
+create hq_temp_access bitmap:ip,mac range 192.168.101.0/24 timeout 900
+create hq_web_ports bitmap:port range 80-8080 timeout 1800 comment
+create hq_database_ports bitmap:port range 3306-5432 counters comment
+create hq_management_ports bitmap:port range 22-443 comment
+create hq_monitoring_ports bitmap:port range 161-162 timeout 3600
+create hq_mail_ports bitmap:port range 25-995 timeout 7200
+create hq_file_ports bitmap:port range 445-2049 counters
+create hq_backup_ports bitmap:port range 873-10080 timeout 3600
+create hq_ephemeral_ports bitmap:port range 32768-65535 timeout 300
+create hq_high_ports bitmap:port range 8000-9999 timeout 1800 counters
+create hq_management_ips hash:ip family inet timeout 3600 counters comment
+create hq_trusted_sources hash:ip family inet hashsize 1024 comment
+create hq_monitoring_agents hash:ip family inet timeout 1800 counters
+create hq_admin_workstations hash:ip family inet timeout 7200 comment
+create hq_blacklisted_ips hash:ip family inet comment maxelem 65536
+create hq_suspicious_sources hash:ip family inet timeout 3600 maxelem 4096
+create hq_rate_limited_ips hash:ip family inet timeout 900 counters
+create hq_dns_resolvers hash:ip family inet comment maxelem 256
+create hq_ntp_servers hash:ip family inet timeout 86400
+create hq_log_collectors hash:ip family inet timeout 3600 counters
+create hq_known_devices hash:mac timeout 86400 counters comment
+create hq_infrastructure_macs hash:mac maxelem 1024 comment
+create hq_approved_devices hash:mac timeout 7200 counters
+create hq_wireless_clients hash:mac timeout 3600 comment maxelem 2048
+create hq_guest_devices hash:mac timeout 1800 counters
+create hq_corporate_devices hash:mac timeout 7200 comment
+create hq_quarantined_macs hash:mac timeout 3600 comment
+create hq_blocked_devices hash:mac comment maxelem 4096
+create hq_internal_networks hash:net family inet maxelem 256 comment
+create hq_trusted_networks hash:net family inet timeout 7200 counters
+create hq_management_networks hash:net family inet comment
+create hq_external_partners hash:net family inet timeout 7200 comment
+create hq_cloud_networks hash:net family inet maxelem 1024
+create hq_cdn_ranges hash:net family inet timeout 3600
+create hq_vpn_networks hash:net family inet counters comment
+create hq_site_networks hash:net family inet timeout 1800
+create hq_blocked_networks hash:net family inet comment maxelem 4096
+create hq_quarantine_networks hash:net family inet timeout 3600
+create hq_web_services hash:ip,port family inet timeout 7200 counters comment
+create hq_database_access hash:ip,port family inet counters comment
+create hq_management_access hash:ip,port family inet comment maxelem 1024
+create hq_monitoring_endpoints hash:ip,port family inet timeout 1800
+create hq_api_endpoints hash:ip,port family inet timeout 3600 counters
+create hq_file_services hash:ip,port family inet comment
+create hq_backup_services hash:ip,port family inet timeout 7200
+create hq_auth_services hash:ip,port family inet timeout 1800 counters
+create hq_log_services hash:ip,port family inet comment
+create hq_interface_networks hash:net,iface family inet comment
+create hq_vlan_interfaces hash:net,iface family inet timeout 1800 counters
+create hq_trusted_vlans hash:net,iface family inet comment
+create hq_dmz_interfaces hash:net,iface family inet counters comment
+create hq_secure_zones hash:net,iface family inet timeout 3600
+create hq_client_interfaces hash:net,iface family inet timeout 1800
+create hq_guest_interfaces hash:net,iface family inet timeout 900 comment
+create hq_service_matrix hash:ip,port,net family inet timeout 600 maxelem 2048
+create hq_access_rules hash:ip,port,net family inet counters comment
+create hq_proxy_rules hash:ip,port,ip family inet timeout 1800 counters
+create hq_nat_rules hash:ip,port,ip family inet comment maxelem 4096
+create hq_routing_matrix hash:net,port,net family inet counters comment
+add hq_10_1_1_0_24_hosts 10.1.1.10
+add hq_10_1_1_0_24_hosts 10.1.1.11
+add hq_10_1_1_0_24_hosts 10.1.1.12
+add hq_management_ips 10.h.10.5
+add hq_management_ips 10.h.10.6
+add hq_trusted_sources 8.8.8.8
+add hq_trusted_sources 1.1.1.1
+add hq_internal_networks 10.h.0.0/16
+add hq_vpn_networks 10.100.1.0/24
+add hq_trusted_devices 10.1.1.10,52:54:00:12:34:56
+add hq_trusted_devices 10.1.1.11,52:54:00:12:34:57
+add hq_web_services 10.h.3.10,80
+add hq_web_services 10.h.3.10,443
+add hq_database_access 10.h.20.5,3306
+add hq_database_access 10.h.20.5,5432
+add hq_web_ports 80
+add hq_web_ports 443
+add hq_web_ports 8080
+add hq_database_ports 3306
+add hq_database_ports 5432
+COMMIT
 
 EXIT_CODE: 0
 === TSIM_SECTION_END:ipset_save ===
 
 === TSIM_SECTION_START:ipset_list ===
-TITLE: Ipset List Summary
-COMMAND: /sbin/ipset list -n
-TIMESTAMP: 2025-06-21 15:24:45
+TITLE: Ipset List Output
+COMMAND: /sbin/ipset list
+TIMESTAMP: 2025-07-01 10:00:00
 ---
-LAB_DEV_ALLOWED
-LAB_TEST_ALLOWED
-LAB_DEV_CLIENTS
-LAB_DEV_TO_TEST
-LAB_TEST_CLIENTS
-LAB_TEST_TO_DEV
-LAB_CRITICAL_SERVICES
-LAB_DEVELOPMENT_PRIORITY
-LAB_TESTING_PRIORITY
-LAB_SANDBOX_ONLY
-LAB_DEV_MATRIX
-LAB_DEV_RESTRICTED
-LAB_DEV_ADMIN_HOSTS
-LAB_TEST_MATRIX
-LAB_TEST_RESTRICTED
-LAB_TEST_ADMIN_HOSTS
-LAB_DEV_SANDBOX
-LAB_DEV_CI_CD
-LAB_DEV_VCS
-LAB_STAGING_ALLOWED
-LAB_STAGING_DEPLOY
-LAB_STAGING_TEST
-LAB_TEST_FRAMEWORKS
-LAB_TEST_AUTOMATION
-LAB_LOAD_TEST_TARGETS
-LAB_SANDBOX_ALLOWED
-LAB_SANDBOX_RESTRICTED
-LAB_DEPLOY_SERVERS
-LAB_ARTIFACT_REPOS
-LAB_BUILD_AGENTS
-LAB_JENKINS_NODES
-LAB_GITLAB_RUNNERS
-LAB_BUILD_TRIGGERS
-LAB_GIT_SERVERS
-LAB_SVN_SERVERS
-LAB_VCS_CLIENTS
-LAB_MAVEN_REPOS
-LAB_NPM_REPOS
-LAB_DOCKER_REGISTRIES
-LAB_PERF_TEST_TARGETS
-LAB_PERF_TEST_AGENTS
-LAB_MONITORING_AGENTS
-LAB_VULN_SCANNERS
-LAB_PENTEST_TOOLS
-LAB_SECURITY_TARGETS
-LAB_API_TEST_TARGETS
-LAB_SERVICE_ENDPOINTS
-LAB_TEST_DATA_SOURCES
-LAB_LOAD_GENERATORS
-LAB_STRESS_TEST_TARGETS
-LAB_SCAN_TARGETS
-LAB_SCAN_EXCLUSIONS
-LAB_SONAR_SERVERS
-LAB_QUALITY_GATES
-LAB_STATIC_ANALYSIS
-LAB_ENV_CONTROLLERS
-LAB_PROVISIONING
-LAB_CONFIGURATION_MGMT
-LAB_HIGH_RESOURCE_USERS
-LAB_MEDIUM_RESOURCE_USERS
-LAB_LOW_RESOURCE_USERS
-LAB_DEVELOPER_WHITELIST
-LAB_ADMIN_ACCESS
-LAB_EMERGENCY_ACCESS
-LAB_MONITORING_TARGETS
-LAB_METRICS_COLLECTORS
+Name: hq_10_1_11_0_24_hosts
+Type: bitmap:ip
+Revision: 3
+Header: bitmap:ip range 10.1.11.0/24 timeout 3600 counters comment
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: hq_mgmt_networks
+Type: bitmap:ip
+Revision: 3
+Header: bitmap:ip range 10.1.2.0-10.1.5.255 counters comment
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: hq_admin_workstations
+Type: bitmap:ip
+Revision: 3
+Header: bitmap:ip range 10.1.3.10-10.1.3.20 timeout 7200
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: hq_access_clients
+Type: bitmap:ip
+Revision: 3
+Header: bitmap:ip range 10.h.20.0/24 timeout 1800
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: hq_guest_range
+Type: bitmap:ip
+Revision: 3
+Header: bitmap:ip range 192.168.100.0/24 timeout 900
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: hq_10_1_11_0_24_secure_clients
+Type: bitmap:ip,mac
+Revision: 3
+Header: bitmap:ip,mac range 10.1.11.0/24 timeout 7200 counters comment
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: hq_trusted_devices
+Type: bitmap:ip,mac
+Revision: 3
+Header: bitmap:ip,mac range 10.h.1.0/24 counters comment
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: hq_dhcp_reservations
+Type: bitmap:ip,mac
+Revision: 3
+Header: bitmap:ip,mac range 10.h.20.0/24 timeout 86400
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: hq_static_assignments
+Type: bitmap:ip,mac
+Revision: 3
+Header: bitmap:ip,mac range 10.h.10.0/24
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: hq_guest_devices
+Type: bitmap:ip,mac
+Revision: 3
+Header: bitmap:ip,mac range 192.168.100.0/24 timeout 1800
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: hq_temp_access
+Type: bitmap:ip,mac
+Revision: 3
+Header: bitmap:ip,mac range 192.168.101.0/24 timeout 900
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: hq_web_ports
+Type: bitmap:port
+Revision: 3
+Header: bitmap:port range 80-8080 timeout 1800 comment
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: hq_database_ports
+Type: bitmap:port
+Revision: 3
+Header: bitmap:port range 3306-5432 counters comment
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: hq_management_ports
+Type: bitmap:port
+Revision: 3
+Header: bitmap:port range 22-443 comment
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: hq_monitoring_ports
+Type: bitmap:port
+Revision: 3
+Header: bitmap:port range 161-162 timeout 3600
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: hq_mail_ports
+Type: bitmap:port
+Revision: 3
+Header: bitmap:port range 25-995 timeout 7200
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: hq_file_ports
+Type: bitmap:port
+Revision: 3
+Header: bitmap:port range 445-2049 counters
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: hq_backup_ports
+Type: bitmap:port
+Revision: 3
+Header: bitmap:port range 873-10080 timeout 3600
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: hq_ephemeral_ports
+Type: bitmap:port
+Revision: 3
+Header: bitmap:port range 32768-65535 timeout 300
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: hq_high_ports
+Type: bitmap:port
+Revision: 3
+Header: bitmap:port range 8000-9999 timeout 1800 counters
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: hq_management_ips
+Type: hash:ip
+Revision: 3
+Header: hash:ip family inet timeout 3600 counters comment
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: hq_trusted_sources
+Type: hash:ip
+Revision: 3
+Header: hash:ip family inet hashsize 1024 comment
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: hq_monitoring_agents
+Type: hash:ip
+Revision: 3
+Header: hash:ip family inet timeout 1800 counters
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: hq_admin_workstations
+Type: hash:ip
+Revision: 3
+Header: hash:ip family inet timeout 7200 comment
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: hq_blacklisted_ips
+Type: hash:ip
+Revision: 3
+Header: hash:ip family inet comment maxelem 65536
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: hq_suspicious_sources
+Type: hash:ip
+Revision: 3
+Header: hash:ip family inet timeout 3600 maxelem 4096
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: hq_rate_limited_ips
+Type: hash:ip
+Revision: 3
+Header: hash:ip family inet timeout 900 counters
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: hq_dns_resolvers
+Type: hash:ip
+Revision: 3
+Header: hash:ip family inet comment maxelem 256
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: hq_ntp_servers
+Type: hash:ip
+Revision: 3
+Header: hash:ip family inet timeout 86400
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: hq_log_collectors
+Type: hash:ip
+Revision: 3
+Header: hash:ip family inet timeout 3600 counters
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: hq_known_devices
+Type: hash:mac
+Revision: 3
+Header: hash:mac timeout 86400 counters comment
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: hq_infrastructure_macs
+Type: hash:mac
+Revision: 3
+Header: hash:mac maxelem 1024 comment
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: hq_approved_devices
+Type: hash:mac
+Revision: 3
+Header: hash:mac timeout 7200 counters
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: hq_wireless_clients
+Type: hash:mac
+Revision: 3
+Header: hash:mac timeout 3600 comment maxelem 2048
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: hq_guest_devices
+Type: hash:mac
+Revision: 3
+Header: hash:mac timeout 1800 counters
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: hq_corporate_devices
+Type: hash:mac
+Revision: 3
+Header: hash:mac timeout 7200 comment
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: hq_quarantined_macs
+Type: hash:mac
+Revision: 3
+Header: hash:mac timeout 3600 comment
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: hq_blocked_devices
+Type: hash:mac
+Revision: 3
+Header: hash:mac comment maxelem 4096
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: hq_internal_networks
+Type: hash:net
+Revision: 3
+Header: hash:net family inet maxelem 256 comment
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: hq_trusted_networks
+Type: hash:net
+Revision: 3
+Header: hash:net family inet timeout 7200 counters
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: hq_management_networks
+Type: hash:net
+Revision: 3
+Header: hash:net family inet comment
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: hq_external_partners
+Type: hash:net
+Revision: 3
+Header: hash:net family inet timeout 7200 comment
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: hq_cloud_networks
+Type: hash:net
+Revision: 3
+Header: hash:net family inet maxelem 1024
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: hq_cdn_ranges
+Type: hash:net
+Revision: 3
+Header: hash:net family inet timeout 3600
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: hq_vpn_networks
+Type: hash:net
+Revision: 3
+Header: hash:net family inet counters comment
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: hq_site_networks
+Type: hash:net
+Revision: 3
+Header: hash:net family inet timeout 1800
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: hq_blocked_networks
+Type: hash:net
+Revision: 3
+Header: hash:net family inet comment maxelem 4096
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: hq_quarantine_networks
+Type: hash:net
+Revision: 3
+Header: hash:net family inet timeout 3600
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: hq_web_services
+Type: hash:ip,port
+Revision: 3
+Header: hash:ip,port family inet timeout 7200 counters comment
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: hq_database_access
+Type: hash:ip,port
+Revision: 3
+Header: hash:ip,port family inet counters comment
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: hq_management_access
+Type: hash:ip,port
+Revision: 3
+Header: hash:ip,port family inet comment maxelem 1024
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: hq_monitoring_endpoints
+Type: hash:ip,port
+Revision: 3
+Header: hash:ip,port family inet timeout 1800
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: hq_api_endpoints
+Type: hash:ip,port
+Revision: 3
+Header: hash:ip,port family inet timeout 3600 counters
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: hq_file_services
+Type: hash:ip,port
+Revision: 3
+Header: hash:ip,port family inet comment
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: hq_backup_services
+Type: hash:ip,port
+Revision: 3
+Header: hash:ip,port family inet timeout 7200
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: hq_auth_services
+Type: hash:ip,port
+Revision: 3
+Header: hash:ip,port family inet timeout 1800 counters
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: hq_log_services
+Type: hash:ip,port
+Revision: 3
+Header: hash:ip,port family inet comment
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: hq_interface_networks
+Type: hash:net,iface
+Revision: 3
+Header: hash:net,iface family inet comment
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: hq_vlan_interfaces
+Type: hash:net,iface
+Revision: 3
+Header: hash:net,iface family inet timeout 1800 counters
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: hq_trusted_vlans
+Type: hash:net,iface
+Revision: 3
+Header: hash:net,iface family inet comment
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: hq_dmz_interfaces
+Type: hash:net,iface
+Revision: 3
+Header: hash:net,iface family inet counters comment
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: hq_secure_zones
+Type: hash:net,iface
+Revision: 3
+Header: hash:net,iface family inet timeout 3600
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: hq_client_interfaces
+Type: hash:net,iface
+Revision: 3
+Header: hash:net,iface family inet timeout 1800
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: hq_guest_interfaces
+Type: hash:net,iface
+Revision: 3
+Header: hash:net,iface family inet timeout 900 comment
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: hq_service_matrix
+Type: hash:ip,port,net
+Revision: 3
+Header: hash:ip,port,net family inet timeout 600 maxelem 2048
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: hq_access_rules
+Type: hash:ip,port,net
+Revision: 3
+Header: hash:ip,port,net family inet counters comment
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: hq_proxy_rules
+Type: hash:ip,port,ip
+Revision: 3
+Header: hash:ip,port,ip family inet timeout 1800 counters
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: hq_nat_rules
+Type: hash:ip,port,ip
+Revision: 3
+Header: hash:ip,port,ip family inet comment maxelem 4096
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: hq_routing_matrix
+Type: hash:net,port,net
+Revision: 3
+Header: hash:net,port,net family inet counters comment
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
 
 EXIT_CODE: 0
 === TSIM_SECTION_END:ipset_list ===

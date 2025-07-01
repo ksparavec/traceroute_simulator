@@ -36,20 +36,123 @@ EXIT_CODE: 0
 === TSIM_SECTION_START:policy_rules ===
 TITLE: IP Policy Rules
 COMMAND: /sbin/ip rule show
-TIMESTAMP: 2025-06-21 15:21:17
+TIMESTAMP: 2025-07-01 10:00:00
 ---
 0:	from all lookup local
-25:	from 10.3.2.0/24 lookup srv_priority
-35:	from 10.3.10.0/24 lookup app_priority
-45:	from 10.3.20.0/24 lookup prod_priority
-55:	from 10.3.21.0/24 lookup storage_priority
+50:	from 10.3.1.0/24 lookup priority_table
+51:	from 10.3.2.0/24 lookup priority_table
+52:	from 10.3.10.0/24 lookup priority_table
+53:	from 10.3.20.0/24 lookup priority_table
+54:	from 10.3.20.0/24 lookup management_table
+55:	dport 3306 lookup database_table
+56:	dport 5432 lookup database_table
+57:	sport 3306 lookup database_table
+58:	dport 80 lookup web_table
+59:	dport 443 lookup web_table
+60:	sport 80 lookup web_table
+61:	dport 22 lookup priority_table
+62:	dport 161 lookup priority_table
+63:	dport 443 lookup priority_table
+64:	fwmark 0x1 lookup priority_table
+65:	fwmark 0x2 lookup service_table
+66:	fwmark 0x3 lookup backup_table
+67:	tos 0x10 lookup priority_table
+68:	tos 0x08 lookup qos_table
+69:	to 10.1.0.0/16 lookup service_table
+70:	to 10.2.0.0/16 lookup service_table
+71:	iif lo lookup priority_table
+72:	oif eth1 lookup service_table
+73:	oif eth2 lookup backup_table
+74:	from 192.168.1.0/24 lookup emergency_table
+75:	ipproto icmp lookup priority_table
+76:	ipproto udp lookup qos_table
 32766:	from all lookup main
 32767:	from all lookup default
 
 EXIT_CODE: 0
 === TSIM_SECTION_END:policy_rules ===
 
-=== TSIM_SECTION_START:interfaces ===
+
+=== TSIM_SECTION_START:routing_table_priority_table ===
+TITLE: IP Routing Table Priority Table (100)
+COMMAND: /sbin/ip route show table 100
+TIMESTAMP: 2025-07-01 10:00:00
+---
+10.3.1.0/24 dev eth1 proto kernel scope link metric 1\n10.3.2.0/24 dev eth0 proto kernel scope link metric 1\n10.3.10.0/24 dev eth0 proto kernel scope link metric 1\n10.3.20.0/24 dev eth0 proto kernel scope link metric 1\n10.1.0.0/16 via 10.3.1.1 dev eth0 metric 5\n10.2.0.0/16 via 10.3.1.1 dev eth0 metric 5
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:routing_table_priority_table ===
+\n
+=== TSIM_SECTION_START:routing_table_service_table ===
+TITLE: IP Routing Table Service Table (200)
+COMMAND: /sbin/ip route show table 200
+TIMESTAMP: 2025-07-01 10:00:00
+---
+10.3.1.0/24 dev eth1 proto kernel scope link metric 10\n10.3.2.0/24 dev eth1 proto kernel scope link metric 10\n10.3.10.0/24 dev eth1 proto kernel scope link metric 10\n10.3.20.0/24 dev eth1 proto kernel scope link metric 10\n10.3.20.0/24 dev eth2 proto kernel scope link metric 5\n10.1.0.0/16 via 10.3.1.1 dev eth0 metric 15\n10.2.0.0/16 via 10.3.1.1 dev eth0 metric 15
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:routing_table_service_table ===
+\n
+=== TSIM_SECTION_START:routing_table_backup_table ===
+TITLE: IP Routing Table Backup Table (300)
+COMMAND: /sbin/ip route show table 300
+TIMESTAMP: 2025-07-01 10:00:00
+---
+10.3.1.0/24 dev eth1 proto kernel scope link metric 20\n10.3.2.0/24 dev eth1 proto kernel scope link metric 20\n10.3.10.0/24 dev eth1 proto kernel scope link metric 20\n10.3.20.0/24 dev eth1 proto kernel scope link metric 20\n10.1.0.0/16 via 10.100.1.1 dev wg0 metric 25\n10.2.0.0/16 via 10.100.1.2 dev wg0 metric 25
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:routing_table_backup_table ===
+\n
+=== TSIM_SECTION_START:routing_table_qos_table ===
+TITLE: IP Routing Table Qos Table (400)
+COMMAND: /sbin/ip route show table 400
+TIMESTAMP: 2025-07-01 10:00:00
+---
+10.3.1.0/24 dev eth1 proto kernel scope link metric 8\n10.3.2.0/24 dev eth1 proto kernel scope link metric 8\n10.3.10.0/24 dev eth1 proto kernel scope link metric 8\n10.3.20.0/24 dev eth1 proto kernel scope link metric 8\n10.1.0.0/16 via 10.3.1.1 dev eth0 metric 8\n10.2.0.0/16 via 10.3.1.1 dev eth0 metric 8
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:routing_table_qos_table ===
+\n
+=== TSIM_SECTION_START:routing_table_management_table ===
+TITLE: IP Routing Table Management Table (500)
+COMMAND: /sbin/ip route show table 500
+TIMESTAMP: 2025-07-01 10:00:00
+---
+10.3.1.0/24 dev eth0 proto kernel scope link metric 1\n10.3.2.0/24 dev eth0 proto kernel scope link metric 1\n10.3.10.0/24 dev eth0 proto kernel scope link metric 1\n10.3.20.0/24 dev eth0 proto kernel scope link metric 1\n10.3.20.0/24 dev eth2 proto kernel scope link metric 1\n10.1.0.0/16 via 10.3.1.1 dev eth0 metric 5\n10.2.0.0/16 via 10.3.1.1 dev eth0 metric 5
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:routing_table_management_table ===
+\n
+=== TSIM_SECTION_START:routing_table_database_table ===
+TITLE: IP Routing Table Database Table (600)
+COMMAND: /sbin/ip route show table 600
+TIMESTAMP: 2025-07-01 10:00:00
+---
+10.3.20.0/24 dev eth2 proto kernel scope link metric 1\n10.3.10.0/24 dev eth1 proto kernel scope link metric 1\n10.1.0.0/16 via 10.3.1.1 dev eth0 metric 5\n10.2.0.0/16 via 10.3.1.1 dev eth0 metric 10\n10.3.1.0/24 dev eth1 proto kernel scope link metric 5\n10.3.2.0/24 dev eth1 proto kernel scope link metric 5\n10.3.10.0/24 dev eth1 proto kernel scope link metric 5\n10.3.20.0/24 dev eth1 proto kernel scope link metric 5
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:routing_table_database_table ===
+\n
+=== TSIM_SECTION_START:routing_table_web_table ===
+TITLE: IP Routing Table Web Table (700)
+COMMAND: /sbin/ip route show table 700
+TIMESTAMP: 2025-07-01 10:00:00
+---
+10.3.2.0/24 dev eth0 proto kernel scope link metric 1\n10.3.1.0/24 dev eth1 proto kernel scope link metric 5\n10.3.2.0/24 dev eth1 proto kernel scope link metric 5\n10.3.10.0/24 dev eth1 proto kernel scope link metric 5\n10.3.20.0/24 dev eth1 proto kernel scope link metric 5
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:routing_table_web_table ===
+\n
+=== TSIM_SECTION_START:routing_table_emergency_table ===
+TITLE: IP Routing Table Emergency Table (800)
+COMMAND: /sbin/ip route show table 800
+TIMESTAMP: 2025-07-01 10:00:00
+---
+192.168.1.0/24 dev eth0 proto kernel scope link metric 1\n10.3.1.0/24 dev eth1 proto kernel scope link metric 1\n10.3.2.0/24 dev eth1 proto kernel scope link metric 1\n10.3.10.0/24 dev eth1 proto kernel scope link metric 1\n10.3.20.0/24 dev eth1 proto kernel scope link metric 1
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:routing_table_emergency_table ===
+\n=== TSIM_SECTION_START:interfaces ===
 TITLE: Network Interfaces
 COMMAND: /sbin/ip addr show
 TIMESTAMP: 2025-06-21 15:21:17
@@ -190,961 +293,1122 @@ EXIT_CODE: 0
 === TSIM_SECTION_END:iptables_info ===
 
 === TSIM_SECTION_START:iptables_save ===
-TITLE: Complete Iptables Configuration
+TITLE: Iptables Save Output
 COMMAND: /sbin/iptables-save
-TIMESTAMP: 2025-06-21 15:21:17
+TIMESTAMP: 2025-07-01 10:00:00
 ---
-# Generated by iptables-save v1.8.7 on Fri Jun 21 15:21:17 2025
+# Generated by iptables-save v1.8.7 on Mon Jul  1 10:00:00 2025
 *filter
-:INPUT ACCEPT [1234:234567]
-:FORWARD ACCEPT [0:0]
-:OUTPUT ACCEPT [987:198765]
-:DC_CORE_FORWARD - [0:0]
-:DC_TIER_SEGMENTATION - [0:0]
-:DC_SRV_ACCESS - [0:0]
-:DC_APP_ACCESS - [0:0]
-:DC_PROD_ACCESS - [0:0]
-:DC_STORAGE_ACCESS - [0:0]
-:DC_LOAD_BALANCING - [0:0]
-:DC_FAILOVER_CONTROL - [0:0]
-:DC_DISASTER_RECOVERY - [0:0]
-:DC_SECURITY_ZONES - [0:0]
-:DC_COMPLIANCE_AUDIT - [0:0]
-:DC_PERFORMANCE_MONITORING - [0:0]
-:DC_CAPACITY_MANAGEMENT - [0:0]
-:DC_SERVICE_MESH - [0:0]
-:DC_MICROSERVICES - [0:0]
-:DC_CONTAINER_NETWORK - [0:0]
-:DC_DATABASE_ACCESS - [0:0]
-:DC_API_GATEWAY - [0:0]
-:DC_CACHE_CONTROL - [0:0]
-:DC_BACKUP_CONTROL - [0:0]
-:DC_REPLICATION_CONTROL - [0:0]
-:RATE_LIMIT - [0:0]
-:LOG_AND_DROP - [0:0]
-:ACCEPT_WITH_LOG - [0:0]
-
-# Main FORWARD chain - Data center core distribution logic
--A FORWARD -i eth0 -o eth1 -m set --match-set DC_SRV_ALLOWED src -j DC_SRV_ACCESS
--A FORWARD -i eth0 -o eth2 -m set --match-set DC_APP_ALLOWED src -j DC_APP_ACCESS
--A FORWARD -i eth0 -o eth3 -m set --match-set DC_PROD_ALLOWED src -j DC_PROD_ACCESS
--A FORWARD -i eth0 -o eth4 -m set --match-set DC_STORAGE_ALLOWED src -j DC_STORAGE_ACCESS
--A FORWARD -i eth1 -o eth0 -m set --match-set DC_SRV_CLIENTS src -j DC_SRV_ACCESS
--A FORWARD -i eth1 -o eth2 -m set --match-set DC_SRV_TO_APP dst -j DC_SERVICE_MESH
--A FORWARD -i eth1 -o eth3 -m set --match-set DC_SRV_TO_PROD dst -j DC_PROD_ACCESS
--A FORWARD -i eth1 -o eth4 -m set --match-set DC_SRV_TO_STORAGE dst -j DC_STORAGE_ACCESS
--A FORWARD -i eth2 -o eth0 -m set --match-set DC_APP_CLIENTS src -j DC_APP_ACCESS
--A FORWARD -i eth2 -o eth1 -m set --match-set DC_APP_TO_SRV dst -j DC_SERVICE_MESH
--A FORWARD -i eth2 -o eth3 -m set --match-set DC_APP_TO_PROD dst -j DC_MICROSERVICES
--A FORWARD -i eth2 -o eth4 -m set --match-set DC_APP_TO_STORAGE dst -j DC_STORAGE_ACCESS
--A FORWARD -i eth3 -o eth0 -m set --match-set DC_PROD_CLIENTS src -j DC_PROD_ACCESS
--A FORWARD -i eth3 -o eth1 -m set --match-set DC_PROD_TO_SRV dst -j DC_SERVICE_MESH
--A FORWARD -i eth3 -o eth2 -m set --match-set DC_PROD_TO_APP dst -j DC_MICROSERVICES
--A FORWARD -i eth3 -o eth4 -m set --match-set DC_PROD_TO_STORAGE dst -j DC_BACKUP_CONTROL
--A FORWARD -i eth4 -o eth0 -m set --match-set DC_STORAGE_CLIENTS src -j DC_STORAGE_ACCESS
--A FORWARD -i eth4 -o eth1 -m set --match-set DC_STORAGE_TO_SRV dst -j DC_REPLICATION_CONTROL
--A FORWARD -i eth4 -o eth2 -m set --match-set DC_STORAGE_TO_APP dst -j LOG_AND_DROP
--A FORWARD -i eth4 -o eth3 -m set --match-set DC_STORAGE_TO_PROD dst -j DC_BACKUP_CONTROL
--A FORWARD -m state --state RELATED,ESTABLISHED -j ACCEPT
--A FORWARD -j DC_SECURITY_ZONES
-
-# DC_CORE_FORWARD - Main data center distribution logic
--A DC_CORE_FORWARD -m set --match-set DC_CRITICAL_SERVICES src,dst -j DC_LOAD_BALANCING
--A DC_CORE_FORWARD -m set --match-set DC_HIGH_AVAILABILITY src,dst,dst -j DC_FAILOVER_CONTROL
--A DC_CORE_FORWARD -m set --match-set DC_BUSINESS_CRITICAL src -j ACCEPT_WITH_LOG
--A DC_CORE_FORWARD -m set --match-set DC_MAINTENANCE_MODE src -j LOG_AND_DROP
--A DC_CORE_FORWARD -m set --match-set DC_PRIORITY_TRAFFIC src,dst -j DC_PERFORMANCE_MONITORING
--A DC_CORE_FORWARD -m hashlimit --hashlimit-above 500/sec --hashlimit-burst 1000 --hashlimit-mode srcip --hashlimit-name dc_flood_protect -j LOG_AND_DROP
--A DC_CORE_FORWARD -j DC_TIER_SEGMENTATION
-
-# DC_TIER_SEGMENTATION - Multi-tier architecture segmentation
--A DC_TIER_SEGMENTATION -m set --match-set DC_TIER_MATRIX src,dst -j ACCEPT
--A DC_TIER_SEGMENTATION -m set --match-set DC_TIER_RESTRICTED src,dst -j LOG_AND_DROP
--A DC_TIER_SEGMENTATION -p tcp -m multiport --dports 80,443,8080,8443 -m set --match-set DC_WEB_TIER dst -j ACCEPT
--A DC_TIER_SEGMENTATION -p tcp -m multiport --dports 1433,3306,5432,27017 -m set --match-set DC_DB_TIER dst -j DC_DATABASE_ACCESS
--A DC_TIER_SEGMENTATION -p tcp -m multiport --dports 6379,11211,9042 -m set --match-set DC_CACHE_TIER dst -j DC_CACHE_CONTROL
--A DC_TIER_SEGMENTATION -j DC_SECURITY_ZONES
-
-# DC_SRV_ACCESS - Server tier access control
--A DC_SRV_ACCESS -m set --match-set DC_SRV_ADMIN_ALLOWED src,dst -j ACCEPT
--A DC_SRV_ACCESS -m set --match-set DC_SRV_MONITORING src,dst,dst -j ACCEPT
--A DC_SRV_ACCESS -m set --match-set DC_SRV_BACKUP_ALLOWED src,dst -j DC_BACKUP_CONTROL
--A DC_SRV_ACCESS -p tcp -m multiport --dports 22,3389 -m set --match-set DC_ADMIN_HOSTS src -j ACCEPT
--A DC_SRV_ACCESS -p tcp -m multiport --dports 80,443,8080,8443 -j ACCEPT
--A DC_SRV_ACCESS -p tcp -m multiport --dports 9100,9200,9300 -m set --match-set DC_MONITORING_ALLOWED src -j ACCEPT
--A DC_SRV_ACCESS -j DC_COMPLIANCE_AUDIT
-
-# DC_APP_ACCESS - Application tier access control
--A DC_APP_ACCESS -m set --match-set DC_APP_SERVICES src,dst,dst -j DC_API_GATEWAY
--A DC_APP_ACCESS -m set --match-set DC_APP_LOAD_BALANCED src,dst -j DC_LOAD_BALANCING
--A DC_APP_ACCESS -m set --match-set DC_APP_MICROSERVICES src,dst -j DC_MICROSERVICES
--A DC_APP_ACCESS -p tcp -m multiport --dports 8080,8443,9080,9443 -j ACCEPT
--A DC_APP_ACCESS -p tcp -m multiport --dports 50051,50052 -j ACCEPT
--A DC_APP_ACCESS -p tcp -m multiport --dports 4000,5000,6000,7000 -j ACCEPT
--A DC_APP_ACCESS -j DC_CONTAINER_NETWORK
-
-# DC_PROD_ACCESS - Production tier access control
--A DC_PROD_ACCESS -m set --match-set DC_PROD_CRITICAL src,dst -j DC_FAILOVER_CONTROL
--A DC_PROD_ACCESS -m set --match-set DC_PROD_HIGH_AVAILABILITY src,dst,dst -j DC_DISASTER_RECOVERY
--A DC_PROD_ACCESS -m set --match-set DC_PROD_MONITORING src,dst -j DC_PERFORMANCE_MONITORING
--A DC_PROD_ACCESS -p tcp -m multiport --dports 80,443 -m set --match-set DC_PROD_WEB_SERVERS dst -j ACCEPT
--A DC_PROD_ACCESS -p tcp -m multiport --dports 22,3389 -m set --match-set DC_PROD_ADMIN_HOSTS src -j ACCEPT
--A DC_PROD_ACCESS -p tcp -m multiport --dports 1433,3306,5432 -m set --match-set DC_PROD_DB_CLIENTS src -j DC_DATABASE_ACCESS
--A DC_PROD_ACCESS -j DC_CAPACITY_MANAGEMENT
-
-# DC_STORAGE_ACCESS - Storage tier access control
--A DC_STORAGE_ACCESS -m set --match-set DC_STORAGE_CRITICAL src,dst -j ACCEPT_WITH_LOG
--A DC_STORAGE_ACCESS -m set --match-set DC_STORAGE_BACKUP src,dst,dst -j DC_BACKUP_CONTROL
--A DC_STORAGE_ACCESS -m set --match-set DC_STORAGE_REPLICATION src,dst -j DC_REPLICATION_CONTROL
--A DC_STORAGE_ACCESS -p tcp -m multiport --dports 2049,111,445 -j ACCEPT
--A DC_STORAGE_ACCESS -p tcp -m multiport --dports 3260,8080 -j ACCEPT
--A DC_STORAGE_ACCESS -p tcp -m multiport --dports 9000,9001 -j ACCEPT
--A DC_STORAGE_ACCESS -j RATE_LIMIT
-
-# DC_LOAD_BALANCING - Load balancing and distribution
--A DC_LOAD_BALANCING -m set --match-set DC_LB_TARGETS src,dst -m statistic --mode nth --every 3 --packet 0 -j MARK --set-mark 0x1
--A DC_LOAD_BALANCING -m set --match-set DC_LB_TARGETS src,dst -m statistic --mode nth --every 3 --packet 1 -j MARK --set-mark 0x2
--A DC_LOAD_BALANCING -m set --match-set DC_LB_TARGETS src,dst -m statistic --mode nth --every 3 --packet 2 -j MARK --set-mark 0x3
--A DC_LOAD_BALANCING -m set --match-set DC_LB_WEIGHTED src,dst,dst -m statistic --mode random --probability 0.7 -j MARK --set-mark 0x10
--A DC_LOAD_BALANCING -m set --match-set DC_LB_PRIORITY src,dst -j MARK --set-mark 0x5
--A DC_LOAD_BALANCING -j ACCEPT
-
-# DC_FAILOVER_CONTROL - High availability and failover
--A DC_FAILOVER_CONTROL -m set --match-set DC_PRIMARY_SERVERS dst -m recent --name dc_health_check --set --rsource
--A DC_FAILOVER_CONTROL -m set --match-set DC_PRIMARY_SERVERS dst -m recent --name dc_health_check --rcheck --seconds 30 --rsource -j ACCEPT
--A DC_FAILOVER_CONTROL -m set --match-set DC_SECONDARY_SERVERS dst -j ACCEPT
--A DC_FAILOVER_CONTROL -m set --match-set DC_BACKUP_SERVERS dst -j ACCEPT
--A DC_FAILOVER_CONTROL -j LOG_AND_DROP
-
-# DC_DISASTER_RECOVERY - Disaster recovery and business continuity
--A DC_DISASTER_RECOVERY -m set --match-set DC_DR_REPLICATION src,dst,dst -j ACCEPT_WITH_LOG
--A DC_DISASTER_RECOVERY -m set --match-set DC_DR_BACKUP src,dst -j DC_BACKUP_CONTROL
--A DC_DISASTER_RECOVERY -m set --match-set DC_DR_PRIORITY src,dst -j DSCP --set-dscp-class EF
--A DC_DISASTER_RECOVERY -p tcp -m multiport --dports 22,443,3306,5432 -j ACCEPT
--A DC_DISASTER_RECOVERY -j ACCEPT
-
-# DC_SECURITY_ZONES - Security zone enforcement
--A DC_SECURITY_ZONES -m set --match-set DC_DMZ_ZONE src,dst -j DC_COMPLIANCE_AUDIT
--A DC_SECURITY_ZONES -m set --match-set DC_TRUSTED_ZONE src,dst -j ACCEPT
--A DC_SECURITY_ZONES -m set --match-set DC_RESTRICTED_ZONE src,dst -j LOG_AND_DROP
--A DC_SECURITY_ZONES -m set --match-set DC_QUARANTINE_ZONE src -j LOG_AND_DROP
--A DC_SECURITY_ZONES -j ACCEPT
-
-# DC_COMPLIANCE_AUDIT - Compliance and audit logging
--A DC_COMPLIANCE_AUDIT -m set --match-set DC_AUDIT_REQUIRED src,dst -j LOG --log-prefix "DC_AUDIT: " --log-level 4
--A DC_COMPLIANCE_AUDIT -m set --match-set DC_PCI_SCOPE src,dst,dst -j LOG --log-prefix "DC_PCI: " --log-level 4
--A DC_COMPLIANCE_AUDIT -m set --match-set DC_SOX_SCOPE src,dst -j LOG --log-prefix "DC_SOX: " --log-level 4
--A DC_COMPLIANCE_AUDIT -m set --match-set DC_HIPAA_SCOPE src,dst -j LOG --log-prefix "DC_HIPAA: " --log-level 4
--A DC_COMPLIANCE_AUDIT -j ACCEPT
-
-# DC_PERFORMANCE_MONITORING - Performance monitoring and metrics
--A DC_PERFORMANCE_MONITORING -m set --match-set DC_PERFORMANCE_TARGETS src -j LOG --log-prefix "DC_PERF: " --log-level 6
--A DC_PERFORMANCE_MONITORING -m conntrack --ctstate NEW -j LOG --log-prefix "DC_NEW_CONN: " --log-level 6
--A DC_PERFORMANCE_MONITORING -m limit --limit 100/sec --limit-burst 200 -j LOG --log-prefix "DC_RATE: " --log-level 6
--A DC_PERFORMANCE_MONITORING -j ACCEPT
-
-# DC_CAPACITY_MANAGEMENT - Capacity management and resource control
--A DC_CAPACITY_MANAGEMENT -m set --match-set DC_HIGH_CAPACITY src -j CLASSIFY --set-class 1:10
--A DC_CAPACITY_MANAGEMENT -m set --match-set DC_MEDIUM_CAPACITY src -j CLASSIFY --set-class 1:20
--A DC_CAPACITY_MANAGEMENT -m set --match-set DC_LOW_CAPACITY src -j CLASSIFY --set-class 1:30
--A DC_CAPACITY_MANAGEMENT -m connlimit --connlimit-above 100 --connlimit-mask 24 -j LOG_AND_DROP
--A DC_CAPACITY_MANAGEMENT -j ACCEPT
-
-# DC_SERVICE_MESH - Service mesh communication
--A DC_SERVICE_MESH -m set --match-set DC_MESH_SERVICES src,dst,dst -j ACCEPT
--A DC_SERVICE_MESH -m set --match-set DC_MESH_ENCRYPTED src,dst -j ACCEPT
--A DC_SERVICE_MESH -p tcp -m multiport --dports 15000,15001,15006 -j ACCEPT
--A DC_SERVICE_MESH -p tcp -m multiport --dports 8080,8443,9080,9443 -j ACCEPT
--A DC_SERVICE_MESH -j ACCEPT
-
-# DC_MICROSERVICES - Microservices communication patterns
--A DC_MICROSERVICES -m set --match-set DC_SERVICE_REGISTRY src,dst -j ACCEPT
--A DC_MICROSERVICES -m set --match-set DC_CONFIG_SERVER src,dst,dst -j ACCEPT
--A DC_MICROSERVICES -m set --match-set DC_API_GATEWAY_TARGETS src,dst -j DC_API_GATEWAY
--A DC_MICROSERVICES -p tcp -m multiport --dports 8761,8888,8080 -j ACCEPT
--A DC_MICROSERVICES -p tcp -m multiport --dports 50051,50052,50053 -j ACCEPT
--A DC_MICROSERVICES -j ACCEPT
-
-# DC_CONTAINER_NETWORK - Container orchestration networking
--A DC_CONTAINER_NETWORK -m set --match-set DC_CONTAINER_PODS src,dst -j ACCEPT
--A DC_CONTAINER_NETWORK -m set --match-set DC_KUBERNETES_SERVICES src,dst,dst -j ACCEPT
--A DC_CONTAINER_NETWORK -m set --match-set DC_DOCKER_NETWORKS src,dst -j ACCEPT
--A DC_CONTAINER_NETWORK -p tcp -m multiport --dports 6443,2379,2380 -j ACCEPT
--A DC_CONTAINER_NETWORK -p tcp -m multiport --dports 10250,10251,10252 -j ACCEPT
--A DC_CONTAINER_NETWORK -j ACCEPT
-
-# DC_DATABASE_ACCESS - Database access control and optimization
--A DC_DATABASE_ACCESS -m set --match-set DC_DB_POOL_ALLOWED src,dst -j ACCEPT
--A DC_DATABASE_ACCESS -m set --match-set DC_DB_READONLY src,dst,dst -j ACCEPT
--A DC_DATABASE_ACCESS -m set --match-set DC_DB_READWRITE src,dst -j ACCEPT
--A DC_DATABASE_ACCESS -m connlimit --connlimit-above 50 --connlimit-mask 32 -j LOG_AND_DROP
--A DC_DATABASE_ACCESS -p tcp -m multiport --dports 1433,3306,5432,27017 -j ACCEPT
--A DC_DATABASE_ACCESS -j RATE_LIMIT
-
-# DC_API_GATEWAY - API gateway and routing
--A DC_API_GATEWAY -m set --match-set DC_API_CONSUMERS src,dst,dst -j ACCEPT
--A DC_API_GATEWAY -m set --match-set DC_API_RATE_LIMITED src -m limit --limit 100/sec --limit-burst 200 -j ACCEPT
--A DC_API_GATEWAY -m set --match-set DC_API_RATE_LIMITED src -j LOG_AND_DROP
--A DC_API_GATEWAY -m set --match-set DC_API_PREMIUM src -j ACCEPT
--A DC_API_GATEWAY -p tcp -m multiport --dports 80,443,8080,8443 -j ACCEPT
--A DC_API_GATEWAY -j RATE_LIMIT
-
-# DC_CACHE_CONTROL - Cache tier management
--A DC_CACHE_CONTROL -m set --match-set DC_CACHE_CLUSTERS src,dst -j ACCEPT
--A DC_CACHE_CONTROL -m set --match-set DC_CACHE_REPLICATION src,dst,dst -j ACCEPT
--A DC_CACHE_CONTROL -p tcp -m multiport --dports 6379,11211,9042 -j ACCEPT
--A DC_CACHE_CONTROL -p tcp -m multiport --dports 7000,7001,9160 -j ACCEPT
--A DC_CACHE_CONTROL -j ACCEPT
-
-# DC_BACKUP_CONTROL - Backup and recovery operations
--A DC_BACKUP_CONTROL -m set --match-set DC_BACKUP_SERVERS src,dst -j ACCEPT_WITH_LOG
--A DC_BACKUP_CONTROL -m set --match-set DC_BACKUP_SCHEDULE src,dst,dst -m time --timestart 02:00 --timestop 06:00 -j ACCEPT
--A DC_BACKUP_CONTROL -m set --match-set DC_BACKUP_PRIORITY src,dst -j DSCP --set-dscp-class AF31
--A DC_BACKUP_CONTROL -p tcp -m multiport --dports 22,443,8080 -j ACCEPT
--A DC_BACKUP_CONTROL -j RATE_LIMIT
-
-# DC_REPLICATION_CONTROL - Data replication management
--A DC_REPLICATION_CONTROL -m set --match-set DC_REPLICATION_PAIRS src,dst -j ACCEPT_WITH_LOG
--A DC_REPLICATION_CONTROL -m set --match-set DC_REPLICATION_PRIORITY src,dst,dst -j DSCP --set-dscp-class EF
--A DC_REPLICATION_CONTROL -m set --match-set DC_ASYNC_REPLICATION src,dst -j CLASSIFY --set-class 1:30
--A DC_REPLICATION_CONTROL -m set --match-set DC_SYNC_REPLICATION src,dst -j CLASSIFY --set-class 1:10
--A DC_REPLICATION_CONTROL -j ACCEPT
-
-# RATE_LIMIT - Generic rate limiting
--A RATE_LIMIT -m limit --limit 200/sec --limit-burst 400 -j ACCEPT
--A RATE_LIMIT -j DROP
-
-# LOG_AND_DROP - Logging and dropping
--A LOG_AND_DROP -j LOG --log-prefix "DC_DROPPED: " --log-level 4
--A LOG_AND_DROP -j DROP
-
-# ACCEPT_WITH_LOG - Logging and accepting
--A ACCEPT_WITH_LOG -j LOG --log-prefix "DC_ACCEPTED: " --log-level 6
--A ACCEPT_WITH_LOG -j ACCEPT
-
+:INPUT DROP [0:0]
+:FORWARD DROP [0:0]
+:OUTPUT ACCEPT [0:0]
+:DC_CORE_MGMT_ACCESS - [0:0]
+:DC_CORE_LAN_FORWARD - [0:0]
+-A INPUT -i lo -j ACCEPT
+-A INPUT -m conntrack --ctstate INVALID -j DROP
+-A INPUT -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
+-A INPUT -s 10.1.0.0/16 -p icmp --icmp-type 0 -j LOG --log-prefix "INPUT-ICMP-0: "
+-A INPUT -s 10.1.0.0/16 -p icmp --icmp-type 0 -j ACCEPT
+-A INPUT -s 10.1.0.0/16 -p icmp --icmp-type 3 -j LOG --log-prefix "INPUT-ICMP-3: "
+-A INPUT -s 10.1.0.0/16 -p icmp --icmp-type 3 -j ACCEPT
+-A INPUT -s 10.1.0.0/16 -p icmp --icmp-type 8 -j LOG --log-prefix "INPUT-ICMP-8: "
+-A INPUT -s 10.1.0.0/16 -p icmp --icmp-type 8 -j ACCEPT
+-A INPUT -s 10.1.0.0/16 -p icmp --icmp-type 11 -j LOG --log-prefix "INPUT-ICMP-11: "
+-A INPUT -s 10.1.0.0/16 -p icmp --icmp-type 11 -j ACCEPT
+-A INPUT -s 10.2.0.0/16 -p icmp --icmp-type 0 -j LOG --log-prefix "INPUT-ICMP-0: "
+-A INPUT -s 10.2.0.0/16 -p icmp --icmp-type 0 -j ACCEPT
+-A INPUT -s 10.2.0.0/16 -p icmp --icmp-type 3 -j LOG --log-prefix "INPUT-ICMP-3: "
+-A INPUT -s 10.2.0.0/16 -p icmp --icmp-type 3 -j ACCEPT
+-A INPUT -s 10.2.0.0/16 -p icmp --icmp-type 8 -j LOG --log-prefix "INPUT-ICMP-8: "
+-A INPUT -s 10.2.0.0/16 -p icmp --icmp-type 8 -j ACCEPT
+-A INPUT -s 10.2.0.0/16 -p icmp --icmp-type 11 -j LOG --log-prefix "INPUT-ICMP-11: "
+-A INPUT -s 10.2.0.0/16 -p icmp --icmp-type 11 -j ACCEPT
+-A INPUT -s 10.3.0.0/16 -p icmp --icmp-type 0 -j LOG --log-prefix "INPUT-ICMP-0: "
+-A INPUT -s 10.3.0.0/16 -p icmp --icmp-type 0 -j ACCEPT
+-A INPUT -s 10.3.0.0/16 -p icmp --icmp-type 3 -j LOG --log-prefix "INPUT-ICMP-3: "
+-A INPUT -s 10.3.0.0/16 -p icmp --icmp-type 3 -j ACCEPT
+-A INPUT -s 10.3.0.0/16 -p icmp --icmp-type 8 -j LOG --log-prefix "INPUT-ICMP-8: "
+-A INPUT -s 10.3.0.0/16 -p icmp --icmp-type 8 -j ACCEPT
+-A INPUT -s 10.3.0.0/16 -p icmp --icmp-type 11 -j LOG --log-prefix "INPUT-ICMP-11: "
+-A INPUT -s 10.3.0.0/16 -p icmp --icmp-type 11 -j ACCEPT
+-A INPUT -s 10.100.1.0/24 -p icmp --icmp-type 0 -j LOG --log-prefix "INPUT-ICMP-0: "
+-A INPUT -s 10.100.1.0/24 -p icmp --icmp-type 0 -j ACCEPT
+-A INPUT -s 10.100.1.0/24 -p icmp --icmp-type 3 -j LOG --log-prefix "INPUT-ICMP-3: "
+-A INPUT -s 10.100.1.0/24 -p icmp --icmp-type 3 -j ACCEPT
+-A INPUT -s 10.100.1.0/24 -p icmp --icmp-type 8 -j LOG --log-prefix "INPUT-ICMP-8: "
+-A INPUT -s 10.100.1.0/24 -p icmp --icmp-type 8 -j ACCEPT
+-A INPUT -s 10.100.1.0/24 -p icmp --icmp-type 11 -j LOG --log-prefix "INPUT-ICMP-11: "
+-A INPUT -s 10.100.1.0/24 -p icmp --icmp-type 11 -j ACCEPT
+-A INPUT -s 10.1.0.0/16 -p tcp --dport 22 -m conntrack --ctstate NEW -j LOG --log-prefix "INPUT-MGMT-22: "
+-A INPUT -s 10.1.0.0/16 -p tcp --dport 22 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
+-A INPUT -s 10.1.0.0/16 -p tcp --dport 161 -m conntrack --ctstate NEW -j LOG --log-prefix "INPUT-MGMT-161: "
+-A INPUT -s 10.1.0.0/16 -p tcp --dport 161 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
+-A INPUT -s 10.1.0.0/16 -p tcp --dport 443 -m conntrack --ctstate NEW -j LOG --log-prefix "INPUT-MGMT-443: "
+-A INPUT -s 10.1.0.0/16 -p tcp --dport 443 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
+-A INPUT -s 10.1.0.0/16 -p tcp --dport 8080 -m conntrack --ctstate NEW -j LOG --log-prefix "INPUT-MGMT-8080: "
+-A INPUT -s 10.1.0.0/16 -p tcp --dport 8080 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
+-A INPUT -s 10.1.0.0/16 -p tcp --dport 514 -m conntrack --ctstate NEW -j LOG --log-prefix "INPUT-MGMT-514: "
+-A INPUT -s 10.1.0.0/16 -p tcp --dport 514 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
+-A INPUT -s 10.2.0.0/16 -p tcp --dport 22 -m conntrack --ctstate NEW -j LOG --log-prefix "INPUT-MGMT-22: "
+-A INPUT -s 10.2.0.0/16 -p tcp --dport 22 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
+-A INPUT -s 10.2.0.0/16 -p tcp --dport 161 -m conntrack --ctstate NEW -j LOG --log-prefix "INPUT-MGMT-161: "
+-A INPUT -s 10.2.0.0/16 -p tcp --dport 161 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
+-A INPUT -s 10.2.0.0/16 -p tcp --dport 443 -m conntrack --ctstate NEW -j LOG --log-prefix "INPUT-MGMT-443: "
+-A INPUT -s 10.2.0.0/16 -p tcp --dport 443 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
+-A INPUT -s 10.2.0.0/16 -p tcp --dport 8080 -m conntrack --ctstate NEW -j LOG --log-prefix "INPUT-MGMT-8080: "
+-A INPUT -s 10.2.0.0/16 -p tcp --dport 8080 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
+-A INPUT -s 10.2.0.0/16 -p tcp --dport 514 -m conntrack --ctstate NEW -j LOG --log-prefix "INPUT-MGMT-514: "
+-A INPUT -s 10.2.0.0/16 -p tcp --dport 514 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
+-A INPUT -s 10.3.0.0/16 -p tcp --dport 22 -m conntrack --ctstate NEW -j LOG --log-prefix "INPUT-MGMT-22: "
+-A INPUT -s 10.3.0.0/16 -p tcp --dport 22 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
+-A INPUT -s 10.3.0.0/16 -p tcp --dport 161 -m conntrack --ctstate NEW -j LOG --log-prefix "INPUT-MGMT-161: "
+-A INPUT -s 10.3.0.0/16 -p tcp --dport 161 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
+-A INPUT -s 10.3.0.0/16 -p tcp --dport 443 -m conntrack --ctstate NEW -j LOG --log-prefix "INPUT-MGMT-443: "
+-A INPUT -s 10.3.0.0/16 -p tcp --dport 443 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
+-A INPUT -s 10.3.0.0/16 -p tcp --dport 8080 -m conntrack --ctstate NEW -j LOG --log-prefix "INPUT-MGMT-8080: "
+-A INPUT -s 10.3.0.0/16 -p tcp --dport 8080 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
+-A INPUT -s 10.3.0.0/16 -p tcp --dport 514 -m conntrack --ctstate NEW -j LOG --log-prefix "INPUT-MGMT-514: "
+-A INPUT -s 10.3.0.0/16 -p tcp --dport 514 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
+-A INPUT -s 10.100.1.0/24 -p tcp --dport 22 -m conntrack --ctstate NEW -j LOG --log-prefix "INPUT-MGMT-22: "
+-A INPUT -s 10.100.1.0/24 -p tcp --dport 22 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
+-A INPUT -s 10.100.1.0/24 -p tcp --dport 161 -m conntrack --ctstate NEW -j LOG --log-prefix "INPUT-MGMT-161: "
+-A INPUT -s 10.100.1.0/24 -p tcp --dport 161 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
+-A INPUT -s 10.100.1.0/24 -p tcp --dport 443 -m conntrack --ctstate NEW -j LOG --log-prefix "INPUT-MGMT-443: "
+-A INPUT -s 10.100.1.0/24 -p tcp --dport 443 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
+-A INPUT -s 10.100.1.0/24 -p tcp --dport 8080 -m conntrack --ctstate NEW -j LOG --log-prefix "INPUT-MGMT-8080: "
+-A INPUT -s 10.100.1.0/24 -p tcp --dport 8080 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
+-A INPUT -s 10.100.1.0/24 -p tcp --dport 514 -m conntrack --ctstate NEW -j LOG --log-prefix "INPUT-MGMT-514: "
+-A INPUT -s 10.100.1.0/24 -p tcp --dport 514 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
+-A INPUT -s 10.1.0.0/16 -p udp --dport 33434:33534 -j LOG --log-prefix "INPUT-MTR-UDP: "
+-A INPUT -s 10.1.0.0/16 -p udp --dport 33434:33534 -j ACCEPT
+-A INPUT -s 10.2.0.0/16 -p udp --dport 33434:33534 -j LOG --log-prefix "INPUT-MTR-UDP: "
+-A INPUT -s 10.2.0.0/16 -p udp --dport 33434:33534 -j ACCEPT
+-A INPUT -s 10.3.0.0/16 -p udp --dport 33434:33534 -j LOG --log-prefix "INPUT-MTR-UDP: "
+-A INPUT -s 10.3.0.0/16 -p udp --dport 33434:33534 -j ACCEPT
+-A INPUT -s 10.100.1.0/24 -p udp --dport 33434:33534 -j LOG --log-prefix "INPUT-MTR-UDP: "
+-A INPUT -s 10.100.1.0/24 -p udp --dport 33434:33534 -j ACCEPT
+-A INPUT -j LOG --log-prefix "INPUT-DROP: "
+-A INPUT -j DROP
+-A FORWARD -i lo -j ACCEPT
+-A FORWARD -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
+-A FORWARD -s 10.1.0.0/16 -d 10.2.0.0/16 -p icmp -j LOG --log-prefix "FWD-ICMP-10_1_0_0-10_2_0_0: "
+-A FORWARD -s 10.1.0.0/16 -d 10.2.0.0/16 -p icmp -j ACCEPT
+-A FORWARD -s 10.1.0.0/16 -d 10.3.0.0/16 -p icmp -j LOG --log-prefix "FWD-ICMP-10_1_0_0-10_3_0_0: "
+-A FORWARD -s 10.1.0.0/16 -d 10.3.0.0/16 -p icmp -j ACCEPT
+-A FORWARD -s 10.1.0.0/16 -d 10.100.1.0/24 -p icmp -j LOG --log-prefix "FWD-ICMP-10_1_0_0-10_100_1_0: "
+-A FORWARD -s 10.1.0.0/16 -d 10.100.1.0/24 -p icmp -j ACCEPT
+-A FORWARD -s 10.2.0.0/16 -d 10.1.0.0/16 -p icmp -j LOG --log-prefix "FWD-ICMP-10_2_0_0-10_1_0_0: "
+-A FORWARD -s 10.2.0.0/16 -d 10.1.0.0/16 -p icmp -j ACCEPT
+-A FORWARD -s 10.2.0.0/16 -d 10.3.0.0/16 -p icmp -j LOG --log-prefix "FWD-ICMP-10_2_0_0-10_3_0_0: "
+-A FORWARD -s 10.2.0.0/16 -d 10.3.0.0/16 -p icmp -j ACCEPT
+-A FORWARD -s 10.2.0.0/16 -d 10.100.1.0/24 -p icmp -j LOG --log-prefix "FWD-ICMP-10_2_0_0-10_100_1_0: "
+-A FORWARD -s 10.2.0.0/16 -d 10.100.1.0/24 -p icmp -j ACCEPT
+-A FORWARD -s 10.3.0.0/16 -d 10.1.0.0/16 -p icmp -j LOG --log-prefix "FWD-ICMP-10_3_0_0-10_1_0_0: "
+-A FORWARD -s 10.3.0.0/16 -d 10.1.0.0/16 -p icmp -j ACCEPT
+-A FORWARD -s 10.3.0.0/16 -d 10.2.0.0/16 -p icmp -j LOG --log-prefix "FWD-ICMP-10_3_0_0-10_2_0_0: "
+-A FORWARD -s 10.3.0.0/16 -d 10.2.0.0/16 -p icmp -j ACCEPT
+-A FORWARD -s 10.3.0.0/16 -d 10.100.1.0/24 -p icmp -j LOG --log-prefix "FWD-ICMP-10_3_0_0-10_100_1_0: "
+-A FORWARD -s 10.3.0.0/16 -d 10.100.1.0/24 -p icmp -j ACCEPT
+-A FORWARD -s 10.100.1.0/24 -d 10.1.0.0/16 -p icmp -j LOG --log-prefix "FWD-ICMP-10_100_1_0-10_1_0_0: "
+-A FORWARD -s 10.100.1.0/24 -d 10.1.0.0/16 -p icmp -j ACCEPT
+-A FORWARD -s 10.100.1.0/24 -d 10.2.0.0/16 -p icmp -j LOG --log-prefix "FWD-ICMP-10_100_1_0-10_2_0_0: "
+-A FORWARD -s 10.100.1.0/24 -d 10.2.0.0/16 -p icmp -j ACCEPT
+-A FORWARD -s 10.100.1.0/24 -d 10.3.0.0/16 -p icmp -j LOG --log-prefix "FWD-ICMP-10_100_1_0-10_3_0_0: "
+-A FORWARD -s 10.100.1.0/24 -d 10.3.0.0/16 -p icmp -j ACCEPT
+-A FORWARD -s 10.1.0.0/16 -d 10.2.0.0/16 -p udp --dport 33434:33534 -j LOG --log-prefix "FWD-MTR-10_1_0_0-10_2_0_0: "
+-A FORWARD -s 10.1.0.0/16 -d 10.2.0.0/16 -p udp --dport 33434:33534 -j ACCEPT
+-A FORWARD -s 10.1.0.0/16 -d 10.3.0.0/16 -p udp --dport 33434:33534 -j LOG --log-prefix "FWD-MTR-10_1_0_0-10_3_0_0: "
+-A FORWARD -s 10.1.0.0/16 -d 10.3.0.0/16 -p udp --dport 33434:33534 -j ACCEPT
+-A FORWARD -s 10.1.0.0/16 -d 10.100.1.0/24 -p udp --dport 33434:33534 -j LOG --log-prefix "FWD-MTR-10_1_0_0-10_100_1_0: "
+-A FORWARD -s 10.1.0.0/16 -d 10.100.1.0/24 -p udp --dport 33434:33534 -j ACCEPT
+-A FORWARD -s 10.2.0.0/16 -d 10.1.0.0/16 -p udp --dport 33434:33534 -j LOG --log-prefix "FWD-MTR-10_2_0_0-10_1_0_0: "
+-A FORWARD -s 10.2.0.0/16 -d 10.1.0.0/16 -p udp --dport 33434:33534 -j ACCEPT
+-A FORWARD -s 10.2.0.0/16 -d 10.3.0.0/16 -p udp --dport 33434:33534 -j LOG --log-prefix "FWD-MTR-10_2_0_0-10_3_0_0: "
+-A FORWARD -s 10.2.0.0/16 -d 10.3.0.0/16 -p udp --dport 33434:33534 -j ACCEPT
+-A FORWARD -s 10.2.0.0/16 -d 10.100.1.0/24 -p udp --dport 33434:33534 -j LOG --log-prefix "FWD-MTR-10_2_0_0-10_100_1_0: "
+-A FORWARD -s 10.2.0.0/16 -d 10.100.1.0/24 -p udp --dport 33434:33534 -j ACCEPT
+-A FORWARD -s 10.3.0.0/16 -d 10.1.0.0/16 -p udp --dport 33434:33534 -j LOG --log-prefix "FWD-MTR-10_3_0_0-10_1_0_0: "
+-A FORWARD -s 10.3.0.0/16 -d 10.1.0.0/16 -p udp --dport 33434:33534 -j ACCEPT
+-A FORWARD -s 10.3.0.0/16 -d 10.2.0.0/16 -p udp --dport 33434:33534 -j LOG --log-prefix "FWD-MTR-10_3_0_0-10_2_0_0: "
+-A FORWARD -s 10.3.0.0/16 -d 10.2.0.0/16 -p udp --dport 33434:33534 -j ACCEPT
+-A FORWARD -s 10.3.0.0/16 -d 10.100.1.0/24 -p udp --dport 33434:33534 -j LOG --log-prefix "FWD-MTR-10_3_0_0-10_100_1_0: "
+-A FORWARD -s 10.3.0.0/16 -d 10.100.1.0/24 -p udp --dport 33434:33534 -j ACCEPT
+-A FORWARD -s 10.100.1.0/24 -d 10.1.0.0/16 -p udp --dport 33434:33534 -j LOG --log-prefix "FWD-MTR-10_100_1_0-10_1_0_0: "
+-A FORWARD -s 10.100.1.0/24 -d 10.1.0.0/16 -p udp --dport 33434:33534 -j ACCEPT
+-A FORWARD -s 10.100.1.0/24 -d 10.2.0.0/16 -p udp --dport 33434:33534 -j LOG --log-prefix "FWD-MTR-10_100_1_0-10_2_0_0: "
+-A FORWARD -s 10.100.1.0/24 -d 10.2.0.0/16 -p udp --dport 33434:33534 -j ACCEPT
+-A FORWARD -s 10.100.1.0/24 -d 10.3.0.0/16 -p udp --dport 33434:33534 -j LOG --log-prefix "FWD-MTR-10_100_1_0-10_3_0_0: "
+-A FORWARD -s 10.100.1.0/24 -d 10.3.0.0/16 -p udp --dport 33434:33534 -j ACCEPT
+-A FORWARD -j LOG --log-prefix "FORWARD-DROP: "
+-A FORWARD -j DROP
 COMMIT
-# Completed on Fri Jun 21 15:21:17 2025
+# Completed on Mon Jul  1 10:00:00 2025
+# Generated by iptables-save v1.8.7 on Mon Jul  1 10:00:00 2025
+*nat
+:PREROUTING ACCEPT [0:0]
+:INPUT ACCEPT [0:0]
+:OUTPUT ACCEPT [0:0]
+:POSTROUTING ACCEPT [0:0]
+COMMIT
+# Completed on Mon Jul  1 10:00:00 2025
+# Generated by iptables-save v1.8.7 on Mon Jul  1 10:00:00 2025
+*mangle
+:PREROUTING ACCEPT [0:0]
+:INPUT ACCEPT [0:0]
+:FORWARD ACCEPT [0:0]
+:OUTPUT ACCEPT [0:0]
+:POSTROUTING ACCEPT [0:0]
+-A PREROUTING -p icmp -j LOG --log-prefix "MANGLE-MARK-ICMP: "
+-A PREROUTING -p icmp -j MARK --set-mark 0x1
+-A PREROUTING -p tcp --dport 22 -j LOG --log-prefix "MANGLE-MARK-22: "
+-A PREROUTING -p tcp --dport 22 -j MARK --set-mark 0x1
+-A PREROUTING -p tcp --dport 161 -j LOG --log-prefix "MANGLE-MARK-161: "
+-A PREROUTING -p tcp --dport 161 -j MARK --set-mark 0x1
+-A PREROUTING -p tcp --dport 443 -j LOG --log-prefix "MANGLE-MARK-443: "
+-A PREROUTING -p tcp --dport 443 -j MARK --set-mark 0x1
+COMMIT
+# Completed on Mon Jul  1 10:00:00 2025
 
 EXIT_CODE: 0
 === TSIM_SECTION_END:iptables_save ===
 
 === TSIM_SECTION_START:ipset_save ===
-TITLE: Complete Ipset Configuration
+TITLE: Ipset Save Output
 COMMAND: /sbin/ipset save
-TIMESTAMP: 2025-06-21 15:21:17
+TIMESTAMP: 2025-07-01 10:00:00
 ---
-create DC_SRV_ALLOWED hash:ip family inet hashsize 1024 maxelem 65536
-add DC_SRV_ALLOWED 10.3.2.0/24
-add DC_SRV_ALLOWED 10.3.1.10
-add DC_SRV_ALLOWED 10.3.1.11
-add DC_SRV_ALLOWED 10.3.1.12
-
-create DC_APP_ALLOWED hash:ip family inet hashsize 1024 maxelem 65536
-add DC_APP_ALLOWED 10.3.10.0/24
-add DC_APP_ALLOWED 10.3.1.20
-add DC_APP_ALLOWED 10.3.1.21
-add DC_APP_ALLOWED 10.3.1.22
-
-create DC_PROD_ALLOWED hash:ip family inet hashsize 1024 maxelem 65536
-add DC_PROD_ALLOWED 10.3.20.0/24
-add DC_PROD_ALLOWED 10.3.1.30
-add DC_PROD_ALLOWED 10.3.1.31
-add DC_PROD_ALLOWED 10.3.1.32
-
-create DC_STORAGE_ALLOWED hash:ip family inet hashsize 1024 maxelem 65536
-add DC_STORAGE_ALLOWED 10.3.21.0/24
-add DC_STORAGE_ALLOWED 10.3.1.40
-add DC_STORAGE_ALLOWED 10.3.1.41
-add DC_STORAGE_ALLOWED 10.3.1.42
-
-create DC_SRV_CLIENTS hash:ip family inet hashsize 1024 maxelem 65536
-add DC_SRV_CLIENTS 10.3.2.10
-add DC_SRV_CLIENTS 10.3.2.11
-add DC_SRV_CLIENTS 10.3.2.12
-add DC_SRV_CLIENTS 10.3.2.13
-add DC_SRV_CLIENTS 10.3.2.14
-add DC_SRV_CLIENTS 10.3.2.15
-add DC_SRV_CLIENTS 10.3.2.16
-add DC_SRV_CLIENTS 10.3.2.17
-add DC_SRV_CLIENTS 10.3.2.18
-add DC_SRV_CLIENTS 10.3.2.19
-add DC_SRV_CLIENTS 10.3.2.20
-
-create DC_SRV_TO_APP hash:ip family inet hashsize 512 maxelem 32768
-add DC_SRV_TO_APP 10.3.10.0/24
-
-create DC_SRV_TO_PROD hash:ip family inet hashsize 512 maxelem 32768
-add DC_SRV_TO_PROD 10.3.20.0/24
-
-create DC_SRV_TO_STORAGE hash:ip family inet hashsize 512 maxelem 32768
-add DC_SRV_TO_STORAGE 10.3.21.0/24
-
-create DC_APP_CLIENTS hash:ip family inet hashsize 1024 maxelem 65536
-add DC_APP_CLIENTS 10.3.10.10
-add DC_APP_CLIENTS 10.3.10.11
-add DC_APP_CLIENTS 10.3.10.12
-add DC_APP_CLIENTS 10.3.10.13
-add DC_APP_CLIENTS 10.3.10.14
-add DC_APP_CLIENTS 10.3.10.15
-add DC_APP_CLIENTS 10.3.10.16
-add DC_APP_CLIENTS 10.3.10.17
-add DC_APP_CLIENTS 10.3.10.18
-add DC_APP_CLIENTS 10.3.10.19
-add DC_APP_CLIENTS 10.3.10.20
-
-create DC_APP_TO_SRV hash:ip family inet hashsize 512 maxelem 32768
-add DC_APP_TO_SRV 10.3.2.0/24
-
-create DC_APP_TO_PROD hash:ip family inet hashsize 512 maxelem 32768
-add DC_APP_TO_PROD 10.3.20.0/24
-
-create DC_APP_TO_STORAGE hash:ip family inet hashsize 512 maxelem 32768
-add DC_APP_TO_STORAGE 10.3.21.0/24
-
-create DC_PROD_CLIENTS hash:ip family inet hashsize 1024 maxelem 65536
-add DC_PROD_CLIENTS 10.3.20.10
-add DC_PROD_CLIENTS 10.3.20.11
-add DC_PROD_CLIENTS 10.3.20.12
-add DC_PROD_CLIENTS 10.3.20.13
-add DC_PROD_CLIENTS 10.3.20.14
-add DC_PROD_CLIENTS 10.3.20.15
-add DC_PROD_CLIENTS 10.3.20.16
-add DC_PROD_CLIENTS 10.3.20.17
-add DC_PROD_CLIENTS 10.3.20.18
-add DC_PROD_CLIENTS 10.3.20.19
-add DC_PROD_CLIENTS 10.3.20.20
-
-create DC_PROD_TO_SRV hash:ip family inet hashsize 512 maxelem 32768
-add DC_PROD_TO_SRV 10.3.2.0/24
-
-create DC_PROD_TO_APP hash:ip family inet hashsize 512 maxelem 32768
-add DC_PROD_TO_APP 10.3.10.0/24
-
-create DC_PROD_TO_STORAGE hash:ip family inet hashsize 512 maxelem 32768
-add DC_PROD_TO_STORAGE 10.3.21.0/24
-
-create DC_STORAGE_CLIENTS hash:ip family inet hashsize 1024 maxelem 65536
-add DC_STORAGE_CLIENTS 10.3.21.10
-add DC_STORAGE_CLIENTS 10.3.21.11
-add DC_STORAGE_CLIENTS 10.3.21.12
-add DC_STORAGE_CLIENTS 10.3.21.13
-add DC_STORAGE_CLIENTS 10.3.21.14
-add DC_STORAGE_CLIENTS 10.3.21.15
-add DC_STORAGE_CLIENTS 10.3.21.16
-add DC_STORAGE_CLIENTS 10.3.21.17
-add DC_STORAGE_CLIENTS 10.3.21.18
-add DC_STORAGE_CLIENTS 10.3.21.19
-add DC_STORAGE_CLIENTS 10.3.21.20
-
-create DC_STORAGE_TO_SRV hash:ip family inet hashsize 512 maxelem 32768
-add DC_STORAGE_TO_SRV 10.3.2.0/24
-
-create DC_STORAGE_TO_APP hash:ip family inet hashsize 512 maxelem 32768
-add DC_STORAGE_TO_APP 10.3.10.0/24
-
-create DC_STORAGE_TO_PROD hash:ip family inet hashsize 512 maxelem 32768
-add DC_STORAGE_TO_PROD 10.3.20.0/24
-
-create DC_CRITICAL_SERVICES hash:net,net family inet hashsize 1024 maxelem 65536
-add DC_CRITICAL_SERVICES 10.3.2.0/24,10.3.20.0/24
-add DC_CRITICAL_SERVICES 10.3.20.0/24,10.3.2.0/24
-add DC_CRITICAL_SERVICES 10.3.10.0/24,10.3.21.0/24
-add DC_CRITICAL_SERVICES 10.3.21.0/24,10.3.10.0/24
-add DC_CRITICAL_SERVICES 10.3.2.0/24,10.3.21.0/24
-
-create DC_HIGH_AVAILABILITY hash:net,net,port family inet hashsize 1024 maxelem 65536
-add DC_HIGH_AVAILABILITY 10.3.2.10,10.3.20.0/24,tcp:80
-add DC_HIGH_AVAILABILITY 10.3.2.10,10.3.20.0/24,tcp:443
-add DC_HIGH_AVAILABILITY 10.3.2.11,10.3.20.0/24,tcp:3306
-add DC_HIGH_AVAILABILITY 10.3.2.12,10.3.20.0/24,tcp:5432
-add DC_HIGH_AVAILABILITY 10.3.10.10,10.3.21.0/24,tcp:8080
-add DC_HIGH_AVAILABILITY 10.3.10.11,10.3.21.0/24,tcp:9000
-add DC_HIGH_AVAILABILITY 10.3.20.10,10.3.21.0/24,tcp:2049
-add DC_HIGH_AVAILABILITY 10.3.20.11,10.3.21.0/24,tcp:3260
-
-create DC_BUSINESS_CRITICAL hash:ip family inet hashsize 512 maxelem 32768
-add DC_BUSINESS_CRITICAL 10.3.2.10
-add DC_BUSINESS_CRITICAL 10.3.2.11
-add DC_BUSINESS_CRITICAL 10.3.2.12
-add DC_BUSINESS_CRITICAL 10.3.20.10
-add DC_BUSINESS_CRITICAL 10.3.20.11
-add DC_BUSINESS_CRITICAL 10.3.20.12
-add DC_BUSINESS_CRITICAL 10.3.21.10
-add DC_BUSINESS_CRITICAL 10.3.21.11
-
-create DC_MAINTENANCE_MODE hash:ip family inet hashsize 256 maxelem 16384
-add DC_MAINTENANCE_MODE 10.3.2.100
-add DC_MAINTENANCE_MODE 10.3.10.100
-add DC_MAINTENANCE_MODE 10.3.20.100
-add DC_MAINTENANCE_MODE 10.3.21.100
-
-create DC_PRIORITY_TRAFFIC hash:net,net family inet hashsize 1024 maxelem 65536
-add DC_PRIORITY_TRAFFIC 10.3.2.0/24,10.3.20.0/24
-add DC_PRIORITY_TRAFFIC 10.3.20.0/24,10.3.2.0/24
-add DC_PRIORITY_TRAFFIC 10.3.10.0/24,10.3.21.0/24
-add DC_PRIORITY_TRAFFIC 10.3.21.0/24,10.3.10.0/24
-add DC_PRIORITY_TRAFFIC 10.3.2.0/24,10.1.0.0/16
-add DC_PRIORITY_TRAFFIC 10.3.2.0/24,10.2.0.0/16
-add DC_PRIORITY_TRAFFIC 10.3.20.0/24,10.1.0.0/16
-add DC_PRIORITY_TRAFFIC 10.3.20.0/24,10.2.0.0/16
-
-create DC_TIER_MATRIX hash:net,net family inet hashsize 1024 maxelem 65536
-add DC_TIER_MATRIX 10.3.2.0/24,10.3.10.0/24
-add DC_TIER_MATRIX 10.3.10.0/24,10.3.2.0/24
-add DC_TIER_MATRIX 10.3.10.0/24,10.3.20.0/24
-add DC_TIER_MATRIX 10.3.20.0/24,10.3.10.0/24
-add DC_TIER_MATRIX 10.3.20.0/24,10.3.21.0/24
-add DC_TIER_MATRIX 10.3.21.0/24,10.3.20.0/24
-add DC_TIER_MATRIX 10.3.2.0/24,10.3.21.0/24
-add DC_TIER_MATRIX 10.3.21.0/24,10.3.2.0/24
-add DC_TIER_MATRIX 10.3.2.0/24,10.1.0.0/16
-add DC_TIER_MATRIX 10.3.10.0/24,10.1.0.0/16
-add DC_TIER_MATRIX 10.3.20.0/24,10.1.0.0/16
-add DC_TIER_MATRIX 10.3.2.0/24,10.2.0.0/16
-add DC_TIER_MATRIX 10.3.10.0/24,10.2.0.0/16
-add DC_TIER_MATRIX 10.3.20.0/24,10.2.0.0/16
-
-create DC_TIER_RESTRICTED hash:net,net family inet hashsize 512 maxelem 32768
-add DC_TIER_RESTRICTED 10.3.21.0/24,10.3.10.0/24
-add DC_TIER_RESTRICTED 10.3.10.0/24,10.3.21.0/24
-add DC_TIER_RESTRICTED 10.3.1.0/24,10.3.2.0/24
-add DC_TIER_RESTRICTED 10.3.1.0/24,10.3.10.0/24
-add DC_TIER_RESTRICTED 10.3.1.0/24,10.3.20.0/24
-add DC_TIER_RESTRICTED 10.3.1.0/24,10.3.21.0/24
-
-create DC_WEB_TIER hash:ip family inet hashsize 512 maxelem 32768
-add DC_WEB_TIER 10.3.2.10
-add DC_WEB_TIER 10.3.2.11
-add DC_WEB_TIER 10.3.2.12
-add DC_WEB_TIER 10.3.10.10
-add DC_WEB_TIER 10.3.10.11
-add DC_WEB_TIER 10.3.20.10
-add DC_WEB_TIER 10.3.20.11
-
-create DC_DB_TIER hash:ip family inet hashsize 512 maxelem 32768
-add DC_DB_TIER 10.3.2.20
-add DC_DB_TIER 10.3.2.21
-add DC_DB_TIER 10.3.2.22
-add DC_DB_TIER 10.3.20.20
-add DC_DB_TIER 10.3.20.21
-add DC_DB_TIER 10.3.20.22
-
-create DC_CACHE_TIER hash:ip family inet hashsize 512 maxelem 32768
-add DC_CACHE_TIER 10.3.2.30
-add DC_CACHE_TIER 10.3.2.31
-add DC_CACHE_TIER 10.3.10.30
-add DC_CACHE_TIER 10.3.10.31
-add DC_CACHE_TIER 10.3.20.30
-add DC_CACHE_TIER 10.3.20.31
-
-create DC_SRV_ADMIN_ALLOWED hash:net,net family inet hashsize 512 maxelem 32768
-add DC_SRV_ADMIN_ALLOWED 10.3.1.10,10.3.2.0/24
-add DC_SRV_ADMIN_ALLOWED 10.3.1.11,10.3.2.0/24
-add DC_SRV_ADMIN_ALLOWED 10.1.2.3,10.3.2.0/24
-add DC_SRV_ADMIN_ALLOWED 10.2.1.10,10.3.2.0/24
-
-create DC_SRV_MONITORING hash:net,net,port family inet hashsize 512 maxelem 32768
-add DC_SRV_MONITORING 10.3.2.0/24,10.3.1.100,tcp:161
-add DC_SRV_MONITORING 10.3.2.0/24,10.3.1.100,udp:161
-add DC_SRV_MONITORING 10.3.2.0/24,10.3.1.101,tcp:9100
-add DC_SRV_MONITORING 10.3.2.0/24,10.3.1.101,tcp:3000
-add DC_SRV_MONITORING 10.3.2.0/24,10.3.1.102,tcp:8086
-add DC_SRV_MONITORING 10.3.2.0/24,10.3.1.102,tcp:9090
-
-create DC_SRV_BACKUP_ALLOWED hash:net,net family inet hashsize 512 maxelem 32768
-add DC_SRV_BACKUP_ALLOWED 10.3.21.50,10.3.2.0/24
-add DC_SRV_BACKUP_ALLOWED 10.3.21.51,10.3.2.0/24
-add DC_SRV_BACKUP_ALLOWED 10.3.21.52,10.3.2.0/24
-add DC_SRV_BACKUP_ALLOWED 10.3.1.50,10.3.2.0/24
-
-create DC_ADMIN_HOSTS hash:ip family inet hashsize 256 maxelem 16384
-add DC_ADMIN_HOSTS 10.3.1.10
-add DC_ADMIN_HOSTS 10.3.1.11
-add DC_ADMIN_HOSTS 10.1.2.3
-add DC_ADMIN_HOSTS 10.2.1.10
-
-create DC_MONITORING_ALLOWED hash:ip family inet hashsize 256 maxelem 16384
-add DC_MONITORING_ALLOWED 10.3.1.100
-add DC_MONITORING_ALLOWED 10.3.1.101
-add DC_MONITORING_ALLOWED 10.3.1.102
-add DC_MONITORING_ALLOWED 10.1.2.3
-
-create DC_APP_SERVICES hash:net,net,port family inet hashsize 1024 maxelem 65536
-add DC_APP_SERVICES 10.3.10.10,10.3.2.0/24,tcp:8080
-add DC_APP_SERVICES 10.3.10.10,10.3.2.0/24,tcp:8443
-add DC_APP_SERVICES 10.3.10.11,10.3.2.0/24,tcp:9080
-add DC_APP_SERVICES 10.3.10.11,10.3.2.0/24,tcp:9443
-add DC_APP_SERVICES 10.3.10.12,10.3.20.0/24,tcp:4000
-add DC_APP_SERVICES 10.3.10.13,10.3.20.0/24,tcp:5000
-add DC_APP_SERVICES 10.3.10.14,10.3.21.0/24,tcp:6000
-add DC_APP_SERVICES 10.3.10.15,10.3.21.0/24,tcp:7000
-
-create DC_APP_LOAD_BALANCED hash:net,net family inet hashsize 512 maxelem 32768
-add DC_APP_LOAD_BALANCED 10.3.10.10,10.3.2.0/24
-add DC_APP_LOAD_BALANCED 10.3.10.11,10.3.2.0/24
-add DC_APP_LOAD_BALANCED 10.3.10.12,10.3.2.0/24
-add DC_APP_LOAD_BALANCED 10.3.10.13,10.3.20.0/24
-add DC_APP_LOAD_BALANCED 10.3.10.14,10.3.20.0/24
-add DC_APP_LOAD_BALANCED 10.3.10.15,10.3.20.0/24
-
-create DC_APP_MICROSERVICES hash:net,net family inet hashsize 512 maxelem 32768
-add DC_APP_MICROSERVICES 10.3.10.0/24,10.3.2.0/24
-add DC_APP_MICROSERVICES 10.3.10.0/24,10.3.20.0/24
-add DC_APP_MICROSERVICES 10.3.10.0/24,10.3.21.0/24
-add DC_APP_MICROSERVICES 10.3.2.0/24,10.3.10.0/24
-add DC_APP_MICROSERVICES 10.3.20.0/24,10.3.10.0/24
-
-create DC_PROD_CRITICAL hash:net,net family inet hashsize 512 maxelem 32768
-add DC_PROD_CRITICAL 10.3.20.10,10.3.2.0/24
-add DC_PROD_CRITICAL 10.3.20.11,10.3.2.0/24
-add DC_PROD_CRITICAL 10.3.20.12,10.3.10.0/24
-add DC_PROD_CRITICAL 10.3.20.13,10.3.10.0/24
-add DC_PROD_CRITICAL 10.3.20.14,10.3.21.0/24
-add DC_PROD_CRITICAL 10.3.20.15,10.3.21.0/24
-
-create DC_PROD_HIGH_AVAILABILITY hash:net,net,port family inet hashsize 512 maxelem 32768
-add DC_PROD_HIGH_AVAILABILITY 10.3.20.10,10.3.2.0/24,tcp:80
-add DC_PROD_HIGH_AVAILABILITY 10.3.20.10,10.3.2.0/24,tcp:443
-add DC_PROD_HIGH_AVAILABILITY 10.3.20.11,10.3.2.0/24,tcp:80
-add DC_PROD_HIGH_AVAILABILITY 10.3.20.11,10.3.2.0/24,tcp:443
-add DC_PROD_HIGH_AVAILABILITY 10.3.20.12,10.3.10.0/24,tcp:8080
-add DC_PROD_HIGH_AVAILABILITY 10.3.20.13,10.3.10.0/24,tcp:8443
-add DC_PROD_HIGH_AVAILABILITY 10.3.20.14,10.3.21.0/24,tcp:3306
-add DC_PROD_HIGH_AVAILABILITY 10.3.20.15,10.3.21.0/24,tcp:5432
-
-create DC_PROD_MONITORING hash:net,net family inet hashsize 512 maxelem 32768
-add DC_PROD_MONITORING 10.3.20.0/24,10.3.1.100
-add DC_PROD_MONITORING 10.3.20.0/24,10.3.1.101
-add DC_PROD_MONITORING 10.3.20.0/24,10.3.1.102
-add DC_PROD_MONITORING 10.3.20.0/24,10.1.2.3
-
-create DC_PROD_WEB_SERVERS hash:ip family inet hashsize 256 maxelem 16384
-add DC_PROD_WEB_SERVERS 10.3.20.10
-add DC_PROD_WEB_SERVERS 10.3.20.11
-add DC_PROD_WEB_SERVERS 10.3.20.12
-add DC_PROD_WEB_SERVERS 10.3.20.13
-
-create DC_PROD_ADMIN_HOSTS hash:ip family inet hashsize 256 maxelem 16384
-add DC_PROD_ADMIN_HOSTS 10.3.1.10
-add DC_PROD_ADMIN_HOSTS 10.3.1.11
-add DC_PROD_ADMIN_HOSTS 10.1.2.3
-add DC_PROD_ADMIN_HOSTS 10.2.1.10
-
-create DC_PROD_DB_CLIENTS hash:ip family inet hashsize 512 maxelem 32768
-add DC_PROD_DB_CLIENTS 10.3.10.10
-add DC_PROD_DB_CLIENTS 10.3.10.11
-add DC_PROD_DB_CLIENTS 10.3.10.12
-add DC_PROD_DB_CLIENTS 10.3.2.10
-add DC_PROD_DB_CLIENTS 10.3.2.11
-add DC_PROD_DB_CLIENTS 10.3.2.12
-
-create DC_STORAGE_CRITICAL hash:net,net family inet hashsize 512 maxelem 32768
-add DC_STORAGE_CRITICAL 10.3.21.10,10.3.20.0/24
-add DC_STORAGE_CRITICAL 10.3.21.11,10.3.20.0/24
-add DC_STORAGE_CRITICAL 10.3.21.12,10.3.2.0/24
-add DC_STORAGE_CRITICAL 10.3.21.13,10.3.2.0/24
-add DC_STORAGE_CRITICAL 10.3.21.14,10.3.10.0/24
-add DC_STORAGE_CRITICAL 10.3.21.15,10.3.10.0/24
-
-create DC_STORAGE_BACKUP hash:net,net,port family inet hashsize 512 maxelem 32768
-add DC_STORAGE_BACKUP 10.3.21.50,10.3.20.0/24,tcp:22
-add DC_STORAGE_BACKUP 10.3.21.51,10.3.20.0/24,tcp:443
-add DC_STORAGE_BACKUP 10.3.21.52,10.3.2.0/24,tcp:22
-add DC_STORAGE_BACKUP 10.3.21.53,10.3.2.0/24,tcp:443
-add DC_STORAGE_BACKUP 10.3.21.54,10.3.10.0/24,tcp:8080
-add DC_STORAGE_BACKUP 10.3.21.55,10.3.10.0/24,tcp:9000
-
-create DC_STORAGE_REPLICATION hash:net,net family inet hashsize 512 maxelem 32768
-add DC_STORAGE_REPLICATION 10.3.21.10,10.3.21.11
-add DC_STORAGE_REPLICATION 10.3.21.11,10.3.21.10
-add DC_STORAGE_REPLICATION 10.3.21.12,10.3.21.13
-add DC_STORAGE_REPLICATION 10.3.21.13,10.3.21.12
-add DC_STORAGE_REPLICATION 10.3.21.14,10.3.21.15
-add DC_STORAGE_REPLICATION 10.3.21.15,10.3.21.14
-
-create DC_LB_TARGETS hash:net,net family inet hashsize 512 maxelem 32768
-add DC_LB_TARGETS 10.3.2.0/24,10.3.10.10
-add DC_LB_TARGETS 10.3.2.0/24,10.3.10.11
-add DC_LB_TARGETS 10.3.2.0/24,10.3.10.12
-add DC_LB_TARGETS 10.3.10.0/24,10.3.20.10
-add DC_LB_TARGETS 10.3.10.0/24,10.3.20.11
-add DC_LB_TARGETS 10.3.10.0/24,10.3.20.12
-
-create DC_LB_WEIGHTED hash:net,net,port family inet hashsize 512 maxelem 32768
-add DC_LB_WEIGHTED 10.3.2.0/24,10.3.10.10,tcp:8080
-add DC_LB_WEIGHTED 10.3.2.0/24,10.3.10.11,tcp:8080
-add DC_LB_WEIGHTED 10.3.2.0/24,10.3.10.12,tcp:8080
-add DC_LB_WEIGHTED 10.3.10.0/24,10.3.20.10,tcp:80
-add DC_LB_WEIGHTED 10.3.10.0/24,10.3.20.11,tcp:80
-add DC_LB_WEIGHTED 10.3.10.0/24,10.3.20.12,tcp:80
-
-create DC_LB_PRIORITY hash:net,net family inet hashsize 256 maxelem 16384
-add DC_LB_PRIORITY 10.3.2.0/24,10.3.10.10
-add DC_LB_PRIORITY 10.3.10.0/24,10.3.20.10
-add DC_LB_PRIORITY 10.3.20.0/24,10.3.21.10
-
-create DC_PRIMARY_SERVERS hash:ip family inet hashsize 256 maxelem 16384
-add DC_PRIMARY_SERVERS 10.3.2.10
-add DC_PRIMARY_SERVERS 10.3.10.10
-add DC_PRIMARY_SERVERS 10.3.20.10
-add DC_PRIMARY_SERVERS 10.3.21.10
-
-create DC_SECONDARY_SERVERS hash:ip family inet hashsize 256 maxelem 16384
-add DC_SECONDARY_SERVERS 10.3.2.11
-add DC_SECONDARY_SERVERS 10.3.10.11
-add DC_SECONDARY_SERVERS 10.3.20.11
-add DC_SECONDARY_SERVERS 10.3.21.11
-
-create DC_BACKUP_SERVERS hash:ip family inet hashsize 256 maxelem 16384
-add DC_BACKUP_SERVERS 10.3.2.12
-add DC_BACKUP_SERVERS 10.3.10.12
-add DC_BACKUP_SERVERS 10.3.20.12
-add DC_BACKUP_SERVERS 10.3.21.12
-
-create DC_DR_REPLICATION hash:net,net,port family inet hashsize 512 maxelem 32768
-add DC_DR_REPLICATION 10.3.2.10,10.2.5.0/24,tcp:3306
-add DC_DR_REPLICATION 10.3.2.11,10.2.5.0/24,tcp:5432
-add DC_DR_REPLICATION 10.3.20.10,10.1.3.0/24,tcp:80
-add DC_DR_REPLICATION 10.3.20.11,10.1.3.0/24,tcp:443
-add DC_DR_REPLICATION 10.3.21.10,10.1.10.0/24,tcp:2049
-add DC_DR_REPLICATION 10.3.21.11,10.2.6.0/24,tcp:3260
-
-create DC_DR_BACKUP hash:net,net family inet hashsize 256 maxelem 16384
-add DC_DR_BACKUP 10.3.2.0/24,10.2.5.0/24
-add DC_DR_BACKUP 10.3.10.0/24,10.1.10.0/24
-add DC_DR_BACKUP 10.3.20.0/24,10.1.3.0/24
-add DC_DR_BACKUP 10.3.21.0/24,10.2.6.0/24
-
-create DC_DR_PRIORITY hash:net,net family inet hashsize 256 maxelem 16384
-add DC_DR_PRIORITY 10.3.2.0/24,10.2.5.0/24
-add DC_DR_PRIORITY 10.3.20.0/24,10.1.3.0/24
-add DC_DR_PRIORITY 10.3.21.0/24,10.1.10.0/24
-
-create DC_DMZ_ZONE hash:net,net family inet hashsize 256 maxelem 16384
-add DC_DMZ_ZONE 10.3.1.0/24,10.3.2.0/24
-add DC_DMZ_ZONE 10.3.1.0/24,10.3.10.0/24
-add DC_DMZ_ZONE 10.3.1.0/24,10.3.20.0/24
-add DC_DMZ_ZONE 10.3.1.0/24,10.3.21.0/24
-
-create DC_TRUSTED_ZONE hash:net,net family inet hashsize 512 maxelem 32768
-add DC_TRUSTED_ZONE 10.3.2.0/24,10.3.10.0/24
-add DC_TRUSTED_ZONE 10.3.10.0/24,10.3.2.0/24
-add DC_TRUSTED_ZONE 10.3.20.0/24,10.3.21.0/24
-add DC_TRUSTED_ZONE 10.3.21.0/24,10.3.20.0/24
-add DC_TRUSTED_ZONE 10.3.2.0/24,10.3.20.0/24
-add DC_TRUSTED_ZONE 10.3.20.0/24,10.3.2.0/24
-
-create DC_RESTRICTED_ZONE hash:net,net family inet hashsize 256 maxelem 16384
-add DC_RESTRICTED_ZONE 10.3.21.0/24,10.3.10.0/24
-add DC_RESTRICTED_ZONE 10.3.10.0/24,10.3.21.0/24
-add DC_RESTRICTED_ZONE 10.3.1.0/24,10.3.2.0/24
-add DC_RESTRICTED_ZONE 10.3.1.0/24,10.3.10.0/24
-
-create DC_QUARANTINE_ZONE hash:ip family inet hashsize 256 maxelem 16384
-add DC_QUARANTINE_ZONE 10.3.1.200
-add DC_QUARANTINE_ZONE 10.3.2.200
-add DC_QUARANTINE_ZONE 10.3.10.200
-add DC_QUARANTINE_ZONE 10.3.20.200
-add DC_QUARANTINE_ZONE 10.3.21.200
-
-create DC_AUDIT_REQUIRED hash:net,net family inet hashsize 512 maxelem 32768
-add DC_AUDIT_REQUIRED 10.3.2.0/24,10.3.20.0/24
-add DC_AUDIT_REQUIRED 10.3.20.0/24,10.3.2.0/24
-add DC_AUDIT_REQUIRED 10.3.10.0/24,10.3.21.0/24
-add DC_AUDIT_REQUIRED 10.3.21.0/24,10.3.10.0/24
-add DC_AUDIT_REQUIRED 10.3.2.0/24,10.1.0.0/16
-add DC_AUDIT_REQUIRED 10.3.20.0/24,10.2.0.0/16
-
-create DC_PCI_SCOPE hash:net,net,port family inet hashsize 256 maxelem 16384
-add DC_PCI_SCOPE 10.3.2.0/24,10.3.20.0/24,tcp:443
-add DC_PCI_SCOPE 10.3.20.0/24,10.3.2.0/24,tcp:1433
-add DC_PCI_SCOPE 10.3.20.0/24,10.3.2.0/24,tcp:3306
-add DC_PCI_SCOPE 10.3.10.0/24,10.3.20.0/24,tcp:8443
-
-create DC_SOX_SCOPE hash:net,net family inet hashsize 256 maxelem 16384
-add DC_SOX_SCOPE 10.3.2.0/24,10.3.20.0/24
-add DC_SOX_SCOPE 10.3.20.0/24,10.3.21.0/24
-add DC_SOX_SCOPE 10.3.10.0/24,10.3.2.0/24
-
-create DC_HIPAA_SCOPE hash:net,net family inet hashsize 256 maxelem 16384
-add DC_HIPAA_SCOPE 10.3.2.20,10.3.20.0/24
-add DC_HIPAA_SCOPE 10.3.2.21,10.3.20.0/24
-add DC_HIPAA_SCOPE 10.3.20.20,10.3.21.0/24
-add DC_HIPAA_SCOPE 10.3.20.21,10.3.21.0/24
-
-create DC_PERFORMANCE_TARGETS hash:ip family inet hashsize 256 maxelem 16384
-add DC_PERFORMANCE_TARGETS 10.3.2.10
-add DC_PERFORMANCE_TARGETS 10.3.2.11
-add DC_PERFORMANCE_TARGETS 10.3.10.10
-add DC_PERFORMANCE_TARGETS 10.3.10.11
-add DC_PERFORMANCE_TARGETS 10.3.20.10
-add DC_PERFORMANCE_TARGETS 10.3.20.11
-add DC_PERFORMANCE_TARGETS 10.3.21.10
-add DC_PERFORMANCE_TARGETS 10.3.21.11
-
-create DC_HIGH_CAPACITY hash:ip family inet hashsize 256 maxelem 16384
-add DC_HIGH_CAPACITY 10.3.2.10
-add DC_HIGH_CAPACITY 10.3.2.11
-add DC_HIGH_CAPACITY 10.3.20.10
-add DC_HIGH_CAPACITY 10.3.20.11
-add DC_HIGH_CAPACITY 10.3.21.10
-add DC_HIGH_CAPACITY 10.3.21.11
-
-create DC_MEDIUM_CAPACITY hash:ip family inet hashsize 512 maxelem 32768
-add DC_MEDIUM_CAPACITY 10.3.2.12
-add DC_MEDIUM_CAPACITY 10.3.2.13
-add DC_MEDIUM_CAPACITY 10.3.10.10
-add DC_MEDIUM_CAPACITY 10.3.10.11
-add DC_MEDIUM_CAPACITY 10.3.20.12
-add DC_MEDIUM_CAPACITY 10.3.20.13
-
-create DC_LOW_CAPACITY hash:ip family inet hashsize 512 maxelem 32768
-add DC_LOW_CAPACITY 10.3.2.20
-add DC_LOW_CAPACITY 10.3.10.20
-add DC_LOW_CAPACITY 10.3.20.20
-add DC_LOW_CAPACITY 10.3.21.20
-add DC_LOW_CAPACITY 10.3.1.0/24
-
-create DC_MESH_SERVICES hash:net,net,port family inet hashsize 512 maxelem 32768
-add DC_MESH_SERVICES 10.3.10.0/24,10.3.2.0/24,tcp:15000
-add DC_MESH_SERVICES 10.3.10.0/24,10.3.2.0/24,tcp:15001
-add DC_MESH_SERVICES 10.3.10.0/24,10.3.20.0/24,tcp:15006
-add DC_MESH_SERVICES 10.3.2.0/24,10.3.10.0/24,tcp:15000
-add DC_MESH_SERVICES 10.3.2.0/24,10.3.20.0/24,tcp:15001
-add DC_MESH_SERVICES 10.3.20.0/24,10.3.10.0/24,tcp:15006
-
-create DC_MESH_ENCRYPTED hash:net,net family inet hashsize 256 maxelem 16384
-add DC_MESH_ENCRYPTED 10.3.10.0/24,10.3.2.0/24
-add DC_MESH_ENCRYPTED 10.3.2.0/24,10.3.10.0/24
-add DC_MESH_ENCRYPTED 10.3.10.0/24,10.3.20.0/24
-add DC_MESH_ENCRYPTED 10.3.20.0/24,10.3.10.0/24
-
-create DC_SERVICE_REGISTRY hash:net,net family inet hashsize 256 maxelem 16384
-add DC_SERVICE_REGISTRY 10.3.10.0/24,10.3.1.100
-add DC_SERVICE_REGISTRY 10.3.2.0/24,10.3.1.100
-add DC_SERVICE_REGISTRY 10.3.20.0/24,10.3.1.100
-
-create DC_CONFIG_SERVER hash:net,net,port family inet hashsize 256 maxelem 16384
-add DC_CONFIG_SERVER 10.3.10.0/24,10.3.1.101,tcp:8888
-add DC_CONFIG_SERVER 10.3.2.0/24,10.3.1.101,tcp:8888
-add DC_CONFIG_SERVER 10.3.20.0/24,10.3.1.101,tcp:8888
-
-create DC_API_GATEWAY_TARGETS hash:net,net family inet hashsize 256 maxelem 16384
-add DC_API_GATEWAY_TARGETS 10.3.2.0/24,10.3.1.110
-add DC_API_GATEWAY_TARGETS 10.3.10.0/24,10.3.1.110
-add DC_API_GATEWAY_TARGETS 10.3.20.0/24,10.3.1.110
-
-create DC_CONTAINER_PODS hash:net,net family inet hashsize 512 maxelem 32768
-add DC_CONTAINER_PODS 10.3.10.0/24,10.3.2.0/24
-add DC_CONTAINER_PODS 10.3.2.0/24,10.3.10.0/24
-add DC_CONTAINER_PODS 10.3.10.0/24,10.3.20.0/24
-add DC_CONTAINER_PODS 10.3.20.0/24,10.3.10.0/24
-add DC_CONTAINER_PODS 10.3.10.0/24,10.3.21.0/24
-add DC_CONTAINER_PODS 10.3.21.0/24,10.3.10.0/24
-
-create DC_KUBERNETES_SERVICES hash:net,net,port family inet hashsize 256 maxelem 16384
-add DC_KUBERNETES_SERVICES 10.3.10.0/24,10.3.1.200,tcp:6443
-add DC_KUBERNETES_SERVICES 10.3.10.0/24,10.3.1.201,tcp:2379
-add DC_KUBERNETES_SERVICES 10.3.10.0/24,10.3.1.202,tcp:10250
-
-create DC_DOCKER_NETWORKS hash:net,net family inet hashsize 256 maxelem 16384
-add DC_DOCKER_NETWORKS 172.17.0.0/16,10.3.10.0/24
-add DC_DOCKER_NETWORKS 172.18.0.0/16,10.3.2.0/24
-add DC_DOCKER_NETWORKS 172.19.0.0/16,10.3.20.0/24
-
-create DC_DB_POOL_ALLOWED hash:net,net family inet hashsize 512 maxelem 32768
-add DC_DB_POOL_ALLOWED 10.3.10.0/24,10.3.2.20
-add DC_DB_POOL_ALLOWED 10.3.10.0/24,10.3.2.21
-add DC_DB_POOL_ALLOWED 10.3.20.0/24,10.3.2.20
-add DC_DB_POOL_ALLOWED 10.3.20.0/24,10.3.2.21
-add DC_DB_POOL_ALLOWED 10.3.2.0/24,10.3.20.20
-add DC_DB_POOL_ALLOWED 10.3.2.0/24,10.3.20.21
-
-create DC_DB_READONLY hash:net,net,port family inet hashsize 256 maxelem 16384
-add DC_DB_READONLY 10.3.10.0/24,10.3.2.20,tcp:3306
-add DC_DB_READONLY 10.3.10.0/24,10.3.2.21,tcp:5432
-add DC_DB_READONLY 10.3.20.0/24,10.3.2.20,tcp:3306
-add DC_DB_READONLY 10.3.20.0/24,10.3.2.21,tcp:5432
-
-create DC_DB_READWRITE hash:net,net family inet hashsize 256 maxelem 16384
-add DC_DB_READWRITE 10.3.2.10,10.3.2.20
-add DC_DB_READWRITE 10.3.2.11,10.3.2.21
-add DC_DB_READWRITE 10.3.20.10,10.3.20.20
-add DC_DB_READWRITE 10.3.20.11,10.3.20.21
-
-create DC_API_CONSUMERS hash:net,net,port family inet hashsize 512 maxelem 32768
-add DC_API_CONSUMERS 10.3.2.0/24,10.3.1.110,tcp:80
-add DC_API_CONSUMERS 10.3.2.0/24,10.3.1.110,tcp:443
-add DC_API_CONSUMERS 10.3.10.0/24,10.3.1.110,tcp:8080
-add DC_API_CONSUMERS 10.3.10.0/24,10.3.1.110,tcp:8443
-add DC_API_CONSUMERS 10.3.20.0/24,10.3.1.110,tcp:80
-add DC_API_CONSUMERS 10.3.20.0/24,10.3.1.110,tcp:443
-
-create DC_API_RATE_LIMITED hash:ip family inet hashsize 512 maxelem 32768
-add DC_API_RATE_LIMITED 10.3.2.100
-add DC_API_RATE_LIMITED 10.3.10.100
-add DC_API_RATE_LIMITED 10.3.20.100
-add DC_API_RATE_LIMITED 10.3.21.100
-add DC_API_RATE_LIMITED 10.3.1.100
-
-create DC_API_PREMIUM hash:ip family inet hashsize 256 maxelem 16384
-add DC_API_PREMIUM 10.3.2.10
-add DC_API_PREMIUM 10.3.2.11
-add DC_API_PREMIUM 10.3.10.10
-add DC_API_PREMIUM 10.3.10.11
-add DC_API_PREMIUM 10.3.20.10
-add DC_API_PREMIUM 10.3.20.11
-
-create DC_CACHE_CLUSTERS hash:net,net family inet hashsize 256 maxelem 16384
-add DC_CACHE_CLUSTERS 10.3.2.30,10.3.2.31
-add DC_CACHE_CLUSTERS 10.3.10.30,10.3.10.31
-add DC_CACHE_CLUSTERS 10.3.20.30,10.3.20.31
-
-create DC_CACHE_REPLICATION hash:net,net,port family inet hashsize 256 maxelem 16384
-add DC_CACHE_REPLICATION 10.3.2.30,10.3.2.31,tcp:6379
-add DC_CACHE_REPLICATION 10.3.10.30,10.3.10.31,tcp:11211
-add DC_CACHE_REPLICATION 10.3.20.30,10.3.20.31,tcp:9042
-
-create DC_BACKUP_SERVERS hash:net,net family inet hashsize 256 maxelem 16384
-add DC_BACKUP_SERVERS 10.3.21.50,10.3.2.0/24
-add DC_BACKUP_SERVERS 10.3.21.51,10.3.10.0/24
-add DC_BACKUP_SERVERS 10.3.21.52,10.3.20.0/24
-add DC_BACKUP_SERVERS 10.3.21.53,10.3.21.0/24
-
-create DC_BACKUP_SCHEDULE hash:net,net,port family inet hashsize 256 maxelem 16384
-add DC_BACKUP_SCHEDULE 10.3.21.50,10.3.2.0/24,tcp:22
-add DC_BACKUP_SCHEDULE 10.3.21.51,10.3.10.0/24,tcp:443
-add DC_BACKUP_SCHEDULE 10.3.21.52,10.3.20.0/24,tcp:8080
-add DC_BACKUP_SCHEDULE 10.3.21.53,10.3.21.0/24,tcp:22
-
-create DC_BACKUP_PRIORITY hash:net,net family inet hashsize 256 maxelem 16384
-add DC_BACKUP_PRIORITY 10.3.21.50,10.3.2.0/24
-add DC_BACKUP_PRIORITY 10.3.21.51,10.3.20.0/24
-add DC_BACKUP_PRIORITY 10.3.21.52,10.3.21.0/24
-
-create DC_REPLICATION_PAIRS hash:net,net family inet hashsize 256 maxelem 16384
-add DC_REPLICATION_PAIRS 10.3.2.10,10.3.2.11
-add DC_REPLICATION_PAIRS 10.3.10.10,10.3.10.11
-add DC_REPLICATION_PAIRS 10.3.20.10,10.3.20.11
-add DC_REPLICATION_PAIRS 10.3.21.10,10.3.21.11
-
-create DC_REPLICATION_PRIORITY hash:net,net,port family inet hashsize 256 maxelem 16384
-add DC_REPLICATION_PRIORITY 10.3.2.10,10.3.2.11,tcp:3306
-add DC_REPLICATION_PRIORITY 10.3.10.10,10.3.10.11,tcp:5432
-add DC_REPLICATION_PRIORITY 10.3.20.10,10.3.20.11,tcp:80
-add DC_REPLICATION_PRIORITY 10.3.21.10,10.3.21.11,tcp:2049
-
-create DC_ASYNC_REPLICATION hash:net,net family inet hashsize 256 maxelem 16384
-add DC_ASYNC_REPLICATION 10.3.2.12,10.3.2.13
-add DC_ASYNC_REPLICATION 10.3.10.12,10.3.10.13
-add DC_ASYNC_REPLICATION 10.3.20.12,10.3.20.13
-add DC_ASYNC_REPLICATION 10.3.21.12,10.3.21.13
-
-create DC_SYNC_REPLICATION hash:net,net family inet hashsize 256 maxelem 16384
-add DC_SYNC_REPLICATION 10.3.2.10,10.3.2.11
-add DC_SYNC_REPLICATION 10.3.10.10,10.3.10.11
-add DC_SYNC_REPLICATION 10.3.20.10,10.3.20.11
-add DC_SYNC_REPLICATION 10.3.21.10,10.3.21.11
+create datacenter_10_3_1_0_24_hosts bitmap:ip range 10.3.1.0/24 timeout 3600 counters comment
+create datacenter_10_3_2_0_24_hosts bitmap:ip range 10.3.2.0/24 timeout 3600 counters comment
+create datacenter_10_3_10_0_24_hosts bitmap:ip range 10.3.10.0/24 timeout 3600 counters comment
+create datacenter_10_3_20_0_24_hosts bitmap:ip range 10.3.20.0/24 timeout 3600 counters comment
+create dc_mgmt_networks bitmap:ip range 10.3.1.0-10.3.5.255 counters comment
+create dc_admin_workstations bitmap:ip range 10.3.10.10-10.3.10.20 timeout 3600
+create datacenter_core_services bitmap:ip range 10.d.10.0/24 timeout 3600
+create datacenter_load_balancers bitmap:ip range 10.d.1.10-10.d.1.20
+create datacenter_10_3_1_0_24_secure_clients bitmap:ip,mac range 10.3.1.0/24 timeout 7200 counters comment
+create datacenter_10_3_2_0_24_secure_clients bitmap:ip,mac range 10.3.2.0/24 timeout 7200 counters comment
+create datacenter_10_3_10_0_24_secure_clients bitmap:ip,mac range 10.3.10.0/24 timeout 7200 counters comment
+create datacenter_10_3_20_0_24_secure_clients bitmap:ip,mac range 10.3.20.0/24 timeout 7200 counters comment
+create datacenter_trusted_devices bitmap:ip,mac range 10.d.1.0/24 counters comment
+create datacenter_infrastructure_devices bitmap:ip,mac range 10.d.1.0/24 comment
+create datacenter_switch_management bitmap:ip,mac range 10.d.10.0/24 timeout 3600
+create datacenter_web_ports bitmap:port range 80-8080 timeout 1800 comment
+create datacenter_database_ports bitmap:port range 3306-5432 counters comment
+create datacenter_management_ports bitmap:port range 22-443 comment
+create datacenter_monitoring_ports bitmap:port range 161-162 timeout 3600
+create datacenter_mail_ports bitmap:port range 25-995 timeout 7200
+create datacenter_file_ports bitmap:port range 445-2049 counters
+create datacenter_backup_ports bitmap:port range 873-10080 timeout 3600
+create datacenter_ephemeral_ports bitmap:port range 32768-65535 timeout 300
+create datacenter_high_ports bitmap:port range 8000-9999 timeout 1800 counters
+create datacenter_routing_ports bitmap:port range 179-520 comment
+create datacenter_cluster_ports bitmap:port range 2379-2380 timeout 3600
+create datacenter_management_ips hash:ip family inet timeout 3600 counters comment
+create datacenter_trusted_sources hash:ip family inet hashsize 1024 comment
+create datacenter_monitoring_agents hash:ip family inet timeout 1800 counters
+create datacenter_admin_workstations hash:ip family inet timeout 7200 comment
+create datacenter_blacklisted_ips hash:ip family inet comment maxelem 65536
+create datacenter_suspicious_sources hash:ip family inet timeout 3600 maxelem 4096
+create datacenter_rate_limited_ips hash:ip family inet timeout 900 counters
+create datacenter_dns_resolvers hash:ip family inet comment maxelem 256
+create datacenter_ntp_servers hash:ip family inet timeout 86400
+create datacenter_log_collectors hash:ip family inet timeout 3600 counters
+create datacenter_core_switches hash:ip family inet comment
+create datacenter_vlan_gateways hash:ip family inet timeout 3600
+create datacenter_load_balancer_vips hash:ip family inet counters
+create datacenter_known_devices hash:mac timeout 86400 counters comment
+create datacenter_infrastructure_macs hash:mac maxelem 1024 comment
+create datacenter_approved_devices hash:mac timeout 7200 counters
+create datacenter_quarantined_macs hash:mac timeout 3600 comment
+create datacenter_blocked_devices hash:mac comment maxelem 4096
+create datacenter_switch_macs hash:mac comment maxelem 256
+create datacenter_ap_macs hash:mac timeout 3600 counters
+create datacenter_router_macs hash:mac comment
+create datacenter_internal_networks hash:net family inet maxelem 256 comment
+create datacenter_trusted_networks hash:net family inet timeout 7200 counters
+create datacenter_management_networks hash:net family inet comment
+create datacenter_external_partners hash:net family inet timeout 7200 comment
+create datacenter_cloud_networks hash:net family inet maxelem 1024
+create datacenter_cdn_ranges hash:net family inet timeout 3600
+create datacenter_vpn_networks hash:net family inet counters comment
+create datacenter_site_networks hash:net family inet timeout 1800
+create datacenter_blocked_networks hash:net family inet comment maxelem 4096
+create datacenter_quarantine_networks hash:net family inet timeout 3600
+create datacenter_vlan_networks hash:net family inet comment
+create datacenter_subnet_ranges hash:net family inet counters
+create datacenter_web_services hash:ip,port family inet timeout 7200 counters comment
+create datacenter_database_access hash:ip,port family inet counters comment
+create datacenter_management_access hash:ip,port family inet comment maxelem 1024
+create datacenter_monitoring_endpoints hash:ip,port family inet timeout 1800
+create datacenter_api_endpoints hash:ip,port family inet timeout 3600 counters
+create datacenter_file_services hash:ip,port family inet comment
+create datacenter_backup_services hash:ip,port family inet timeout 7200
+create datacenter_auth_services hash:ip,port family inet timeout 1800 counters
+create datacenter_log_services hash:ip,port family inet comment
+create datacenter_interface_networks hash:net,iface family inet comment
+create datacenter_vlan_interfaces hash:net,iface family inet timeout 1800 counters
+create datacenter_trusted_vlans hash:net,iface family inet comment
+create datacenter_dmz_interfaces hash:net,iface family inet counters comment
+create datacenter_secure_zones hash:net,iface family inet timeout 3600
+create datacenter_trunk_interfaces hash:net,iface family inet comment
+create datacenter_access_interfaces hash:net,iface family inet counters
+create datacenter_service_matrix hash:ip,port,net family inet timeout 600 maxelem 2048
+create datacenter_access_rules hash:ip,port,net family inet counters comment
+create datacenter_proxy_rules hash:ip,port,ip family inet timeout 1800 counters
+create datacenter_nat_rules hash:ip,port,ip family inet comment maxelem 4096
+create datacenter_routing_matrix hash:net,port,net family inet counters comment
+create datacenter_switching_matrix hash:ip,port,net family inet comment
+create datacenter_vlan_rules hash:net,port,net family inet timeout 1800
+add datacenter_10_1_1_0_24_hosts 10.1.1.10
+add datacenter_10_1_1_0_24_hosts 10.1.1.11
+add datacenter_10_1_1_0_24_hosts 10.1.1.12
+add datacenter_management_ips 10.d.10.5
+add datacenter_management_ips 10.d.10.6
+add datacenter_trusted_sources 8.8.8.8
+add datacenter_trusted_sources 1.1.1.1
+add datacenter_internal_networks 10.d.0.0/16
+add datacenter_vpn_networks 10.100.1.0/24
+add datacenter_trusted_devices 10.3.1.10,52:54:00:ef:12:01
+add datacenter_trusted_devices 10.3.1.11,52:54:00:ef:12:02
+add datacenter_web_services 10.d.3.10,80
+add datacenter_web_services 10.d.3.10,443
+add datacenter_database_access 10.d.20.5,3306
+add datacenter_database_access 10.d.20.5,5432
+add datacenter_web_ports 80
+add datacenter_web_ports 443
+add datacenter_web_ports 8080
+add datacenter_database_ports 3306
+add datacenter_database_ports 5432
+COMMIT
 
 EXIT_CODE: 0
 === TSIM_SECTION_END:ipset_save ===
 
 === TSIM_SECTION_START:ipset_list ===
-TITLE: Ipset List Summary
-COMMAND: /sbin/ipset list -n
-TIMESTAMP: 2025-06-21 15:21:17
+TITLE: Ipset List Output
+COMMAND: /sbin/ipset list
+TIMESTAMP: 2025-07-01 10:00:00
 ---
-DC_SRV_ALLOWED
-DC_APP_ALLOWED
-DC_PROD_ALLOWED
-DC_STORAGE_ALLOWED
-DC_SRV_CLIENTS
-DC_SRV_TO_APP
-DC_SRV_TO_PROD
-DC_SRV_TO_STORAGE
-DC_APP_CLIENTS
-DC_APP_TO_SRV
-DC_APP_TO_PROD
-DC_APP_TO_STORAGE
-DC_PROD_CLIENTS
-DC_PROD_TO_SRV
-DC_PROD_TO_APP
-DC_PROD_TO_STORAGE
-DC_STORAGE_CLIENTS
-DC_STORAGE_TO_SRV
-DC_STORAGE_TO_APP
-DC_STORAGE_TO_PROD
-DC_CRITICAL_SERVICES
-DC_HIGH_AVAILABILITY
-DC_BUSINESS_CRITICAL
-DC_MAINTENANCE_MODE
-DC_PRIORITY_TRAFFIC
-DC_TIER_MATRIX
-DC_TIER_RESTRICTED
-DC_WEB_TIER
-DC_DB_TIER
-DC_CACHE_TIER
-DC_SRV_ADMIN_ALLOWED
-DC_SRV_MONITORING
-DC_SRV_BACKUP_ALLOWED
-DC_ADMIN_HOSTS
-DC_MONITORING_ALLOWED
-DC_APP_SERVICES
-DC_APP_LOAD_BALANCED
-DC_APP_MICROSERVICES
-DC_PROD_CRITICAL
-DC_PROD_HIGH_AVAILABILITY
-DC_PROD_MONITORING
-DC_PROD_WEB_SERVERS
-DC_PROD_ADMIN_HOSTS
-DC_PROD_DB_CLIENTS
-DC_STORAGE_CRITICAL
-DC_STORAGE_BACKUP
-DC_STORAGE_REPLICATION
-DC_LB_TARGETS
-DC_LB_WEIGHTED
-DC_LB_PRIORITY
-DC_PRIMARY_SERVERS
-DC_SECONDARY_SERVERS
-DC_BACKUP_SERVERS
-DC_DR_REPLICATION
-DC_DR_BACKUP
-DC_DR_PRIORITY
-DC_DMZ_ZONE
-DC_TRUSTED_ZONE
-DC_RESTRICTED_ZONE
-DC_QUARANTINE_ZONE
-DC_AUDIT_REQUIRED
-DC_PCI_SCOPE
-DC_SOX_SCOPE
-DC_HIPAA_SCOPE
-DC_PERFORMANCE_TARGETS
-DC_HIGH_CAPACITY
-DC_MEDIUM_CAPACITY
-DC_LOW_CAPACITY
-DC_MESH_SERVICES
-DC_MESH_ENCRYPTED
-DC_SERVICE_REGISTRY
-DC_CONFIG_SERVER
-DC_API_GATEWAY_TARGETS
-DC_CONTAINER_PODS
-DC_KUBERNETES_SERVICES
-DC_DOCKER_NETWORKS
-DC_DB_POOL_ALLOWED
-DC_DB_READONLY
-DC_DB_READWRITE
-DC_API_CONSUMERS
-DC_API_RATE_LIMITED
-DC_API_PREMIUM
-DC_CACHE_CLUSTERS
-DC_CACHE_REPLICATION
-DC_BACKUP_SERVERS
-DC_BACKUP_SCHEDULE
-DC_BACKUP_PRIORITY
-DC_REPLICATION_PAIRS
-DC_REPLICATION_PRIORITY
-DC_ASYNC_REPLICATION
-DC_SYNC_REPLICATION
+Name: datacenter_10_3_1_0_24_hosts
+Type: bitmap:ip
+Revision: 3
+Header: bitmap:ip range 10.3.1.0/24 timeout 3600 counters comment
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: datacenter_10_3_2_0_24_hosts
+Type: bitmap:ip
+Revision: 3
+Header: bitmap:ip range 10.3.2.0/24 timeout 3600 counters comment
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: datacenter_10_3_10_0_24_hosts
+Type: bitmap:ip
+Revision: 3
+Header: bitmap:ip range 10.3.10.0/24 timeout 3600 counters comment
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: datacenter_10_3_20_0_24_hosts
+Type: bitmap:ip
+Revision: 3
+Header: bitmap:ip range 10.3.20.0/24 timeout 3600 counters comment
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: dc_mgmt_networks
+Type: bitmap:ip
+Revision: 3
+Header: bitmap:ip range 10.3.1.0-10.3.5.255 counters comment
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: dc_admin_workstations
+Type: bitmap:ip
+Revision: 3
+Header: bitmap:ip range 10.3.10.10-10.3.10.20 timeout 3600
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: datacenter_core_services
+Type: bitmap:ip
+Revision: 3
+Header: bitmap:ip range 10.d.10.0/24 timeout 3600
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: datacenter_load_balancers
+Type: bitmap:ip
+Revision: 3
+Header: bitmap:ip range 10.d.1.10-10.d.1.20
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: datacenter_10_3_1_0_24_secure_clients
+Type: bitmap:ip,mac
+Revision: 3
+Header: bitmap:ip,mac range 10.3.1.0/24 timeout 7200 counters comment
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: datacenter_10_3_2_0_24_secure_clients
+Type: bitmap:ip,mac
+Revision: 3
+Header: bitmap:ip,mac range 10.3.2.0/24 timeout 7200 counters comment
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: datacenter_10_3_10_0_24_secure_clients
+Type: bitmap:ip,mac
+Revision: 3
+Header: bitmap:ip,mac range 10.3.10.0/24 timeout 7200 counters comment
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: datacenter_10_3_20_0_24_secure_clients
+Type: bitmap:ip,mac
+Revision: 3
+Header: bitmap:ip,mac range 10.3.20.0/24 timeout 7200 counters comment
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: datacenter_trusted_devices
+Type: bitmap:ip,mac
+Revision: 3
+Header: bitmap:ip,mac range 10.d.1.0/24 counters comment
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: datacenter_infrastructure_devices
+Type: bitmap:ip,mac
+Revision: 3
+Header: bitmap:ip,mac range 10.d.1.0/24 comment
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: datacenter_switch_management
+Type: bitmap:ip,mac
+Revision: 3
+Header: bitmap:ip,mac range 10.d.10.0/24 timeout 3600
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: datacenter_web_ports
+Type: bitmap:port
+Revision: 3
+Header: bitmap:port range 80-8080 timeout 1800 comment
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: datacenter_database_ports
+Type: bitmap:port
+Revision: 3
+Header: bitmap:port range 3306-5432 counters comment
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: datacenter_management_ports
+Type: bitmap:port
+Revision: 3
+Header: bitmap:port range 22-443 comment
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: datacenter_monitoring_ports
+Type: bitmap:port
+Revision: 3
+Header: bitmap:port range 161-162 timeout 3600
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: datacenter_mail_ports
+Type: bitmap:port
+Revision: 3
+Header: bitmap:port range 25-995 timeout 7200
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: datacenter_file_ports
+Type: bitmap:port
+Revision: 3
+Header: bitmap:port range 445-2049 counters
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: datacenter_backup_ports
+Type: bitmap:port
+Revision: 3
+Header: bitmap:port range 873-10080 timeout 3600
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: datacenter_ephemeral_ports
+Type: bitmap:port
+Revision: 3
+Header: bitmap:port range 32768-65535 timeout 300
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: datacenter_high_ports
+Type: bitmap:port
+Revision: 3
+Header: bitmap:port range 8000-9999 timeout 1800 counters
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: datacenter_routing_ports
+Type: bitmap:port
+Revision: 3
+Header: bitmap:port range 179-520 comment
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: datacenter_cluster_ports
+Type: bitmap:port
+Revision: 3
+Header: bitmap:port range 2379-2380 timeout 3600
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: datacenter_management_ips
+Type: hash:ip
+Revision: 3
+Header: hash:ip family inet timeout 3600 counters comment
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: datacenter_trusted_sources
+Type: hash:ip
+Revision: 3
+Header: hash:ip family inet hashsize 1024 comment
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: datacenter_monitoring_agents
+Type: hash:ip
+Revision: 3
+Header: hash:ip family inet timeout 1800 counters
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: datacenter_admin_workstations
+Type: hash:ip
+Revision: 3
+Header: hash:ip family inet timeout 7200 comment
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: datacenter_blacklisted_ips
+Type: hash:ip
+Revision: 3
+Header: hash:ip family inet comment maxelem 65536
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: datacenter_suspicious_sources
+Type: hash:ip
+Revision: 3
+Header: hash:ip family inet timeout 3600 maxelem 4096
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: datacenter_rate_limited_ips
+Type: hash:ip
+Revision: 3
+Header: hash:ip family inet timeout 900 counters
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: datacenter_dns_resolvers
+Type: hash:ip
+Revision: 3
+Header: hash:ip family inet comment maxelem 256
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: datacenter_ntp_servers
+Type: hash:ip
+Revision: 3
+Header: hash:ip family inet timeout 86400
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: datacenter_log_collectors
+Type: hash:ip
+Revision: 3
+Header: hash:ip family inet timeout 3600 counters
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: datacenter_core_switches
+Type: hash:ip
+Revision: 3
+Header: hash:ip family inet comment
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: datacenter_vlan_gateways
+Type: hash:ip
+Revision: 3
+Header: hash:ip family inet timeout 3600
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: datacenter_load_balancer_vips
+Type: hash:ip
+Revision: 3
+Header: hash:ip family inet counters
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: datacenter_known_devices
+Type: hash:mac
+Revision: 3
+Header: hash:mac timeout 86400 counters comment
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: datacenter_infrastructure_macs
+Type: hash:mac
+Revision: 3
+Header: hash:mac maxelem 1024 comment
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: datacenter_approved_devices
+Type: hash:mac
+Revision: 3
+Header: hash:mac timeout 7200 counters
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: datacenter_quarantined_macs
+Type: hash:mac
+Revision: 3
+Header: hash:mac timeout 3600 comment
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: datacenter_blocked_devices
+Type: hash:mac
+Revision: 3
+Header: hash:mac comment maxelem 4096
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: datacenter_switch_macs
+Type: hash:mac
+Revision: 3
+Header: hash:mac comment maxelem 256
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: datacenter_ap_macs
+Type: hash:mac
+Revision: 3
+Header: hash:mac timeout 3600 counters
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: datacenter_router_macs
+Type: hash:mac
+Revision: 3
+Header: hash:mac comment
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: datacenter_internal_networks
+Type: hash:net
+Revision: 3
+Header: hash:net family inet maxelem 256 comment
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: datacenter_trusted_networks
+Type: hash:net
+Revision: 3
+Header: hash:net family inet timeout 7200 counters
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: datacenter_management_networks
+Type: hash:net
+Revision: 3
+Header: hash:net family inet comment
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: datacenter_external_partners
+Type: hash:net
+Revision: 3
+Header: hash:net family inet timeout 7200 comment
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: datacenter_cloud_networks
+Type: hash:net
+Revision: 3
+Header: hash:net family inet maxelem 1024
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: datacenter_cdn_ranges
+Type: hash:net
+Revision: 3
+Header: hash:net family inet timeout 3600
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: datacenter_vpn_networks
+Type: hash:net
+Revision: 3
+Header: hash:net family inet counters comment
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: datacenter_site_networks
+Type: hash:net
+Revision: 3
+Header: hash:net family inet timeout 1800
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: datacenter_blocked_networks
+Type: hash:net
+Revision: 3
+Header: hash:net family inet comment maxelem 4096
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: datacenter_quarantine_networks
+Type: hash:net
+Revision: 3
+Header: hash:net family inet timeout 3600
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: datacenter_vlan_networks
+Type: hash:net
+Revision: 3
+Header: hash:net family inet comment
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: datacenter_subnet_ranges
+Type: hash:net
+Revision: 3
+Header: hash:net family inet counters
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: datacenter_web_services
+Type: hash:ip,port
+Revision: 3
+Header: hash:ip,port family inet timeout 7200 counters comment
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: datacenter_database_access
+Type: hash:ip,port
+Revision: 3
+Header: hash:ip,port family inet counters comment
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: datacenter_management_access
+Type: hash:ip,port
+Revision: 3
+Header: hash:ip,port family inet comment maxelem 1024
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: datacenter_monitoring_endpoints
+Type: hash:ip,port
+Revision: 3
+Header: hash:ip,port family inet timeout 1800
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: datacenter_api_endpoints
+Type: hash:ip,port
+Revision: 3
+Header: hash:ip,port family inet timeout 3600 counters
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: datacenter_file_services
+Type: hash:ip,port
+Revision: 3
+Header: hash:ip,port family inet comment
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: datacenter_backup_services
+Type: hash:ip,port
+Revision: 3
+Header: hash:ip,port family inet timeout 7200
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: datacenter_auth_services
+Type: hash:ip,port
+Revision: 3
+Header: hash:ip,port family inet timeout 1800 counters
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: datacenter_log_services
+Type: hash:ip,port
+Revision: 3
+Header: hash:ip,port family inet comment
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: datacenter_interface_networks
+Type: hash:net,iface
+Revision: 3
+Header: hash:net,iface family inet comment
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: datacenter_vlan_interfaces
+Type: hash:net,iface
+Revision: 3
+Header: hash:net,iface family inet timeout 1800 counters
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: datacenter_trusted_vlans
+Type: hash:net,iface
+Revision: 3
+Header: hash:net,iface family inet comment
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: datacenter_dmz_interfaces
+Type: hash:net,iface
+Revision: 3
+Header: hash:net,iface family inet counters comment
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: datacenter_secure_zones
+Type: hash:net,iface
+Revision: 3
+Header: hash:net,iface family inet timeout 3600
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: datacenter_trunk_interfaces
+Type: hash:net,iface
+Revision: 3
+Header: hash:net,iface family inet comment
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: datacenter_access_interfaces
+Type: hash:net,iface
+Revision: 3
+Header: hash:net,iface family inet counters
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: datacenter_service_matrix
+Type: hash:ip,port,net
+Revision: 3
+Header: hash:ip,port,net family inet timeout 600 maxelem 2048
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: datacenter_access_rules
+Type: hash:ip,port,net
+Revision: 3
+Header: hash:ip,port,net family inet counters comment
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: datacenter_proxy_rules
+Type: hash:ip,port,ip
+Revision: 3
+Header: hash:ip,port,ip family inet timeout 1800 counters
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: datacenter_nat_rules
+Type: hash:ip,port,ip
+Revision: 3
+Header: hash:ip,port,ip family inet comment maxelem 4096
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: datacenter_routing_matrix
+Type: hash:net,port,net
+Revision: 3
+Header: hash:net,port,net family inet counters comment
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: datacenter_switching_matrix
+Type: hash:ip,port,net
+Revision: 3
+Header: hash:ip,port,net family inet comment
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: datacenter_vlan_rules
+Type: hash:net,port,net
+Revision: 3
+Header: hash:net,port,net family inet timeout 1800
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
 
 EXIT_CODE: 0
 === TSIM_SECTION_END:ipset_list ===

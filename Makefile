@@ -17,7 +17,7 @@ REQUIRED_MODULES := json sys argparse ipaddress os glob typing subprocess re dif
 
 # Colors removed for better terminal compatibility
 
-.PHONY: help check-deps test test-iptables-enhanced test-policy-routing test-ipset-enhanced test-raw-facts-loading test-mtr-options test-iptables-logging test-network fetch-routing-data clean tsim ifa netsetup nettest netclean netshow netstatus test-namespace hostadd hostdel hostlist hostclean netnsclean service-start service-stop service-restart service-status service-test service-clean test-services svctest svcstart svcstop svclist svcclean
+.PHONY: help check-deps test test-iptables-enhanced test-policy-routing test-ipset-enhanced test-raw-facts-loading test-mtr-options test-iptables-logging test-packet-tracing test-network fetch-routing-data clean tsim ifa netsetup nettest netclean netshow netstatus test-namespace hostadd hostdel hostlist hostclean netnsclean service-start service-stop service-restart service-status service-test service-clean test-services svctest svcstart svcstop svclist svcclean
 
 # Default target
 help:
@@ -42,6 +42,7 @@ help:
 	@echo "test-iptables-enhanced - Test enhanced iptables rules for ping/mtr connectivity"
 	@echo "test-policy-routing   - Test enhanced policy routing with multiple routing tables"
 	@echo "test-iptables-logging - Test iptables logging implementation with comprehensive log analysis"
+	@echo "test-packet-tracing   - Test comprehensive packet tracing implementation with rule correlation"
 	@echo "test-namespace    - Run namespace simulation tests independently (requires sudo and completed 'make test')"
 	@echo "test-network      - Run comprehensive network connectivity tests (requires sudo, takes 3-5 minutes)"
 	@echo "hostadd           - Add dynamic host to network (e.g., make hostadd ARGS='--host web1 --primary-ip 10.1.1.100/24 --connect-to hq-gw')"
@@ -873,6 +874,31 @@ test-iptables-logging:
 	@echo "   - Output formats: text reports and JSON data"
 	@echo "   - Enhanced raw facts: LOG targets added to all rules"
 	@echo "   - Network analysis: comprehensive packet tracing"
+
+# Test comprehensive packet tracing implementation
+# Usage: make test-packet-tracing
+test-packet-tracing:
+	@echo "Testing Comprehensive Packet Tracing Implementation"
+	@echo "=================================================="
+	@echo "Validating advanced packet tracing functionality for:"
+	@echo "  - Packet tracer engine with comprehensive path analysis"
+	@echo "  - Rule database system with iptables rule correlation"
+	@echo "  - Integration with existing routing simulation"
+	@echo "  - Real-time packet monitoring capabilities"
+	@echo "  - Performance optimization with indexed lookups"
+	@echo "  - Export functionality (JSON and text formats)"
+	@echo "  - Trace lifecycle management and cleanup"
+	@echo "  - Concurrent tracing and error handling"
+	@echo ""
+	@$(PYTHON) -B tests/test_packet_tracing.py
+	@echo ""
+	@echo "✅ Comprehensive packet tracing implementation validated successfully!"
+	@echo "   - All 24+ comprehensive test cases pass"
+	@echo "   - Packet tracer engine: hop-by-hop analysis complete"
+	@echo "   - Rule database: iptables rule indexing and correlation"
+	@echo "   - Integration tests: end-to-end tracing workflows"
+	@echo "   - Performance tests: efficient trace execution"
+	@echo "   - Export formats: JSON and text trace reports"
 
 # Run comprehensive network connectivity tests (requires sudo)
 # Usage: sudo make test-network

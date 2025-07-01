@@ -2,6 +2,22 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## IMPORTANT: Git Repository Safety Policies
+
+**CRITICAL SAFETY REQUIREMENTS - MUST BE FOLLOWED AT ALL TIMES:**
+
+1. **File Deletion/Modification Protection**: You will never execute any command that removes, deletes, or changes any existing file or directory on your own in the git working area. You are only allowed to make a suggestion and ask a question. The user must always confirm any such action.
+
+2. **Git Branch Operations Prohibited**: You are not allowed under any circumstances to execute any git command with respect to changing git branches, restoring any file or commit from git history, changing any git setting, or doing anything potentially destructive in the git working area using git.
+
+3. **Git Read-Only Operations Only**: You are allowed to use git tools essentially as read-only tools, i.e., you may do diffs and comparisons with files from git history.
+
+4. **No Git Commits**: You will never commit anything under any circumstances to git.
+
+5. **No Git Staging**: You will never stage anything under any circumstances to the staging area of git.
+
+**YOU MUST STRICTLY FOLLOW THIS POLICY WHEN WORKING WITH FILES IN THIS REPOSITORY.**
+
 ## Build/Test Commands
 
 ### Automated Make Targets (Recommended)

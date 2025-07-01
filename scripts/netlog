@@ -1,0 +1,430 @@
+#!/usr/bin/env python3
+"""
+NetLog - Network Log Analysis Tool
+
+Comprehensive command-line interface for analyzing iptables logs from
+network namespace simulation environments. Provides filtering, correlation,
+and reporting capabilities for network troubleshooting and analysis.
+
+Usage examples:
+  ./scripts/netlog --source 10.1.1.1 --dest 10.2.1.1 --time-range "10:00-11:00"
+  ./scripts/netlog --router hq-gw --port 80 --last 100
+  ./scripts/netlog --all-routers --protocol icmp --format json
+  ./scripts/netlog --source 10.1.1.0/24 --action DROP --verbose
+
+Features:
+- Time-range based filtering
+- Network and port-based filtering
+- Multi-router log aggregation
+- Real-time and historical analysis
+- JSON and text output formats
+- Integration with network namespace testing
+
+Author: Network Analysis Tool
+License: MIT
+"""
+
+import argparse
+import sys
+import json
+from datetime import datetime, timedelta
+from pathlib import Path
+import os
+
+# Add src directory to path for imports
+script_dir = Path(__file__).parent.parent
+sys.path.insert(0, str(script_dir / 'src'))
+
+from analyzers.iptables_log_processor import IptablesLogProcessor, LogFilter as ProcessorLogFilter
+from core.log_filter import LogFilter, FilterCriteria
+
+
+class NetLogCLI:
+    """Command-line interface for network log analysis."""
+    
+    def __init__(self):
+        self.processor = IptablesLogProcessor()
+        self.filter = LogFilter()
+        self.routers = set()
+        
+        # Load known routers from facts directory
+        self._load_routers()
+    
+    def _load_routers(self):
+        """Load known router names from facts directory."""
+        facts_paths = [
+            os.environ.get('TRACEROUTE_SIMULATOR_FACTS', '/tmp/traceroute_test_output'),
+            os.environ.get('TRACEROUTE_SIMULATOR_RAW_FACTS', 'tests/raw_facts'),
+            'tests/tsim_facts'
+        ]
+        
+        for facts_path in facts_paths:
+            facts_dir = Path(facts_path)
+            if facts_dir.exists():
+                # Look for JSON files
+                for json_file in facts_dir.glob("*.json"):
+                    router_name = json_file.stem
+                    self.routers.add(router_name)
+                    self.processor.add_router(router_name)
+                
+                # Look for raw facts files
+                for facts_file in facts_dir.glob("*_facts.txt"):
+                    router_name = facts_file.stem.replace('_facts', '')
+                    self.routers.add(router_name)
+                    self.processor.add_router(router_name)
+                
+                if self.routers:
+                    break
+    
+    def parse_time_range(self, time_range_str: str) -> tuple:
+        """Parse time range string like '10:00-11:00' or '2025-07-01 10:00 - 2025-07-01 11:00'."""
+        if '-' not in time_range_str:
+            raise ValueError("Time range must contain '-' separator")
+        
+        start_str, end_str = time_range_str.split('-', 1)
+        start_str = start_str.strip()
+        end_str = end_str.strip()
+        
+        # Handle different time formats
+        today = datetime.now().date()
+        
+        # If time only (HH:MM), use today's date
+        if ':' in start_str and len(start_str.split()) == 1:
+            start_time = datetime.strptime(start_str, '%H:%M').time()
+            start_dt = datetime.combine(today, start_time)
+        else:
+            start_dt = self.filter.parse_time_string(start_str)
+        
+        if ':' in end_str and len(end_str.split()) == 1:
+            end_time = datetime.strptime(end_str, '%H:%M').time()
+            end_dt = datetime.combine(today, end_time)
+        else:
+            end_dt = self.filter.parse_time_string(end_str)
+        
+        return start_dt, end_dt
+    
+    def create_filter_criteria(self, args) -> FilterCriteria:
+        """Create filter criteria from command line arguments."""
+        criteria = FilterCriteria()
+        
+        # Network filters
+        if args.source:
+            criteria.source_networks = [args.source]
+        if args.dest:
+            criteria.dest_networks = [args.dest]
+        if args.protocol:
+            criteria.protocols = [args.protocol]
+        if args.port:
+            criteria.dest_ports = [args.port]
+        if args.source_port:
+            criteria.source_ports = [args.source_port]
+        
+        # Infrastructure filters
+        if args.router:
+            criteria.routers = [args.router]
+        elif args.all_routers:
+            criteria.routers = list(self.routers)
+        
+        if args.interface_in:
+            criteria.interfaces_in = [args.interface_in]
+        if args.interface_out:
+            criteria.interfaces_out = [args.interface_out]
+        
+        # Time filters
+        if args.time_range:
+            start_time, end_time = self.parse_time_range(args.time_range)
+            criteria.time_start = start_time
+            criteria.time_end = end_time
+        elif args.since:
+            criteria.time_start = self.filter.parse_time_string(args.since)
+        elif args.last:
+            criteria.duration_minutes = args.last
+        else:
+            # Default to last hour
+            criteria.duration_minutes = 60
+        
+        # Content filters
+        if args.action:
+            criteria.actions = [args.action]
+        if args.prefix:
+            criteria.prefix_patterns = [args.prefix]
+        
+        # Advanced filters
+        criteria.exclude_internal = args.exclude_internal
+        criteria.exclude_broadcast = args.exclude_broadcast
+        criteria.exclude_multicast = args.exclude_multicast
+        criteria.include_only_errors = args.errors_only
+        
+        return criteria
+    
+    def get_logs(self, criteria: FilterCriteria) -> list:
+        """Get logs based on filter criteria."""
+        all_entries = []
+        
+        if criteria.routers:
+            # Get logs from specific routers
+            for router in criteria.routers:
+                if criteria.duration_minutes:
+                    entries = self.processor.get_recent_logs(router, criteria.duration_minutes)
+                else:
+                    # Use default recent logs
+                    entries = self.processor.get_recent_logs(router, 60)
+                all_entries.extend(entries)
+        else:
+            # Get logs from all available sources
+            if criteria.duration_minutes:
+                entries = self.processor.get_recent_logs(None, criteria.duration_minutes)
+            else:
+                entries = self.processor.get_recent_logs(None, 60)
+            all_entries.extend(entries)
+        
+        # Convert LogEntry objects to dictionaries for filtering
+        entries_dict = []
+        for entry in all_entries:
+            entry_dict = {
+                'timestamp': entry.timestamp,
+                'router': entry.router,
+                'prefix': entry.prefix,
+                'protocol': entry.protocol,
+                'source_ip': entry.source_ip,
+                'dest_ip': entry.dest_ip,
+                'source_port': entry.source_port,
+                'dest_port': entry.dest_port,
+                'interface_in': entry.interface_in,
+                'interface_out': entry.interface_out,
+                'action': entry.action,
+                'packet_length': entry.packet_length,
+                'ttl': entry.ttl,
+                'raw_line': entry.raw_line
+            }
+            entries_dict.append(entry_dict)
+        
+        # Apply filters
+        filtered_entries = self.filter.filter_entries(entries_dict, criteria)
+        
+        return filtered_entries
+    
+    def format_output(self, entries: list, format: str, args) -> str:
+        """Format output according to specified format."""
+        if format == 'json':
+            return json.dumps(entries, indent=2, default=str)
+        
+        # Text format
+        output = []
+        
+        # Header
+        output.append("Network Log Analysis Results")
+        output.append("=" * 50)
+        output.append(f"Total entries: {len(entries)}")
+        output.append(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        
+        if args.router:
+            output.append(f"Router: {args.router}")
+        elif args.all_routers:
+            output.append(f"Routers: {', '.join(sorted(self.routers))}")
+        
+        output.append("")
+        
+        if not entries:
+            output.append("No log entries found matching criteria.")
+            return "\n".join(output)
+        
+        # Summary statistics
+        protocols = {}
+        routers = {}
+        actions = {}
+        
+        for entry in entries:
+            protocol = entry.get('protocol', 'unknown')
+            router = entry.get('router', 'unknown')
+            action = entry.get('action', 'unknown')
+            
+            protocols[protocol] = protocols.get(protocol, 0) + 1
+            routers[router] = routers.get(router, 0) + 1
+            actions[action] = actions.get(action, 0) + 1
+        
+        output.append("Summary:")
+        if protocols:
+            output.append(f"  Protocols: {', '.join(f'{k}({v})' for k, v in sorted(protocols.items()))}")
+        if len(routers) > 1:
+            output.append(f"  Routers: {', '.join(f'{k}({v})' for k, v in sorted(routers.items()))}")
+        if actions:
+            output.append(f"  Actions: {', '.join(f'{k}({v})' for k, v in sorted(actions.items()))}")
+        output.append("")
+        
+        # Time range
+        if entries:
+            timestamps = [entry.get('timestamp') for entry in entries if entry.get('timestamp')]
+            if timestamps:
+                # Convert string timestamps to datetime
+                dt_timestamps = []
+                for ts in timestamps:
+                    if isinstance(ts, str):
+                        try:
+                            dt_timestamps.append(datetime.fromisoformat(ts.replace('Z', '+00:00')))
+                        except ValueError:
+                            continue
+                    elif isinstance(ts, datetime):
+                        dt_timestamps.append(ts)
+                
+                if dt_timestamps:
+                    min_time = min(dt_timestamps)
+                    max_time = max(dt_timestamps)
+                    output.append(f"Time range: {min_time.strftime('%Y-%m-%d %H:%M:%S')} to {max_time.strftime('%Y-%m-%d %H:%M:%S')}")
+                    output.append("")
+        
+        # Detailed entries
+        if args.verbose or len(entries) <= 50:
+            output.append("Log Entries:")
+            output.append("-" * 80)
+            
+            # Sort entries by timestamp
+            sorted_entries = sorted(entries, key=lambda e: e.get('timestamp', ''))
+            
+            for entry in sorted_entries:
+                timestamp = entry.get('timestamp', 'unknown')
+                if isinstance(timestamp, datetime):
+                    timestamp_str = timestamp.strftime('%Y-%m-%d %H:%M:%S')
+                else:
+                    timestamp_str = str(timestamp)[:19]  # Truncate if string
+                
+                router = entry.get('router', 'unknown')
+                action = entry.get('action', 'LOG')
+                source_ip = entry.get('source_ip', '?')
+                dest_ip = entry.get('dest_ip', '?')
+                protocol = entry.get('protocol', '?')
+                
+                # Port information
+                ports = ""
+                source_port = entry.get('source_port')
+                dest_port = entry.get('dest_port')
+                if source_port or dest_port:
+                    ports = f" {source_port or '?'}->{dest_port or '?'}"
+                
+                # Interface information
+                interfaces = ""
+                interface_in = entry.get('interface_in')
+                interface_out = entry.get('interface_out')
+                if interface_in or interface_out:
+                    interfaces = f" [{interface_in or '?'}->{interface_out or '?'}]"
+                
+                # Prefix information
+                prefix = entry.get('prefix', '')
+                prefix_str = f" ({prefix})" if prefix else ""
+                
+                output.append(
+                    f"{timestamp_str} [{router}] {action}: "
+                    f"{source_ip}->{dest_ip} {protocol}{ports}{interfaces}{prefix_str}"
+                )
+        else:
+            output.append(f"Showing summary only (use --verbose to see all {len(entries)} entries)")
+        
+        return "\n".join(output)
+    
+    def run(self, args):
+        """Run the netlog analysis."""
+        # Create filter criteria
+        criteria = self.create_filter_criteria(args)
+        
+        if args.verbose:
+            print(f"Searching logs with criteria:")
+            if criteria.source_networks:
+                print(f"  Source: {', '.join(criteria.source_networks)}")
+            if criteria.dest_networks:
+                print(f"  Destination: {', '.join(criteria.dest_networks)}")
+            if criteria.protocols:
+                print(f"  Protocol: {', '.join(criteria.protocols)}")
+            if criteria.routers:
+                print(f"  Routers: {', '.join(criteria.routers)}")
+            if criteria.duration_minutes:
+                print(f"  Last {criteria.duration_minutes} minutes")
+            print()
+        
+        # Get logs
+        try:
+            entries = self.get_logs(criteria)
+        except Exception as e:
+            print(f"Error retrieving logs: {e}", file=sys.stderr)
+            return 1
+        
+        # Format and output results
+        try:
+            output = self.format_output(entries, args.format, args)
+            print(output)
+        except Exception as e:
+            print(f"Error formatting output: {e}", file=sys.stderr)
+            return 1
+        
+        return 0
+
+
+def main():
+    """Main entry point."""
+    parser = argparse.ArgumentParser(
+        description='Network Log Analysis Tool',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  %(prog)s --source 10.1.1.1 --dest 10.2.1.1 --last 60
+  %(prog)s --router hq-gw --port 80 --action DROP
+  %(prog)s --all-routers --protocol icmp --format json
+  %(prog)s --source 10.1.1.0/24 --time-range "10:00-11:00"
+  %(prog)s --errors-only --last 30 --verbose
+        """
+    )
+    
+    # Network filters
+    parser.add_argument('--source', help='Source IP or network (supports CIDR)')
+    parser.add_argument('--dest', help='Destination IP or network (supports CIDR)')
+    parser.add_argument('--protocol', help='Protocol filter (tcp, udp, icmp)')
+    parser.add_argument('--port', type=int, help='Destination port filter')
+    parser.add_argument('--source-port', type=int, help='Source port filter')
+    
+    # Infrastructure filters
+    parser.add_argument('--router', help='Router name filter')
+    parser.add_argument('--all-routers', action='store_true', help='Include all known routers')
+    parser.add_argument('--interface-in', help='Input interface filter')
+    parser.add_argument('--interface-out', help='Output interface filter')
+    
+    # Time filters
+    time_group = parser.add_mutually_exclusive_group()
+    time_group.add_argument('--time-range', help='Time range (e.g., "10:00-11:00" or "2025-07-01 10:00-11:00")')
+    time_group.add_argument('--since', help='Since time (e.g., "1 hour ago", "2025-07-01 10:00")')
+    time_group.add_argument('--last', type=int, metavar='MINUTES', help='Last N minutes (default: 60)')
+    
+    # Content filters
+    parser.add_argument('--action', help='Action filter (ACCEPT, DROP, REJECT)')
+    parser.add_argument('--prefix', help='Log prefix pattern filter')
+    
+    # Advanced filters
+    parser.add_argument('--exclude-internal', action='store_true', 
+                       help='Exclude internal-to-internal traffic')
+    parser.add_argument('--exclude-broadcast', action='store_true',
+                       help='Exclude broadcast traffic')
+    parser.add_argument('--exclude-multicast', action='store_true',
+                       help='Exclude multicast traffic')
+    parser.add_argument('--errors-only', action='store_true',
+                       help='Show only errors (DROP, REJECT)')
+    
+    # Output options
+    parser.add_argument('--format', choices=['text', 'json'], default='text',
+                       help='Output format')
+    parser.add_argument('-v', '--verbose', action='store_true',
+                       help='Verbose output')
+    
+    args = parser.parse_args()
+    
+    # Create and run CLI
+    try:
+        cli = NetLogCLI()
+        return cli.run(args)
+    except KeyboardInterrupt:
+        print("\nInterrupted by user", file=sys.stderr)
+        return 130
+    except Exception as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
+
+
+if __name__ == '__main__':
+    sys.exit(main())

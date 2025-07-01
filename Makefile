@@ -17,7 +17,7 @@ REQUIRED_MODULES := json sys argparse ipaddress os glob typing subprocess re dif
 
 # Colors removed for better terminal compatibility
 
-.PHONY: help check-deps test test-iptables-enhanced test-policy-routing test-ipset-enhanced test-raw-facts-loading test-network fetch-routing-data clean tsim ifa netsetup nettest netclean netshow netstatus test-namespace hostadd hostdel hostlist hostclean netnsclean service-start service-stop service-restart service-status service-test service-clean test-services svctest svcstart svcstop svclist svcclean
+.PHONY: help check-deps test test-iptables-enhanced test-policy-routing test-ipset-enhanced test-raw-facts-loading test-mtr-options test-network fetch-routing-data clean tsim ifa netsetup nettest netclean netshow netstatus test-namespace hostadd hostdel hostlist hostclean netnsclean service-start service-stop service-restart service-status service-test service-clean test-services svctest svcstart svcstop svclist svcclean
 
 # Default target
 help:
@@ -823,6 +823,30 @@ test-raw-facts-loading:
 	@echo "   - Data format compatibility maintained"
 	@echo "   - Eliminates JSON intermediate processing step"
 	@echo "   - Supports both raw facts and JSON fallback"
+
+# Test enhanced MTR options implementation
+# Usage: make test-mtr-options
+test-mtr-options:
+	@echo "Testing Enhanced MTR Options Implementation"
+	@echo "==========================================="
+	@echo "Validating advanced MTR options support for:"
+	@echo "  - Protocol-specific execution (ICMP, UDP, TCP)"
+	@echo "  - Source/destination port specification"
+	@echo "  - Advanced timeout handling"
+	@echo "  - MTR command building and validation"
+	@echo "  - Output parsing (text and JSON formats)"
+	@echo "  - Network namespace integration"
+	@echo "  - Connectivity testing functionality"
+	@echo ""
+	@$(PYTHON) -B tests/test_mtr_options.py
+	@echo ""
+	@echo "✅ Enhanced MTR options implementation validated successfully!"
+	@echo "   - All 17 comprehensive test cases pass"
+	@echo "   - Protocol support: ICMP, UDP, TCP"
+	@echo "   - Port specification: source and destination"
+	@echo "   - Advanced options: timeout, packet size, intervals"
+	@echo "   - Output parsing: text and JSON formats"
+	@echo "   - Network namespace integration ready"
 
 # Run comprehensive network connectivity tests (requires sudo)
 # Usage: sudo make test-network

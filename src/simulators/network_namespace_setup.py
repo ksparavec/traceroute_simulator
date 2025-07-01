@@ -31,6 +31,10 @@ import re
 from pathlib import Path
 from typing import Dict, List, Set, Optional, Any
 
+# Import the raw facts parser
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+from core.raw_facts_parser import load_raw_facts_directory
+
 
 class CompleteNetworkSetup:
     """Complete implementation of network namespace setup with full firewall support."""
@@ -67,19 +71,60 @@ class CompleteNetworkSetup:
         self.logger = logging.getLogger(__name__)
         
     def load_facts(self):
-        """Load router facts from facts directory."""
+        """Load router facts from facts directory (supports both JSON and raw facts)."""
         facts_path = os.environ.get('TRACEROUTE_SIMULATOR_FACTS', '/tmp/traceroute_test_output')
         facts_dir = Path(facts_path)
         if not facts_dir.exists():
-            raise FileNotFoundError(f"Facts directory not found: {facts_dir}")
-            
+            # Try raw facts directory as fallback
+            raw_facts_path = os.environ.get('TRACEROUTE_SIMULATOR_RAW_FACTS', 'tests/raw_facts')
+            facts_dir = Path(raw_facts_path)
+            if not facts_dir.exists():
+                raise FileNotFoundError(f"Facts directory not found: {facts_path} or {raw_facts_path}")
+        
+        # Check for raw facts files first (*.txt)
+        raw_facts_files = list(facts_dir.glob("*_facts.txt"))
         json_files = list(facts_dir.glob("*.json"))
-        if not json_files:
-            raise FileNotFoundError(f"No JSON files found in {facts_dir}")
+        
+        if raw_facts_files:
+            self.logger.info(f"Loading raw facts from {len(raw_facts_files)} files")
+            self._load_raw_facts(facts_dir)
+        elif json_files:
+            self.logger.info(f"Loading JSON facts from {len(json_files)} files")
+            self._load_json_facts(facts_dir, json_files)
+        else:
+            raise FileNotFoundError(f"No facts files (*.txt or *.json) found in {facts_dir}")
+
+    def _load_raw_facts(self, facts_dir: Path):
+        """Load raw facts files using the raw facts parser."""
+        routers_data = load_raw_facts_directory(facts_dir, verbose=self.verbose)
+        
+        for router_name, facts in routers_data.items():
+            self.logger.debug(f"Loading raw facts for {router_name}")
+            self.routers[router_name] = facts
             
+            # Extract interfaces
+            interfaces = facts.get('network', {}).get('interfaces', [])
+            self.router_interfaces[router_name] = interfaces
+            
+            # Build subnet mapping
+            for iface in interfaces:
+                if (iface.get('proto') == 'kernel' and 
+                    iface.get('scope') == 'link' and
+                    iface.get('prefsrc') and iface.get('dev') and iface.get('dst')):
+                    
+                    subnet = iface['dst']
+                    router_iface = iface['dev'] 
+                    ip = iface['prefsrc']
+                    
+                    if subnet not in self.subnets:
+                        self.subnets[subnet] = []
+                    self.subnets[subnet].append((router_name, router_iface, ip))
+
+    def _load_json_facts(self, facts_dir: Path, json_files: List[Path]):
+        """Load JSON facts files (legacy format)."""
         for json_file in json_files:
             router_name = json_file.stem
-            self.logger.debug(f"Loading {router_name}")
+            self.logger.debug(f"Loading JSON facts for {router_name}")
             
             with open(json_file, 'r') as f:
                 facts = json.load(f)

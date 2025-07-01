@@ -37,16 +37,125 @@ EXIT_CODE: 0
 === TSIM_SECTION_START:policy_rules ===
 TITLE: IP Policy Rules
 COMMAND: /sbin/ip rule show
-TIMESTAMP: 2025-06-21 14:30:15
+TIMESTAMP: 2025-07-01 10:00:00
 ---
 0:	from all lookup local
+50:	from 10.1.1.0/24 lookup priority_table
+51:	from 10.1.2.0/24 lookup priority_table
+52:	from 10.1.3.0/24 lookup priority_table
+53:	from 10.1.10.0/24 lookup priority_table
+54:	from 10.1.11.0/24 lookup priority_table
+55:	from 10.1.3.0/24 lookup management_table
+56:	from 10.1.3.5/32 lookup priority_table
+57:	dport 3306 lookup database_table
+58:	dport 5432 lookup database_table
+59:	sport 3306 lookup database_table
+60:	dport 80 lookup web_table
+61:	dport 443 lookup web_table
+62:	sport 80 lookup web_table
+63:	dport 22 lookup priority_table
+64:	dport 161 lookup priority_table
+65:	dport 443 lookup priority_table
+66:	fwmark 0x1 lookup priority_table
+67:	fwmark 0x2 lookup service_table
+68:	fwmark 0x3 lookup backup_table
+69:	tos 0x10 lookup priority_table
+70:	tos 0x08 lookup qos_table
+71:	to 0.0.0.0/0 lookup service_table
+72:	from 10.100.1.0/24 lookup priority_table
+73:	to 10.3.0.0/16 lookup priority_table
+74:	to 10.2.0.0/16 lookup service_table
+75:	from 192.168.1.0/24 lookup emergency_table
+76:	oif wg0 lookup backup_table
+77:	ipproto icmp lookup priority_table
+78:	ipproto udp lookup qos_table
 32766:	from all lookup main
 32767:	from all lookup default
 
 EXIT_CODE: 0
 === TSIM_SECTION_END:policy_rules ===
 
-=== TSIM_SECTION_START:interfaces ===
+
+=== TSIM_SECTION_START:routing_table_priority_table ===
+TITLE: IP Routing Table Priority Table (100)
+COMMAND: /sbin/ip route show table 100
+TIMESTAMP: 2025-07-01 10:00:00
+---
+default via 203.0.113.1 dev eth0 metric 1\n10.100.1.0/24 dev wg0 proto kernel scope link src 10.100.1.1 metric 1\n10.1.1.0/24 dev eth1 proto kernel scope link metric 1\n10.1.2.0/24 dev eth0 proto kernel scope link metric 1\n10.2.0.0/16 via 10.1.1.1 dev eth0 metric 5\n10.3.0.0/16 via 10.1.1.1 dev eth0 metric 5
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:routing_table_priority_table ===
+\n
+=== TSIM_SECTION_START:routing_table_service_table ===
+TITLE: IP Routing Table Service Table (200)
+COMMAND: /sbin/ip route show table 200
+TIMESTAMP: 2025-07-01 10:00:00
+---
+default via 203.0.113.1 dev eth0 metric 10\n10.1.1.0/24 dev eth1 proto kernel scope link metric 10\n10.1.2.0/24 dev eth1 proto kernel scope link metric 10\n10.1.3.0/24 dev eth1 proto kernel scope link metric 5\n10.2.0.0/16 via 10.1.1.1 dev eth0 metric 15\n10.3.0.0/16 via 10.1.1.1 dev eth0 metric 15
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:routing_table_service_table ===
+\n
+=== TSIM_SECTION_START:routing_table_backup_table ===
+TITLE: IP Routing Table Backup Table (300)
+COMMAND: /sbin/ip route show table 300
+TIMESTAMP: 2025-07-01 10:00:00
+---
+default via 203.0.113.1 dev eth0 metric 20\n10.100.1.0/24 dev wg0 proto kernel scope link metric 20\n10.1.1.0/24 dev eth1 proto kernel scope link metric 20\n10.1.2.0/24 dev eth1 proto kernel scope link metric 20\n10.2.0.0/16 via 10.100.1.2 dev wg0 metric 25\n10.3.0.0/16 via 10.100.1.3 dev wg0 metric 25
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:routing_table_backup_table ===
+\n
+=== TSIM_SECTION_START:routing_table_qos_table ===
+TITLE: IP Routing Table Qos Table (400)
+COMMAND: /sbin/ip route show table 400
+TIMESTAMP: 2025-07-01 10:00:00
+---
+10.1.1.0/24 dev eth1 proto kernel scope link metric 8\n10.1.2.0/24 dev eth1 proto kernel scope link metric 8\n10.2.0.0/16 via 10.1.1.1 dev eth0 metric 8\n10.3.0.0/16 via 10.1.1.1 dev eth0 metric 8
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:routing_table_qos_table ===
+\n
+=== TSIM_SECTION_START:routing_table_management_table ===
+TITLE: IP Routing Table Management Table (500)
+COMMAND: /sbin/ip route show table 500
+TIMESTAMP: 2025-07-01 10:00:00
+---
+10.1.1.0/24 dev eth0 proto kernel scope link metric 1\n10.1.2.0/24 dev eth0 proto kernel scope link metric 1\n10.1.3.0/24 dev eth1 proto kernel scope link metric 1\n10.2.0.0/16 via 10.1.1.1 dev eth0 metric 5\n10.3.0.0/16 via 10.1.1.1 dev eth0 metric 5
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:routing_table_management_table ===
+\n
+=== TSIM_SECTION_START:routing_table_database_table ===
+TITLE: IP Routing Table Database Table (600)
+COMMAND: /sbin/ip route show table 600
+TIMESTAMP: 2025-07-01 10:00:00
+---
+10.1.0.0/16 via 10.3.1.1 dev eth0 metric 5\n10.2.0.0/16 via 10.3.1.1 dev eth0 metric 10
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:routing_table_database_table ===
+\n
+=== TSIM_SECTION_START:routing_table_web_table ===
+TITLE: IP Routing Table Web Table (700)
+COMMAND: /sbin/ip route show table 700
+TIMESTAMP: 2025-07-01 10:00:00
+---
+10.1.3.0/24 dev eth1 proto kernel scope link metric 1\n10.1.1.0/24 dev eth1 proto kernel scope link metric 5\n10.1.2.0/24 dev eth1 proto kernel scope link metric 5\n10.2.0.0/16 via 10.1.1.1 dev eth0 metric 10\n10.3.0.0/16 via 10.1.1.1 dev eth0 metric 10
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:routing_table_web_table ===
+\n
+=== TSIM_SECTION_START:routing_table_emergency_table ===
+TITLE: IP Routing Table Emergency Table (800)
+COMMAND: /sbin/ip route show table 800
+TIMESTAMP: 2025-07-01 10:00:00
+---
+192.168.1.0/24 dev eth0 proto kernel scope link metric 1\n10.1.1.0/24 dev eth1 proto kernel scope link metric 1\n10.1.2.0/24 dev eth1 proto kernel scope link metric 1\ndefault via 203.0.113.1 dev eth0 metric 1
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:routing_table_emergency_table ===
+\n=== TSIM_SECTION_START:interfaces ===
 TITLE: Network Interfaces
 COMMAND: /sbin/ip addr show
 TIMESTAMP: 2025-06-21 14:30:15
@@ -119,75 +228,294 @@ EXIT_CODE: 0
 === TSIM_SECTION_START:iptables_filter ===
 TITLE: Iptables Filter Table
 COMMAND: /sbin/iptables -t filter -L -n -v --line-numbers
-TIMESTAMP: 2025-06-21 14:30:15
+TIMESTAMP: 2025-07-01 10:00:00
 ---
-Chain INPUT (policy ACCEPT 0 packets, 0 bytes)
-num   pkts bytes target     prot opt in     out     source               destination         
-1      123  9876 ACCEPT     all  --  lo     *       0.0.0.0/0            0.0.0.0/0           
-2     4567 123456 DROP      all  --  eth0   *       0.0.0.0/0            0.0.0.0/0            ctstate INVALID
-3     2345 234567 HQ_MGMT_ACCESS  all  --  *      *       0.0.0.0/0            10.1.1.1            
-4     1234 456789 ACCEPT     icmp --  *      *       0.0.0.0/0            0.0.0.0/0            icmp-type 8
-5      789  34567 ACCEPT     tcp  --  *      *       0.0.0.0/0            0.0.0.0/0            tcp dpt:22 ctstate NEW,ESTABLISHED
-6      456  23456 ACCEPT     udp  --  wg0    *       0.0.0.0/0            0.0.0.0/0            udp dpt:51820
-7      234  12345 ACCEPT     all  --  *      *       0.0.0.0/0            0.0.0.0/0            ctstate RELATED,ESTABLISHED
-8       89   5678 LOG        all  --  *      *       0.0.0.0/0            0.0.0.0/0            LOG flags 0 level 4 prefix "INPUT-DROP: "
-9       56   2345 DROP       all  --  *      *       0.0.0.0/0            0.0.0.0/0           
+Chain INPUT (policy DROP 0 packets, 0 bytes)
+num   pkts bytes target     prot opt in     out     source               destination
+ 1      123  9876 ACCEPT     all  --  lo     *       0.0.0.0/0            0.0.0.0/0
+ 2     4567 123456 DROP      all  --  *      *       0.0.0.0/0            0.0.0.0/0            ctstate INVALID
+ 3     2345 234567 ACCEPT     all  --  *      *       0.0.0.0/0            0.0.0.0/0            ctstate RELATED,ESTABLISHED
+ 4     1234 456789 LOG        icmp --  *      *       10.1.0.0/16      0.0.0.0/0            icmp-type 0 LOG flags 0 level 4 prefix "INPUT-ICMP-0: "
+ 5     1234 456789 ACCEPT     icmp --  *      *       10.1.0.0/16      0.0.0.0/0            icmp-type 0
+ 6     1234 456789 LOG        icmp --  *      *       10.1.0.0/16      0.0.0.0/0            icmp-type 3 LOG flags 0 level 4 prefix "INPUT-ICMP-3: "
+ 7     1234 456789 ACCEPT     icmp --  *      *       10.1.0.0/16      0.0.0.0/0            icmp-type 3
+ 8     1234 456789 LOG        icmp --  *      *       10.1.0.0/16      0.0.0.0/0            icmp-type 8 LOG flags 0 level 4 prefix "INPUT-ICMP-8: "
+ 9     1234 456789 ACCEPT     icmp --  *      *       10.1.0.0/16      0.0.0.0/0            icmp-type 8
+10     1234 456789 LOG        icmp --  *      *       10.1.0.0/16      0.0.0.0/0            icmp-type 11 LOG flags 0 level 4 prefix "INPUT-ICMP-11: "
+11     1234 456789 ACCEPT     icmp --  *      *       10.1.0.0/16      0.0.0.0/0            icmp-type 11
+12     1234 456789 LOG        icmp --  *      *       10.2.0.0/16      0.0.0.0/0            icmp-type 0 LOG flags 0 level 4 prefix "INPUT-ICMP-0: "
+13     1234 456789 ACCEPT     icmp --  *      *       10.2.0.0/16      0.0.0.0/0            icmp-type 0
+14     1234 456789 LOG        icmp --  *      *       10.2.0.0/16      0.0.0.0/0            icmp-type 3 LOG flags 0 level 4 prefix "INPUT-ICMP-3: "
+15     1234 456789 ACCEPT     icmp --  *      *       10.2.0.0/16      0.0.0.0/0            icmp-type 3
+16     1234 456789 LOG        icmp --  *      *       10.2.0.0/16      0.0.0.0/0            icmp-type 8 LOG flags 0 level 4 prefix "INPUT-ICMP-8: "
+17     1234 456789 ACCEPT     icmp --  *      *       10.2.0.0/16      0.0.0.0/0            icmp-type 8
+18     1234 456789 LOG        icmp --  *      *       10.2.0.0/16      0.0.0.0/0            icmp-type 11 LOG flags 0 level 4 prefix "INPUT-ICMP-11: "
+19     1234 456789 ACCEPT     icmp --  *      *       10.2.0.0/16      0.0.0.0/0            icmp-type 11
+20     1234 456789 LOG        icmp --  *      *       10.3.0.0/16      0.0.0.0/0            icmp-type 0 LOG flags 0 level 4 prefix "INPUT-ICMP-0: "
+21     1234 456789 ACCEPT     icmp --  *      *       10.3.0.0/16      0.0.0.0/0            icmp-type 0
+22     1234 456789 LOG        icmp --  *      *       10.3.0.0/16      0.0.0.0/0            icmp-type 3 LOG flags 0 level 4 prefix "INPUT-ICMP-3: "
+23     1234 456789 ACCEPT     icmp --  *      *       10.3.0.0/16      0.0.0.0/0            icmp-type 3
+24     1234 456789 LOG        icmp --  *      *       10.3.0.0/16      0.0.0.0/0            icmp-type 8 LOG flags 0 level 4 prefix "INPUT-ICMP-8: "
+25     1234 456789 ACCEPT     icmp --  *      *       10.3.0.0/16      0.0.0.0/0            icmp-type 8
+26     1234 456789 LOG        icmp --  *      *       10.3.0.0/16      0.0.0.0/0            icmp-type 11 LOG flags 0 level 4 prefix "INPUT-ICMP-11: "
+27     1234 456789 ACCEPT     icmp --  *      *       10.3.0.0/16      0.0.0.0/0            icmp-type 11
+28     1234 456789 LOG        icmp --  *      *       10.100.1.0/24    0.0.0.0/0            icmp-type 0 LOG flags 0 level 4 prefix "INPUT-ICMP-0: "
+29     1234 456789 ACCEPT     icmp --  *      *       10.100.1.0/24    0.0.0.0/0            icmp-type 0
+30     1234 456789 LOG        icmp --  *      *       10.100.1.0/24    0.0.0.0/0            icmp-type 3 LOG flags 0 level 4 prefix "INPUT-ICMP-3: "
+31     1234 456789 ACCEPT     icmp --  *      *       10.100.1.0/24    0.0.0.0/0            icmp-type 3
+32     1234 456789 LOG        icmp --  *      *       10.100.1.0/24    0.0.0.0/0            icmp-type 8 LOG flags 0 level 4 prefix "INPUT-ICMP-8: "
+33     1234 456789 ACCEPT     icmp --  *      *       10.100.1.0/24    0.0.0.0/0            icmp-type 8
+34     1234 456789 LOG        icmp --  *      *       10.100.1.0/24    0.0.0.0/0            icmp-type 11 LOG flags 0 level 4 prefix "INPUT-ICMP-11: "
+35     1234 456789 ACCEPT     icmp --  *      *       10.100.1.0/24    0.0.0.0/0            icmp-type 11
+36      789  34567 LOG        tcp  --  *      *       10.1.0.0/16      0.0.0.0/0            tcp dpt:22 ctstate NEW LOG flags 0 level 4 prefix "INPUT-MGMT-22: "
+37      789  34567 ACCEPT     tcp  --  *      *       10.1.0.0/16      0.0.0.0/0            tcp dpt:22 ctstate NEW,ESTABLISHED
+38      789  34567 LOG        tcp  --  *      *       10.1.0.0/16      0.0.0.0/0            tcp dpt:161 ctstate NEW LOG flags 0 level 4 prefix "INPUT-MGMT-161: "
+39      789  34567 ACCEPT     tcp  --  *      *       10.1.0.0/16      0.0.0.0/0            tcp dpt:161 ctstate NEW,ESTABLISHED
+40      789  34567 LOG        tcp  --  *      *       10.1.0.0/16      0.0.0.0/0            tcp dpt:443 ctstate NEW LOG flags 0 level 4 prefix "INPUT-MGMT-443: "
+41      789  34567 ACCEPT     tcp  --  *      *       10.1.0.0/16      0.0.0.0/0            tcp dpt:443 ctstate NEW,ESTABLISHED
+42      789  34567 LOG        tcp  --  *      *       10.1.0.0/16      0.0.0.0/0            tcp dpt:8080 ctstate NEW LOG flags 0 level 4 prefix "INPUT-MGMT-8080: "
+43      789  34567 ACCEPT     tcp  --  *      *       10.1.0.0/16      0.0.0.0/0            tcp dpt:8080 ctstate NEW,ESTABLISHED
+44      789  34567 LOG        tcp  --  *      *       10.1.0.0/16      0.0.0.0/0            tcp dpt:514 ctstate NEW LOG flags 0 level 4 prefix "INPUT-MGMT-514: "
+45      789  34567 ACCEPT     tcp  --  *      *       10.1.0.0/16      0.0.0.0/0            tcp dpt:514 ctstate NEW,ESTABLISHED
+46      789  34567 LOG        tcp  --  *      *       10.2.0.0/16      0.0.0.0/0            tcp dpt:22 ctstate NEW LOG flags 0 level 4 prefix "INPUT-MGMT-22: "
+47      789  34567 ACCEPT     tcp  --  *      *       10.2.0.0/16      0.0.0.0/0            tcp dpt:22 ctstate NEW,ESTABLISHED
+48      789  34567 LOG        tcp  --  *      *       10.2.0.0/16      0.0.0.0/0            tcp dpt:161 ctstate NEW LOG flags 0 level 4 prefix "INPUT-MGMT-161: "
+49      789  34567 ACCEPT     tcp  --  *      *       10.2.0.0/16      0.0.0.0/0            tcp dpt:161 ctstate NEW,ESTABLISHED
+50      789  34567 LOG        tcp  --  *      *       10.2.0.0/16      0.0.0.0/0            tcp dpt:443 ctstate NEW LOG flags 0 level 4 prefix "INPUT-MGMT-443: "
+51      789  34567 ACCEPT     tcp  --  *      *       10.2.0.0/16      0.0.0.0/0            tcp dpt:443 ctstate NEW,ESTABLISHED
+52      789  34567 LOG        tcp  --  *      *       10.2.0.0/16      0.0.0.0/0            tcp dpt:8080 ctstate NEW LOG flags 0 level 4 prefix "INPUT-MGMT-8080: "
+53      789  34567 ACCEPT     tcp  --  *      *       10.2.0.0/16      0.0.0.0/0            tcp dpt:8080 ctstate NEW,ESTABLISHED
+54      789  34567 LOG        tcp  --  *      *       10.2.0.0/16      0.0.0.0/0            tcp dpt:514 ctstate NEW LOG flags 0 level 4 prefix "INPUT-MGMT-514: "
+55      789  34567 ACCEPT     tcp  --  *      *       10.2.0.0/16      0.0.0.0/0            tcp dpt:514 ctstate NEW,ESTABLISHED
+56      789  34567 LOG        tcp  --  *      *       10.3.0.0/16      0.0.0.0/0            tcp dpt:22 ctstate NEW LOG flags 0 level 4 prefix "INPUT-MGMT-22: "
+57      789  34567 ACCEPT     tcp  --  *      *       10.3.0.0/16      0.0.0.0/0            tcp dpt:22 ctstate NEW,ESTABLISHED
+58      789  34567 LOG        tcp  --  *      *       10.3.0.0/16      0.0.0.0/0            tcp dpt:161 ctstate NEW LOG flags 0 level 4 prefix "INPUT-MGMT-161: "
+59      789  34567 ACCEPT     tcp  --  *      *       10.3.0.0/16      0.0.0.0/0            tcp dpt:161 ctstate NEW,ESTABLISHED
+60      789  34567 LOG        tcp  --  *      *       10.3.0.0/16      0.0.0.0/0            tcp dpt:443 ctstate NEW LOG flags 0 level 4 prefix "INPUT-MGMT-443: "
+61      789  34567 ACCEPT     tcp  --  *      *       10.3.0.0/16      0.0.0.0/0            tcp dpt:443 ctstate NEW,ESTABLISHED
+62      789  34567 LOG        tcp  --  *      *       10.3.0.0/16      0.0.0.0/0            tcp dpt:8080 ctstate NEW LOG flags 0 level 4 prefix "INPUT-MGMT-8080: "
+63      789  34567 ACCEPT     tcp  --  *      *       10.3.0.0/16      0.0.0.0/0            tcp dpt:8080 ctstate NEW,ESTABLISHED
+64      789  34567 LOG        tcp  --  *      *       10.3.0.0/16      0.0.0.0/0            tcp dpt:514 ctstate NEW LOG flags 0 level 4 prefix "INPUT-MGMT-514: "
+65      789  34567 ACCEPT     tcp  --  *      *       10.3.0.0/16      0.0.0.0/0            tcp dpt:514 ctstate NEW,ESTABLISHED
+66      789  34567 LOG        tcp  --  *      *       10.100.1.0/24    0.0.0.0/0            tcp dpt:22 ctstate NEW LOG flags 0 level 4 prefix "INPUT-MGMT-22: "
+67      789  34567 ACCEPT     tcp  --  *      *       10.100.1.0/24    0.0.0.0/0            tcp dpt:22 ctstate NEW,ESTABLISHED
+68      789  34567 LOG        tcp  --  *      *       10.100.1.0/24    0.0.0.0/0            tcp dpt:161 ctstate NEW LOG flags 0 level 4 prefix "INPUT-MGMT-161: "
+69      789  34567 ACCEPT     tcp  --  *      *       10.100.1.0/24    0.0.0.0/0            tcp dpt:161 ctstate NEW,ESTABLISHED
+70      789  34567 LOG        tcp  --  *      *       10.100.1.0/24    0.0.0.0/0            tcp dpt:443 ctstate NEW LOG flags 0 level 4 prefix "INPUT-MGMT-443: "
+71      789  34567 ACCEPT     tcp  --  *      *       10.100.1.0/24    0.0.0.0/0            tcp dpt:443 ctstate NEW,ESTABLISHED
+72      789  34567 LOG        tcp  --  *      *       10.100.1.0/24    0.0.0.0/0            tcp dpt:8080 ctstate NEW LOG flags 0 level 4 prefix "INPUT-MGMT-8080: "
+73      789  34567 ACCEPT     tcp  --  *      *       10.100.1.0/24    0.0.0.0/0            tcp dpt:8080 ctstate NEW,ESTABLISHED
+74      789  34567 LOG        tcp  --  *      *       10.100.1.0/24    0.0.0.0/0            tcp dpt:514 ctstate NEW LOG flags 0 level 4 prefix "INPUT-MGMT-514: "
+75      789  34567 ACCEPT     tcp  --  *      *       10.100.1.0/24    0.0.0.0/0            tcp dpt:514 ctstate NEW,ESTABLISHED
+76      456  23456 LOG        udp  --  *      *       10.1.0.0/16      0.0.0.0/0            udp dpts:33434:33534 LOG flags 0 level 4 prefix "INPUT-MTR-UDP: "
+77      456  23456 ACCEPT     udp  --  *      *       10.1.0.0/16      0.0.0.0/0            udp dpts:33434:33534
+78      456  23456 LOG        udp  --  *      *       10.2.0.0/16      0.0.0.0/0            udp dpts:33434:33534 LOG flags 0 level 4 prefix "INPUT-MTR-UDP: "
+79      456  23456 ACCEPT     udp  --  *      *       10.2.0.0/16      0.0.0.0/0            udp dpts:33434:33534
+80      456  23456 LOG        udp  --  *      *       10.3.0.0/16      0.0.0.0/0            udp dpts:33434:33534 LOG flags 0 level 4 prefix "INPUT-MTR-UDP: "
+81      456  23456 ACCEPT     udp  --  *      *       10.3.0.0/16      0.0.0.0/0            udp dpts:33434:33534
+82      456  23456 LOG        udp  --  *      *       10.100.1.0/24    0.0.0.0/0            udp dpts:33434:33534 LOG flags 0 level 4 prefix "INPUT-MTR-UDP: "
+83      456  23456 ACCEPT     udp  --  *      *       10.100.1.0/24    0.0.0.0/0            udp dpts:33434:33534
+84      234  12345 ACCEPT     udp  --  wg0    *       0.0.0.0/0            0.0.0.0/0            udp dpt:51820
+85       89   5678 LOG        all  --  *      *       0.0.0.0/0            0.0.0.0/0            LOG flags 0 level 4 prefix "INPUT-DROP: "
+86       56   2345 DROP       all  --  *      *       0.0.0.0/0            0.0.0.0/0
 
 Chain FORWARD (policy DROP 0 packets, 0 bytes)
-num   pkts bytes target     prot opt in     out     source               destination         
-1     8765 876543 ACCEPT     all  --  lo     *       0.0.0.0/0            0.0.0.0/0           
-2     5432 543210 HQ_LAN_FORWARD  all  --  eth1   *       10.1.0.0/16          0.0.0.0/0           
-3     3456 345678 WG_VPN_FORWARD  all  --  wg0    *       10.100.1.0/24        0.0.0.0/0           
-4     2345 234567 INET_FORWARD  all  --  eth1   eth0    10.1.0.0/16          0.0.0.0/0           
-5     1234 123456 ACCEPT     all  --  *      eth1    0.0.0.0/0            10.1.0.0/16          ctstate RELATED,ESTABLISHED
-6      987  98765 DROP       all  --  eth0   eth1    0.0.0.0/0            10.1.0.0/16         
-7      654  65432 LOG        all  --  *      *       0.0.0.0/0            0.0.0.0/0            LOG flags 0 level 4 prefix "FORWARD-DROP: "
-8      321  32123 DROP       all  --  *      *       0.0.0.0/0            0.0.0.0/0           
+num   pkts bytes target     prot opt in     out     source               destination
+ 1     8765 876543 ACCEPT     all  --  lo     *       0.0.0.0/0            0.0.0.0/0
+ 2     5432 543210 ACCEPT     all  --  *      *       0.0.0.0/0            0.0.0.0/0            ctstate RELATED,ESTABLISHED
+ 3     3456 345678 LOG        icmp --  *      *       10.1.0.0/16      10.2.0.0/16      LOG flags 0 level 4 prefix "FWD-ICMP-10_1_0_0-10_2_0_0: "
+ 4     3456 345678 ACCEPT     icmp --  *      *       10.1.0.0/16      10.2.0.0/16     
+ 5     3456 345678 LOG        icmp --  *      *       10.1.0.0/16      10.3.0.0/16      LOG flags 0 level 4 prefix "FWD-ICMP-10_1_0_0-10_3_0_0: "
+ 6     3456 345678 ACCEPT     icmp --  *      *       10.1.0.0/16      10.3.0.0/16     
+ 7     3456 345678 LOG        icmp --  *      *       10.1.0.0/16      10.100.1.0/24    LOG flags 0 level 4 prefix "FWD-ICMP-10_1_0_0-10_100_1_0: "
+ 8     3456 345678 ACCEPT     icmp --  *      *       10.1.0.0/16      10.100.1.0/24   
+ 9     3456 345678 LOG        icmp --  *      *       10.2.0.0/16      10.1.0.0/16      LOG flags 0 level 4 prefix "FWD-ICMP-10_2_0_0-10_1_0_0: "
+10     3456 345678 ACCEPT     icmp --  *      *       10.2.0.0/16      10.1.0.0/16     
+11     3456 345678 LOG        icmp --  *      *       10.2.0.0/16      10.3.0.0/16      LOG flags 0 level 4 prefix "FWD-ICMP-10_2_0_0-10_3_0_0: "
+12     3456 345678 ACCEPT     icmp --  *      *       10.2.0.0/16      10.3.0.0/16     
+13     3456 345678 LOG        icmp --  *      *       10.2.0.0/16      10.100.1.0/24    LOG flags 0 level 4 prefix "FWD-ICMP-10_2_0_0-10_100_1_0: "
+14     3456 345678 ACCEPT     icmp --  *      *       10.2.0.0/16      10.100.1.0/24   
+15     3456 345678 LOG        icmp --  *      *       10.3.0.0/16      10.1.0.0/16      LOG flags 0 level 4 prefix "FWD-ICMP-10_3_0_0-10_1_0_0: "
+16     3456 345678 ACCEPT     icmp --  *      *       10.3.0.0/16      10.1.0.0/16     
+17     3456 345678 LOG        icmp --  *      *       10.3.0.0/16      10.2.0.0/16      LOG flags 0 level 4 prefix "FWD-ICMP-10_3_0_0-10_2_0_0: "
+18     3456 345678 ACCEPT     icmp --  *      *       10.3.0.0/16      10.2.0.0/16     
+19     3456 345678 LOG        icmp --  *      *       10.3.0.0/16      10.100.1.0/24    LOG flags 0 level 4 prefix "FWD-ICMP-10_3_0_0-10_100_1_0: "
+20     3456 345678 ACCEPT     icmp --  *      *       10.3.0.0/16      10.100.1.0/24   
+21     3456 345678 LOG        icmp --  *      *       10.100.1.0/24    10.1.0.0/16      LOG flags 0 level 4 prefix "FWD-ICMP-10_100_1_0-10_1_0_0: "
+22     3456 345678 ACCEPT     icmp --  *      *       10.100.1.0/24    10.1.0.0/16     
+23     3456 345678 LOG        icmp --  *      *       10.100.1.0/24    10.2.0.0/16      LOG flags 0 level 4 prefix "FWD-ICMP-10_100_1_0-10_2_0_0: "
+24     3456 345678 ACCEPT     icmp --  *      *       10.100.1.0/24    10.2.0.0/16     
+25     3456 345678 LOG        icmp --  *      *       10.100.1.0/24    10.3.0.0/16      LOG flags 0 level 4 prefix "FWD-ICMP-10_100_1_0-10_3_0_0: "
+26     3456 345678 ACCEPT     icmp --  *      *       10.100.1.0/24    10.3.0.0/16     
+27     2345 234567 LOG        udp  --  *      *       10.1.0.0/16      10.2.0.0/16      udp dpts:33434:33534 LOG flags 0 level 4 prefix "FWD-MTR-10_1_0_0-10_2_0_0: "
+28     2345 234567 ACCEPT     udp  --  *      *       10.1.0.0/16      10.2.0.0/16      udp dpts:33434:33534
+29     2345 234567 LOG        udp  --  *      *       10.1.0.0/16      10.3.0.0/16      udp dpts:33434:33534 LOG flags 0 level 4 prefix "FWD-MTR-10_1_0_0-10_3_0_0: "
+30     2345 234567 ACCEPT     udp  --  *      *       10.1.0.0/16      10.3.0.0/16      udp dpts:33434:33534
+31     2345 234567 LOG        udp  --  *      *       10.1.0.0/16      10.100.1.0/24    udp dpts:33434:33534 LOG flags 0 level 4 prefix "FWD-MTR-10_1_0_0-10_100_1_0: "
+32     2345 234567 ACCEPT     udp  --  *      *       10.1.0.0/16      10.100.1.0/24    udp dpts:33434:33534
+33     2345 234567 LOG        udp  --  *      *       10.2.0.0/16      10.1.0.0/16      udp dpts:33434:33534 LOG flags 0 level 4 prefix "FWD-MTR-10_2_0_0-10_1_0_0: "
+34     2345 234567 ACCEPT     udp  --  *      *       10.2.0.0/16      10.1.0.0/16      udp dpts:33434:33534
+35     2345 234567 LOG        udp  --  *      *       10.2.0.0/16      10.3.0.0/16      udp dpts:33434:33534 LOG flags 0 level 4 prefix "FWD-MTR-10_2_0_0-10_3_0_0: "
+36     2345 234567 ACCEPT     udp  --  *      *       10.2.0.0/16      10.3.0.0/16      udp dpts:33434:33534
+37     2345 234567 LOG        udp  --  *      *       10.2.0.0/16      10.100.1.0/24    udp dpts:33434:33534 LOG flags 0 level 4 prefix "FWD-MTR-10_2_0_0-10_100_1_0: "
+38     2345 234567 ACCEPT     udp  --  *      *       10.2.0.0/16      10.100.1.0/24    udp dpts:33434:33534
+39     2345 234567 LOG        udp  --  *      *       10.3.0.0/16      10.1.0.0/16      udp dpts:33434:33534 LOG flags 0 level 4 prefix "FWD-MTR-10_3_0_0-10_1_0_0: "
+40     2345 234567 ACCEPT     udp  --  *      *       10.3.0.0/16      10.1.0.0/16      udp dpts:33434:33534
+41     2345 234567 LOG        udp  --  *      *       10.3.0.0/16      10.2.0.0/16      udp dpts:33434:33534 LOG flags 0 level 4 prefix "FWD-MTR-10_3_0_0-10_2_0_0: "
+42     2345 234567 ACCEPT     udp  --  *      *       10.3.0.0/16      10.2.0.0/16      udp dpts:33434:33534
+43     2345 234567 LOG        udp  --  *      *       10.3.0.0/16      10.100.1.0/24    udp dpts:33434:33534 LOG flags 0 level 4 prefix "FWD-MTR-10_3_0_0-10_100_1_0: "
+44     2345 234567 ACCEPT     udp  --  *      *       10.3.0.0/16      10.100.1.0/24    udp dpts:33434:33534
+45     2345 234567 LOG        udp  --  *      *       10.100.1.0/24    10.1.0.0/16      udp dpts:33434:33534 LOG flags 0 level 4 prefix "FWD-MTR-10_100_1_0-10_1_0_0: "
+46     2345 234567 ACCEPT     udp  --  *      *       10.100.1.0/24    10.1.0.0/16      udp dpts:33434:33534
+47     2345 234567 LOG        udp  --  *      *       10.100.1.0/24    10.2.0.0/16      udp dpts:33434:33534 LOG flags 0 level 4 prefix "FWD-MTR-10_100_1_0-10_2_0_0: "
+48     2345 234567 ACCEPT     udp  --  *      *       10.100.1.0/24    10.2.0.0/16      udp dpts:33434:33534
+49     2345 234567 LOG        udp  --  *      *       10.100.1.0/24    10.3.0.0/16      udp dpts:33434:33534 LOG flags 0 level 4 prefix "FWD-MTR-10_100_1_0-10_3_0_0: "
+50     2345 234567 ACCEPT     udp  --  *      *       10.100.1.0/24    10.3.0.0/16      udp dpts:33434:33534
+51     1234 123456 LOG        tcp  --  *      *       10.1.0.0/16      10.2.0.0/16      tcp dpt:22 LOG flags 0 level 4 prefix "FWD-TCP-22-10_1_0_0-10_2_0_0: "
+52     1234 123456 ACCEPT     tcp  --  *      *       10.1.0.0/16      10.2.0.0/16      tcp dpt:22
+53     1234 123456 LOG        tcp  --  *      *       10.1.0.0/16      10.2.0.0/16      tcp dpt:161 LOG flags 0 level 4 prefix "FWD-TCP-161-10_1_0_0-10_2_0_0: "
+54     1234 123456 ACCEPT     tcp  --  *      *       10.1.0.0/16      10.2.0.0/16      tcp dpt:161
+55     1234 123456 LOG        tcp  --  *      *       10.1.0.0/16      10.2.0.0/16      tcp dpt:443 LOG flags 0 level 4 prefix "FWD-TCP-443-10_1_0_0-10_2_0_0: "
+56     1234 123456 ACCEPT     tcp  --  *      *       10.1.0.0/16      10.2.0.0/16      tcp dpt:443
+57     1234 123456 LOG        tcp  --  *      *       10.1.0.0/16      10.2.0.0/16      tcp dpt:8080 LOG flags 0 level 4 prefix "FWD-TCP-8080-10_1_0_0-10_2_0_0: "
+58     1234 123456 ACCEPT     tcp  --  *      *       10.1.0.0/16      10.2.0.0/16      tcp dpt:8080
+59     1234 123456 LOG        tcp  --  *      *       10.1.0.0/16      10.2.0.0/16      tcp dpt:514 LOG flags 0 level 4 prefix "FWD-TCP-514-10_1_0_0-10_2_0_0: "
+60     1234 123456 ACCEPT     tcp  --  *      *       10.1.0.0/16      10.2.0.0/16      tcp dpt:514
+61     1234 123456 LOG        tcp  --  *      *       10.1.0.0/16      10.3.0.0/16      tcp dpt:22 LOG flags 0 level 4 prefix "FWD-TCP-22-10_1_0_0-10_3_0_0: "
+62     1234 123456 ACCEPT     tcp  --  *      *       10.1.0.0/16      10.3.0.0/16      tcp dpt:22
+63     1234 123456 LOG        tcp  --  *      *       10.1.0.0/16      10.3.0.0/16      tcp dpt:161 LOG flags 0 level 4 prefix "FWD-TCP-161-10_1_0_0-10_3_0_0: "
+64     1234 123456 ACCEPT     tcp  --  *      *       10.1.0.0/16      10.3.0.0/16      tcp dpt:161
+65     1234 123456 LOG        tcp  --  *      *       10.1.0.0/16      10.3.0.0/16      tcp dpt:443 LOG flags 0 level 4 prefix "FWD-TCP-443-10_1_0_0-10_3_0_0: "
+66     1234 123456 ACCEPT     tcp  --  *      *       10.1.0.0/16      10.3.0.0/16      tcp dpt:443
+67     1234 123456 LOG        tcp  --  *      *       10.1.0.0/16      10.3.0.0/16      tcp dpt:8080 LOG flags 0 level 4 prefix "FWD-TCP-8080-10_1_0_0-10_3_0_0: "
+68     1234 123456 ACCEPT     tcp  --  *      *       10.1.0.0/16      10.3.0.0/16      tcp dpt:8080
+69     1234 123456 LOG        tcp  --  *      *       10.1.0.0/16      10.3.0.0/16      tcp dpt:514 LOG flags 0 level 4 prefix "FWD-TCP-514-10_1_0_0-10_3_0_0: "
+70     1234 123456 ACCEPT     tcp  --  *      *       10.1.0.0/16      10.3.0.0/16      tcp dpt:514
+71     1234 123456 LOG        tcp  --  *      *       10.1.0.0/16      10.100.1.0/24    tcp dpt:22 LOG flags 0 level 4 prefix "FWD-TCP-22-10_1_0_0-10_100_1_0: "
+72     1234 123456 ACCEPT     tcp  --  *      *       10.1.0.0/16      10.100.1.0/24    tcp dpt:22
+73     1234 123456 LOG        tcp  --  *      *       10.1.0.0/16      10.100.1.0/24    tcp dpt:161 LOG flags 0 level 4 prefix "FWD-TCP-161-10_1_0_0-10_100_1_0: "
+74     1234 123456 ACCEPT     tcp  --  *      *       10.1.0.0/16      10.100.1.0/24    tcp dpt:161
+75     1234 123456 LOG        tcp  --  *      *       10.1.0.0/16      10.100.1.0/24    tcp dpt:443 LOG flags 0 level 4 prefix "FWD-TCP-443-10_1_0_0-10_100_1_0: "
+76     1234 123456 ACCEPT     tcp  --  *      *       10.1.0.0/16      10.100.1.0/24    tcp dpt:443
+77     1234 123456 LOG        tcp  --  *      *       10.1.0.0/16      10.100.1.0/24    tcp dpt:8080 LOG flags 0 level 4 prefix "FWD-TCP-8080-10_1_0_0-10_100_1_0: "
+78     1234 123456 ACCEPT     tcp  --  *      *       10.1.0.0/16      10.100.1.0/24    tcp dpt:8080
+79     1234 123456 LOG        tcp  --  *      *       10.1.0.0/16      10.100.1.0/24    tcp dpt:514 LOG flags 0 level 4 prefix "FWD-TCP-514-10_1_0_0-10_100_1_0: "
+80     1234 123456 ACCEPT     tcp  --  *      *       10.1.0.0/16      10.100.1.0/24    tcp dpt:514
+81     1234 123456 LOG        tcp  --  *      *       10.2.0.0/16      10.1.0.0/16      tcp dpt:22 LOG flags 0 level 4 prefix "FWD-TCP-22-10_2_0_0-10_1_0_0: "
+82     1234 123456 ACCEPT     tcp  --  *      *       10.2.0.0/16      10.1.0.0/16      tcp dpt:22
+83     1234 123456 LOG        tcp  --  *      *       10.2.0.0/16      10.1.0.0/16      tcp dpt:161 LOG flags 0 level 4 prefix "FWD-TCP-161-10_2_0_0-10_1_0_0: "
+84     1234 123456 ACCEPT     tcp  --  *      *       10.2.0.0/16      10.1.0.0/16      tcp dpt:161
+85     1234 123456 LOG        tcp  --  *      *       10.2.0.0/16      10.1.0.0/16      tcp dpt:443 LOG flags 0 level 4 prefix "FWD-TCP-443-10_2_0_0-10_1_0_0: "
+86     1234 123456 ACCEPT     tcp  --  *      *       10.2.0.0/16      10.1.0.0/16      tcp dpt:443
+87     1234 123456 LOG        tcp  --  *      *       10.2.0.0/16      10.1.0.0/16      tcp dpt:8080 LOG flags 0 level 4 prefix "FWD-TCP-8080-10_2_0_0-10_1_0_0: "
+88     1234 123456 ACCEPT     tcp  --  *      *       10.2.0.0/16      10.1.0.0/16      tcp dpt:8080
+89     1234 123456 LOG        tcp  --  *      *       10.2.0.0/16      10.1.0.0/16      tcp dpt:514 LOG flags 0 level 4 prefix "FWD-TCP-514-10_2_0_0-10_1_0_0: "
+90     1234 123456 ACCEPT     tcp  --  *      *       10.2.0.0/16      10.1.0.0/16      tcp dpt:514
+91     1234 123456 LOG        tcp  --  *      *       10.2.0.0/16      10.3.0.0/16      tcp dpt:22 LOG flags 0 level 4 prefix "FWD-TCP-22-10_2_0_0-10_3_0_0: "
+92     1234 123456 ACCEPT     tcp  --  *      *       10.2.0.0/16      10.3.0.0/16      tcp dpt:22
+93     1234 123456 LOG        tcp  --  *      *       10.2.0.0/16      10.3.0.0/16      tcp dpt:161 LOG flags 0 level 4 prefix "FWD-TCP-161-10_2_0_0-10_3_0_0: "
+94     1234 123456 ACCEPT     tcp  --  *      *       10.2.0.0/16      10.3.0.0/16      tcp dpt:161
+95     1234 123456 LOG        tcp  --  *      *       10.2.0.0/16      10.3.0.0/16      tcp dpt:443 LOG flags 0 level 4 prefix "FWD-TCP-443-10_2_0_0-10_3_0_0: "
+96     1234 123456 ACCEPT     tcp  --  *      *       10.2.0.0/16      10.3.0.0/16      tcp dpt:443
+97     1234 123456 LOG        tcp  --  *      *       10.2.0.0/16      10.3.0.0/16      tcp dpt:8080 LOG flags 0 level 4 prefix "FWD-TCP-8080-10_2_0_0-10_3_0_0: "
+98     1234 123456 ACCEPT     tcp  --  *      *       10.2.0.0/16      10.3.0.0/16      tcp dpt:8080
+99     1234 123456 LOG        tcp  --  *      *       10.2.0.0/16      10.3.0.0/16      tcp dpt:514 LOG flags 0 level 4 prefix "FWD-TCP-514-10_2_0_0-10_3_0_0: "
+100     1234 123456 ACCEPT     tcp  --  *      *       10.2.0.0/16      10.3.0.0/16      tcp dpt:514
+101     1234 123456 LOG        tcp  --  *      *       10.2.0.0/16      10.100.1.0/24    tcp dpt:22 LOG flags 0 level 4 prefix "FWD-TCP-22-10_2_0_0-10_100_1_0: "
+102     1234 123456 ACCEPT     tcp  --  *      *       10.2.0.0/16      10.100.1.0/24    tcp dpt:22
+103     1234 123456 LOG        tcp  --  *      *       10.2.0.0/16      10.100.1.0/24    tcp dpt:161 LOG flags 0 level 4 prefix "FWD-TCP-161-10_2_0_0-10_100_1_0: "
+104     1234 123456 ACCEPT     tcp  --  *      *       10.2.0.0/16      10.100.1.0/24    tcp dpt:161
+105     1234 123456 LOG        tcp  --  *      *       10.2.0.0/16      10.100.1.0/24    tcp dpt:443 LOG flags 0 level 4 prefix "FWD-TCP-443-10_2_0_0-10_100_1_0: "
+106     1234 123456 ACCEPT     tcp  --  *      *       10.2.0.0/16      10.100.1.0/24    tcp dpt:443
+107     1234 123456 LOG        tcp  --  *      *       10.2.0.0/16      10.100.1.0/24    tcp dpt:8080 LOG flags 0 level 4 prefix "FWD-TCP-8080-10_2_0_0-10_100_1_0: "
+108     1234 123456 ACCEPT     tcp  --  *      *       10.2.0.0/16      10.100.1.0/24    tcp dpt:8080
+109     1234 123456 LOG        tcp  --  *      *       10.2.0.0/16      10.100.1.0/24    tcp dpt:514 LOG flags 0 level 4 prefix "FWD-TCP-514-10_2_0_0-10_100_1_0: "
+110     1234 123456 ACCEPT     tcp  --  *      *       10.2.0.0/16      10.100.1.0/24    tcp dpt:514
+111     1234 123456 LOG        tcp  --  *      *       10.3.0.0/16      10.1.0.0/16      tcp dpt:22 LOG flags 0 level 4 prefix "FWD-TCP-22-10_3_0_0-10_1_0_0: "
+112     1234 123456 ACCEPT     tcp  --  *      *       10.3.0.0/16      10.1.0.0/16      tcp dpt:22
+113     1234 123456 LOG        tcp  --  *      *       10.3.0.0/16      10.1.0.0/16      tcp dpt:161 LOG flags 0 level 4 prefix "FWD-TCP-161-10_3_0_0-10_1_0_0: "
+114     1234 123456 ACCEPT     tcp  --  *      *       10.3.0.0/16      10.1.0.0/16      tcp dpt:161
+115     1234 123456 LOG        tcp  --  *      *       10.3.0.0/16      10.1.0.0/16      tcp dpt:443 LOG flags 0 level 4 prefix "FWD-TCP-443-10_3_0_0-10_1_0_0: "
+116     1234 123456 ACCEPT     tcp  --  *      *       10.3.0.0/16      10.1.0.0/16      tcp dpt:443
+117     1234 123456 LOG        tcp  --  *      *       10.3.0.0/16      10.1.0.0/16      tcp dpt:8080 LOG flags 0 level 4 prefix "FWD-TCP-8080-10_3_0_0-10_1_0_0: "
+118     1234 123456 ACCEPT     tcp  --  *      *       10.3.0.0/16      10.1.0.0/16      tcp dpt:8080
+119     1234 123456 LOG        tcp  --  *      *       10.3.0.0/16      10.1.0.0/16      tcp dpt:514 LOG flags 0 level 4 prefix "FWD-TCP-514-10_3_0_0-10_1_0_0: "
+120     1234 123456 ACCEPT     tcp  --  *      *       10.3.0.0/16      10.1.0.0/16      tcp dpt:514
+121     1234 123456 LOG        tcp  --  *      *       10.3.0.0/16      10.2.0.0/16      tcp dpt:22 LOG flags 0 level 4 prefix "FWD-TCP-22-10_3_0_0-10_2_0_0: "
+122     1234 123456 ACCEPT     tcp  --  *      *       10.3.0.0/16      10.2.0.0/16      tcp dpt:22
+123     1234 123456 LOG        tcp  --  *      *       10.3.0.0/16      10.2.0.0/16      tcp dpt:161 LOG flags 0 level 4 prefix "FWD-TCP-161-10_3_0_0-10_2_0_0: "
+124     1234 123456 ACCEPT     tcp  --  *      *       10.3.0.0/16      10.2.0.0/16      tcp dpt:161
+125     1234 123456 LOG        tcp  --  *      *       10.3.0.0/16      10.2.0.0/16      tcp dpt:443 LOG flags 0 level 4 prefix "FWD-TCP-443-10_3_0_0-10_2_0_0: "
+126     1234 123456 ACCEPT     tcp  --  *      *       10.3.0.0/16      10.2.0.0/16      tcp dpt:443
+127     1234 123456 LOG        tcp  --  *      *       10.3.0.0/16      10.2.0.0/16      tcp dpt:8080 LOG flags 0 level 4 prefix "FWD-TCP-8080-10_3_0_0-10_2_0_0: "
+128     1234 123456 ACCEPT     tcp  --  *      *       10.3.0.0/16      10.2.0.0/16      tcp dpt:8080
+129     1234 123456 LOG        tcp  --  *      *       10.3.0.0/16      10.2.0.0/16      tcp dpt:514 LOG flags 0 level 4 prefix "FWD-TCP-514-10_3_0_0-10_2_0_0: "
+130     1234 123456 ACCEPT     tcp  --  *      *       10.3.0.0/16      10.2.0.0/16      tcp dpt:514
+131     1234 123456 LOG        tcp  --  *      *       10.3.0.0/16      10.100.1.0/24    tcp dpt:22 LOG flags 0 level 4 prefix "FWD-TCP-22-10_3_0_0-10_100_1_0: "
+132     1234 123456 ACCEPT     tcp  --  *      *       10.3.0.0/16      10.100.1.0/24    tcp dpt:22
+133     1234 123456 LOG        tcp  --  *      *       10.3.0.0/16      10.100.1.0/24    tcp dpt:161 LOG flags 0 level 4 prefix "FWD-TCP-161-10_3_0_0-10_100_1_0: "
+134     1234 123456 ACCEPT     tcp  --  *      *       10.3.0.0/16      10.100.1.0/24    tcp dpt:161
+135     1234 123456 LOG        tcp  --  *      *       10.3.0.0/16      10.100.1.0/24    tcp dpt:443 LOG flags 0 level 4 prefix "FWD-TCP-443-10_3_0_0-10_100_1_0: "
+136     1234 123456 ACCEPT     tcp  --  *      *       10.3.0.0/16      10.100.1.0/24    tcp dpt:443
+137     1234 123456 LOG        tcp  --  *      *       10.3.0.0/16      10.100.1.0/24    tcp dpt:8080 LOG flags 0 level 4 prefix "FWD-TCP-8080-10_3_0_0-10_100_1_0: "
+138     1234 123456 ACCEPT     tcp  --  *      *       10.3.0.0/16      10.100.1.0/24    tcp dpt:8080
+139     1234 123456 LOG        tcp  --  *      *       10.3.0.0/16      10.100.1.0/24    tcp dpt:514 LOG flags 0 level 4 prefix "FWD-TCP-514-10_3_0_0-10_100_1_0: "
+140     1234 123456 ACCEPT     tcp  --  *      *       10.3.0.0/16      10.100.1.0/24    tcp dpt:514
+141     1234 123456 LOG        tcp  --  *      *       10.100.1.0/24    10.1.0.0/16      tcp dpt:22 LOG flags 0 level 4 prefix "FWD-TCP-22-10_100_1_0-10_1_0_0: "
+142     1234 123456 ACCEPT     tcp  --  *      *       10.100.1.0/24    10.1.0.0/16      tcp dpt:22
+143     1234 123456 LOG        tcp  --  *      *       10.100.1.0/24    10.1.0.0/16      tcp dpt:161 LOG flags 0 level 4 prefix "FWD-TCP-161-10_100_1_0-10_1_0_0: "
+144     1234 123456 ACCEPT     tcp  --  *      *       10.100.1.0/24    10.1.0.0/16      tcp dpt:161
+145     1234 123456 LOG        tcp  --  *      *       10.100.1.0/24    10.1.0.0/16      tcp dpt:443 LOG flags 0 level 4 prefix "FWD-TCP-443-10_100_1_0-10_1_0_0: "
+146     1234 123456 ACCEPT     tcp  --  *      *       10.100.1.0/24    10.1.0.0/16      tcp dpt:443
+147     1234 123456 LOG        tcp  --  *      *       10.100.1.0/24    10.1.0.0/16      tcp dpt:8080 LOG flags 0 level 4 prefix "FWD-TCP-8080-10_100_1_0-10_1_0_0: "
+148     1234 123456 ACCEPT     tcp  --  *      *       10.100.1.0/24    10.1.0.0/16      tcp dpt:8080
+149     1234 123456 LOG        tcp  --  *      *       10.100.1.0/24    10.1.0.0/16      tcp dpt:514 LOG flags 0 level 4 prefix "FWD-TCP-514-10_100_1_0-10_1_0_0: "
+150     1234 123456 ACCEPT     tcp  --  *      *       10.100.1.0/24    10.1.0.0/16      tcp dpt:514
+151     1234 123456 LOG        tcp  --  *      *       10.100.1.0/24    10.2.0.0/16      tcp dpt:22 LOG flags 0 level 4 prefix "FWD-TCP-22-10_100_1_0-10_2_0_0: "
+152     1234 123456 ACCEPT     tcp  --  *      *       10.100.1.0/24    10.2.0.0/16      tcp dpt:22
+153     1234 123456 LOG        tcp  --  *      *       10.100.1.0/24    10.2.0.0/16      tcp dpt:161 LOG flags 0 level 4 prefix "FWD-TCP-161-10_100_1_0-10_2_0_0: "
+154     1234 123456 ACCEPT     tcp  --  *      *       10.100.1.0/24    10.2.0.0/16      tcp dpt:161
+155     1234 123456 LOG        tcp  --  *      *       10.100.1.0/24    10.2.0.0/16      tcp dpt:443 LOG flags 0 level 4 prefix "FWD-TCP-443-10_100_1_0-10_2_0_0: "
+156     1234 123456 ACCEPT     tcp  --  *      *       10.100.1.0/24    10.2.0.0/16      tcp dpt:443
+157     1234 123456 LOG        tcp  --  *      *       10.100.1.0/24    10.2.0.0/16      tcp dpt:8080 LOG flags 0 level 4 prefix "FWD-TCP-8080-10_100_1_0-10_2_0_0: "
+158     1234 123456 ACCEPT     tcp  --  *      *       10.100.1.0/24    10.2.0.0/16      tcp dpt:8080
+159     1234 123456 LOG        tcp  --  *      *       10.100.1.0/24    10.2.0.0/16      tcp dpt:514 LOG flags 0 level 4 prefix "FWD-TCP-514-10_100_1_0-10_2_0_0: "
+160     1234 123456 ACCEPT     tcp  --  *      *       10.100.1.0/24    10.2.0.0/16      tcp dpt:514
+161     1234 123456 LOG        tcp  --  *      *       10.100.1.0/24    10.3.0.0/16      tcp dpt:22 LOG flags 0 level 4 prefix "FWD-TCP-22-10_100_1_0-10_3_0_0: "
+162     1234 123456 ACCEPT     tcp  --  *      *       10.100.1.0/24    10.3.0.0/16      tcp dpt:22
+163     1234 123456 LOG        tcp  --  *      *       10.100.1.0/24    10.3.0.0/16      tcp dpt:161 LOG flags 0 level 4 prefix "FWD-TCP-161-10_100_1_0-10_3_0_0: "
+164     1234 123456 ACCEPT     tcp  --  *      *       10.100.1.0/24    10.3.0.0/16      tcp dpt:161
+165     1234 123456 LOG        tcp  --  *      *       10.100.1.0/24    10.3.0.0/16      tcp dpt:443 LOG flags 0 level 4 prefix "FWD-TCP-443-10_100_1_0-10_3_0_0: "
+166     1234 123456 ACCEPT     tcp  --  *      *       10.100.1.0/24    10.3.0.0/16      tcp dpt:443
+167     1234 123456 LOG        tcp  --  *      *       10.100.1.0/24    10.3.0.0/16      tcp dpt:8080 LOG flags 0 level 4 prefix "FWD-TCP-8080-10_100_1_0-10_3_0_0: "
+168     1234 123456 ACCEPT     tcp  --  *      *       10.100.1.0/24    10.3.0.0/16      tcp dpt:8080
+169     1234 123456 LOG        tcp  --  *      *       10.100.1.0/24    10.3.0.0/16      tcp dpt:514 LOG flags 0 level 4 prefix "FWD-TCP-514-10_100_1_0-10_3_0_0: "
+170     1234 123456 ACCEPT     tcp  --  *      *       10.100.1.0/24    10.3.0.0/16      tcp dpt:514
+171      987  98765 LOG        all  --  *      eth0    10.1.0.0/16      0.0.0.0/0            LOG flags 0 level 4 prefix "FWD-INET-OUT-10_1_0_0: "
+172      987  98765 ACCEPT     all  --  *      eth0    10.1.0.0/16      0.0.0.0/0
+173      987  98765 LOG        all  --  *      eth0    10.2.0.0/16      0.0.0.0/0            LOG flags 0 level 4 prefix "FWD-INET-OUT-10_2_0_0: "
+174      987  98765 ACCEPT     all  --  *      eth0    10.2.0.0/16      0.0.0.0/0
+175      987  98765 LOG        all  --  *      eth0    10.3.0.0/16      0.0.0.0/0            LOG flags 0 level 4 prefix "FWD-INET-OUT-10_3_0_0: "
+176      987  98765 ACCEPT     all  --  *      eth0    10.3.0.0/16      0.0.0.0/0
+177      654  65432 LOG        all  --  *      *       0.0.0.0/0            0.0.0.0/0            LOG flags 0 level 4 prefix "FORWARD-DROP: "
+178      321  32123 DROP       all  --  *      *       0.0.0.0/0            0.0.0.0/0
 
 Chain OUTPUT (policy ACCEPT 0 packets, 0 bytes)
-num   pkts bytes target     prot opt in     out     source               destination         
-1      987  98765 ACCEPT     all  --  *      lo      0.0.0.0/0            0.0.0.0/0           
-2      654  65432 ACCEPT     all  --  *      *       0.0.0.0/0            0.0.0.0/0            ctstate RELATED,ESTABLISHED
-3      321  32123 ACCEPT     icmp --  *      *       0.0.0.0/0            0.0.0.0/0           
-4      123  12345 ACCEPT     tcp  --  *      *       0.0.0.0/0            0.0.0.0/0            tcp spt:22
-5       98   9876 DROP       all  --  *      *       0.0.0.0/0            0.0.0.0/0           
-
-Chain HQ_MGMT_ACCESS (1 references)
-num   pkts bytes target     prot opt in     out     source               destination         
-1      567  56789 ACCEPT     tcp  --  *      *       10.1.2.0/24          0.0.0.0/0            multiport dports 22,443,8080 ctstate NEW,ESTABLISHED
-2      234  23456 ACCEPT     tcp  --  *      *       10.1.3.0/24          0.0.0.0/0            multiport dports 22,443 ctstate NEW,ESTABLISHED
-3      123  12345 ACCEPT     udp  --  *      *       10.1.10.0/24         0.0.0.0/0            multiport dports 161,514 ctstate NEW,ESTABLISHED
-4       67   6789 RETURN     all  --  *      *       0.0.0.0/0            0.0.0.0/0           
-
-Chain HQ_LAN_FORWARD (1 references)
-num   pkts bytes target     prot opt in     out     source               destination         
-1     2345 234567 ACCEPT     all  --  *      *       0.0.0.0/0            0.0.0.0/0            match-set HQ_TRUSTED_NETS src match-set HQ_INTERNAL_SERVICES dst
-2     1234 123456 ACCEPT     tcp  --  *      *       10.1.0.0/16          0.0.0.0/0            multiport dports 80,443,8080,8443
-3      789  78901 ACCEPT     udp  --  *      *       10.1.0.0/16          0.0.0.0/0            multiport dports 53,123,514
-4      456  45678 DROP       tcp  --  *      *       10.1.11.0/24         10.1.3.0/24          tcp dpt:3389
-5      234  23456 ACCEPT     icmp --  *      *       10.1.0.0/16          10.1.0.0/16          icmp-type 8
-6      123  12345 LOG        all  --  *      *       10.1.0.0/16          0.0.0.0/0            limit: avg 10/min burst 5 LOG flags 0 level 6 prefix "HQ-LAN-ALLOW: "
-7       67   6789 RETURN     all  --  *      *       0.0.0.0/0            0.0.0.0/0           
-
-Chain WG_VPN_FORWARD (1 references)
-num   pkts bytes target     prot opt in     out     source               destination         
-1     1234 123456 ACCEPT     all  --  *      *       10.100.1.0/24        0.0.0.0/0            match-set VPN_ALLOWED_PROTOCOLS src,dst,proto
-2      789  78901 ACCEPT     tcp  --  *      *       10.100.1.0/24        10.0.0.0/8           multiport dports 22,80,443
-3      456  45678 ACCEPT     udp  --  *      *       10.100.1.0/24        10.0.0.0/8           multiport dports 53,123
-4      234  23456 DROP       all  --  *      *       10.100.1.0/24        192.168.0.0/16      
-5      123  12345 LOG        all  --  *      *       10.100.1.0/24        0.0.0.0/0            limit: avg 5/min burst 3 LOG flags 0 level 6 prefix "VPN-FORWARD: "
-6       67   6789 RETURN     all  --  *      *       0.0.0.0/0            0.0.0.0/0           
-
-Chain INET_FORWARD (1 references)
-num   pkts bytes target     prot opt in     out     source               destination         
-1     2345 234567 ACCEPT     tcp  --  *      *       0.0.0.0/0            0.0.0.0/0            match-set HQ_WEB_USERS src multiport dports 80,443,8080,8443
-2     1234 123456 ACCEPT     udp  --  *      *       0.0.0.0/0            0.0.0.0/0            match-set HQ_DNS_USERS src udp dpt:53
-3      789  78901 ACCEPT     tcp  --  *      *       10.1.3.0/24          0.0.0.0/0            multiport dports 25,465,587,993,995
-4      456  45678 ACCEPT     tcp  --  *      *       10.1.10.0/24         0.0.0.0/0            multiport dports 22,443,9443
-5      234  23456 DROP       tcp  --  *      *       0.0.0.0/0            0.0.0.0/0            multiport dports 135,139,445,1433,3389
-6      123  12345 ACCEPT     icmp --  *      *       10.1.0.0/16          0.0.0.0/0            icmp-type 8
-7       67   6789 LOG        all  --  *      *       10.1.0.0/16          0.0.0.0/0            limit: avg 20/min burst 10 LOG flags 0 level 6 prefix "INET-FORWARD: "
-8       34   3456 RETURN     all  --  *      *       0.0.0.0/0            0.0.0.0/0           
+num   pkts bytes target     prot opt in     out     source               destination
+ 1      987  98765 ACCEPT     all  --  *      lo      0.0.0.0/0            0.0.0.0/0
+ 2      654  65432 ACCEPT     all  --  *      *       0.0.0.0/0            0.0.0.0/0            ctstate RELATED,ESTABLISHED
+ 3      321  32123 ACCEPT     icmp --  *      *       0.0.0.0/0            0.0.0.0/0
+ 4      123  12345 ACCEPT     udp  --  *      *       0.0.0.0/0            0.0.0.0/0            udp dpts:33434:33534
+ 5       98   9876 ACCEPT     tcp  --  *      *       0.0.0.0/0            0.0.0.0/0            tcp spt:22
+ 6       87   8765 ACCEPT     tcp  --  *      *       0.0.0.0/0            0.0.0.0/0            tcp dpt:22
+ 7       98   9876 ACCEPT     tcp  --  *      *       0.0.0.0/0            0.0.0.0/0            tcp spt:161
+ 8       87   8765 ACCEPT     tcp  --  *      *       0.0.0.0/0            0.0.0.0/0            tcp dpt:161
+ 9       98   9876 ACCEPT     tcp  --  *      *       0.0.0.0/0            0.0.0.0/0            tcp spt:443
+10       87   8765 ACCEPT     tcp  --  *      *       0.0.0.0/0            0.0.0.0/0            tcp dpt:443
+11       98   9876 ACCEPT     tcp  --  *      *       0.0.0.0/0            0.0.0.0/0            tcp spt:8080
+12       87   8765 ACCEPT     tcp  --  *      *       0.0.0.0/0            0.0.0.0/0            tcp dpt:8080
+13       98   9876 ACCEPT     tcp  --  *      *       0.0.0.0/0            0.0.0.0/0            tcp spt:514
+14       87   8765 ACCEPT     tcp  --  *      *       0.0.0.0/0            0.0.0.0/0            tcp dpt:514
 
 EXIT_CODE: 0
 === TSIM_SECTION_END:iptables_filter ===
@@ -195,26 +523,29 @@ EXIT_CODE: 0
 === TSIM_SECTION_START:iptables_nat ===
 TITLE: Iptables NAT Table
 COMMAND: /sbin/iptables -t nat -L -n -v --line-numbers
-TIMESTAMP: 2025-06-21 14:30:15
+TIMESTAMP: 2025-07-01 10:00:00
 ---
 Chain PREROUTING (policy ACCEPT 0 packets, 0 bytes)
-num   pkts bytes target     prot opt in     out     source               destination         
-1      567  56789 DNAT       tcp  --  eth0   *       0.0.0.0/0            203.0.113.10         tcp dpt:80 to:10.1.3.10:80
-2      234  23456 DNAT       tcp  --  eth0   *       0.0.0.0/0            203.0.113.10         tcp dpt:443 to:10.1.3.10:443
-3      123  12345 DNAT       tcp  --  eth0   *       0.0.0.0/0            203.0.113.10         tcp dpt:25 to:10.1.3.20:25
-4       67   6789 DNAT       tcp  --  eth0   *       0.0.0.0/0            203.0.113.10         tcp dpt:22 to:10.1.3.5:22
+num   pkts bytes target     prot opt in     out     source               destination
+ 1      123  12345 LOG        tcp  --  eth0   *       0.0.0.0/0            0.0.0.0/0            tcp dpt:80 LOG flags 0 level 4 prefix "NAT-DNAT-HTTP: "
+ 2      123  12345 DNAT       tcp  --  eth0   *       0.0.0.0/0            0.0.0.0/0            tcp dpt:80 to:10.h.1.10
+ 3       87   8765 LOG        tcp  --  eth0   *       0.0.0.0/0            0.0.0.0/0            tcp dpt:443 LOG flags 0 level 4 prefix "NAT-DNAT-HTTPS: "
+ 4       87   8765 DNAT       tcp  --  eth0   *       0.0.0.0/0            0.0.0.0/0            tcp dpt:443 to:10.h.1.10
 
 Chain INPUT (policy ACCEPT 0 packets, 0 bytes)
-num   pkts bytes target     prot opt in     out     source               destination         
+num   pkts bytes target     prot opt in     out     source               destination
 
 Chain OUTPUT (policy ACCEPT 0 packets, 0 bytes)
-num   pkts bytes target     prot opt in     out     source               destination         
+num   pkts bytes target     prot opt in     out     source               destination
 
 Chain POSTROUTING (policy ACCEPT 0 packets, 0 bytes)
-num   pkts bytes target     prot opt in     out     source               destination         
-1     5432 543210 SNAT       all  --  *      eth0    10.1.0.0/16          0.0.0.0/0            to:203.0.113.10
-2     2345 234567 MASQUERADE  all  --  *      wg0     10.100.1.1           0.0.0.0/0           
-3     1234 123456 SNAT       all  --  *      eth0    10.100.1.0/24        0.0.0.0/0            to:203.0.113.10
+num   pkts bytes target     prot opt in     out     source               destination
+ 1     1234 123456 LOG        all  --  *      eth0    10.1.0.0/16      0.0.0.0/0            LOG flags 0 level 4 prefix "NAT-MASQ-10_1_0_0: "
+ 2     1234 123456 MASQUERADE  all  --  *      eth0    10.1.0.0/16      0.0.0.0/0
+ 3     1234 123456 LOG        all  --  *      eth0    10.2.0.0/16      0.0.0.0/0            LOG flags 0 level 4 prefix "NAT-MASQ-10_2_0_0: "
+ 4     1234 123456 MASQUERADE  all  --  *      eth0    10.2.0.0/16      0.0.0.0/0
+ 5     1234 123456 LOG        all  --  *      eth0    10.3.0.0/16      0.0.0.0/0            LOG flags 0 level 4 prefix "NAT-MASQ-10_3_0_0: "
+ 6     1234 123456 MASQUERADE  all  --  *      eth0    10.3.0.0/16      0.0.0.0/0
 
 EXIT_CODE: 0
 === TSIM_SECTION_END:iptables_nat ===
@@ -222,299 +553,1018 @@ EXIT_CODE: 0
 === TSIM_SECTION_START:iptables_mangle ===
 TITLE: Iptables Mangle Table
 COMMAND: /sbin/iptables -t mangle -L -n -v --line-numbers
-TIMESTAMP: 2025-06-21 14:30:15
+TIMESTAMP: 2025-07-01 10:00:00
 ---
 Chain PREROUTING (policy ACCEPT 0 packets, 0 bytes)
-num   pkts bytes target     prot opt in     out     source               destination         
-1     2345 234567 MARK       tcp  --  *      *       0.0.0.0/0            0.0.0.0/0            multiport dports 80,443 MARK set 0x1
-2     1234 123456 MARK       tcp  --  *      *       0.0.0.0/0            0.0.0.0/0            multiport dports 22,3389 MARK set 0x2
-3      789  78901 DSCP       all  --  wg0    *       10.100.1.0/24        0.0.0.0/0            DSCP set 0x2e
+num   pkts bytes target     prot opt in     out     source               destination
+ 1      123  12345 LOG        icmp --  *      *       0.0.0.0/0            0.0.0.0/0            LOG flags 0 level 4 prefix "MANGLE-MARK-ICMP: "
+ 2      123  12345 MARK       icmp --  *      *       0.0.0.0/0            0.0.0.0/0            MARK set 0x1
+ 3       87   8765 LOG        tcp  --  *      *       0.0.0.0/0            0.0.0.0/0            tcp dpt:22 LOG flags 0 level 4 prefix "MANGLE-MARK-22: "
+ 4       87   8765 MARK       tcp  --  *      *       0.0.0.0/0            0.0.0.0/0            tcp dpt:22 MARK set 0x1
+ 5       87   8765 LOG        tcp  --  *      *       0.0.0.0/0            0.0.0.0/0            tcp dpt:161 LOG flags 0 level 4 prefix "MANGLE-MARK-161: "
+ 6       87   8765 MARK       tcp  --  *      *       0.0.0.0/0            0.0.0.0/0            tcp dpt:161 MARK set 0x1
+ 7       87   8765 LOG        tcp  --  *      *       0.0.0.0/0            0.0.0.0/0            tcp dpt:443 LOG flags 0 level 4 prefix "MANGLE-MARK-443: "
+ 8       87   8765 MARK       tcp  --  *      *       0.0.0.0/0            0.0.0.0/0            tcp dpt:443 MARK set 0x1
 
 Chain INPUT (policy ACCEPT 0 packets, 0 bytes)
-num   pkts bytes target     prot opt in     out     source               destination         
+num   pkts bytes target     prot opt in     out     source               destination
 
 Chain FORWARD (policy ACCEPT 0 packets, 0 bytes)
-num   pkts bytes target     prot opt in     out     source               destination         
-1     3456 345678 MARK       all  --  eth1   eth0    10.1.0.0/16          0.0.0.0/0            match-set HQ_HIGH_PRIORITY src MARK set 0x10
-2     2345 234567 DSCP       all  --  wg0    *       10.100.1.0/24        0.0.0.0/0            DSCP set 0x2e
-3     1234 123456 TOS        all  --  eth1   eth0    10.1.3.0/24          0.0.0.0/0            TOS set 0x10
+num   pkts bytes target     prot opt in     out     source               destination
+ 1      234  23456 LOG        all  --  *      *       10.100.1.0/24        0.0.0.0/0            LOG flags 0 level 4 prefix "MANGLE-TTL-VPN: "
+ 2      234  23456 TTL        all  --  *      *       10.100.1.0/24        0.0.0.0/0            TTL set 64
 
 Chain OUTPUT (policy ACCEPT 0 packets, 0 bytes)
-num   pkts bytes target     prot opt in     out     source               destination         
+num   pkts bytes target     prot opt in     out     source               destination
 
 Chain POSTROUTING (policy ACCEPT 0 packets, 0 bytes)
-num   pkts bytes target     prot opt in     out     source               destination         
-1     4567 456789 DSCP       all  --  *      eth0    0.0.0.0/0            0.0.0.0/0            DSCP set 0x00
+num   pkts bytes target     prot opt in     out     source               destination
 
 EXIT_CODE: 0
 === TSIM_SECTION_END:iptables_mangle ===
 
 === TSIM_SECTION_START:iptables_save ===
-TITLE: Complete Iptables Configuration
+TITLE: Iptables Save Output
 COMMAND: /sbin/iptables-save
-TIMESTAMP: 2025-06-21 14:30:15
+TIMESTAMP: 2025-07-01 10:00:00
 ---
-# Generated by iptables-save v1.8.7 on Fri Jun 21 14:30:15 2025
+# Generated by iptables-save v1.8.7 on Mon Jul  1 10:00:00 2025
 *filter
-:INPUT ACCEPT [0:0]
+:INPUT DROP [0:0]
 :FORWARD DROP [0:0]
 :OUTPUT ACCEPT [0:0]
-:HQ_MGMT_ACCESS - [0:0]
-:HQ_LAN_FORWARD - [0:0]
-:WG_VPN_FORWARD - [0:0]
-:INET_FORWARD - [0:0]
+:HQ_GW_MGMT_ACCESS - [0:0]
+:HQ_GW_LAN_FORWARD - [0:0]
 -A INPUT -i lo -j ACCEPT
--A INPUT -i eth0 -m conntrack --ctstate INVALID -j DROP
--A INPUT -d 10.1.1.1/32 -j HQ_MGMT_ACCESS
--A INPUT -p icmp -m icmp --icmp-type 8 -j ACCEPT
--A INPUT -p tcp -m tcp --dport 22 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
--A INPUT -i wg0 -p udp -m udp --dport 51820 -j ACCEPT
+-A INPUT -m conntrack --ctstate INVALID -j DROP
 -A INPUT -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
+-A INPUT -s 10.1.0.0/16 -p icmp --icmp-type 0 -j LOG --log-prefix "INPUT-ICMP-0: "
+-A INPUT -s 10.1.0.0/16 -p icmp --icmp-type 0 -j ACCEPT
+-A INPUT -s 10.1.0.0/16 -p icmp --icmp-type 3 -j LOG --log-prefix "INPUT-ICMP-3: "
+-A INPUT -s 10.1.0.0/16 -p icmp --icmp-type 3 -j ACCEPT
+-A INPUT -s 10.1.0.0/16 -p icmp --icmp-type 8 -j LOG --log-prefix "INPUT-ICMP-8: "
+-A INPUT -s 10.1.0.0/16 -p icmp --icmp-type 8 -j ACCEPT
+-A INPUT -s 10.1.0.0/16 -p icmp --icmp-type 11 -j LOG --log-prefix "INPUT-ICMP-11: "
+-A INPUT -s 10.1.0.0/16 -p icmp --icmp-type 11 -j ACCEPT
+-A INPUT -s 10.2.0.0/16 -p icmp --icmp-type 0 -j LOG --log-prefix "INPUT-ICMP-0: "
+-A INPUT -s 10.2.0.0/16 -p icmp --icmp-type 0 -j ACCEPT
+-A INPUT -s 10.2.0.0/16 -p icmp --icmp-type 3 -j LOG --log-prefix "INPUT-ICMP-3: "
+-A INPUT -s 10.2.0.0/16 -p icmp --icmp-type 3 -j ACCEPT
+-A INPUT -s 10.2.0.0/16 -p icmp --icmp-type 8 -j LOG --log-prefix "INPUT-ICMP-8: "
+-A INPUT -s 10.2.0.0/16 -p icmp --icmp-type 8 -j ACCEPT
+-A INPUT -s 10.2.0.0/16 -p icmp --icmp-type 11 -j LOG --log-prefix "INPUT-ICMP-11: "
+-A INPUT -s 10.2.0.0/16 -p icmp --icmp-type 11 -j ACCEPT
+-A INPUT -s 10.3.0.0/16 -p icmp --icmp-type 0 -j LOG --log-prefix "INPUT-ICMP-0: "
+-A INPUT -s 10.3.0.0/16 -p icmp --icmp-type 0 -j ACCEPT
+-A INPUT -s 10.3.0.0/16 -p icmp --icmp-type 3 -j LOG --log-prefix "INPUT-ICMP-3: "
+-A INPUT -s 10.3.0.0/16 -p icmp --icmp-type 3 -j ACCEPT
+-A INPUT -s 10.3.0.0/16 -p icmp --icmp-type 8 -j LOG --log-prefix "INPUT-ICMP-8: "
+-A INPUT -s 10.3.0.0/16 -p icmp --icmp-type 8 -j ACCEPT
+-A INPUT -s 10.3.0.0/16 -p icmp --icmp-type 11 -j LOG --log-prefix "INPUT-ICMP-11: "
+-A INPUT -s 10.3.0.0/16 -p icmp --icmp-type 11 -j ACCEPT
+-A INPUT -s 10.100.1.0/24 -p icmp --icmp-type 0 -j LOG --log-prefix "INPUT-ICMP-0: "
+-A INPUT -s 10.100.1.0/24 -p icmp --icmp-type 0 -j ACCEPT
+-A INPUT -s 10.100.1.0/24 -p icmp --icmp-type 3 -j LOG --log-prefix "INPUT-ICMP-3: "
+-A INPUT -s 10.100.1.0/24 -p icmp --icmp-type 3 -j ACCEPT
+-A INPUT -s 10.100.1.0/24 -p icmp --icmp-type 8 -j LOG --log-prefix "INPUT-ICMP-8: "
+-A INPUT -s 10.100.1.0/24 -p icmp --icmp-type 8 -j ACCEPT
+-A INPUT -s 10.100.1.0/24 -p icmp --icmp-type 11 -j LOG --log-prefix "INPUT-ICMP-11: "
+-A INPUT -s 10.100.1.0/24 -p icmp --icmp-type 11 -j ACCEPT
+-A INPUT -s 10.1.0.0/16 -p tcp --dport 22 -m conntrack --ctstate NEW -j LOG --log-prefix "INPUT-MGMT-22: "
+-A INPUT -s 10.1.0.0/16 -p tcp --dport 22 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
+-A INPUT -s 10.1.0.0/16 -p tcp --dport 161 -m conntrack --ctstate NEW -j LOG --log-prefix "INPUT-MGMT-161: "
+-A INPUT -s 10.1.0.0/16 -p tcp --dport 161 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
+-A INPUT -s 10.1.0.0/16 -p tcp --dport 443 -m conntrack --ctstate NEW -j LOG --log-prefix "INPUT-MGMT-443: "
+-A INPUT -s 10.1.0.0/16 -p tcp --dport 443 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
+-A INPUT -s 10.1.0.0/16 -p tcp --dport 8080 -m conntrack --ctstate NEW -j LOG --log-prefix "INPUT-MGMT-8080: "
+-A INPUT -s 10.1.0.0/16 -p tcp --dport 8080 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
+-A INPUT -s 10.1.0.0/16 -p tcp --dport 514 -m conntrack --ctstate NEW -j LOG --log-prefix "INPUT-MGMT-514: "
+-A INPUT -s 10.1.0.0/16 -p tcp --dport 514 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
+-A INPUT -s 10.2.0.0/16 -p tcp --dport 22 -m conntrack --ctstate NEW -j LOG --log-prefix "INPUT-MGMT-22: "
+-A INPUT -s 10.2.0.0/16 -p tcp --dport 22 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
+-A INPUT -s 10.2.0.0/16 -p tcp --dport 161 -m conntrack --ctstate NEW -j LOG --log-prefix "INPUT-MGMT-161: "
+-A INPUT -s 10.2.0.0/16 -p tcp --dport 161 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
+-A INPUT -s 10.2.0.0/16 -p tcp --dport 443 -m conntrack --ctstate NEW -j LOG --log-prefix "INPUT-MGMT-443: "
+-A INPUT -s 10.2.0.0/16 -p tcp --dport 443 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
+-A INPUT -s 10.2.0.0/16 -p tcp --dport 8080 -m conntrack --ctstate NEW -j LOG --log-prefix "INPUT-MGMT-8080: "
+-A INPUT -s 10.2.0.0/16 -p tcp --dport 8080 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
+-A INPUT -s 10.2.0.0/16 -p tcp --dport 514 -m conntrack --ctstate NEW -j LOG --log-prefix "INPUT-MGMT-514: "
+-A INPUT -s 10.2.0.0/16 -p tcp --dport 514 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
+-A INPUT -s 10.3.0.0/16 -p tcp --dport 22 -m conntrack --ctstate NEW -j LOG --log-prefix "INPUT-MGMT-22: "
+-A INPUT -s 10.3.0.0/16 -p tcp --dport 22 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
+-A INPUT -s 10.3.0.0/16 -p tcp --dport 161 -m conntrack --ctstate NEW -j LOG --log-prefix "INPUT-MGMT-161: "
+-A INPUT -s 10.3.0.0/16 -p tcp --dport 161 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
+-A INPUT -s 10.3.0.0/16 -p tcp --dport 443 -m conntrack --ctstate NEW -j LOG --log-prefix "INPUT-MGMT-443: "
+-A INPUT -s 10.3.0.0/16 -p tcp --dport 443 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
+-A INPUT -s 10.3.0.0/16 -p tcp --dport 8080 -m conntrack --ctstate NEW -j LOG --log-prefix "INPUT-MGMT-8080: "
+-A INPUT -s 10.3.0.0/16 -p tcp --dport 8080 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
+-A INPUT -s 10.3.0.0/16 -p tcp --dport 514 -m conntrack --ctstate NEW -j LOG --log-prefix "INPUT-MGMT-514: "
+-A INPUT -s 10.3.0.0/16 -p tcp --dport 514 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
+-A INPUT -s 10.100.1.0/24 -p tcp --dport 22 -m conntrack --ctstate NEW -j LOG --log-prefix "INPUT-MGMT-22: "
+-A INPUT -s 10.100.1.0/24 -p tcp --dport 22 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
+-A INPUT -s 10.100.1.0/24 -p tcp --dport 161 -m conntrack --ctstate NEW -j LOG --log-prefix "INPUT-MGMT-161: "
+-A INPUT -s 10.100.1.0/24 -p tcp --dport 161 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
+-A INPUT -s 10.100.1.0/24 -p tcp --dport 443 -m conntrack --ctstate NEW -j LOG --log-prefix "INPUT-MGMT-443: "
+-A INPUT -s 10.100.1.0/24 -p tcp --dport 443 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
+-A INPUT -s 10.100.1.0/24 -p tcp --dport 8080 -m conntrack --ctstate NEW -j LOG --log-prefix "INPUT-MGMT-8080: "
+-A INPUT -s 10.100.1.0/24 -p tcp --dport 8080 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
+-A INPUT -s 10.100.1.0/24 -p tcp --dport 514 -m conntrack --ctstate NEW -j LOG --log-prefix "INPUT-MGMT-514: "
+-A INPUT -s 10.100.1.0/24 -p tcp --dport 514 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
+-A INPUT -s 10.1.0.0/16 -p udp --dport 33434:33534 -j LOG --log-prefix "INPUT-MTR-UDP: "
+-A INPUT -s 10.1.0.0/16 -p udp --dport 33434:33534 -j ACCEPT
+-A INPUT -s 10.2.0.0/16 -p udp --dport 33434:33534 -j LOG --log-prefix "INPUT-MTR-UDP: "
+-A INPUT -s 10.2.0.0/16 -p udp --dport 33434:33534 -j ACCEPT
+-A INPUT -s 10.3.0.0/16 -p udp --dport 33434:33534 -j LOG --log-prefix "INPUT-MTR-UDP: "
+-A INPUT -s 10.3.0.0/16 -p udp --dport 33434:33534 -j ACCEPT
+-A INPUT -s 10.100.1.0/24 -p udp --dport 33434:33534 -j LOG --log-prefix "INPUT-MTR-UDP: "
+-A INPUT -s 10.100.1.0/24 -p udp --dport 33434:33534 -j ACCEPT
 -A INPUT -j LOG --log-prefix "INPUT-DROP: "
 -A INPUT -j DROP
 -A FORWARD -i lo -j ACCEPT
--A FORWARD -s 10.1.0.0/16 -i eth1 -j HQ_LAN_FORWARD
--A FORWARD -s 10.100.1.0/24 -i wg0 -j WG_VPN_FORWARD
--A FORWARD -s 10.1.0.0/16 -i eth1 -o eth0 -j INET_FORWARD
--A FORWARD -d 10.1.0.0/16 -o eth1 -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
--A FORWARD -s 0.0.0.0/0 -i eth0 -o eth1 -d 10.1.0.0/16 -j DROP
+-A FORWARD -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
+-A FORWARD -s 10.1.0.0/16 -d 10.2.0.0/16 -p icmp -j LOG --log-prefix "FWD-ICMP-10_1_0_0-10_2_0_0: "
+-A FORWARD -s 10.1.0.0/16 -d 10.2.0.0/16 -p icmp -j ACCEPT
+-A FORWARD -s 10.1.0.0/16 -d 10.3.0.0/16 -p icmp -j LOG --log-prefix "FWD-ICMP-10_1_0_0-10_3_0_0: "
+-A FORWARD -s 10.1.0.0/16 -d 10.3.0.0/16 -p icmp -j ACCEPT
+-A FORWARD -s 10.1.0.0/16 -d 10.100.1.0/24 -p icmp -j LOG --log-prefix "FWD-ICMP-10_1_0_0-10_100_1_0: "
+-A FORWARD -s 10.1.0.0/16 -d 10.100.1.0/24 -p icmp -j ACCEPT
+-A FORWARD -s 10.2.0.0/16 -d 10.1.0.0/16 -p icmp -j LOG --log-prefix "FWD-ICMP-10_2_0_0-10_1_0_0: "
+-A FORWARD -s 10.2.0.0/16 -d 10.1.0.0/16 -p icmp -j ACCEPT
+-A FORWARD -s 10.2.0.0/16 -d 10.3.0.0/16 -p icmp -j LOG --log-prefix "FWD-ICMP-10_2_0_0-10_3_0_0: "
+-A FORWARD -s 10.2.0.0/16 -d 10.3.0.0/16 -p icmp -j ACCEPT
+-A FORWARD -s 10.2.0.0/16 -d 10.100.1.0/24 -p icmp -j LOG --log-prefix "FWD-ICMP-10_2_0_0-10_100_1_0: "
+-A FORWARD -s 10.2.0.0/16 -d 10.100.1.0/24 -p icmp -j ACCEPT
+-A FORWARD -s 10.3.0.0/16 -d 10.1.0.0/16 -p icmp -j LOG --log-prefix "FWD-ICMP-10_3_0_0-10_1_0_0: "
+-A FORWARD -s 10.3.0.0/16 -d 10.1.0.0/16 -p icmp -j ACCEPT
+-A FORWARD -s 10.3.0.0/16 -d 10.2.0.0/16 -p icmp -j LOG --log-prefix "FWD-ICMP-10_3_0_0-10_2_0_0: "
+-A FORWARD -s 10.3.0.0/16 -d 10.2.0.0/16 -p icmp -j ACCEPT
+-A FORWARD -s 10.3.0.0/16 -d 10.100.1.0/24 -p icmp -j LOG --log-prefix "FWD-ICMP-10_3_0_0-10_100_1_0: "
+-A FORWARD -s 10.3.0.0/16 -d 10.100.1.0/24 -p icmp -j ACCEPT
+-A FORWARD -s 10.100.1.0/24 -d 10.1.0.0/16 -p icmp -j LOG --log-prefix "FWD-ICMP-10_100_1_0-10_1_0_0: "
+-A FORWARD -s 10.100.1.0/24 -d 10.1.0.0/16 -p icmp -j ACCEPT
+-A FORWARD -s 10.100.1.0/24 -d 10.2.0.0/16 -p icmp -j LOG --log-prefix "FWD-ICMP-10_100_1_0-10_2_0_0: "
+-A FORWARD -s 10.100.1.0/24 -d 10.2.0.0/16 -p icmp -j ACCEPT
+-A FORWARD -s 10.100.1.0/24 -d 10.3.0.0/16 -p icmp -j LOG --log-prefix "FWD-ICMP-10_100_1_0-10_3_0_0: "
+-A FORWARD -s 10.100.1.0/24 -d 10.3.0.0/16 -p icmp -j ACCEPT
+-A FORWARD -s 10.1.0.0/16 -d 10.2.0.0/16 -p udp --dport 33434:33534 -j LOG --log-prefix "FWD-MTR-10_1_0_0-10_2_0_0: "
+-A FORWARD -s 10.1.0.0/16 -d 10.2.0.0/16 -p udp --dport 33434:33534 -j ACCEPT
+-A FORWARD -s 10.1.0.0/16 -d 10.3.0.0/16 -p udp --dport 33434:33534 -j LOG --log-prefix "FWD-MTR-10_1_0_0-10_3_0_0: "
+-A FORWARD -s 10.1.0.0/16 -d 10.3.0.0/16 -p udp --dport 33434:33534 -j ACCEPT
+-A FORWARD -s 10.1.0.0/16 -d 10.100.1.0/24 -p udp --dport 33434:33534 -j LOG --log-prefix "FWD-MTR-10_1_0_0-10_100_1_0: "
+-A FORWARD -s 10.1.0.0/16 -d 10.100.1.0/24 -p udp --dport 33434:33534 -j ACCEPT
+-A FORWARD -s 10.2.0.0/16 -d 10.1.0.0/16 -p udp --dport 33434:33534 -j LOG --log-prefix "FWD-MTR-10_2_0_0-10_1_0_0: "
+-A FORWARD -s 10.2.0.0/16 -d 10.1.0.0/16 -p udp --dport 33434:33534 -j ACCEPT
+-A FORWARD -s 10.2.0.0/16 -d 10.3.0.0/16 -p udp --dport 33434:33534 -j LOG --log-prefix "FWD-MTR-10_2_0_0-10_3_0_0: "
+-A FORWARD -s 10.2.0.0/16 -d 10.3.0.0/16 -p udp --dport 33434:33534 -j ACCEPT
+-A FORWARD -s 10.2.0.0/16 -d 10.100.1.0/24 -p udp --dport 33434:33534 -j LOG --log-prefix "FWD-MTR-10_2_0_0-10_100_1_0: "
+-A FORWARD -s 10.2.0.0/16 -d 10.100.1.0/24 -p udp --dport 33434:33534 -j ACCEPT
+-A FORWARD -s 10.3.0.0/16 -d 10.1.0.0/16 -p udp --dport 33434:33534 -j LOG --log-prefix "FWD-MTR-10_3_0_0-10_1_0_0: "
+-A FORWARD -s 10.3.0.0/16 -d 10.1.0.0/16 -p udp --dport 33434:33534 -j ACCEPT
+-A FORWARD -s 10.3.0.0/16 -d 10.2.0.0/16 -p udp --dport 33434:33534 -j LOG --log-prefix "FWD-MTR-10_3_0_0-10_2_0_0: "
+-A FORWARD -s 10.3.0.0/16 -d 10.2.0.0/16 -p udp --dport 33434:33534 -j ACCEPT
+-A FORWARD -s 10.3.0.0/16 -d 10.100.1.0/24 -p udp --dport 33434:33534 -j LOG --log-prefix "FWD-MTR-10_3_0_0-10_100_1_0: "
+-A FORWARD -s 10.3.0.0/16 -d 10.100.1.0/24 -p udp --dport 33434:33534 -j ACCEPT
+-A FORWARD -s 10.100.1.0/24 -d 10.1.0.0/16 -p udp --dport 33434:33534 -j LOG --log-prefix "FWD-MTR-10_100_1_0-10_1_0_0: "
+-A FORWARD -s 10.100.1.0/24 -d 10.1.0.0/16 -p udp --dport 33434:33534 -j ACCEPT
+-A FORWARD -s 10.100.1.0/24 -d 10.2.0.0/16 -p udp --dport 33434:33534 -j LOG --log-prefix "FWD-MTR-10_100_1_0-10_2_0_0: "
+-A FORWARD -s 10.100.1.0/24 -d 10.2.0.0/16 -p udp --dport 33434:33534 -j ACCEPT
+-A FORWARD -s 10.100.1.0/24 -d 10.3.0.0/16 -p udp --dport 33434:33534 -j LOG --log-prefix "FWD-MTR-10_100_1_0-10_3_0_0: "
+-A FORWARD -s 10.100.1.0/24 -d 10.3.0.0/16 -p udp --dport 33434:33534 -j ACCEPT
+-A FORWARD -s 10.1.0.0/16 -o eth0 -j LOG --log-prefix "FWD-INET-OUT-10_1_0_0: "
+-A FORWARD -s 10.1.0.0/16 -o eth0 -j ACCEPT
+-A FORWARD -s 10.2.0.0/16 -o eth0 -j LOG --log-prefix "FWD-INET-OUT-10_2_0_0: "
+-A FORWARD -s 10.2.0.0/16 -o eth0 -j ACCEPT
+-A FORWARD -s 10.3.0.0/16 -o eth0 -j LOG --log-prefix "FWD-INET-OUT-10_3_0_0: "
+-A FORWARD -s 10.3.0.0/16 -o eth0 -j ACCEPT
 -A FORWARD -j LOG --log-prefix "FORWARD-DROP: "
 -A FORWARD -j DROP
--A OUTPUT -o lo -j ACCEPT
--A OUTPUT -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
--A OUTPUT -p icmp -j ACCEPT
--A OUTPUT -p tcp -m tcp --sport 22 -j ACCEPT
--A OUTPUT -j DROP
--A HQ_MGMT_ACCESS -s 10.1.2.0/24 -p tcp -m multiport --dports 22,443,8080 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
--A HQ_MGMT_ACCESS -s 10.1.3.0/24 -p tcp -m multiport --dports 22,443 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
--A HQ_MGMT_ACCESS -s 10.1.10.0/24 -p udp -m multiport --dports 161,514 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
--A HQ_MGMT_ACCESS -j RETURN
--A HQ_LAN_FORWARD -m set --match-set HQ_TRUSTED_NETS src --match-set HQ_INTERNAL_SERVICES dst -j ACCEPT
--A HQ_LAN_FORWARD -s 10.1.0.0/16 -p tcp -m multiport --dports 80,443,8080,8443 -j ACCEPT
--A HQ_LAN_FORWARD -s 10.1.0.0/16 -p udp -m multiport --dports 53,123,514 -j ACCEPT
--A HQ_LAN_FORWARD -s 10.1.11.0/24 -d 10.1.3.0/24 -p tcp -m tcp --dport 3389 -j DROP
--A HQ_LAN_FORWARD -s 10.1.0.0/16 -d 10.1.0.0/16 -p icmp -m icmp --icmp-type 8 -j ACCEPT
--A HQ_LAN_FORWARD -s 10.1.0.0/16 -m limit --limit 10/min --limit-burst 5 -j LOG --log-prefix "HQ-LAN-ALLOW: " --log-level 6
--A HQ_LAN_FORWARD -j RETURN
--A WG_VPN_FORWARD -m set --match-set VPN_ALLOWED_PROTOCOLS src,dst,proto -j ACCEPT
--A WG_VPN_FORWARD -s 10.100.1.0/24 -d 10.0.0.0/8 -p tcp -m multiport --dports 22,80,443 -j ACCEPT
--A WG_VPN_FORWARD -s 10.100.1.0/24 -d 10.0.0.0/8 -p udp -m multiport --dports 53,123 -j ACCEPT
--A WG_VPN_FORWARD -s 10.100.1.0/24 -d 192.168.0.0/16 -j DROP
--A WG_VPN_FORWARD -s 10.100.1.0/24 -m limit --limit 5/min --limit-burst 3 -j LOG --log-prefix "VPN-FORWARD: " --log-level 6
--A WG_VPN_FORWARD -j RETURN
--A INET_FORWARD -m set --match-set HQ_WEB_USERS src -p tcp -m multiport --dports 80,443,8080,8443 -j ACCEPT
--A INET_FORWARD -m set --match-set HQ_DNS_USERS src -p udp -m udp --dport 53 -j ACCEPT
--A INET_FORWARD -s 10.1.3.0/24 -p tcp -m multiport --dports 25,465,587,993,995 -j ACCEPT
--A INET_FORWARD -s 10.1.10.0/24 -p tcp -m multiport --dports 22,443,9443 -j ACCEPT
--A INET_FORWARD -p tcp -m multiport --dports 135,139,445,1433,3389 -j DROP
--A INET_FORWARD -s 10.1.0.0/16 -p icmp -m icmp --icmp-type 8 -j ACCEPT
--A INET_FORWARD -s 10.1.0.0/16 -m limit --limit 20/min --limit-burst 10 -j LOG --log-prefix "INET-FORWARD: " --log-level 6
--A INET_FORWARD -j RETURN
 COMMIT
-# Completed on Fri Jun 21 14:30:15 2025
-# Generated by iptables-save v1.8.7 on Fri Jun 21 14:30:15 2025
+# Completed on Mon Jul  1 10:00:00 2025
+# Generated by iptables-save v1.8.7 on Mon Jul  1 10:00:00 2025
 *nat
 :PREROUTING ACCEPT [0:0]
 :INPUT ACCEPT [0:0]
 :OUTPUT ACCEPT [0:0]
 :POSTROUTING ACCEPT [0:0]
--A PREROUTING -i eth0 -d 203.0.113.10/32 -p tcp -m tcp --dport 80 -j DNAT --to-destination 10.1.3.10:80
--A PREROUTING -i eth0 -d 203.0.113.10/32 -p tcp -m tcp --dport 443 -j DNAT --to-destination 10.1.3.10:443
--A PREROUTING -i eth0 -d 203.0.113.10/32 -p tcp -m tcp --dport 25 -j DNAT --to-destination 10.1.3.20:25
--A PREROUTING -i eth0 -d 203.0.113.10/32 -p tcp -m tcp --dport 22 -j DNAT --to-destination 10.1.3.5:22
--A POSTROUTING -s 10.1.0.0/16 -o eth0 -j SNAT --to-source 203.0.113.10
--A POSTROUTING -s 10.100.1.1/32 -o wg0 -j MASQUERADE
--A POSTROUTING -s 10.100.1.0/24 -o eth0 -j SNAT --to-source 203.0.113.10
+-A PREROUTING -i eth0 -p tcp --dport 80 -j LOG --log-prefix "NAT-DNAT-HTTP: "
+-A PREROUTING -i eth0 -p tcp --dport 80 -j DNAT --to-destination 10.h.1.10
+-A POSTROUTING -s 10.1.0.0/16 -o eth0 -j LOG --log-prefix "NAT-MASQ-10_1_0_0: "
+-A POSTROUTING -s 10.1.0.0/16 -o eth0 -j MASQUERADE
+-A POSTROUTING -s 10.2.0.0/16 -o eth0 -j LOG --log-prefix "NAT-MASQ-10_2_0_0: "
+-A POSTROUTING -s 10.2.0.0/16 -o eth0 -j MASQUERADE
+-A POSTROUTING -s 10.3.0.0/16 -o eth0 -j LOG --log-prefix "NAT-MASQ-10_3_0_0: "
+-A POSTROUTING -s 10.3.0.0/16 -o eth0 -j MASQUERADE
 COMMIT
-# Completed on Fri Jun 21 14:30:15 2025
-# Generated by iptables-save v1.8.7 on Fri Jun 21 14:30:15 2025
+# Completed on Mon Jul  1 10:00:00 2025
+# Generated by iptables-save v1.8.7 on Mon Jul  1 10:00:00 2025
 *mangle
 :PREROUTING ACCEPT [0:0]
 :INPUT ACCEPT [0:0]
 :FORWARD ACCEPT [0:0]
 :OUTPUT ACCEPT [0:0]
 :POSTROUTING ACCEPT [0:0]
--A PREROUTING -p tcp -m multiport --dports 80,443 -j MARK --set-xmark 0x1/0xffffffff
--A PREROUTING -p tcp -m multiport --dports 22,3389 -j MARK --set-xmark 0x2/0xffffffff
--A PREROUTING -s 10.100.1.0/24 -i wg0 -j DSCP --set-dscp 0x2e
--A FORWARD -s 10.1.0.0/16 -i eth1 -o eth0 -m set --match-set HQ_HIGH_PRIORITY src -j MARK --set-xmark 0x10/0xffffffff
--A FORWARD -s 10.100.1.0/24 -i wg0 -j DSCP --set-dscp 0x2e
--A FORWARD -s 10.1.3.0/24 -i eth1 -o eth0 -j TOS --set-tos 0x10
--A POSTROUTING -o eth0 -j DSCP --set-dscp 0x00
+-A PREROUTING -p icmp -j LOG --log-prefix "MANGLE-MARK-ICMP: "
+-A PREROUTING -p icmp -j MARK --set-mark 0x1
+-A PREROUTING -p tcp --dport 22 -j LOG --log-prefix "MANGLE-MARK-22: "
+-A PREROUTING -p tcp --dport 22 -j MARK --set-mark 0x1
+-A PREROUTING -p tcp --dport 161 -j LOG --log-prefix "MANGLE-MARK-161: "
+-A PREROUTING -p tcp --dport 161 -j MARK --set-mark 0x1
+-A PREROUTING -p tcp --dport 443 -j LOG --log-prefix "MANGLE-MARK-443: "
+-A PREROUTING -p tcp --dport 443 -j MARK --set-mark 0x1
 COMMIT
-# Completed on Fri Jun 21 14:30:15 2025
+# Completed on Mon Jul  1 10:00:00 2025
 
 EXIT_CODE: 0
 === TSIM_SECTION_END:iptables_save ===
 
 === TSIM_SECTION_START:ipset_list ===
-TITLE: Ipset Lists and Membership
+TITLE: Ipset List Output
 COMMAND: /sbin/ipset list
-TIMESTAMP: 2025-06-21 14:30:15
+TIMESTAMP: 2025-07-01 10:00:00
 ---
-Name: HQ_TRUSTED_NETS
-Type: hash:net
-Revision: 6
-Header: family inet hashsize 1024 maxelem 65536
-Size in memory: 584
+Name: hq_10_1_1_0_24_hosts
+Type: bitmap:ip
+Revision: 3
+Header: bitmap:ip range 10.1.1.0/24 timeout 3600 counters comment
+Size in memory: 1048
 References: 1
-Number of entries: 6
+Default binding: 
+Number of entries: 0
 Members:
-10.1.1.0/24
-10.1.2.0/24
-10.1.3.0/24
-10.1.10.0/24
-10.1.11.0/24
-10.100.1.0/24
 
-Name: HQ_INTERNAL_SERVICES
-Type: hash:ip,port
-Revision: 5
-Header: family inet hashsize 1024 maxelem 65536
-Size in memory: 728
+Name: hq_10_1_2_0_24_hosts
+Type: bitmap:ip
+Revision: 3
+Header: bitmap:ip range 10.1.2.0/24 timeout 3600 counters comment
+Size in memory: 1048
 References: 1
-Number of entries: 12
+Default binding: 
+Number of entries: 0
 Members:
-10.1.3.10,tcp:80
-10.1.3.10,tcp:443
-10.1.3.10,tcp:8080
-10.1.3.20,tcp:25
-10.1.3.20,tcp:465
-10.1.3.20,tcp:587
-10.1.3.5,tcp:22
-10.1.3.15,tcp:53
-10.1.3.15,udp:53
-10.1.3.25,tcp:389
-10.1.3.25,tcp:636
-10.1.2.100,tcp:161
 
-Name: VPN_ALLOWED_PROTOCOLS
-Type: hash:net,net,port
-Revision: 0
-Header: family inet hashsize 1024 maxelem 65536
-Size in memory: 920
+Name: hq_mgmt_networks
+Type: bitmap:ip
+Revision: 3
+Header: bitmap:ip range 10.1.2.0-10.1.5.255 counters comment
+Size in memory: 1048
 References: 1
-Number of entries: 8
+Default binding: 
+Number of entries: 0
 Members:
-10.100.1.1/32,10.2.0.0/16,tcp:22
-10.100.1.1/32,10.2.0.0/16,tcp:80
-10.100.1.1/32,10.2.0.0/16,tcp:443
-10.100.1.1/32,10.3.0.0/16,tcp:22
-10.100.1.1/32,10.3.0.0/16,tcp:80
-10.100.1.1/32,10.3.0.0/16,tcp:443
-10.100.1.2/32,10.1.0.0/16,tcp:22
-10.100.1.3/32,10.1.0.0/16,tcp:22
 
-Name: HQ_WEB_USERS
-Type: hash:net
-Revision: 6
-Header: family inet hashsize 1024 maxelem 65536
-Size in memory: 456
+Name: hq_admin_workstations
+Type: bitmap:ip
+Revision: 3
+Header: bitmap:ip range 10.1.3.10-10.1.3.20 timeout 7200
+Size in memory: 1048
 References: 1
-Number of entries: 4
+Default binding: 
+Number of entries: 0
 Members:
-10.1.1.0/24
-10.1.2.0/24
-10.1.10.0/24
-10.1.11.0/24
 
-Name: HQ_DNS_USERS
-Type: hash:net
-Revision: 6
-Header: family inet hashsize 1024 maxelem 65536
-Size in memory: 520
+Name: hq_internet_ranges
+Type: bitmap:ip
+Revision: 3
+Header: bitmap:ip range 8.8.8.0/24 timeout 1800
+Size in memory: 1048
 References: 1
-Number of entries: 5
+Default binding: 
+Number of entries: 0
 Members:
-10.1.1.0/24
-10.1.2.0/24
-10.1.3.0/24
-10.1.10.0/24
-10.1.11.0/24
 
-Name: HQ_HIGH_PRIORITY
-Type: hash:ip
-Revision: 4
-Header: family inet hashsize 1024 maxelem 65536
-Size in memory: 296
+Name: hq_dns_servers
+Type: bitmap:ip
+Revision: 3
+Header: bitmap:ip range 1.1.1.0-1.1.1.10 counters
+Size in memory: 1048
 References: 1
-Number of entries: 8
+Default binding: 
+Number of entries: 0
 Members:
-10.1.3.5
-10.1.3.10
-10.1.3.15
-10.1.3.20
-10.1.10.5
-10.1.10.10
-10.1.11.5
-10.1.2.100
 
-Name: HQ_BLACKLIST
-Type: hash:net
-Revision: 6
-Header: family inet hashsize 1024 maxelem 65536
-Size in memory: 424
-References: 0
-Number of entries: 3
+Name: hq_ntp_servers
+Type: bitmap:ip
+Revision: 3
+Header: bitmap:ip range 129.6.15.28-129.6.15.30
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
 Members:
-192.168.1.0/24
-172.16.0.0/16
-169.254.0.0/16
 
-Name: HQ_VIP_PORTS
+Name: hq_10_1_1_0_24_secure_clients
+Type: bitmap:ip,mac
+Revision: 3
+Header: bitmap:ip,mac range 10.1.1.0/24 timeout 7200 counters comment
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: hq_10_1_2_0_24_secure_clients
+Type: bitmap:ip,mac
+Revision: 3
+Header: bitmap:ip,mac range 10.1.2.0/24 timeout 7200 counters comment
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: hq_trusted_devices
+Type: bitmap:ip,mac
+Revision: 3
+Header: bitmap:ip,mac range 10.h.1.0/24 counters comment
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: hq_web_ports
 Type: bitmap:port
 Revision: 3
-Header: range 0-65535
-Size in memory: 8264
-References: 0
-Number of entries: 12
+Header: bitmap:port range 80-8080 timeout 1800 comment
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
 Members:
-22
-25
-53
-80
-110
-143
-443
-465
-587
-993
-995
-8080
 
-Name: HQ_MGMT_IPS
-Type: hash:ip,mac
-Revision: 1
-Header: family inet hashsize 1024 maxelem 65536
-Size in memory: 424
-References: 0
-Number of entries: 5
+Name: hq_database_ports
+Type: bitmap:port
+Revision: 3
+Header: bitmap:port range 3306-5432 counters comment
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
 Members:
-10.1.2.100,52:54:00:aa:bb:cc
-10.1.3.5,52:54:00:dd:ee:ff
-10.1.10.5,52:54:00:11:22:33
-10.1.11.5,52:54:00:44:55:66
-10.1.1.100,52:54:00:77:88:99
 
-Name: HQ_TIME_RESTRICTED
+Name: hq_management_ports
+Type: bitmap:port
+Revision: 3
+Header: bitmap:port range 22-443 comment
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: hq_monitoring_ports
+Type: bitmap:port
+Revision: 3
+Header: bitmap:port range 161-162 timeout 3600
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: hq_mail_ports
+Type: bitmap:port
+Revision: 3
+Header: bitmap:port range 25-995 timeout 7200
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: hq_file_ports
+Type: bitmap:port
+Revision: 3
+Header: bitmap:port range 445-2049 counters
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: hq_backup_ports
+Type: bitmap:port
+Revision: 3
+Header: bitmap:port range 873-10080 timeout 3600
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: hq_ephemeral_ports
+Type: bitmap:port
+Revision: 3
+Header: bitmap:port range 32768-65535 timeout 300
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: hq_high_ports
+Type: bitmap:port
+Revision: 3
+Header: bitmap:port range 8000-9999 timeout 1800 counters
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: hq_vpn_ports
+Type: bitmap:port
+Revision: 3
+Header: bitmap:port range 500-4500 counters comment
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: hq_tunnel_ports
+Type: bitmap:port
+Revision: 3
+Header: bitmap:port range 1194-1200 timeout 7200
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: hq_management_ips
+Type: hash:ip
+Revision: 3
+Header: hash:ip family inet timeout 3600 counters comment
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: hq_trusted_sources
+Type: hash:ip
+Revision: 3
+Header: hash:ip family inet hashsize 1024 comment
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: hq_monitoring_agents
+Type: hash:ip
+Revision: 3
+Header: hash:ip family inet timeout 1800 counters
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: hq_admin_workstations
+Type: hash:ip
+Revision: 3
+Header: hash:ip family inet timeout 7200 comment
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: hq_blacklisted_ips
+Type: hash:ip
+Revision: 3
+Header: hash:ip family inet comment maxelem 65536
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: hq_suspicious_sources
+Type: hash:ip
+Revision: 3
+Header: hash:ip family inet timeout 3600 maxelem 4096
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: hq_rate_limited_ips
+Type: hash:ip
+Revision: 3
+Header: hash:ip family inet timeout 900 counters
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: hq_dns_resolvers
+Type: hash:ip
+Revision: 3
+Header: hash:ip family inet comment maxelem 256
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: hq_ntp_servers
+Type: hash:ip
+Revision: 3
+Header: hash:ip family inet timeout 86400
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: hq_log_collectors
+Type: hash:ip
+Revision: 3
+Header: hash:ip family inet timeout 3600 counters
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: hq_external_partners
+Type: hash:ip
+Revision: 3
+Header: hash:ip family inet timeout 7200 comment
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: hq_cdn_networks
+Type: hash:ip
+Revision: 3
+Header: hash:ip family inet maxelem 1024
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: hq_vpn_endpoints
+Type: hash:ip
+Revision: 3
+Header: hash:ip family inet timeout 3600 counters
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: hq_known_devices
+Type: hash:mac
+Revision: 3
+Header: hash:mac timeout 86400 counters comment
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: hq_infrastructure_macs
+Type: hash:mac
+Revision: 3
+Header: hash:mac maxelem 1024 comment
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: hq_approved_devices
+Type: hash:mac
+Revision: 3
+Header: hash:mac timeout 7200 counters
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: hq_quarantined_macs
+Type: hash:mac
+Revision: 3
+Header: hash:mac timeout 3600 comment
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: hq_blocked_devices
+Type: hash:mac
+Revision: 3
+Header: hash:mac comment maxelem 4096
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: hq_internal_networks
+Type: hash:net
+Revision: 3
+Header: hash:net family inet maxelem 256 comment
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: hq_trusted_networks
+Type: hash:net
+Revision: 3
+Header: hash:net family inet timeout 7200 counters
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: hq_management_networks
+Type: hash:net
+Revision: 3
+Header: hash:net family inet comment
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: hq_external_partners
+Type: hash:net
+Revision: 3
+Header: hash:net family inet timeout 7200 comment
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: hq_cloud_networks
+Type: hash:net
+Revision: 3
+Header: hash:net family inet maxelem 1024
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: hq_cdn_ranges
+Type: hash:net
+Revision: 3
+Header: hash:net family inet timeout 3600
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: hq_vpn_networks
+Type: hash:net
+Revision: 3
+Header: hash:net family inet counters comment
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: hq_site_networks
+Type: hash:net
+Revision: 3
+Header: hash:net family inet timeout 1800
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: hq_blocked_networks
+Type: hash:net
+Revision: 3
+Header: hash:net family inet comment maxelem 4096
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: hq_quarantine_networks
+Type: hash:net
+Revision: 3
+Header: hash:net family inet timeout 3600
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: hq_internet_ranges
+Type: hash:net
+Revision: 3
+Header: hash:net family inet maxelem 2048
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: hq_isp_networks
+Type: hash:net
+Revision: 3
+Header: hash:net family inet comment
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: hq_peering_networks
+Type: hash:net
+Revision: 3
+Header: hash:net family inet timeout 7200
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: hq_web_services
+Type: hash:ip,port
+Revision: 3
+Header: hash:ip,port family inet timeout 7200 counters comment
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: hq_database_access
+Type: hash:ip,port
+Revision: 3
+Header: hash:ip,port family inet counters comment
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: hq_management_access
+Type: hash:ip,port
+Revision: 3
+Header: hash:ip,port family inet comment maxelem 1024
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: hq_monitoring_endpoints
+Type: hash:ip,port
+Revision: 3
+Header: hash:ip,port family inet timeout 1800
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: hq_api_endpoints
+Type: hash:ip,port
+Revision: 3
+Header: hash:ip,port family inet timeout 3600 counters
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: hq_file_services
+Type: hash:ip,port
+Revision: 3
+Header: hash:ip,port family inet comment
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: hq_backup_services
+Type: hash:ip,port
+Revision: 3
+Header: hash:ip,port family inet timeout 7200
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: hq_auth_services
+Type: hash:ip,port
+Revision: 3
+Header: hash:ip,port family inet timeout 1800 counters
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: hq_log_services
+Type: hash:ip,port
+Revision: 3
+Header: hash:ip,port family inet comment
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: hq_vpn_services
+Type: hash:ip,port
+Revision: 3
+Header: hash:ip,port family inet timeout 3600 comment
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: hq_public_services
+Type: hash:ip,port
+Revision: 3
+Header: hash:ip,port family inet counters
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: hq_interface_networks
+Type: hash:net,iface
+Revision: 3
+Header: hash:net,iface family inet comment
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: hq_vlan_interfaces
+Type: hash:net,iface
+Revision: 3
+Header: hash:net,iface family inet timeout 1800 counters
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: hq_trusted_vlans
+Type: hash:net,iface
+Revision: 3
+Header: hash:net,iface family inet comment
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: hq_dmz_interfaces
+Type: hash:net,iface
+Revision: 3
+Header: hash:net,iface family inet counters comment
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: hq_secure_zones
+Type: hash:net,iface
+Revision: 3
+Header: hash:net,iface family inet timeout 3600
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: hq_external_interfaces
+Type: hash:net,iface
+Revision: 3
+Header: hash:net,iface family inet comment
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: hq_vpn_interfaces
+Type: hash:net,iface
+Revision: 3
+Header: hash:net,iface family inet timeout 7200
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: hq_service_matrix
+Type: hash:ip,port,net
+Revision: 3
+Header: hash:ip,port,net family inet timeout 600 maxelem 2048
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: hq_access_rules
+Type: hash:ip,port,net
+Revision: 3
+Header: hash:ip,port,net family inet counters comment
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: hq_proxy_rules
 Type: hash:ip,port,ip
-Revision: 1
-Header: family inet hashsize 1024 maxelem 65536
-Size in memory: 648
-References: 0
-Number of entries: 6
+Revision: 3
+Header: hash:ip,port,ip family inet timeout 1800 counters
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
 Members:
-10.1.11.0/24,tcp:80,8.8.8.8
-10.1.11.0/24,tcp:443,8.8.8.8
-10.1.11.0/24,tcp:80,1.1.1.1
-10.1.11.0/24,tcp:443,1.1.1.1
-10.1.10.0/24,tcp:22,10.1.3.0/24
-10.1.2.0/24,tcp:3389,10.1.3.0/24
+
+Name: hq_nat_rules
+Type: hash:ip,port,ip
+Revision: 3
+Header: hash:ip,port,ip family inet comment maxelem 4096
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: hq_routing_matrix
+Type: hash:net,port,net
+Revision: 3
+Header: hash:net,port,net family inet counters comment
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: hq_firewall_rules
+Type: hash:ip,port,net
+Revision: 3
+Header: hash:ip,port,net family inet timeout 3600 comment
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
+Name: hq_load_balance_rules
+Type: hash:ip,port,ip
+Revision: 3
+Header: hash:ip,port,ip family inet counters
+Size in memory: 1048
+References: 1
+Default binding: 
+Number of entries: 0
+Members:
+
 
 EXIT_CODE: 0
 === TSIM_SECTION_END:ipset_list ===
 
-=== TSIM_SECTION_START:conntrack ===
+=== TSIM_SECTION_START:ipset_save ===
+TITLE: Ipset Save Output
+COMMAND: /sbin/ipset save
+TIMESTAMP: 2025-07-01 10:00:00
+---
+create hq_10_1_1_0_24_hosts bitmap:ip range 10.1.1.0/24 timeout 3600 counters comment\ncreate hq_10_1_2_0_24_hosts bitmap:ip range 10.1.2.0/24 timeout 3600 counters comment\ncreate hq_mgmt_networks bitmap:ip range 10.1.2.0-10.1.5.255 counters comment\ncreate hq_admin_workstations bitmap:ip range 10.1.3.10-10.1.3.20 timeout 7200\ncreate hq_internet_ranges bitmap:ip range 8.8.8.0/24 timeout 1800\ncreate hq_dns_servers bitmap:ip range 1.1.1.0-1.1.1.10 counters\ncreate hq_ntp_servers bitmap:ip range 129.6.15.28-129.6.15.30\ncreate hq_10_1_1_0_24_secure_clients bitmap:ip,mac range 10.1.1.0/24 timeout 7200 counters comment\ncreate hq_10_1_2_0_24_secure_clients bitmap:ip,mac range 10.1.2.0/24 timeout 7200 counters comment\ncreate hq_trusted_devices bitmap:ip,mac range 10.h.1.0/24 counters comment\ncreate hq_web_ports bitmap:port range 80-8080 timeout 1800 comment\ncreate hq_database_ports bitmap:port range 3306-5432 counters comment\ncreate hq_management_ports bitmap:port range 22-443 comment\ncreate hq_monitoring_ports bitmap:port range 161-162 timeout 3600\ncreate hq_mail_ports bitmap:port range 25-995 timeout 7200\ncreate hq_file_ports bitmap:port range 445-2049 counters\ncreate hq_backup_ports bitmap:port range 873-10080 timeout 3600\ncreate hq_ephemeral_ports bitmap:port range 32768-65535 timeout 300\ncreate hq_high_ports bitmap:port range 8000-9999 timeout 1800 counters\ncreate hq_vpn_ports bitmap:port range 500-4500 counters comment\ncreate hq_tunnel_ports bitmap:port range 1194-1200 timeout 7200\ncreate hq_management_ips hash:ip family inet timeout 3600 counters comment\ncreate hq_trusted_sources hash:ip family inet hashsize 1024 comment\ncreate hq_monitoring_agents hash:ip family inet timeout 1800 counters\ncreate hq_admin_workstations hash:ip family inet timeout 7200 comment\ncreate hq_blacklisted_ips hash:ip family inet comment maxelem 65536\ncreate hq_suspicious_sources hash:ip family inet timeout 3600 maxelem 4096\ncreate hq_rate_limited_ips hash:ip family inet timeout 900 counters\ncreate hq_dns_resolvers hash:ip family inet comment maxelem 256\ncreate hq_ntp_servers hash:ip family inet timeout 86400\ncreate hq_log_collectors hash:ip family inet timeout 3600 counters\ncreate hq_external_partners hash:ip family inet timeout 7200 comment\ncreate hq_cdn_networks hash:ip family inet maxelem 1024\ncreate hq_vpn_endpoints hash:ip family inet timeout 3600 counters\ncreate hq_known_devices hash:mac timeout 86400 counters comment\ncreate hq_infrastructure_macs hash:mac maxelem 1024 comment\ncreate hq_approved_devices hash:mac timeout 7200 counters\ncreate hq_quarantined_macs hash:mac timeout 3600 comment\ncreate hq_blocked_devices hash:mac comment maxelem 4096\ncreate hq_internal_networks hash:net family inet maxelem 256 comment\ncreate hq_trusted_networks hash:net family inet timeout 7200 counters\ncreate hq_management_networks hash:net family inet comment\ncreate hq_external_partners hash:net family inet timeout 7200 comment\ncreate hq_cloud_networks hash:net family inet maxelem 1024\ncreate hq_cdn_ranges hash:net family inet timeout 3600\ncreate hq_vpn_networks hash:net family inet counters comment\ncreate hq_site_networks hash:net family inet timeout 1800\ncreate hq_blocked_networks hash:net family inet comment maxelem 4096\ncreate hq_quarantine_networks hash:net family inet timeout 3600\ncreate hq_internet_ranges hash:net family inet maxelem 2048\ncreate hq_isp_networks hash:net family inet comment\ncreate hq_peering_networks hash:net family inet timeout 7200\ncreate hq_web_services hash:ip,port family inet timeout 7200 counters comment\ncreate hq_database_access hash:ip,port family inet counters comment\ncreate hq_management_access hash:ip,port family inet comment maxelem 1024\ncreate hq_monitoring_endpoints hash:ip,port family inet timeout 1800\ncreate hq_api_endpoints hash:ip,port family inet timeout 3600 counters\ncreate hq_file_services hash:ip,port family inet comment\ncreate hq_backup_services hash:ip,port family inet timeout 7200\ncreate hq_auth_services hash:ip,port family inet timeout 1800 counters\ncreate hq_log_services hash:ip,port family inet comment\ncreate hq_vpn_services hash:ip,port family inet timeout 3600 comment\ncreate hq_public_services hash:ip,port family inet counters\ncreate hq_interface_networks hash:net,iface family inet comment\ncreate hq_vlan_interfaces hash:net,iface family inet timeout 1800 counters\ncreate hq_trusted_vlans hash:net,iface family inet comment\ncreate hq_dmz_interfaces hash:net,iface family inet counters comment\ncreate hq_secure_zones hash:net,iface family inet timeout 3600\ncreate hq_external_interfaces hash:net,iface family inet comment\ncreate hq_vpn_interfaces hash:net,iface family inet timeout 7200\ncreate hq_service_matrix hash:ip,port,net family inet timeout 600 maxelem 2048\ncreate hq_access_rules hash:ip,port,net family inet counters comment\ncreate hq_proxy_rules hash:ip,port,ip family inet timeout 1800 counters\ncreate hq_nat_rules hash:ip,port,ip family inet comment maxelem 4096\ncreate hq_routing_matrix hash:net,port,net family inet counters comment\ncreate hq_firewall_rules hash:ip,port,net family inet timeout 3600 comment\ncreate hq_load_balance_rules hash:ip,port,ip family inet counters\nadd hq_10_1_1_0_24_hosts 10.1.1.10\nadd hq_10_1_1_0_24_hosts 10.1.1.11\nadd hq_10_1_1_0_24_hosts 10.1.1.12\nadd hq_management_ips 10.h.10.5\nadd hq_management_ips 10.h.10.6\nadd hq_trusted_sources 8.8.8.8\nadd hq_trusted_sources 1.1.1.1\nadd hq_internal_networks 10.h.0.0/16\nadd hq_vpn_networks 10.100.1.0/24\nadd hq_trusted_devices 10.1.1.10,52:54:00:12:34:56\nadd hq_trusted_devices 10.1.1.11,52:54:00:12:34:57\nadd hq_web_services 10.h.3.10,80\nadd hq_web_services 10.h.3.10,443\nadd hq_database_access 10.h.20.5,3306\nadd hq_database_access 10.h.20.5,5432\nadd hq_web_ports 80\nadd hq_web_ports 443\nadd hq_web_ports 8080\nadd hq_database_ports 3306\nadd hq_database_ports 5432\nCOMMIT
+
+EXIT_CODE: 0
+=== TSIM_SECTION_END:ipset_save ===\n\n=== TSIM_SECTION_START:conntrack ===
 TITLE: Connection Tracking Entries (first 10)
 COMMAND: head -10 /proc/net/nf_conntrack
 TIMESTAMP: 2025-06-21 14:30:15

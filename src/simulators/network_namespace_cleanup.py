@@ -55,12 +55,14 @@ class NetworkNamespaceCleanup:
         self.verbose = verbose
         self.setup_logging()
         
-        # Expected namespace patterns from the test network
+        # Dynamic router discovery from facts
+        self.known_routers: Set[str] = set()
+        self.load_router_names_from_facts()
+        
+        # General namespace patterns (no hardcoded router names)
         self.namespace_patterns = [
-            r'^hq-\w+$',      # hq-gw, hq-core, hq-dmz, hq-lab
-            r'^br-\w+$',      # br-gw, br-core, br-wifi  
-            r'^dc-\w+$',      # dc-gw, dc-core, dc-srv
             r'^netsim$',      # Simulation namespace
+            r'^hidden-mesh$', # Hidden mesh infrastructure namespace
             r'^pub[a-f0-9]+-.*$',  # Temporary public IP hosts (pub{hash}-{router})
             r'^p[a-f0-9]+$',  # Temporary public IP hosts (shortened format)
             r'^h[a-f0-9]+$',  # Temporary dynamic hosts
@@ -97,6 +99,45 @@ class NetworkNamespaceCleanup:
             datefmt='%H:%M:%S'
         )
         self.logger = logging.getLogger(__name__)
+        
+    def load_router_names_from_facts(self):
+        """Load router names dynamically from facts directories."""
+        self.known_routers = set()
+        
+        # Check multiple possible facts locations
+        facts_locations = [
+            os.environ.get('TRACEROUTE_SIMULATOR_FACTS', 'tests/tsim_facts'),
+            os.environ.get('TRACEROUTE_SIMULATOR_RAW_FACTS', 'tests/raw_facts'),
+            '/tmp/traceroute_test_output',
+            'tests/tsim_facts',
+            'tests/raw_facts'
+        ]
+        
+        for facts_dir in facts_locations:
+            if not facts_dir:
+                continue
+                
+            facts_path = Path(facts_dir)
+            if not facts_path.exists():
+                continue
+                
+            self.logger.debug(f"Checking facts directory: {facts_path}")
+            
+            # Look for JSON facts files
+            for json_file in facts_path.glob("*.json"):
+                if json_file.name.endswith('_metadata.json'):
+                    continue  # Skip metadata files
+                router_name = json_file.stem
+                self.known_routers.add(router_name)
+                self.logger.debug(f"Found router from JSON: {router_name}")
+            
+            # Look for raw facts files
+            for raw_file in facts_path.glob("*_facts.txt"):
+                router_name = raw_file.stem.replace('_facts', '')
+                self.known_routers.add(router_name)
+                self.logger.debug(f"Found router from raw facts: {router_name}")
+        
+        self.logger.info(f"Discovered {len(self.known_routers)} routers from facts: {sorted(self.known_routers)}")
         
     def check_command_availability(self, command: str) -> bool:
         """Check if a command is available on the system."""
@@ -152,6 +193,11 @@ class NetworkNamespaceCleanup:
         Returns:
             True if namespace is part of our simulation
         """
+        # Check if it's a known router from facts
+        if namespace in self.known_routers:
+            return True
+            
+        # Check general patterns
         for pattern in self.namespace_patterns:
             if re.match(pattern, namespace):
                 return True
@@ -201,11 +247,25 @@ class NetworkNamespaceCleanup:
                     if veth_match:
                         interface = veth_match.group(1)
                         # Check if it looks like a simulation interface
-                        # New patterns: router-interface (hq-gw-eth1, dc-srv-eth0, etc.) or bridge veths (b100r0, b101r1, etc.)
-                        if (any(router in interface for router in ['hq-', 'br-', 'dc-']) or 
-                            re.match(r'^b\d+r\d+$', interface) or
-                            re.match(r'^wg-[a-z]+-[a-z]+$', interface) or  # WireGuard veth interfaces
-                            re.match(r'^v\d{3}$', interface)):
+                        # Dynamic router detection + hidden mesh patterns
+                        is_simulation_veth = False
+                        
+                        # Check if interface belongs to known routers
+                        for router_name in self.known_routers:
+                            if interface.startswith(f"{router_name}-"):
+                                is_simulation_veth = True
+                                break
+                        
+                        # Check general simulation patterns
+                        if not is_simulation_veth:
+                            if (re.match(r'^b\d+r\d+$', interface) or
+                                re.match(r'^wg-[a-z]+-[a-z]+$', interface) or  # WireGuard veth interfaces
+                                re.match(r'^v\d{3}$', interface) or
+                                re.match(r'^r\d{2}\w+[rh]$', interface) or  # New compressed naming: r00eth0r, r01wg0h, etc.
+                                '-router' in interface or '-hidden' in interface):  # Legacy hidden mesh veth pairs
+                                is_simulation_veth = True
+                        
+                        if is_simulation_veth:
                             self.found_veths.add(interface)
                             self.logger.debug(f"Found simulation veth: {interface}")
             else:
@@ -537,9 +597,9 @@ Verbosity Levels:
   
 Safety:
   This script only removes namespaces matching simulation patterns:
-  - hq-* (hq-gw, hq-core, hq-dmz, hq-lab)
-  - br-* (br-gw, br-core, br-wifi)
-  - dc-* (dc-gw, dc-core, dc-srv)
+  - Router namespaces discovered from facts files
+  - Simulation infrastructure namespaces (hidden-mesh, netsim)
+  - Test and temporary host namespaces
   
   System namespaces and other network configuration are preserved.
         """

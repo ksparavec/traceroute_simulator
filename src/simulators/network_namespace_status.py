@@ -421,7 +421,7 @@ class NetworkNamespaceStatus:
         return '\n'.join(output_lines)
         
     def show_routes(self, namespace: str) -> str:
-        """Show routing table with original interface names."""
+        """Show all routing tables dynamically discovered from policy rules."""
         if namespace not in self.available_namespaces:
             # For non-existent namespaces, we can't determine the type, so use generic term
             if namespace in self.hosts:
@@ -430,15 +430,84 @@ class NetworkNamespaceStatus:
                 return f"Router {namespace} namespace not found"
             else:
                 return f"Namespace {namespace} not found"
+        
+        # Dynamically discover active routing tables from policy rules
+        discovered_tables = self._discover_routing_tables(namespace)
+        
+        sections = []
+        
+        for table_id, table_name in discovered_tables:
+            if table_name == 'main':
+                sections.append("Main routing table:")
+                result = self.run_command("ip route show", namespace=namespace, check=False)
+            else:
+                sections.append(f"Table {table_id} ({table_name}):")
+                result = self.run_command(f"ip route show table {table_id}", namespace=namespace, check=False)
             
-        result = self.run_command("ip route show", namespace=namespace, check=False)
+            if result.returncode == 0 and result.stdout.strip():
+                sections.append(self._translate_interface_names(result.stdout))
+            else:
+                sections.append(f"Failed to get table {table_id}")
+            
+            sections.append("")  # Add blank line between tables
+        
+        return '\n'.join(sections).rstrip()
+    
+    def _discover_routing_tables(self, namespace: str):
+        """Dynamically discover active routing tables from ip rule show output."""
+        discovered_tables = []
+        seen_tables = set()
+        
+        # Get policy rules to discover active tables
+        result = self.run_command("ip rule show", namespace=namespace, check=False)
         if result.returncode != 0:
-            return f"Failed to get routing information for {namespace}"
-            
-        # Parse and translate interface names in routes
-        output_lines = []
+            # Fallback to main table only
+            return [('main', 'main')]
+        
+        import re
         
         for line in result.stdout.split('\n'):
+            line = line.strip()
+            if not line:
+                continue
+            
+            # Look for table references in policy rules
+            # Examples: "lookup main", "table 100", "lookup local"
+            table_match = re.search(r'(?:lookup|table)\s+(\w+)', line)
+            if table_match:
+                table_ref = table_match.group(1)
+                
+                # Skip system tables we don't want to show
+                if table_ref in ['local', 'default']:
+                    continue
+                
+                # Determine table ID and name
+                if table_ref == 'main':
+                    table_id = 'main'
+                    table_name = 'main'
+                elif table_ref.isdigit():
+                    table_id = table_ref
+                    table_name = f"table_{table_ref}"
+                else:
+                    # Named table, try to resolve to number or use name
+                    table_id = table_ref
+                    table_name = table_ref
+                
+                if table_id not in seen_tables:
+                    discovered_tables.append((table_id, table_name))
+                    seen_tables.add(table_id)
+        
+        # Ensure main table is included if not found in rules
+        if 'main' not in seen_tables:
+            discovered_tables.insert(0, ('main', 'main'))
+        
+        return discovered_tables
+    
+    def _translate_interface_names(self, route_output: str) -> str:
+        """Helper method to translate interface names in routing output."""
+        output_lines = []
+        
+        for line in route_output.split('\n'):
             if not line.strip():
                 continue
                 
@@ -539,6 +608,103 @@ class NetworkNamespaceStatus:
             
         return '\n'.join(summary_lines)
         
+    def show_iptables(self, namespace: str) -> str:
+        """Show iptables configuration."""
+        if namespace not in self.available_namespaces:
+            if namespace in self.hosts:
+                return f"Host {namespace} namespace not found"
+            elif namespace in self.routers:
+                return f"Router {namespace} namespace not found"
+            else:
+                return f"Namespace {namespace} not found"
+        
+        result = self.run_command("iptables -L -n -v", namespace=namespace, check=False)
+        if result.returncode != 0:
+            return f"Failed to get iptables information for {namespace}"
+        
+        return result.stdout
+    
+    def show_iptables_nat(self, namespace: str) -> str:
+        """Show iptables NAT table."""
+        if namespace not in self.available_namespaces:
+            if namespace in self.hosts:
+                return f"Host {namespace} namespace not found"
+            elif namespace in self.routers:
+                return f"Router {namespace} namespace not found"
+            else:
+                return f"Namespace {namespace} not found"
+        
+        result = self.run_command("iptables -t nat -L -n -v", namespace=namespace, check=False)
+        if result.returncode != 0:
+            return f"Failed to get iptables NAT information for {namespace}"
+        
+        return result.stdout
+    
+    def show_iptables_mangle(self, namespace: str) -> str:
+        """Show iptables mangle table."""
+        if namespace not in self.available_namespaces:
+            if namespace in self.hosts:
+                return f"Host {namespace} namespace not found"
+            elif namespace in self.routers:
+                return f"Router {namespace} namespace not found"
+            else:
+                return f"Namespace {namespace} not found"
+        
+        result = self.run_command("iptables -t mangle -L -n -v", namespace=namespace, check=False)
+        if result.returncode != 0:
+            return f"Failed to get iptables mangle information for {namespace}"
+        
+        return result.stdout
+    
+    def show_ipsets(self, namespace: str) -> str:
+        """Show ipset configuration."""
+        if namespace not in self.available_namespaces:
+            if namespace in self.hosts:
+                return f"Host {namespace} namespace not found"
+            elif namespace in self.routers:
+                return f"Router {namespace} namespace not found"
+            else:
+                return f"Namespace {namespace} not found"
+        
+        result = self.run_command("ipset list", namespace=namespace, check=False)
+        if result.returncode != 0:
+            return f"No ipsets configured in {namespace} or ipset command failed"
+        
+        return result.stdout
+    
+    def show_routing_tables(self, namespace: str) -> str:
+        """Show all routing tables dynamically discovered from policy rules."""
+        # Use the same dynamic discovery logic as show_routes but without interface name translation
+        if namespace not in self.available_namespaces:
+            if namespace in self.hosts:
+                return f"Host {namespace} namespace not found"
+            elif namespace in self.routers:
+                return f"Router {namespace} namespace not found"
+            else:
+                return f"Namespace {namespace} not found"
+        
+        # Dynamically discover active routing tables from policy rules
+        discovered_tables = self._discover_routing_tables(namespace)
+        
+        sections = []
+        
+        for table_id, table_name in discovered_tables:
+            if table_name == 'main':
+                sections.append("Main routing table:")
+                result = self.run_command("ip route show", namespace=namespace, check=False)
+            else:
+                sections.append(f"Table {table_id} ({table_name}):")
+                result = self.run_command(f"ip route show table {table_id}", namespace=namespace, check=False)
+            
+            if result.returncode == 0 and result.stdout.strip():
+                sections.append(result.stdout)
+            else:
+                sections.append(f"Failed to get table {table_id}")
+            
+            sections.append("")  # Add blank line between tables
+        
+        return '\n'.join(sections).rstrip()
+
     def show_all_configuration(self, namespace: str) -> str:
         """Show complete configuration for namespace."""
         if namespace not in self.available_namespaces:
@@ -557,13 +723,29 @@ class NetworkNamespaceStatus:
         sections.append(f"=== {namespace} {entity_type} INTERFACES ===")
         sections.append(self.show_interfaces(namespace))
         
-        # Routes
-        sections.append(f"\n=== {namespace} {entity_type} ROUTES ===")
-        sections.append(self.show_routes(namespace))
+        # All Routes (including additional tables)
+        sections.append(f"\n=== {namespace} {entity_type} ROUTING TABLES ===")
+        sections.append(self.show_routing_tables(namespace))
         
-        # Rules
-        sections.append(f"\n=== {namespace} {entity_type} RULES ===")
+        # Policy Rules
+        sections.append(f"\n=== {namespace} {entity_type} POLICY RULES ===")
         sections.append(self.show_rules(namespace))
+        
+        # Iptables Filter table
+        sections.append(f"\n=== {namespace} {entity_type} IPTABLES FILTER ===")
+        sections.append(self.show_iptables(namespace))
+        
+        # Iptables NAT table
+        sections.append(f"\n=== {namespace} {entity_type} IPTABLES NAT ===")
+        sections.append(self.show_iptables_nat(namespace))
+        
+        # Iptables Mangle table
+        sections.append(f"\n=== {namespace} {entity_type} IPTABLES MANGLE ===")
+        sections.append(self.show_iptables_mangle(namespace))
+        
+        # Ipsets
+        sections.append(f"\n=== {namespace} {entity_type} IPSETS ===")
+        sections.append(self.show_ipsets(namespace))
         
         return '\n'.join(sections)
         

@@ -17,7 +17,7 @@ REQUIRED_MODULES := json sys argparse ipaddress os glob typing subprocess re dif
 
 # Colors removed for better terminal compatibility
 
-.PHONY: help check-deps test test-iptables-enhanced test-policy-routing test-ipset-enhanced test-raw-facts-loading test-mtr-options test-network fetch-routing-data clean tsim ifa netsetup nettest netclean netshow netstatus test-namespace hostadd hostdel hostlist hostclean netnsclean service-start service-stop service-restart service-status service-test service-clean test-services svctest svcstart svcstop svclist svcclean
+.PHONY: help check-deps test test-iptables-enhanced test-policy-routing test-ipset-enhanced test-raw-facts-loading test-mtr-options test-iptables-logging test-network fetch-routing-data clean tsim ifa netsetup nettest netclean netshow netstatus test-namespace hostadd hostdel hostlist hostclean netnsclean service-start service-stop service-restart service-status service-test service-clean test-services svctest svcstart svcstop svclist svcclean
 
 # Default target
 help:
@@ -41,6 +41,7 @@ help:
 	@echo "netclean          - Clean up namespace network simulation (requires sudo, ARGS='-v/-f/--force' for options)"
 	@echo "test-iptables-enhanced - Test enhanced iptables rules for ping/mtr connectivity"
 	@echo "test-policy-routing   - Test enhanced policy routing with multiple routing tables"
+	@echo "test-iptables-logging - Test iptables logging implementation with comprehensive log analysis"
 	@echo "test-namespace    - Run namespace simulation tests independently (requires sudo and completed 'make test')"
 	@echo "test-network      - Run comprehensive network connectivity tests (requires sudo, takes 3-5 minutes)"
 	@echo "hostadd           - Add dynamic host to network (e.g., make hostadd ARGS='--host web1 --primary-ip 10.1.1.100/24 --connect-to hq-gw')"
@@ -847,6 +848,31 @@ test-mtr-options:
 	@echo "   - Advanced options: timeout, packet size, intervals"
 	@echo "   - Output parsing: text and JSON formats"
 	@echo "   - Network namespace integration ready"
+
+# Test iptables logging implementation
+# Usage: make test-iptables-logging
+test-iptables-logging:
+	@echo "Testing Iptables Logging Implementation"
+	@echo "======================================"
+	@echo "Validating comprehensive iptables logging functionality for:"
+	@echo "  - Log processing and parsing engine"
+	@echo "  - Advanced log filtering capabilities"
+	@echo "  - NetLog CLI interface integration"
+	@echo "  - Time-based and network-based filtering"
+	@echo "  - Protocol and action-based filtering"
+	@echo "  - JSON and text output formats"
+	@echo "  - Real-time and historical log analysis"
+	@echo "  - Enhanced raw facts with LOG targets"
+	@echo ""
+	@$(PYTHON) -B tests/test_iptables_logging.py
+	@echo ""
+	@echo "✅ Iptables logging implementation validated successfully!"
+	@echo "   - All 12+ comprehensive test cases pass"
+	@echo "   - Log processing: parsing, filtering, correlation"
+	@echo "   - CLI integration: netlog command-line tool"
+	@echo "   - Output formats: text reports and JSON data"
+	@echo "   - Enhanced raw facts: LOG targets added to all rules"
+	@echo "   - Network analysis: comprehensive packet tracing"
 
 # Run comprehensive network connectivity tests (requires sudo)
 # Usage: sudo make test-network

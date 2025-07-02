@@ -20,11 +20,13 @@ Usage:
     python3 network_namespace_status.py br-core routes
     python3 network_namespace_status.py web1 summary
     python3 network_namespace_status.py dc-srv rules
+    python3 network_namespace_status.py hq-core ipsets
 
 Functions:
     interfaces  - Show live IP configuration (ip addr show equivalent)
     routes      - Show live routing table (ip route show equivalent) 
     rules       - Show live policy rules (ip rule show equivalent)
+    ipsets      - Show live ipset configuration (ipset list equivalent)
     summary     - Show brief overview of live configuration
     all         - Show complete live configuration
 
@@ -116,6 +118,13 @@ class NetworkNamespaceStatus:
                 # Skip metadata files and test variations
                 if "_metadata.json" not in facts_file.name and "_" not in facts_file.stem:
                     self.known_routers.add(facts_file.stem)
+        else:
+            # Fallback: try to load from raw facts if JSON facts don't exist
+            raw_facts_dir = self.facts_dir.parent / "raw_facts"
+            if raw_facts_dir.exists():
+                for facts_file in raw_facts_dir.glob("*_facts.txt"):
+                    router_name = facts_file.stem.replace("_facts", "")
+                    self.known_routers.add(router_name)
                     
         self.logger.debug(f"Found {len(self.known_routers)} known routers: {self.known_routers}")
         
@@ -388,7 +397,7 @@ class NetworkNamespaceStatus:
             # For non-existent namespaces, we can't determine the type, so use generic term
             if namespace in self.hosts:
                 return f"Host {namespace} namespace not found"
-            elif namespace in self.routers:
+            elif namespace in self.known_routers:
                 return f"Router {namespace} namespace not found"
             else:
                 return f"Namespace {namespace} not found"
@@ -426,7 +435,7 @@ class NetworkNamespaceStatus:
             # For non-existent namespaces, we can't determine the type, so use generic term
             if namespace in self.hosts:
                 return f"Host {namespace} namespace not found"
-            elif namespace in self.routers:
+            elif namespace in self.known_routers:
                 return f"Router {namespace} namespace not found"
             else:
                 return f"Namespace {namespace} not found"
@@ -532,7 +541,7 @@ class NetworkNamespaceStatus:
             # For non-existent namespaces, we can't determine the type, so use generic term
             if namespace in self.hosts:
                 return f"Host {namespace} namespace not found"
-            elif namespace in self.routers:
+            elif namespace in self.known_routers:
                 return f"Router {namespace} namespace not found"
             else:
                 return f"Namespace {namespace} not found"
@@ -549,7 +558,7 @@ class NetworkNamespaceStatus:
             # For non-existent namespaces, we can't determine the type, so use generic term
             if namespace in self.hosts:
                 return f"Host {namespace} namespace not found"
-            elif namespace in self.routers:
+            elif namespace in self.known_routers:
                 return f"Router {namespace} namespace not found"
             else:
                 return f"Namespace {namespace} not found"
@@ -613,7 +622,7 @@ class NetworkNamespaceStatus:
         if namespace not in self.available_namespaces:
             if namespace in self.hosts:
                 return f"Host {namespace} namespace not found"
-            elif namespace in self.routers:
+            elif namespace in self.known_routers:
                 return f"Router {namespace} namespace not found"
             else:
                 return f"Namespace {namespace} not found"
@@ -629,7 +638,7 @@ class NetworkNamespaceStatus:
         if namespace not in self.available_namespaces:
             if namespace in self.hosts:
                 return f"Host {namespace} namespace not found"
-            elif namespace in self.routers:
+            elif namespace in self.known_routers:
                 return f"Router {namespace} namespace not found"
             else:
                 return f"Namespace {namespace} not found"
@@ -645,7 +654,7 @@ class NetworkNamespaceStatus:
         if namespace not in self.available_namespaces:
             if namespace in self.hosts:
                 return f"Host {namespace} namespace not found"
-            elif namespace in self.routers:
+            elif namespace in self.known_routers:
                 return f"Router {namespace} namespace not found"
             else:
                 return f"Namespace {namespace} not found"
@@ -657,14 +666,16 @@ class NetworkNamespaceStatus:
         return result.stdout
     
     def show_ipsets(self, namespace: str) -> str:
-        """Show ipset configuration."""
-        if namespace not in self.available_namespaces:
+        """Show ipset configuration for routers only."""
+        # Check if this is a router namespace
+        if namespace not in self.known_routers:
             if namespace in self.hosts:
-                return f"Host {namespace} namespace not found"
-            elif namespace in self.routers:
-                return f"Router {namespace} namespace not found"
+                return f"Ipsets are not applicable for host {namespace} (hosts don't have ipsets)"
             else:
-                return f"Namespace {namespace} not found"
+                return f"Ipsets are only available for known routers, not {namespace}"
+        
+        if namespace not in self.available_namespaces:
+            return f"Router {namespace} namespace not found"
         
         result = self.run_command("ipset list", namespace=namespace, check=False)
         if result.returncode != 0:
@@ -678,7 +689,7 @@ class NetworkNamespaceStatus:
         if namespace not in self.available_namespaces:
             if namespace in self.hosts:
                 return f"Host {namespace} namespace not found"
-            elif namespace in self.routers:
+            elif namespace in self.known_routers:
                 return f"Router {namespace} namespace not found"
             else:
                 return f"Namespace {namespace} not found"
@@ -711,7 +722,7 @@ class NetworkNamespaceStatus:
             # For non-existent namespaces, we can't determine the type, so use generic term
             if namespace in self.hosts:
                 return f"Host {namespace} namespace not found"
-            elif namespace in self.routers:
+            elif namespace in self.known_routers:
                 return f"Router {namespace} namespace not found"
             else:
                 return f"Namespace {namespace} not found"
@@ -804,6 +815,8 @@ Examples:
   %(prog)s web1 summary                  # Live host summary for web1
   %(prog)s web1 interfaces               # Live interface config for host web1
   %(prog)s dc-srv rules                  # Live policy rules for dc-srv
+  %(prog)s hq-core iptables              # Live iptables configuration for hq-core
+  %(prog)s hq-core ipsets                # Live ipset configuration for hq-core
   %(prog)s hq-dmz all                    # Complete live config for hq-dmz
   %(prog)s hq-gw interfaces -v           # Live interface config with basic verbosity
   %(prog)s all summary -vv               # Live overview with info messages
@@ -812,7 +825,9 @@ Examples:
 Functions:
   interfaces  - Live IP configuration (ip addr show equivalent)
   routes      - Live routing table (ip route show equivalent)
-  rules       - Live policy rules (ip rule show equivalent)  
+  rules       - Live policy rules (ip rule show equivalent)
+  iptables    - Live iptables configuration (iptables -L equivalent)
+  ipsets      - Live ipset configuration (ipset list equivalent)  
   summary     - Brief live overview
   all         - Complete live configuration
   
@@ -836,7 +851,7 @@ Environment Variables:
     parser.add_argument(
         'function',
         type=str,
-        choices=['interfaces', 'routes', 'rules', 'summary', 'all'],
+        choices=['interfaces', 'routes', 'rules', 'iptables', 'ipsets', 'summary', 'all'],
         help='Live information to display'
     )
     
@@ -875,12 +890,17 @@ Environment Variables:
         if args.json:
             # JSON output mode
             if args.namespace == 'all':
-                # Collect data for all namespaces
+                # Collect data for known routers and hosts only
                 data = {}
-                for namespace in sorted(status_tool.available_namespaces):
+                # Get only known routers and hosts that are actually running
+                active_routers = [ns for ns in status_tool.known_routers if ns in status_tool.available_namespaces]
+                active_hosts = [ns for ns in status_tool.hosts.keys() if ns in status_tool.available_namespaces]
+                all_active_entities = sorted(active_routers + active_hosts)
+                
+                for namespace in all_active_entities:
                     if args.function == 'interfaces':
                         data[namespace] = status_tool.get_interfaces_data(namespace)
-                    elif args.function in ['routes', 'rules', 'summary', 'all']:
+                    elif args.function in ['routes', 'rules', 'iptables', 'ipsets', 'summary', 'all']:
                         # For now, just return interfaces for JSON mode
                         # TODO: Implement get_routes_data, get_rules_data, etc.
                         data[namespace] = {"error": f"JSON output for '{args.function}' not yet implemented"}
@@ -897,9 +917,19 @@ Environment Variables:
             if args.namespace == 'all' and args.function == 'summary':
                 output = status_tool.show_all_summary()
             elif args.namespace == 'all':
-                # Show function for all namespaces
+                # Show function for known routers and hosts only
                 output_sections = []
-                for namespace in sorted(status_tool.available_namespaces):
+                # Get only known routers and hosts that are actually running
+                active_routers = [ns for ns in status_tool.known_routers if ns in status_tool.available_namespaces]
+                active_hosts = [ns for ns in status_tool.hosts.keys() if ns in status_tool.available_namespaces]
+                
+                # For ipsets, only show routers (not hosts)
+                if args.function == 'ipsets':
+                    target_namespaces = sorted(active_routers)
+                else:
+                    target_namespaces = sorted(active_routers + active_hosts)
+                
+                for namespace in target_namespaces:
                     entity_type = "HOST" if status_tool.is_host(namespace) else "ROUTER"
                     if args.function == 'interfaces':
                         output_sections.append(f"=== {namespace} {entity_type} LIVE INTERFACES ===")
@@ -910,6 +940,12 @@ Environment Variables:
                     elif args.function == 'rules':
                         output_sections.append(f"=== {namespace} {entity_type} LIVE RULES ===")
                         output_sections.append(status_tool.show_rules(namespace))
+                    elif args.function == 'iptables':
+                        output_sections.append(f"=== {namespace} {entity_type} LIVE IPTABLES ===")
+                        output_sections.append(status_tool.show_iptables(namespace))
+                    elif args.function == 'ipsets':
+                        output_sections.append(f"=== {namespace} {entity_type} LIVE IPSETS ===")
+                        output_sections.append(status_tool.show_ipsets(namespace))
                     elif args.function == 'all':
                         output_sections.append(status_tool.show_all_configuration(namespace))
                     output_sections.append("")
@@ -922,6 +958,10 @@ Environment Variables:
                     output = status_tool.show_routes(args.namespace)
                 elif args.function == 'rules':
                     output = status_tool.show_rules(args.namespace)
+                elif args.function == 'iptables':
+                    output = status_tool.show_iptables(args.namespace)
+                elif args.function == 'ipsets':
+                    output = status_tool.show_ipsets(args.namespace)
                 elif args.function == 'summary':
                     output = status_tool.show_summary(args.namespace)
                 elif args.function == 'all':

@@ -78,81 +78,106 @@ TITLE: IP Routing Table Priority Table (100)
 COMMAND: /sbin/ip route show table 100
 TIMESTAMP: 2025-07-01 10:00:00
 ---
-10.1.11.0/24 dev eth0 proto kernel scope link metric 1\n10.2.0.0/16 via 10.1.1.1 dev eth0 metric 5\n10.3.0.0/16 via 10.1.1.1 dev eth0 metric 5
+10.1.11.0/24 dev eth0 proto kernel scope link metric 1
+10.2.0.0/16 via 10.1.1.1 dev eth0 metric 5
+10.3.0.0/16 via 10.1.1.1 dev eth0 metric 5
 
 EXIT_CODE: 0
 === TSIM_SECTION_END:routing_table_priority_table ===
-\n
+
+
 === TSIM_SECTION_START:routing_table_service_table ===
 TITLE: IP Routing Table Service Table (200)
 COMMAND: /sbin/ip route show table 200
 TIMESTAMP: 2025-07-01 10:00:00
 ---
-10.1.11.0/24 dev eth1 proto kernel scope link metric 10\n10.1.3.0/24 dev eth1 proto kernel scope link metric 5\n10.2.0.0/16 via 10.1.1.1 dev eth0 metric 15\n10.3.0.0/16 via 10.1.1.1 dev eth0 metric 15
+10.1.11.0/24 dev eth1 proto kernel scope link metric 10
+10.1.3.0/24 dev eth1 proto kernel scope link metric 5
+10.2.0.0/16 via 10.1.1.1 dev eth0 metric 15
+10.3.0.0/16 via 10.1.1.1 dev eth0 metric 15
 
 EXIT_CODE: 0
 === TSIM_SECTION_END:routing_table_service_table ===
-\n
+
+
 === TSIM_SECTION_START:routing_table_backup_table ===
 TITLE: IP Routing Table Backup Table (300)
 COMMAND: /sbin/ip route show table 300
 TIMESTAMP: 2025-07-01 10:00:00
 ---
-10.1.11.0/24 dev eth1 proto kernel scope link metric 20\n10.2.0.0/16 via 10.100.1.2 dev wg0 metric 25\n10.3.0.0/16 via 10.100.1.3 dev wg0 metric 25
+10.1.11.0/24 dev eth1 proto kernel scope link metric 20
+10.2.0.0/16 via 10.100.1.2 dev wg0 metric 25
+10.3.0.0/16 via 10.100.1.3 dev wg0 metric 25
 
 EXIT_CODE: 0
 === TSIM_SECTION_END:routing_table_backup_table ===
-\n
+
+
 === TSIM_SECTION_START:routing_table_qos_table ===
 TITLE: IP Routing Table Qos Table (400)
 COMMAND: /sbin/ip route show table 400
 TIMESTAMP: 2025-07-01 10:00:00
 ---
-10.1.11.0/24 dev eth1 proto kernel scope link metric 8\n10.2.0.0/16 via 10.1.1.1 dev eth0 metric 8\n10.3.0.0/16 via 10.1.1.1 dev eth0 metric 8
+10.1.11.0/24 dev eth1 proto kernel scope link metric 8
+10.2.0.0/16 via 10.1.1.1 dev eth0 metric 8
+10.3.0.0/16 via 10.1.1.1 dev eth0 metric 8
 
 EXIT_CODE: 0
 === TSIM_SECTION_END:routing_table_qos_table ===
-\n
+
+
 === TSIM_SECTION_START:routing_table_management_table ===
 TITLE: IP Routing Table Management Table (500)
 COMMAND: /sbin/ip route show table 500
 TIMESTAMP: 2025-07-01 10:00:00
 ---
-10.1.11.0/24 dev eth0 proto kernel scope link metric 1\n10.1.3.0/24 dev eth1 proto kernel scope link metric 1\n10.2.0.0/16 via 10.1.1.1 dev eth0 metric 5\n10.3.0.0/16 via 10.1.1.1 dev eth0 metric 5
+10.1.11.0/24 dev eth0 proto kernel scope link metric 1
+10.1.3.0/24 dev eth1 proto kernel scope link metric 1
+10.2.0.0/16 via 10.1.1.1 dev eth0 metric 5
+10.3.0.0/16 via 10.1.1.1 dev eth0 metric 5
 
 EXIT_CODE: 0
 === TSIM_SECTION_END:routing_table_management_table ===
-\n
+
+
 === TSIM_SECTION_START:routing_table_database_table ===
 TITLE: IP Routing Table Database Table (600)
 COMMAND: /sbin/ip route show table 600
 TIMESTAMP: 2025-07-01 10:00:00
 ---
-10.1.0.0/16 via 10.3.1.1 dev eth0 metric 5\n10.2.0.0/16 via 10.3.1.1 dev eth0 metric 10
+10.1.0.0/16 via 10.3.1.1 dev eth0 metric 5
+10.2.0.0/16 via 10.3.1.1 dev eth0 metric 10
 
 EXIT_CODE: 0
 === TSIM_SECTION_END:routing_table_database_table ===
-\n
+
+
 === TSIM_SECTION_START:routing_table_web_table ===
 TITLE: IP Routing Table Web Table (700)
 COMMAND: /sbin/ip route show table 700
 TIMESTAMP: 2025-07-01 10:00:00
 ---
-10.1.3.0/24 dev eth1 proto kernel scope link metric 1\n10.1.11.0/24 dev eth1 proto kernel scope link metric 5\n10.2.0.0/16 via 10.1.1.1 dev eth0 metric 10\n10.3.0.0/16 via 10.1.1.1 dev eth0 metric 10
+10.1.3.0/24 dev eth1 proto kernel scope link metric 1
+10.1.11.0/24 dev eth1 proto kernel scope link metric 5
+10.2.0.0/16 via 10.1.1.1 dev eth0 metric 10
+10.3.0.0/16 via 10.1.1.1 dev eth0 metric 10
 
 EXIT_CODE: 0
 === TSIM_SECTION_END:routing_table_web_table ===
-\n
+
+
 === TSIM_SECTION_START:routing_table_emergency_table ===
 TITLE: IP Routing Table Emergency Table (800)
 COMMAND: /sbin/ip route show table 800
 TIMESTAMP: 2025-07-01 10:00:00
 ---
-192.168.1.0/24 dev eth0 proto kernel scope link metric 1\n10.1.11.0/24 dev eth1 proto kernel scope link metric 1
+192.168.1.0/24 dev eth0 proto kernel scope link metric 1
+10.1.11.0/24 dev eth1 proto kernel scope link metric 1
 
 EXIT_CODE: 0
 === TSIM_SECTION_END:routing_table_emergency_table ===
-\n=== TSIM_SECTION_START:interfaces ===
+
+=== TSIM_SECTION_START:interfaces ===
 TITLE: Network Interfaces
 COMMAND: /sbin/ip addr show
 TIMESTAMP: 2025-06-21 15:24:45
@@ -468,802 +493,22 @@ COMMIT
 # Completed on Mon Jul  1 10:00:00 2025
 
 EXIT_CODE: 0
-=== TSIM_SECTION_END:iptables_save ===
 
+=== TSIM_SECTION_END:iptables_save ===
 === TSIM_SECTION_START:ipset_save ===
 TITLE: Ipset Save Output
 COMMAND: /sbin/ipset save
-TIMESTAMP: 2025-07-01 10:00:00
+TIMESTAMP: 2025-07-02 10:00:00
 ---
-create hq_10_1_11_0_24_hosts bitmap:ip range 10.1.11.0/24 timeout 3600 counters comment
-create hq_mgmt_networks bitmap:ip range 10.1.2.0-10.1.5.255 counters comment
-create hq_admin_workstations bitmap:ip range 10.1.3.10-10.1.3.20 timeout 7200
-create hq_access_clients bitmap:ip range 10.1.20.0/24 timeout 1800
-create hq_guest_range bitmap:ip range 192.168.100.0/24 timeout 900
-create hq_10_1_11_0_24_secure_clients bitmap:ip,mac range 10.1.11.0/24 timeout 7200 counters comment
-create hq_trusted_devices bitmap:ip,mac range 10.1.1.0/24 counters comment
-create hq_dhcp_reservations bitmap:ip,mac range 10.1.20.0/24 timeout 86400
-create hq_static_assignments bitmap:ip,mac range 10.1.10.0/24
-create hq_guest_devices bitmap:ip,mac range 192.168.100.0/24 timeout 1800
-create hq_temp_access bitmap:ip,mac range 192.168.101.0/24 timeout 900
-create hq_web_ports bitmap:port range 80-8080 timeout 1800 comment
-create hq_database_ports bitmap:port range 3306-5432 counters comment
-create hq_management_ports bitmap:port range 22-443 comment
-create hq_monitoring_ports bitmap:port range 161-162 timeout 3600
-create hq_mail_ports bitmap:port range 25-995 timeout 7200
-create hq_file_ports bitmap:port range 445-2049 counters
-create hq_backup_ports bitmap:port range 873-10080 timeout 3600
-create hq_ephemeral_ports bitmap:port range 32768-65535 timeout 300
-create hq_high_ports bitmap:port range 8000-9999 timeout 1800 counters
-create hq_management_ips hash:ip family inet timeout 3600 counters comment
-create hq_trusted_sources hash:ip family inet hashsize 1024 comment
-create hq_monitoring_agents hash:ip family inet timeout 1800 counters
-create hq_admin_workstations hash:ip family inet timeout 7200 comment
-create hq_blacklisted_ips hash:ip family inet comment maxelem 65536
-create hq_suspicious_sources hash:ip family inet timeout 3600 maxelem 4096
-create hq_rate_limited_ips hash:ip family inet timeout 900 counters
-create hq_dns_resolvers hash:ip family inet comment maxelem 256
-create hq_ntp_servers hash:ip family inet timeout 86400
-create hq_log_collectors hash:ip family inet timeout 3600 counters
-create hq_known_devices hash:mac timeout 86400 counters comment
-create hq_infrastructure_macs hash:mac maxelem 1024 comment
-create hq_approved_devices hash:mac timeout 7200 counters
-create hq_wireless_clients hash:mac timeout 3600 comment maxelem 2048
-create hq_guest_devices hash:mac timeout 1800 counters
-create hq_corporate_devices hash:mac timeout 7200 comment
-create hq_quarantined_macs hash:mac timeout 3600 comment
-create hq_blocked_devices hash:mac comment maxelem 4096
-create hq_internal_networks hash:net family inet maxelem 256 comment
-create hq_trusted_networks hash:net family inet timeout 7200 counters
-create hq_management_networks hash:net family inet comment
-create hq_external_partners hash:net family inet timeout 7200 comment
-create hq_cloud_networks hash:net family inet maxelem 1024
-create hq_cdn_ranges hash:net family inet timeout 3600
-create hq_vpn_networks hash:net family inet counters comment
-create hq_site_networks hash:net family inet timeout 1800
-create hq_blocked_networks hash:net family inet comment maxelem 4096
-create hq_quarantine_networks hash:net family inet timeout 3600
-create hq_web_services hash:ip,port family inet timeout 7200 counters comment
-create hq_database_access hash:ip,port family inet counters comment
-create hq_management_access hash:ip,port family inet comment maxelem 1024
-create hq_monitoring_endpoints hash:ip,port family inet timeout 1800
-create hq_api_endpoints hash:ip,port family inet timeout 3600 counters
-create hq_file_services hash:ip,port family inet comment
-create hq_backup_services hash:ip,port family inet timeout 7200
-create hq_auth_services hash:ip,port family inet timeout 1800 counters
-create hq_log_services hash:ip,port family inet comment
-create hq_interface_networks hash:net,iface family inet comment
-create hq_vlan_interfaces hash:net,iface family inet timeout 1800 counters
-create hq_trusted_vlans hash:net,iface family inet comment
-create hq_dmz_interfaces hash:net,iface family inet counters comment
-create hq_secure_zones hash:net,iface family inet timeout 3600
-create hq_client_interfaces hash:net,iface family inet timeout 1800
-create hq_guest_interfaces hash:net,iface family inet timeout 900 comment
-create hq_service_matrix hash:ip,port,net family inet timeout 600 maxelem 2048
-create hq_access_rules hash:ip,port,net family inet counters comment
-create hq_proxy_rules hash:ip,port,ip family inet timeout 1800 counters
-create hq_nat_rules hash:ip,port,ip family inet comment maxelem 4096
-create hq_routing_matrix hash:net,port,net family inet counters comment
-add hq_10_1_1_0_24_hosts 10.1.1.10
-add hq_10_1_1_0_24_hosts 10.1.1.11
-add hq_10_1_1_0_24_hosts 10.1.1.12
-add hq_management_ips 10.1.10.5
-add hq_management_ips 10.1.10.6
-add hq_trusted_sources 8.8.8.8
-add hq_trusted_sources 1.1.1.1
-add hq_internal_networks 10.1.0.0/16
-add hq_vpn_networks 10.100.1.0/24
-add hq_trusted_devices 10.1.1.10,52:54:00:12:34:56
-add hq_trusted_devices 10.1.1.11,52:54:00:12:34:57
-add hq_web_services 10.1.3.10,80
-add hq_web_services 10.1.3.10,443
-add hq_database_access 10.1.20.5,3306
-add hq_database_access 10.1.20.5,5432
-add hq_web_ports 80
-add hq_web_ports 443
-add hq_web_ports 8080
-add hq_database_ports 3306
-add hq_database_ports 5432
-COMMIT
+create test_hash_mac hash:mac
+create test_hash_ip_mac hash:ip,mac
+add test_hash_mac 52:54:00:01:10:01
+add test_hash_mac 52:54:00:01:10:02
+add test_hash_mac 52:54:00:01:10:03
+add test_hash_ip_mac 10.1.10.10,52:54:00:01:11:01
+add test_hash_ip_mac 10.1.11.10,52:54:00:01:11:02
+add test_hash_ip_mac 10.1.10.20,52:54:00:01:11:03
 
 EXIT_CODE: 0
 === TSIM_SECTION_END:ipset_save ===
 
-=== TSIM_SECTION_START:ipset_list ===
-TITLE: Ipset List Output
-COMMAND: /sbin/ipset list
-TIMESTAMP: 2025-07-01 10:00:00
----
-Name: hq_10_1_11_0_24_hosts
-Type: bitmap:ip
-Revision: 3
-Header: bitmap:ip range 10.1.11.0/24 timeout 3600 counters comment
-Size in memory: 1048
-References: 1
-Default binding: 
-Number of entries: 0
-Members:
-
-Name: hq_mgmt_networks
-Type: bitmap:ip
-Revision: 3
-Header: bitmap:ip range 10.1.2.0-10.1.5.255 counters comment
-Size in memory: 1048
-References: 1
-Default binding: 
-Number of entries: 0
-Members:
-
-Name: hq_admin_workstations
-Type: bitmap:ip
-Revision: 3
-Header: bitmap:ip range 10.1.3.10-10.1.3.20 timeout 7200
-Size in memory: 1048
-References: 1
-Default binding: 
-Number of entries: 0
-Members:
-
-Name: hq_access_clients
-Type: bitmap:ip
-Revision: 3
-Header: bitmap:ip range 10.1.20.0/24 timeout 1800
-Size in memory: 1048
-References: 1
-Default binding: 
-Number of entries: 0
-Members:
-
-Name: hq_guest_range
-Type: bitmap:ip
-Revision: 3
-Header: bitmap:ip range 192.168.100.0/24 timeout 900
-Size in memory: 1048
-References: 1
-Default binding: 
-Number of entries: 0
-Members:
-
-Name: hq_10_1_11_0_24_secure_clients
-Type: bitmap:ip,mac
-Revision: 3
-Header: bitmap:ip,mac range 10.1.11.0/24 timeout 7200 counters comment
-Size in memory: 1048
-References: 1
-Default binding: 
-Number of entries: 0
-Members:
-
-Name: hq_trusted_devices
-Type: bitmap:ip,mac
-Revision: 3
-Header: bitmap:ip,mac range 10.1.1.0/24 counters comment
-Size in memory: 1048
-References: 1
-Default binding: 
-Number of entries: 0
-Members:
-
-Name: hq_dhcp_reservations
-Type: bitmap:ip,mac
-Revision: 3
-Header: bitmap:ip,mac range 10.1.20.0/24 timeout 86400
-Size in memory: 1048
-References: 1
-Default binding: 
-Number of entries: 0
-Members:
-
-Name: hq_static_assignments
-Type: bitmap:ip,mac
-Revision: 3
-Header: bitmap:ip,mac range 10.1.10.0/24
-Size in memory: 1048
-References: 1
-Default binding: 
-Number of entries: 0
-Members:
-
-Name: hq_guest_devices
-Type: bitmap:ip,mac
-Revision: 3
-Header: bitmap:ip,mac range 192.168.100.0/24 timeout 1800
-Size in memory: 1048
-References: 1
-Default binding: 
-Number of entries: 0
-Members:
-
-Name: hq_temp_access
-Type: bitmap:ip,mac
-Revision: 3
-Header: bitmap:ip,mac range 192.168.101.0/24 timeout 900
-Size in memory: 1048
-References: 1
-Default binding: 
-Number of entries: 0
-Members:
-
-Name: hq_web_ports
-Type: bitmap:port
-Revision: 3
-Header: bitmap:port range 80-8080 timeout 1800 comment
-Size in memory: 1048
-References: 1
-Default binding: 
-Number of entries: 0
-Members:
-
-Name: hq_database_ports
-Type: bitmap:port
-Revision: 3
-Header: bitmap:port range 3306-5432 counters comment
-Size in memory: 1048
-References: 1
-Default binding: 
-Number of entries: 0
-Members:
-
-Name: hq_management_ports
-Type: bitmap:port
-Revision: 3
-Header: bitmap:port range 22-443 comment
-Size in memory: 1048
-References: 1
-Default binding: 
-Number of entries: 0
-Members:
-
-Name: hq_monitoring_ports
-Type: bitmap:port
-Revision: 3
-Header: bitmap:port range 161-162 timeout 3600
-Size in memory: 1048
-References: 1
-Default binding: 
-Number of entries: 0
-Members:
-
-Name: hq_mail_ports
-Type: bitmap:port
-Revision: 3
-Header: bitmap:port range 25-995 timeout 7200
-Size in memory: 1048
-References: 1
-Default binding: 
-Number of entries: 0
-Members:
-
-Name: hq_file_ports
-Type: bitmap:port
-Revision: 3
-Header: bitmap:port range 445-2049 counters
-Size in memory: 1048
-References: 1
-Default binding: 
-Number of entries: 0
-Members:
-
-Name: hq_backup_ports
-Type: bitmap:port
-Revision: 3
-Header: bitmap:port range 873-10080 timeout 3600
-Size in memory: 1048
-References: 1
-Default binding: 
-Number of entries: 0
-Members:
-
-Name: hq_ephemeral_ports
-Type: bitmap:port
-Revision: 3
-Header: bitmap:port range 32768-65535 timeout 300
-Size in memory: 1048
-References: 1
-Default binding: 
-Number of entries: 0
-Members:
-
-Name: hq_high_ports
-Type: bitmap:port
-Revision: 3
-Header: bitmap:port range 8000-9999 timeout 1800 counters
-Size in memory: 1048
-References: 1
-Default binding: 
-Number of entries: 0
-Members:
-
-Name: hq_management_ips
-Type: hash:ip
-Revision: 3
-Header: hash:ip family inet timeout 3600 counters comment
-Size in memory: 1048
-References: 1
-Default binding: 
-Number of entries: 0
-Members:
-
-Name: hq_trusted_sources
-Type: hash:ip
-Revision: 3
-Header: hash:ip family inet hashsize 1024 comment
-Size in memory: 1048
-References: 1
-Default binding: 
-Number of entries: 0
-Members:
-
-Name: hq_monitoring_agents
-Type: hash:ip
-Revision: 3
-Header: hash:ip family inet timeout 1800 counters
-Size in memory: 1048
-References: 1
-Default binding: 
-Number of entries: 0
-Members:
-
-Name: hq_admin_workstations
-Type: hash:ip
-Revision: 3
-Header: hash:ip family inet timeout 7200 comment
-Size in memory: 1048
-References: 1
-Default binding: 
-Number of entries: 0
-Members:
-
-Name: hq_blacklisted_ips
-Type: hash:ip
-Revision: 3
-Header: hash:ip family inet comment maxelem 65536
-Size in memory: 1048
-References: 1
-Default binding: 
-Number of entries: 0
-Members:
-
-Name: hq_suspicious_sources
-Type: hash:ip
-Revision: 3
-Header: hash:ip family inet timeout 3600 maxelem 4096
-Size in memory: 1048
-References: 1
-Default binding: 
-Number of entries: 0
-Members:
-
-Name: hq_rate_limited_ips
-Type: hash:ip
-Revision: 3
-Header: hash:ip family inet timeout 900 counters
-Size in memory: 1048
-References: 1
-Default binding: 
-Number of entries: 0
-Members:
-
-Name: hq_dns_resolvers
-Type: hash:ip
-Revision: 3
-Header: hash:ip family inet comment maxelem 256
-Size in memory: 1048
-References: 1
-Default binding: 
-Number of entries: 0
-Members:
-
-Name: hq_ntp_servers
-Type: hash:ip
-Revision: 3
-Header: hash:ip family inet timeout 86400
-Size in memory: 1048
-References: 1
-Default binding: 
-Number of entries: 0
-Members:
-
-Name: hq_log_collectors
-Type: hash:ip
-Revision: 3
-Header: hash:ip family inet timeout 3600 counters
-Size in memory: 1048
-References: 1
-Default binding: 
-Number of entries: 0
-Members:
-
-Name: hq_known_devices
-Type: hash:mac
-Revision: 3
-Header: hash:mac timeout 86400 counters comment
-Size in memory: 1048
-References: 1
-Default binding: 
-Number of entries: 0
-Members:
-
-Name: hq_infrastructure_macs
-Type: hash:mac
-Revision: 3
-Header: hash:mac maxelem 1024 comment
-Size in memory: 1048
-References: 1
-Default binding: 
-Number of entries: 0
-Members:
-
-Name: hq_approved_devices
-Type: hash:mac
-Revision: 3
-Header: hash:mac timeout 7200 counters
-Size in memory: 1048
-References: 1
-Default binding: 
-Number of entries: 0
-Members:
-
-Name: hq_wireless_clients
-Type: hash:mac
-Revision: 3
-Header: hash:mac timeout 3600 comment maxelem 2048
-Size in memory: 1048
-References: 1
-Default binding: 
-Number of entries: 0
-Members:
-
-Name: hq_guest_devices
-Type: hash:mac
-Revision: 3
-Header: hash:mac timeout 1800 counters
-Size in memory: 1048
-References: 1
-Default binding: 
-Number of entries: 0
-Members:
-
-Name: hq_corporate_devices
-Type: hash:mac
-Revision: 3
-Header: hash:mac timeout 7200 comment
-Size in memory: 1048
-References: 1
-Default binding: 
-Number of entries: 0
-Members:
-
-Name: hq_quarantined_macs
-Type: hash:mac
-Revision: 3
-Header: hash:mac timeout 3600 comment
-Size in memory: 1048
-References: 1
-Default binding: 
-Number of entries: 0
-Members:
-
-Name: hq_blocked_devices
-Type: hash:mac
-Revision: 3
-Header: hash:mac comment maxelem 4096
-Size in memory: 1048
-References: 1
-Default binding: 
-Number of entries: 0
-Members:
-
-Name: hq_internal_networks
-Type: hash:net
-Revision: 3
-Header: hash:net family inet maxelem 256 comment
-Size in memory: 1048
-References: 1
-Default binding: 
-Number of entries: 0
-Members:
-
-Name: hq_trusted_networks
-Type: hash:net
-Revision: 3
-Header: hash:net family inet timeout 7200 counters
-Size in memory: 1048
-References: 1
-Default binding: 
-Number of entries: 0
-Members:
-
-Name: hq_management_networks
-Type: hash:net
-Revision: 3
-Header: hash:net family inet comment
-Size in memory: 1048
-References: 1
-Default binding: 
-Number of entries: 0
-Members:
-
-Name: hq_external_partners
-Type: hash:net
-Revision: 3
-Header: hash:net family inet timeout 7200 comment
-Size in memory: 1048
-References: 1
-Default binding: 
-Number of entries: 0
-Members:
-
-Name: hq_cloud_networks
-Type: hash:net
-Revision: 3
-Header: hash:net family inet maxelem 1024
-Size in memory: 1048
-References: 1
-Default binding: 
-Number of entries: 0
-Members:
-
-Name: hq_cdn_ranges
-Type: hash:net
-Revision: 3
-Header: hash:net family inet timeout 3600
-Size in memory: 1048
-References: 1
-Default binding: 
-Number of entries: 0
-Members:
-
-Name: hq_vpn_networks
-Type: hash:net
-Revision: 3
-Header: hash:net family inet counters comment
-Size in memory: 1048
-References: 1
-Default binding: 
-Number of entries: 0
-Members:
-
-Name: hq_site_networks
-Type: hash:net
-Revision: 3
-Header: hash:net family inet timeout 1800
-Size in memory: 1048
-References: 1
-Default binding: 
-Number of entries: 0
-Members:
-
-Name: hq_blocked_networks
-Type: hash:net
-Revision: 3
-Header: hash:net family inet comment maxelem 4096
-Size in memory: 1048
-References: 1
-Default binding: 
-Number of entries: 0
-Members:
-
-Name: hq_quarantine_networks
-Type: hash:net
-Revision: 3
-Header: hash:net family inet timeout 3600
-Size in memory: 1048
-References: 1
-Default binding: 
-Number of entries: 0
-Members:
-
-Name: hq_web_services
-Type: hash:ip,port
-Revision: 3
-Header: hash:ip,port family inet timeout 7200 counters comment
-Size in memory: 1048
-References: 1
-Default binding: 
-Number of entries: 0
-Members:
-
-Name: hq_database_access
-Type: hash:ip,port
-Revision: 3
-Header: hash:ip,port family inet counters comment
-Size in memory: 1048
-References: 1
-Default binding: 
-Number of entries: 0
-Members:
-
-Name: hq_management_access
-Type: hash:ip,port
-Revision: 3
-Header: hash:ip,port family inet comment maxelem 1024
-Size in memory: 1048
-References: 1
-Default binding: 
-Number of entries: 0
-Members:
-
-Name: hq_monitoring_endpoints
-Type: hash:ip,port
-Revision: 3
-Header: hash:ip,port family inet timeout 1800
-Size in memory: 1048
-References: 1
-Default binding: 
-Number of entries: 0
-Members:
-
-Name: hq_api_endpoints
-Type: hash:ip,port
-Revision: 3
-Header: hash:ip,port family inet timeout 3600 counters
-Size in memory: 1048
-References: 1
-Default binding: 
-Number of entries: 0
-Members:
-
-Name: hq_file_services
-Type: hash:ip,port
-Revision: 3
-Header: hash:ip,port family inet comment
-Size in memory: 1048
-References: 1
-Default binding: 
-Number of entries: 0
-Members:
-
-Name: hq_backup_services
-Type: hash:ip,port
-Revision: 3
-Header: hash:ip,port family inet timeout 7200
-Size in memory: 1048
-References: 1
-Default binding: 
-Number of entries: 0
-Members:
-
-Name: hq_auth_services
-Type: hash:ip,port
-Revision: 3
-Header: hash:ip,port family inet timeout 1800 counters
-Size in memory: 1048
-References: 1
-Default binding: 
-Number of entries: 0
-Members:
-
-Name: hq_log_services
-Type: hash:ip,port
-Revision: 3
-Header: hash:ip,port family inet comment
-Size in memory: 1048
-References: 1
-Default binding: 
-Number of entries: 0
-Members:
-
-Name: hq_interface_networks
-Type: hash:net,iface
-Revision: 3
-Header: hash:net,iface family inet comment
-Size in memory: 1048
-References: 1
-Default binding: 
-Number of entries: 0
-Members:
-
-Name: hq_vlan_interfaces
-Type: hash:net,iface
-Revision: 3
-Header: hash:net,iface family inet timeout 1800 counters
-Size in memory: 1048
-References: 1
-Default binding: 
-Number of entries: 0
-Members:
-
-Name: hq_trusted_vlans
-Type: hash:net,iface
-Revision: 3
-Header: hash:net,iface family inet comment
-Size in memory: 1048
-References: 1
-Default binding: 
-Number of entries: 0
-Members:
-
-Name: hq_dmz_interfaces
-Type: hash:net,iface
-Revision: 3
-Header: hash:net,iface family inet counters comment
-Size in memory: 1048
-References: 1
-Default binding: 
-Number of entries: 0
-Members:
-
-Name: hq_secure_zones
-Type: hash:net,iface
-Revision: 3
-Header: hash:net,iface family inet timeout 3600
-Size in memory: 1048
-References: 1
-Default binding: 
-Number of entries: 0
-Members:
-
-Name: hq_client_interfaces
-Type: hash:net,iface
-Revision: 3
-Header: hash:net,iface family inet timeout 1800
-Size in memory: 1048
-References: 1
-Default binding: 
-Number of entries: 0
-Members:
-
-Name: hq_guest_interfaces
-Type: hash:net,iface
-Revision: 3
-Header: hash:net,iface family inet timeout 900 comment
-Size in memory: 1048
-References: 1
-Default binding: 
-Number of entries: 0
-Members:
-
-Name: hq_service_matrix
-Type: hash:ip,port,net
-Revision: 3
-Header: hash:ip,port,net family inet timeout 600 maxelem 2048
-Size in memory: 1048
-References: 1
-Default binding: 
-Number of entries: 0
-Members:
-
-Name: hq_access_rules
-Type: hash:ip,port,net
-Revision: 3
-Header: hash:ip,port,net family inet counters comment
-Size in memory: 1048
-References: 1
-Default binding: 
-Number of entries: 0
-Members:
-
-Name: hq_proxy_rules
-Type: hash:ip,port,ip
-Revision: 3
-Header: hash:ip,port,ip family inet timeout 1800 counters
-Size in memory: 1048
-References: 1
-Default binding: 
-Number of entries: 0
-Members:
-
-Name: hq_nat_rules
-Type: hash:ip,port,ip
-Revision: 3
-Header: hash:ip,port,ip family inet comment maxelem 4096
-Size in memory: 1048
-References: 1
-Default binding: 
-Number of entries: 0
-Members:
-
-Name: hq_routing_matrix
-Type: hash:net,port,net
-Revision: 3
-Header: hash:net,port,net family inet counters comment
-Size in memory: 1048
-References: 1
-Default binding: 
-Number of entries: 0
-Members:
-
-
-EXIT_CODE: 0
-=== TSIM_SECTION_END:ipset_list ===

@@ -721,12 +721,13 @@ netstatus:
 		echo "Shows LIVE status of running namespaces only (no static facts)"; \
 		echo ""; \
 		echo "Namespace names: any running router or host namespace, or 'all'"; \
-		echo "Functions: interfaces, routes, rules, summary, all"; \
+		echo "Functions: interfaces, routes, rules, ipsets, summary, all"; \
 		echo "Options: -v (verbose debug output)"; \
 		echo ""; \
 		echo "Examples:"; \
 		echo "  sudo make netstatus ARGS='hq-gw interfaces'         # Show live interface config"; \
 		echo "  sudo make netstatus ARGS='br-core routes'           # Show live routing table"; \
+		echo "  sudo make netstatus ARGS='hq-core ipsets'           # Show live ipset configuration"; \
 		echo "  sudo make netstatus ARGS='web1 summary'             # Show live host summary"; \
 		echo "  sudo make netstatus ARGS='all summary'              # Show live status of all namespaces"; \
 		echo "  sudo make netstatus ARGS='hq-gw all'                # Show complete live config"; \

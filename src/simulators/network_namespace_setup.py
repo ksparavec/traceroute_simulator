@@ -739,18 +739,26 @@ class HiddenMeshNetworkSetup:
             return
         
         try:
-            import tempfile
-            with tempfile.NamedTemporaryFile(mode='w', suffix='.iptables', delete=False) as f:
-                f.write(iptables_content)
-                temp_file = f.name
+            if router_name:
+                full_cmd = f"ip netns exec {router_name} iptables-restore"
+            else:
+                full_cmd = "iptables-restore"
             
-            cmd = f"iptables-restore < {temp_file}"
-            self.run_cmd(cmd, router_name, check=False)
+            self.logger.info(f"Applying iptables to {router_name}: {len(iptables_content)} chars")
             
-            Path(temp_file).unlink()
+            # Use subprocess.run to pass content directly via stdin (same as ipsets)
+            result = subprocess.run(
+                full_cmd.split(), input=iptables_content, text=True, 
+                capture_output=True, check=False
+            )
+            
+            if result.returncode != 0:
+                self.logger.error(f"iptables-restore failed for {router_name}: {result.stderr}")
+            else:
+                self.logger.debug(f"iptables-restore succeeded for {router_name}")
             
         except Exception as e:
-            self.logger.debug(f"iptables restore failed (expected): {e}")
+            self.logger.error(f"iptables restore failed for {router_name}: {e}")
             
     def _apply_ipsets_configuration(self, router_name: str, router_facts: RouterRawFacts):
         """Apply ipsets configuration."""
@@ -764,22 +772,41 @@ class HiddenMeshNetworkSetup:
             return
         
         try:
-            import tempfile
-            with tempfile.NamedTemporaryFile(mode='w', suffix='.ipset', delete=False) as f:
-                f.write(ipset_content)
-                temp_file = f.name
+            if router_name:
+                full_cmd = f"ip netns exec {router_name} ipset restore"
+            else:
+                full_cmd = "ipset restore"
             
-            cmd = f"ipset restore < {temp_file}"
-            self.run_cmd(cmd, router_name, check=False)
+            self.logger.info(f"Applying ipsets to {router_name}: {len(ipset_content)} chars, {ipset_content.count('create')} creates, {ipset_content.count('add')} adds")
             
-            Path(temp_file).unlink()
+            # Use subprocess.PIPE to pass content directly via stdin
+            result = subprocess.run(
+                full_cmd.split(), input=ipset_content, text=True, 
+                capture_output=True, check=False
+            )
+            
+            if result.returncode != 0:
+                self.logger.error(f"ipset restore failed for {router_name}: {result.stderr}")
+                self.logger.error(f"Return code: {result.returncode}")
+                if result.stdout:
+                    self.logger.error(f"Stdout: {result.stdout}")
+            else:
+                self.logger.info(f"ipset restore succeeded for {router_name}")
             
         except Exception as e:
-            self.logger.debug(f"ipset restore failed (expected): {e}")
+            self.logger.error(f"ipset restore failed (exception) for {router_name}: {e}")
             
     def cleanup_network(self):
         """Clean up all created network resources."""
         self.logger.info("Cleaning up hidden mesh network")
+        
+        # Clean up ipsets in each namespace before removing namespaces
+        for ns in list(self.created_namespaces):
+            try:
+                self.run_cmd(f"ipset flush", ns, check=False)
+                self.run_cmd(f"ipset destroy", ns, check=False)
+            except:
+                pass
         
         # Remove all created namespaces (this removes interfaces too)
         for ns in list(self.created_namespaces):

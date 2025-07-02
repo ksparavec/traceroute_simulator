@@ -1,46 +1,25 @@
 ---
-# Ansible Playbook for collecting traceroute simulator facts
+# Ansible Playbook for collecting network facts as raw data
 # 
-# Two operational modes:
-# 
-# PRODUCTION MODE (default):
-# 1. Execute get_facts.sh script on remote hosts
-# 2. Transfer text output to Ansible controller  
-# 3. Convert to structured JSON format on controller
-# 4. Store JSON files in specified facts directory
-# 
-# TEST MODE (-e test=true):
-# 1. Skip remote host execution (use existing raw facts)
-# 2. Convert raw facts from tests/raw_facts/ to JSON
-# 3. Store converted JSON in /tmp/traceroute_test_output/
-# 4. Merge with existing tests/tsim_facts/ data for complete test dataset
+# OPERATIONAL MODE:
+# 1. Execute get_facts.sh script on remote hosts to collect comprehensive network facts
+# 2. Transfer raw text output to Ansible controller  
+# 3. Store raw facts files in TRACEROUTE_SIMULATOR_RAW_FACTS directory
+# 4. Raw facts are preserved without modification for later processing
 
-- name: Collect traceroute simulator facts from all hosts
-  hosts: "{{ 'localhost' if (test | default(false) | bool) else 'all' }}"
-  gather_facts: no
-  strategy: free  # Allow parallel execution across all hosts
-  serial: 0       # Process all hosts in parallel (no limit)
-  connection: "{{ 'local' if (test | default(false) | bool) else 'smart' }}"
+- name: Collect network facts from all hosts
+  hosts: all
+  gather_facts: no # Don't gather facts using standard Ansible plugins
+  strategy: free   # Process tasks on each host as fast as possible
+  serial: 3        # Process so many hosts in parallel
   vars:
-    # Test mode detection
-    test_mode: "{{ test | default(false) | bool }}"
-    
-    # Directory configuration based on mode
-    facts_dir: >-
-      {{
-        '/tmp/traceroute_test_output' if test_mode else
-        (tsim_facts_dir | default(lookup('env', 'TRACEROUTE_SIMULATOR_FACTS') | default('tsim_facts', true), true))
-      }}
-    
-    # Source directories
-    raw_facts_dir: "{{ playbook_dir }}/../tests/raw_facts"
-    existing_facts_dir: "{{ playbook_dir }}/../tests/tsim_facts"
+    # Directory configuration from environment variables
+    raw_facts_dir: "{{ lookup('env', 'TRACEROUTE_SIMULATOR_RAW_FACTS') | default('/tmp/tsim/raw_facts', true) }}"
     temp_dir: "/tmp/tsim_facts_temp"
     
     # Scripts
     facts_script: "get_facts.sh"
-    facts_script_temp: "get_facts_{{ ansible_date_time.epoch }}_{{ inventory_hostname | default('local') }}.sh"
-    processor_script: "process_facts.py"
+    facts_script_temp: "get_facts_{{ ansible_date_time.epoch }}_{{ inventory_hostname }}.sh"
     
     # Configuration
     collection_timeout: 300  # 5 minutes timeout for facts collection
@@ -49,206 +28,100 @@
     - name: Display operation mode
       debug:
         msg:
-          - "Operation Mode: {{ 'TEST MODE - Converting raw facts to JSON' if test_mode else 'PRODUCTION MODE - Collecting facts from remote hosts' }}"
-          - "Target directory: {{ facts_dir }}"
+          - "Operation Mode: Raw facts collection from network hosts"
+          - "Target directory: {{ raw_facts_dir }}"
       run_once: true
 
-    - name: Create facts output directory
+    - name: Create raw facts output directory
       file:
-        path: "{{ facts_dir }}"
+        path: "{{ raw_facts_dir }}"
         state: directory
         mode: '0755'
       run_once: true
+      delegate_to: localhost
 
-    # TEST MODE BLOCK - Process all routers locally on controller
-    - name: Find available raw facts files (test mode)
-      find:
-        paths: "{{ raw_facts_dir }}"
-        patterns: "*_facts.txt"
-      register: raw_facts_files
-      when: test_mode
-      run_once: true
-
-    - name: Process each raw facts file to JSON (test mode)
-      shell: >
-        cd {{ playbook_dir }} && 
-        python3 {{ processor_script }} 
-        "{{ item.path }}" 
-        "{{ facts_dir }}/{{ item.path | basename | replace('_facts.txt', '.json') }}"
-        --merge-with "{{ existing_facts_dir }}/{{ item.path | basename | replace('_facts.txt', '.json') }}"
-      loop: "{{ raw_facts_files.files }}"
-      register: json_conversions_test
-      when: test_mode
-      run_once: true
-
-    - name: Display test mode conversion results
-      debug:
-        msg:
-          - "Converted {{ raw_facts_files.files | length }} raw facts files to JSON"
-          - "Output directory: {{ facts_dir }}"
-      when: test_mode
-      run_once: true
-
-    # PRODUCTION MODE BLOCK - Execute on remote hosts  
-    - block:
-        - name: Create temporary directory on Ansible controller (production mode)
-          file:
-            path: "{{ temp_dir }}"
-            state: directory
-            mode: '0755'
-          run_once: true
-          delegate_to: localhost
-
-        - name: Check if unified facts script exists (production mode)
-          stat:
-            path: "{{ playbook_dir }}/{{ facts_script }}"
-          register: facts_script_stat
-          delegate_to: localhost
-
-        - name: Fail if facts script is missing (production mode)
-          fail:
-            msg: "Facts collection script {{ facts_script }} not found in {{ playbook_dir }}"
-          when: not facts_script_stat.stat.exists
-
-        - name: Copy facts collection script to remote host (production mode)
-          copy:
-            src: "{{ playbook_dir }}/{{ facts_script }}"
-            dest: "/tmp/{{ facts_script_temp }}"
-            mode: '0755'
-          register: script_copy
-
-        - name: Execute unified facts collection script on remote host (production mode)
-          shell: "/tmp/{{ facts_script_temp }}"
-          become: yes
-          become_method: sudo
-          register: facts_output
-          failed_when: facts_output.rc != 0
-          async: "{{ collection_timeout }}"
-          poll: 10
-
-        - name: Remove facts collection script from remote host (production mode)
-          file:
-            path: "/tmp/{{ facts_script_temp }}"
-            state: absent
-
-        - name: Save raw facts output to temporary file (production mode)
-          copy:
-            content: "{{ facts_output.stdout }}"
-            dest: "{{ temp_dir }}/{{ inventory_hostname }}_raw_facts.txt"
-          delegate_to: localhost
-
-        - name: Display raw facts collection summary (production mode)
-          debug:
-            msg: 
-              - "Raw facts collected from {{ inventory_hostname }}"
-              - "Facts size: {{ (facts_output.stdout | length / 1024) | round(1) }}KB"
-              - "Collection time: {{ facts_output.delta if facts_output.delta is defined else 'unknown' }}"
-              - "Exit code: {{ facts_output.rc }}"
-
-        - name: Convert raw facts to JSON (production mode)
-          shell: >
-            cd {{ playbook_dir }} && 
-            python3 {{ processor_script }} 
-            {{ temp_dir }}/{{ inventory_hostname }}_raw_facts.txt 
-            {{ facts_dir }}/{{ inventory_hostname }}.json
-          register: json_conversion_prod
-          delegate_to: localhost
-          failed_when: json_conversion_prod.rc != 0
-
-        - name: Display JSON conversion results (production mode)
-          debug:
-            msg: 
-              - "JSON conversion completed for {{ inventory_hostname }}"
-              - "JSON file: {{ facts_dir }}/{{ inventory_hostname }}.json"
-              - "Conversion output: {{ json_conversion_prod.stdout_lines }}"
-
-        - name: Validate JSON file integrity (production mode)
-          shell: "python3 -m json.tool {{ facts_dir }}/{{ inventory_hostname }}.json > /dev/null"
-          delegate_to: localhost
-          register: json_validation
-          failed_when: json_validation.rc != 0
-
-        - name: Get final JSON file statistics (production mode)
-          stat:
-            path: "{{ facts_dir }}/{{ inventory_hostname }}.json"
-          delegate_to: localhost
-          register: json_file_stat
-
-        - name: Display final collection summary (production mode)
-          debug:
-            msg: 
-              - "Successfully processed facts for {{ inventory_hostname }}"
-              - "Mode: PRODUCTION - Facts collected and converted"
-              - "Final JSON file size: {{ (json_file_stat.stat.size / 1024) | round(1) }}KB"
-              - "JSON file location: {{ facts_dir }}/{{ inventory_hostname }}.json"
-              - "File is valid JSON: {{ json_validation.rc == 0 }}"
-
-        - name: Clean up temporary raw facts file (production mode only)
-          file:
-            path: "{{ temp_dir }}/{{ inventory_hostname }}_raw_facts.txt"
-            state: absent
-          delegate_to: localhost
-
-      when: not test_mode
-
-    # COMMON TASKS - Processor script validation
-    - name: Check if facts processor script exists
-      stat:
-        path: "{{ playbook_dir }}/{{ processor_script }}"
-      register: processor_script_stat
+    - name: Create temporary directory on Ansible controller
+      file:
+        path: "{{ temp_dir }}"
+        state: directory
+        mode: '0755'
       run_once: true
       delegate_to: localhost
 
-    - name: Fail if processor script is missing
+    - name: Check if unified facts script exists
+      stat:
+        path: "{{ playbook_dir }}/{{ facts_script }}"
+      register: facts_script_stat
+      delegate_to: localhost
+
+    - name: Fail if facts script is missing
       fail:
-        msg: "Facts processor script {{ processor_script }} not found in {{ playbook_dir }}"
-      when: not processor_script_stat.stat.exists
-      run_once: true
+        msg: "Facts collection script {{ facts_script }} not found in {{ playbook_dir }}"
+      when: not facts_script_stat.stat.exists
 
-    # Note: Test mode merging is now handled by process_facts.py --merge-with option
+    - name: Copy facts collection script to remote host
+      copy:
+        src: "{{ playbook_dir }}/{{ facts_script }}"
+        dest: "/tmp/{{ facts_script_temp }}"
+        mode: '0755'
+      register: script_copy
 
-    - name: Validate all JSON files (test mode)
-      shell: "for file in {{ facts_dir }}/*.json; do python3 -m json.tool \"$file\" > /dev/null; done"
-      register: test_validation
-      failed_when: test_validation.rc != 0
-      when: test_mode
-      run_once: true
+    - name: Execute unified facts collection script on remote host
+      shell: "/tmp/{{ facts_script_temp }}"
+      become: yes
+      become_method: sudo
+      register: facts_output
+      failed_when: facts_output.rc != 0
+      async: "{{ collection_timeout }}"
+      poll: 10
+
+    - name: Remove facts collection script from remote host
+      file:
+        path: "/tmp/{{ facts_script_temp }}"
+        state: absent
+
+    - name: Save raw facts output to final location
+      copy:
+        content: "{{ facts_output.stdout }}"
+        dest: "{{ raw_facts_dir }}/{{ inventory_hostname }}_facts.txt"
+      delegate_to: localhost
+
+    - name: Display raw facts collection summary
+      debug:
+        msg: 
+          - "Raw facts collected from {{ inventory_hostname }}"
+          - "Facts size: {{ (facts_output.stdout | length / 1024) | round(1) }}KB"
+          - "Collection time: {{ facts_output.delta if facts_output.delta is defined else 'unknown' }}"
+          - "Exit code: {{ facts_output.rc }}"
+          - "Raw facts file: {{ raw_facts_dir }}/{{ inventory_hostname }}_facts.txt"
+
+    - name: Get final raw facts file statistics
+      stat:
+        path: "{{ raw_facts_dir }}/{{ inventory_hostname }}_facts.txt"
+      delegate_to: localhost
+      register: raw_file_stat
+
+    - name: Display final collection summary
+      debug:
+        msg: 
+          - "Successfully collected raw facts for {{ inventory_hostname }}"
+          - "Raw facts file size: {{ (raw_file_stat.stat.size / 1024) | round(1) }}KB"
+          - "Raw facts location: {{ raw_facts_dir }}/{{ inventory_hostname }}_facts.txt"
+          - "Raw facts preserved for later processing"
+
 
   post_tasks:
     - name: Display overall collection summary
       debug:
         msg:
-          - "Traceroute Simulator facts processing completed"
-          - "Operation mode: {{ 'TEST MODE - Raw facts conversion' if test_mode else 'PRODUCTION MODE - Live facts collection' }}"
-          - "Total hosts processed: {{ ansible_play_hosts | length if not test_mode else 'N/A (test mode - local processing only)' }}"
-          - "Facts directory: {{ facts_dir }}"
-          - "Each host has a single JSON file: {hostname}.json"
+          - "Network facts collection completed"
+          - "Operation mode: Raw facts collection from live network infrastructure"
+          - "Total hosts processed: {{ ansible_play_hosts | length }}"
+          - "Raw facts directory: {{ raw_facts_dir }}"
+          - "Each host has a raw facts file: {hostname}_facts.txt"
+          - "Raw facts are preserved without modification for later processing"
       run_once: true
       delegate_to: localhost
-
-    - name: Display production mode summary (production mode only)
-      debug:
-        msg:
-          - "PRODUCTION MODE COMPLETED"
-          - "Facts collected from live network infrastructure"
-          - "Use these facts for production traceroute simulation"
-          - "Test command: TRACEROUTE_SIMULATOR_FACTS={{ facts_dir }} python3 traceroute_simulator.py -s <src> -d <dst>"
-      run_once: true
-      delegate_to: localhost
-      when: not test_mode
-
-    - name: Display test mode summary (test mode only)
-      debug:
-        msg:
-          - "TEST MODE COMPLETED"
-          - "Raw facts converted from: {{ raw_facts_dir }}"
-          - "Test dataset location: {{ facts_dir }}"
-          - "Ready for comprehensive testing and validation"
-          - "Test command: TRACEROUTE_SIMULATOR_FACTS={{ facts_dir }} python3 tests/test_comprehensive_facts_processing.py"
-          - "Simulator test: TRACEROUTE_SIMULATOR_FACTS={{ facts_dir }} python3 traceroute_simulator.py -s <src> -d <dst>"
-      run_once: true
-      delegate_to: localhost
-      when: test_mode
 
     - name: Clean up temporary directory
       file:
@@ -259,48 +132,30 @@
 
 # Usage Examples:
 #
-# PRODUCTION MODE (collect from live network):
-# Basic usage with default tsim_facts directory:
+# Basic usage with default raw facts directory (/tmp/tsim/raw_facts):
 #   ansible-playbook -i inventory.ini get_tsim_facts.yml
 #
-# Using environment variable for facts directory:
-#   export TRACEROUTE_SIMULATOR_FACTS=/path/to/facts
+# Using environment variable for raw facts directory:
+#   export TRACEROUTE_SIMULATOR_RAW_FACTS=/path/to/raw_facts
 #   ansible-playbook -i inventory.ini get_tsim_facts.yml
 #
-# Custom facts directory via command line:
-#   ansible-playbook -i inventory.ini get_tsim_facts.yml -e tsim_facts_dir=custom_facts
-#
-# TEST MODE (convert raw facts to JSON for testing):
-# Convert raw facts from tests/raw_facts/ to /tmp/traceroute_test_output/:
-#   ansible-playbook -i tests/inventory.yml get_tsim_facts.yml -e test=true
-#
-# Test mode with existing test inventory:
-#   ansible-playbook -i tests/inventory.yml get_tsim_facts.yml -e test=true --limit test_routers
-#
-# Common options for both modes:
 # Limit to specific hosts:
 #   ansible-playbook -i inventory.ini get_tsim_facts.yml --limit "hq-*"
 #
 # Increase verbosity for debugging:
 #   ansible-playbook -i inventory.ini get_tsim_facts.yml -vv
 #
-# Set custom timeout (production mode only):
+# Set custom timeout:
 #   ansible-playbook -i inventory.ini get_tsim_facts.yml -e collection_timeout=600
-#
-# Directory Precedence (highest to lowest):
-# 1. Command line: -e tsim_facts_dir=value
-# 2. Environment variable: TRACEROUTE_SIMULATOR_FACTS
-# 3. Default: tsim_facts
 #
 # Notes:
 # - Uses 'free' strategy for maximum parallelism (all hosts process simultaneously)
 # - Each host executes the unified get_facts.sh script once
-# - All raw facts are converted to structured JSON on the Ansible controller
-# - Final output is single JSON file per host in the specified facts directory
+# - Raw facts are stored without modification in TRACEROUTE_SIMULATOR_RAW_FACTS directory
+# - Final output is one raw facts file per host: {hostname}_facts.txt
 # - Requires sudo/root access on remote hosts for complete iptables/ipset access
-# - Temporary files are automatically cleaned up after processing (unless test=true)
-# - JSON files are validated for integrity before completion
+# - Temporary files are automatically cleaned up after processing
 # - Compatible with ansible-parallel-shell for high-performance execution
 # - Supports all standard Ansible inventory formats and host patterns
-# - Test mode (-e test=true) preserves raw facts in tests/raw_facts/ for development and testing
-# - Test mode enables comprehensive testing of facts processing and iptables analysis functionality
+# - Raw facts include: interfaces/IPs, policy rules, routing tables, iptables-save, ipset save
+# - Routing tables are automatically discovered from policy rules output

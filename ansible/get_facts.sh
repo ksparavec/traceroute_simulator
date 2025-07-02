@@ -109,12 +109,64 @@ collect_facts() {
     fi
     
     # === ROUTING INFORMATION ===
-    # These are collected as text for JSON conversion on the controller
-    exec_section "routing_table" "IP Routing Table" "$IP_CMD route show"
+    # Collect interfaces and IPs first
+    exec_section "interfaces" "Network Interfaces and IP Addresses" "$IP_CMD addr show"
+    
+    # Collect policy rules to discover routing tables
     exec_section "policy_rules" "IP Policy Rules" "$IP_CMD rule show"
     
+    # Extract routing table names/IDs from policy rules and /etc/iproute2/rt_tables
+    echo "# Extracting routing tables from policy rules..."
+    
+    # Get table names from rules output and rt_tables
+    RT_TABLES_FILE="/etc/iproute2/rt_tables"
+    RULES_OUTPUT=$($IP_CMD rule show 2>/dev/null || echo "")
+    
+    # Extract table references from rules (both names and numbers)
+    TABLE_REFS=$(echo "$RULES_OUTPUT" | grep -o 'lookup [a-zA-Z0-9_]*' | cut -d' ' -f2 | sort -u || echo "")
+    
+    # Add standard tables
+    ALL_TABLES="main local"
+    if [ -n "$TABLE_REFS" ]; then
+        ALL_TABLES="$ALL_TABLES $TABLE_REFS"
+    fi
+    
+    # Convert table names to numbers using rt_tables if available
+    FINAL_TABLES=""
+    for table in $ALL_TABLES; do
+        if [ "$table" = "local" ]; then
+            continue  # Skip local table as requested
+        fi
+        
+        # Try to convert name to number using rt_tables
+        if [ -f "$RT_TABLES_FILE" ] && [ "$table" != "main" ]; then
+            TABLE_NUM=$(grep "^[0-9]*[[:space:]]*$table[[:space:]]*" "$RT_TABLES_FILE" 2>/dev/null | awk '{print $1}' | head -1)
+            if [ -n "$TABLE_NUM" ]; then
+                table="$TABLE_NUM"
+            fi
+        fi
+        
+        # Add to final list (avoid duplicates)
+        if ! echo "$FINAL_TABLES" | grep -q "\b$table\b"; then
+            FINAL_TABLES="$FINAL_TABLES $table"
+        fi
+    done
+    
+    echo "# Found routing tables: $FINAL_TABLES"
+    
+    # Collect routing tables for each discovered table
+    for table in $FINAL_TABLES; do
+        if [ -n "$table" ]; then
+            table_name=$(echo "$table" | tr -d ' ')
+            if [ "$table_name" = "main" ]; then
+                exec_section "routing_table_main" "Main Routing Table" "$IP_CMD route show table main"
+            else
+                exec_section "routing_table_$table_name" "Routing Table $table_name" "$IP_CMD route show table $table_name"
+            fi
+        fi
+    done
+    
     # === NETWORK INTERFACE INFORMATION ===
-    exec_section "interfaces" "Network Interfaces" "$IP_CMD addr show"
     exec_section "interface_stats" "Interface Statistics" "${CAT_CMD:-cat} /proc/net/dev"
     
     # === SYSTEM INFORMATION ===
@@ -168,6 +220,7 @@ collect_facts() {
     if [ -n "$IPSET_CMD" ]; then
         if [ $is_root -eq 1 ]; then
             exec_section "ipset_list" "Ipset Lists and Membership" "$IPSET_CMD list"
+            exec_section "ipset_save" "Ipset Configuration (Save Format)" "$IPSET_CMD save"
         else
             echo "=== TSIM_SECTION_START:ipset_warning ==="
             echo "TITLE: Ipset Access Warning"

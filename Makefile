@@ -17,7 +17,7 @@ REQUIRED_MODULES := json sys argparse ipaddress os glob typing subprocess re dif
 
 # Colors removed for better terminal compatibility
 
-.PHONY: help check-deps test test-iptables-enhanced test-policy-routing test-ipset-enhanced test-raw-facts-loading test-mtr-options test-iptables-logging test-packet-tracing test-network fetch-routing-data clean tsim ifa netsetup nettest netclean netshow netstatus test-namespace hostadd hostdel hostlist hostclean netnsclean service-start service-stop service-restart service-status service-test service-clean test-services svctest svcstart svcstop svclist svcclean
+.PHONY: help check-deps test test-iptables-enhanced test-policy-routing test-ipset-enhanced test-raw-facts-loading test-mtr-options test-iptables-logging test-packet-tracing test-network facts clean tsim ifa netsetup nettest netclean netshow netstatus test-namespace hostadd hostdel hostlist hostclean netnsclean service-start service-stop service-restart service-status service-test service-clean test-services svctest svcstart svcstop svclist svcclean
 
 # Default target
 help:
@@ -25,7 +25,7 @@ help:
 	@echo "=============================================="
 	@echo "check-deps        - Check for required Python modules and provide installation hints"
 	@echo "test              - Execute all test scripts with test setup and report results (includes make targets tests)"
-	@echo "fetch-routing-data - Run Ansible playbook to collect routing facts (requires OUTPUT_DIR and INVENTORY_FILE or INVENTORY)"
+	@echo "facts             - Run Ansible playbook to collect network facts (requires INVENTORY_FILE or INVENTORY)"
 	@echo "clean             - Clean up generated files and cache"
 	@echo "tsim              - Run traceroute simulator with command line arguments (e.g., make tsim ARGS='-s 10.1.1.1 -d 10.2.1.1')"
 	@echo "ifa               - Run iptables forward analyzer with command line arguments (e.g., make ifa ARGS='--router hq-gw -s 10.1.1.1 -d 8.8.8.8')"
@@ -58,9 +58,9 @@ help:
 	@echo "Usage Examples:"
 	@echo "  make check-deps                                              # Verify all dependencies are installed"
 	@echo "  make test                                                   # Run comprehensive test suite"
-	@echo "  make fetch-routing-data OUTPUT_DIR=tests/routing_facts INVENTORY_FILE=hosts.ini       # Use specific inventory file"
-	@echo "  make fetch-routing-data OUTPUT_DIR=prod INVENTORY=routers              # Use configured inventory group"
-	@echo "  make fetch-routing-data OUTPUT_DIR=temp INVENTORY=specific-host        # Target specific host"
+	@echo "  make facts INVENTORY_FILE=hosts.ini                     # Use specific inventory file"
+	@echo "  make facts INVENTORY=routers                            # Use configured inventory group"
+	@echo "  make facts INVENTORY=specific-host                      # Target specific host"
 	@echo "  make tsim ARGS='-s 10.1.1.1 -d 10.2.1.1'                              # Run traceroute simulation"
 	@echo "  make ifa ARGS='--router hq-gw -s 10.1.1.1 -d 8.8.8.8 -p tcp'          # Analyze iptables forwarding"
 	@echo "  make netlog ARGS='--source 10.1.1.1 --dest 10.2.1.1 --format json'    # Analyze iptables logs"
@@ -104,9 +104,11 @@ help:
 	@echo "  sudo make svclist ARGS='-j'                                                                # List services in JSON format"
 	@echo "  sudo make svcclean                                                                         # Stop all services"
 	@echo ""
-	@echo "Test Data Collection:"
-	@echo "  # Collect facts and preserve raw data for testing (adds -e test=true to Ansible command)"
-	@echo "  make fetch-routing-data OUTPUT_DIR=tests/tsim_facts INVENTORY_FILE=hosts.ini TEST_MODE=true"
+	@echo "Facts Collection Examples:"
+	@echo "  # Collect raw network facts from production environment"
+	@echo "  make facts INVENTORY_FILE=production.ini"
+	@echo "  # Collect test facts from test environment"  
+	@echo "  TRACEROUTE_SIMULATOR_RAW_FACTS=/tmp/test_raw make facts INVENTORY_FILE=tests/inventory.yml"
 
 # Check for existence of all required Python modules
 check-deps:
@@ -319,42 +321,47 @@ test: check-deps
 	@echo ""
 	@echo "All tests completed successfully!"
 
-# Run Ansible playbook to fetch routing facts
+# Collect network facts using Ansible playbook
 # 
-# Two inventory modes supported:
+# Environment variables:
+# - TRACEROUTE_SIMULATOR_RAW_FACTS: Directory to store raw facts (default: /tmp/tsim/raw_facts)
+# - TRACEROUTE_SIMULATOR_FACTS: Directory for processed JSON facts (default: /tmp/tsim/json_facts)
+#
+# Inventory modes supported:
 # 1. INVENTORY_FILE: Specify a specific inventory file (e.g., hosts.ini, production.yml)
 # 2. INVENTORY: Use configured Ansible inventory to target specific group or host
-#    (requires ANSIBLE_INVENTORY environment variable or ansible.cfg configuration)
 #
-# Usage: make fetch-routing-data OUTPUT_DIR=directory_name [INVENTORY_FILE=file OR INVENTORY=group/host]
-fetch-routing-data:
-	@echo "Fetching Traceroute Simulator Facts from Network Routers"
-	@echo "=============================================="
+# Usage: make facts [INVENTORY_FILE=file OR INVENTORY=group/host]
+facts:
+	@echo "Collecting Network Facts from Routers"
+	@echo "======================================"
 	@echo ""
 	
-	# Check if OUTPUT_DIR is provided
-	@if [ -z "$(OUTPUT_DIR)" ]; then \
-		echo "Error: OUTPUT_DIR parameter is required"; \
-		echo "Usage: make fetch-routing-data OUTPUT_DIR=directory_name [INVENTORY_FILE=file OR INVENTORY=group/host]"; \
-		echo "Examples:"; \
-		echo "  make fetch-routing-data OUTPUT_DIR=tests/routing_facts INVENTORY_FILE=hosts.ini"; \
-		echo "  make fetch-routing-data OUTPUT_DIR=production_data INVENTORY_FILE=production.yml"; \
-		echo "  make fetch-routing-data OUTPUT_DIR=tests/routing_facts INVENTORY=routers"; \
-		echo "  make fetch-routing-data OUTPUT_DIR=production_data INVENTORY=production_group"; \
-		echo "  make fetch-routing-data OUTPUT_DIR=/tmp/routing_facts INVENTORY=specific-host"; \
-		exit 1; \
+	# Check environment variables and set defaults
+	@if [ -n "$(TRACEROUTE_SIMULATOR_FACTS)" ] || [ -n "$(TRACEROUTE_SIMULATOR_RAW_FACTS)" ]; then \
+		echo "Environment variables detected:"; \
+		[ -n "$(TRACEROUTE_SIMULATOR_FACTS)" ] && echo "  TRACEROUTE_SIMULATOR_FACTS=$(TRACEROUTE_SIMULATOR_FACTS)"; \
+		[ -n "$(TRACEROUTE_SIMULATOR_RAW_FACTS)" ] && echo "  TRACEROUTE_SIMULATOR_RAW_FACTS=$(TRACEROUTE_SIMULATOR_RAW_FACTS)"; \
 	fi
+	
+	$(eval RAW_FACTS_DIR := $(if $(TRACEROUTE_SIMULATOR_RAW_FACTS),$(TRACEROUTE_SIMULATOR_RAW_FACTS),/tmp/tsim/raw_facts))
+	$(eval JSON_FACTS_DIR := $(if $(TRACEROUTE_SIMULATOR_FACTS),$(TRACEROUTE_SIMULATOR_FACTS),/tmp/tsim/json_facts))
+	
+	@echo "Using directories:"
+	@echo "  Raw facts: $(RAW_FACTS_DIR)"
+	@echo "  JSON facts: $(JSON_FACTS_DIR)"
+	@echo ""
 	
 	# Check if either INVENTORY_FILE or INVENTORY is provided
 	@if [ -z "$(INVENTORY_FILE)" ] && [ -z "$(INVENTORY)" ]; then \
 		echo "Error: Either INVENTORY_FILE or INVENTORY parameter is required"; \
-		echo "Usage: make fetch-routing-data OUTPUT_DIR=directory_name [INVENTORY_FILE=file OR INVENTORY=group/host]"; \
+		echo "Usage: make facts [INVENTORY_FILE=file OR INVENTORY=group/host]"; \
 		echo "Examples:"; \
-		echo "  make fetch-routing-data OUTPUT_DIR=tests/routing_facts INVENTORY_FILE=hosts.ini      # Use specific inventory file"; \
-		echo "  make fetch-routing-data OUTPUT_DIR=production_data INVENTORY_FILE=production.yml     # Use specific inventory file"; \
-		echo "  make fetch-routing-data OUTPUT_DIR=tests/routing_facts INVENTORY=routers           # Use configured inventory group"; \
-		echo "  make fetch-routing-data OUTPUT_DIR=production_data INVENTORY=production_group        # Use configured inventory group"; \
-		echo "  make fetch-routing-data OUTPUT_DIR=/tmp/routing_facts INVENTORY=specific-host        # Target specific host"; \
+		echo "  make facts INVENTORY_FILE=hosts.ini              # Use specific inventory file"; \
+		echo "  make facts INVENTORY_FILE=production.yml         # Use specific inventory file"; \
+		echo "  make facts INVENTORY=routers                     # Use configured inventory group"; \
+		echo "  make facts INVENTORY=production_group            # Use configured inventory group"; \
+		echo "  make facts INVENTORY=specific-host               # Target specific host"; \
 		exit 1; \
 	fi
 	
@@ -363,13 +370,10 @@ fetch-routing-data:
 		echo "Error: Cannot specify both INVENTORY_FILE and INVENTORY parameters"; \
 		echo "Usage: Use either INVENTORY_FILE for a specific file OR INVENTORY for a group/host"; \
 		echo "Examples:"; \
-		echo "  make fetch-routing-data OUTPUT_DIR=test INVENTORY_FILE=hosts.ini  # Use file"; \
-		echo "  make fetch-routing-data OUTPUT_DIR=test INVENTORY=routers         # Use group"; \
+		echo "  make facts INVENTORY_FILE=hosts.ini  # Use file"; \
+		echo "  make facts INVENTORY=routers         # Use group"; \
 		exit 1; \
 	fi
-	
-	$(eval TARGET_DIR := $(OUTPUT_DIR))
-	@echo "Target output directory: $(TARGET_DIR)"
 	
 	# Set inventory parameter based on what was provided
 	@if [ -n "$(INVENTORY_FILE)" ]; then \
@@ -378,6 +382,11 @@ fetch-routing-data:
 		echo "Using inventory group/host: $(INVENTORY)"; \
 	fi
 	@echo ""
+	
+	# Create output directories
+	@echo "Creating output directories..."
+	@mkdir -p $(RAW_FACTS_DIR)
+	@echo "✓ Raw facts directory: $(RAW_FACTS_DIR)"
 	
 	# Check if Ansible is available
 	@if ! command -v $(ANSIBLE) >/dev/null 2>&1; then \
@@ -408,36 +417,23 @@ fetch-routing-data:
 	@echo "✓ Playbook syntax is valid"
 	@echo ""
 	
-	# Create backup of existing routing facts if they exist
-	@if [ -d "$(TARGET_DIR)" ] && [ "$$(ls -A $(TARGET_DIR) 2>/dev/null)" ]; then \
-		backup_dir="$(TARGET_DIR).backup.$$(date +%Y%m%d_%H%M%S)"; \
-		echo "Backing up existing routing facts to $$backup_dir"; \
-		cp -r $(TARGET_DIR) $$backup_dir; \
+	# Create backup of existing raw facts if they exist
+	@if [ -d "$(RAW_FACTS_DIR)" ] && [ "$$(ls -A $(RAW_FACTS_DIR) 2>/dev/null)" ]; then \
+		backup_dir="$(RAW_FACTS_DIR).backup.$$(date +%Y%m%d_%H%M%S)"; \
+		echo "Backing up existing raw facts to $$backup_dir"; \
+		cp -r $(RAW_FACTS_DIR) $$backup_dir; \
 	fi
 	
-	# Run the playbook with user-specified output directory and inventory
-	@echo "Executing Ansible playbook to collect traceroute simulator facts..."
-	$(eval TEST_FLAG := $(if $(TEST_MODE),-e "test=true",))
-	$(eval TEST_INVENTORY := $(if $(TEST_MODE),$(TESTS_DIR)/inventory.yml,))
-	@if [ -n "$(TEST_MODE)" ]; then \
-		echo "Test mode enabled: Converting raw facts from tests/raw_facts/"; \
-		echo "Using test inventory: $(TESTS_DIR)/inventory.yml"; \
-		echo "Output directory: /tmp/traceroute_test_output"; \
-	fi
-	@if [ -n "$(TEST_MODE)" ]; then \
-		$(ANSIBLE) $(ANSIBLE_DIR)/get_tsim_facts.yml -i "$(TESTS_DIR)/inventory.yml" -v $(TEST_FLAG) || { \
-			echo "Ansible playbook execution failed in test mode!"; \
-			echo "Check that tests/raw_facts/ contains the necessary router facts files"; \
-			exit 1; \
-		}; \
-	elif [ -n "$(INVENTORY_FILE)" ]; then \
-		$(ANSIBLE) $(ANSIBLE_DIR)/get_tsim_facts.yml -i "$(INVENTORY_FILE)" -v -e "tsim_facts_dir=$(TARGET_DIR)" || { \
+	# Run the playbook to collect raw facts
+	@echo "Executing Ansible playbook to collect network facts..."
+	@if [ -n "$(INVENTORY_FILE)" ]; then \
+		TRACEROUTE_SIMULATOR_RAW_FACTS=$(RAW_FACTS_DIR) $(ANSIBLE) $(ANSIBLE_DIR)/get_tsim_facts.yml -i "$(INVENTORY_FILE)" -v || { \
 			echo "Ansible playbook execution failed!"; \
 			echo "Check your inventory file and network connectivity"; \
 			exit 1; \
 		}; \
 	else \
-		$(ANSIBLE) $(ANSIBLE_DIR)/get_tsim_facts.yml --limit "$(INVENTORY)" -v -e "tsim_facts_dir=$(TARGET_DIR)" || { \
+		TRACEROUTE_SIMULATOR_RAW_FACTS=$(RAW_FACTS_DIR) $(ANSIBLE) $(ANSIBLE_DIR)/get_tsim_facts.yml --limit "$(INVENTORY)" -v || { \
 			echo "Ansible playbook execution failed!"; \
 			echo "Check your inventory configuration and network connectivity"; \
 			echo "Ensure the group/host '$(INVENTORY)' exists in your configured inventory"; \
@@ -446,18 +442,15 @@ fetch-routing-data:
 	fi
 	
 	# Verify collected data
-	@if [ -d "$(TARGET_DIR)" ]; then \
-		json_files=$$(find $(TARGET_DIR) -name "*.json" | wc -l); \
+	@if [ -d "$(RAW_FACTS_DIR)" ]; then \
+		raw_files=$$(find $(RAW_FACTS_DIR) -name "*_facts.txt" | wc -l); \
 		echo ""; \
-		echo "Traceroute simulator facts collection completed!"; \
-		echo "  JSON files collected: $$json_files"; \
-		echo "  Data location: $(TARGET_DIR)"; \
-		if [ -n "$(TEST_MODE)" ]; then \
-			echo "  Test mode: Raw facts preserved in tests/raw_facts/"; \
-			echo "  Run tests: cd tests && python3 test_comprehensive_facts_processing.py"; \
-		fi; \
-		if [ $$json_files -eq 0 ]; then \
-			echo "Warning: No JSON files collected. Check Ansible output above."; \
+		echo "Network facts collection completed!"; \
+		echo "  Raw facts files collected: $$raw_files"; \
+		echo "  Raw facts location: $(RAW_FACTS_DIR)"; \
+		echo "  Raw facts are preserved for processing"; \
+		if [ $$raw_files -eq 0 ]; then \
+			echo "Warning: No raw facts files collected. Check Ansible output above."; \
 		fi; \
 	else \
 		echo "No facts were collected!"; \

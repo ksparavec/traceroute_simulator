@@ -30,29 +30,29 @@ help:
 	@echo "tsim              - Run traceroute simulator with command line arguments (e.g., make tsim ARGS='-s 10.1.1.1 -d 10.2.1.1')"
 	@echo "ifa               - Run iptables forward analyzer with command line arguments (e.g., make ifa ARGS='--router hq-gw -s 10.1.1.1 -d 8.8.8.8')"
 	@echo "netlog            - Analyze iptables logs with filtering and correlation (e.g., make netlog ARGS='--source 10.1.1.1 --dest 10.2.1.1')"
-	@echo "netsetup          - Set up Linux namespace network simulation (requires sudo, ARGS='-v/-vv/-vvv' for verbosity)"
+	@echo "netsetup          - Set up Linux namespace network simulation (requires sudo -E, ARGS='-v/-vv/-vvv' for verbosity)"
 	@echo "nettest           - Test network connectivity in namespace simulation (e.g., make nettest ARGS='-s 10.1.1.1 -d 10.2.1.1 --test-type ping')"
 	@echo "svctest           - Test TCP/UDP services with auto namespace detection (e.g., make svctest ARGS='-s 10.1.1.1 -d 10.2.1.1:8080')"
 	@echo "svcstart          - Start a service on an IP address (e.g., make svcstart ARGS='10.1.1.1:8080')"
 	@echo "svcstop           - Stop a service on an IP address (e.g., make svcstop ARGS='10.1.1.1:8080')"
-	@echo "svclist           - List all services across all namespaces (sudo make svclist [ARGS='-j'])"
-	@echo "svcclean          - Stop all services across all namespaces (sudo make svcclean)"
+	@echo "svclist           - List all services across all namespaces (sudo -E make svclist [ARGS='-j'])"
+	@echo "svcclean          - Stop all services across all namespaces (sudo -E make svcclean)"
 	@echo "netshow           - Show static network topology from facts (e.g., make netshow ARGS='hq-gw interfaces' or 'all hosts')"
 	@echo "netstatus         - Show live namespace status (e.g., make netstatus ARGS='hq-gw interfaces' or 'all summary')"
-	@echo "netclean          - Clean up namespace network simulation (requires sudo, ARGS='-v/-f/--force' for options)"
+	@echo "netclean          - Clean up namespace network simulation (requires sudo -E, ARGS='-v/-f/--force' for options)"
 	@echo "test-iptables-enhanced - Test enhanced iptables rules for ping/mtr connectivity"
 	@echo "test-policy-routing   - Test enhanced policy routing with multiple routing tables"
 	@echo "test-iptables-logging - Test iptables logging implementation with comprehensive log analysis"
 	@echo "test-packet-tracing   - Test comprehensive packet tracing implementation with rule correlation"
-	@echo "test-namespace    - Run namespace simulation tests independently (requires sudo and completed 'make test')"
-	@echo "test-network      - Run comprehensive network connectivity tests (requires sudo, takes 3-5 minutes)"
+	@echo "test-namespace    - Run namespace simulation tests independently (requires sudo -E and completed 'make test')"
+	@echo "test-network      - Run comprehensive network connectivity tests (requires sudo -E, takes 3-5 minutes)"
 	@echo "hostadd           - Add dynamic host to network (e.g., make hostadd ARGS='--host web1 --primary-ip 10.1.1.100/24 --connect-to hq-gw')"
 	@echo "hostdel           - Remove host from network (e.g., make hostdel ARGS='--host web1')"
-	@echo "hostlist          - List all registered hosts (sudo make hostlist)"
-	@echo "hostclean         - Remove all registered hosts (sudo make hostclean)"
-	@echo "netnsclean        - Clean up both routers and hosts (sudo make netnsclean)"
+	@echo "hostlist          - List all registered hosts (sudo -E make hostlist)"
+	@echo "hostclean         - Remove all registered hosts (sudo -E make hostclean)"
+	@echo "netnsclean        - Clean up both routers and hosts (sudo -E make netnsclean)"
 	@echo "# Service management - use svctest for IP-based interface"
-	@echo "test-services     - Run service manager test suite (requires sudo)"
+	@echo "test-services     - Run service manager test suite (requires sudo -E)"
 	@echo "help              - Show this help message"
 	@echo ""
 	@echo "Usage Examples:"
@@ -64,13 +64,13 @@ help:
 	@echo "  make tsim ARGS='-s 10.1.1.1 -d 10.2.1.1'                              # Run traceroute simulation"
 	@echo "  make ifa ARGS='--router hq-gw -s 10.1.1.1 -d 8.8.8.8 -p tcp'          # Analyze iptables forwarding"
 	@echo "  make netlog ARGS='--source 10.1.1.1 --dest 10.2.1.1 --format json'    # Analyze iptables logs"
-	@echo "  sudo make netsetup                                                     # Set up namespace network simulation (silent)"
-	@echo "  sudo make netsetup ARGS='-v'                                          # Set up with basic output"
-	@echo "  sudo make netsetup ARGS='-vv'                                         # Set up with info messages"
-	@echo "  sudo make netsetup ARGS='-vvv'                                        # Set up with debug messages"
-	@echo "  sudo make nettest ARGS='-s 10.1.1.1 -d 10.2.1.1 --test-type ping'    # Test ICMP connectivity"
-	@echo "  sudo make nettest ARGS='-s 10.1.1.1 -d 10.2.1.1 --test-type mtr'     # Test with MTR traceroute"
-	@echo "  sudo make nettest ARGS='-s 10.1.1.1 -d 8.8.8.8 --test-type both -v'  # Test external IP with both ping and MTR"
+	@echo "  sudo -E make netsetup                                                     # Set up namespace network simulation (silent)"
+	@echo "  sudo -E make netsetup ARGS='-v'                                          # Set up with basic output"
+	@echo "  sudo -E make netsetup ARGS='-vv'                                         # Set up with info messages"
+	@echo "  sudo -E make netsetup ARGS='-vvv'                                        # Set up with debug messages"
+	@echo "  sudo -E make nettest ARGS='-s 10.1.1.1 -d 10.2.1.1 --test-type ping'    # Test ICMP connectivity"
+	@echo "  sudo -E make nettest ARGS='-s 10.1.1.1 -d 10.2.1.1 --test-type mtr'     # Test with MTR traceroute"
+	@echo "  sudo -E make nettest ARGS='-s 10.1.1.1 -d 8.8.8.8 --test-type both -v'  # Test external IP with both ping and MTR"
 	@echo "  make netshow ARGS='hq-gw interfaces'                                  # Show static interface config from facts"
 	@echo "  make netshow ARGS='all summary'                                       # Show static summary of all routers and hosts from facts"
 	@echo "  make netshow ARGS='all topology'                                      # Show complete network topology from facts"
@@ -79,30 +79,30 @@ help:
 	@echo "  make netshow ARGS='hq-gw hosts'                                       # Show hosts connected to hq-gw from registry"
 	@echo "  make netshow ARGS='web1 summary'                                      # Show host summary for web1 from registry"
 	@echo "  make netshow ARGS='br-core routes -v'                                 # Show static routing table from facts"
-	@echo "  sudo make netstatus ARGS='hq-gw interfaces'                           # Show live interface config"
-	@echo "  sudo make netstatus ARGS='web1 summary'                               # Show live host summary"
-	@echo "  sudo make netstatus ARGS='all summary'                                # Show live status of all namespaces"
-	@echo "  sudo make netclean                                                     # Clean up namespace simulation (silent)"
-	@echo "  sudo make netclean ARGS='-v'                                          # Clean up with verbose output"
-	@echo "  sudo make netclean ARGS='-f'                                          # Force cleanup of stuck resources"
-	@echo "  sudo make netclean ARGS='-v -f'                                       # Verbose force cleanup"
-	@echo "  sudo make test-namespace                                               # Run namespace simulation tests after 'make test'"
-	@echo "  sudo make test-network                                                 # Run comprehensive network connectivity tests (3-5 min)"
-	@echo "  sudo make hostadd ARGS='--host web1 --primary-ip 10.1.1.100/24 --connect-to hq-gw'      # Add host to bridge"
-	@echo "  sudo make hostadd ARGS='--host srv1 --primary-ip 10.1.11.100/24 --connect-to hq-lab --router-interface eth2'  # Connect to specific bridge"
-	@echo "  sudo make hostadd ARGS='--host db1 --primary-ip 10.2.1.100/24 --secondary-ips 192.168.1.1/24'  # Add host with secondary IP"
-	@echo "  sudo make hostdel ARGS='--host web1 --remove'                         # Remove host from network"
-	@echo "  sudo make hostlist                                                     # List all registered hosts"
-	@echo "  sudo make hostclean                                                    # Remove all registered hosts"
-	@echo "  sudo make netnsclean                                                   # Clean up both routers and hosts"
-	@echo "  sudo make svcstart ARGS='10.1.1.1:8080'                                                   # Start TCP echo service on IP"
-	@echo "  sudo make svcstart ARGS='10.2.1.1:53 -p udp --name dns'                                  # Start UDP service on IP with name"
-	@echo "  sudo make svcstop ARGS='10.1.1.1:8080'                                                    # Stop service on IP:port"
-	@echo "  sudo make svctest ARGS='-s 10.1.1.1 -d 10.2.1.1:8080'                                   # Test TCP service (auto-detect namespaces)"
-	@echo "  sudo make svctest ARGS='-s 10.1.1.1 -d 10.2.1.1:53 -p udp -m \"Query\"'                   # Test UDP service with message"
-	@echo "  sudo make svclist                                                                          # List all running services"
-	@echo "  sudo make svclist ARGS='-j'                                                                # List services in JSON format"
-	@echo "  sudo make svcclean                                                                         # Stop all services"
+	@echo "  sudo -E make netstatus ARGS='hq-gw interfaces'                           # Show live interface config"
+	@echo "  sudo -E make netstatus ARGS='web1 summary'                               # Show live host summary"
+	@echo "  sudo -E make netstatus ARGS='all summary'                                # Show live status of all namespaces"
+	@echo "  sudo -E make netclean                                                     # Clean up namespace simulation (silent)"
+	@echo "  sudo -E make netclean ARGS='-v'                                          # Clean up with verbose output"
+	@echo "  sudo -E make netclean ARGS='-f'                                          # Force cleanup of stuck resources"
+	@echo "  sudo -E make netclean ARGS='-v -f'                                       # Verbose force cleanup"
+	@echo "  sudo -E make test-namespace                                               # Run namespace simulation tests after 'make test'"
+	@echo "  sudo -E make test-network                                                 # Run comprehensive network connectivity tests (3-5 min)"
+	@echo "  sudo -E make hostadd ARGS='--host web1 --primary-ip 10.1.1.100/24 --connect-to hq-gw'      # Add host to bridge"
+	@echo "  sudo -E make hostadd ARGS='--host srv1 --primary-ip 10.1.11.100/24 --connect-to hq-lab --router-interface eth2'  # Connect to specific bridge"
+	@echo "  sudo -E make hostadd ARGS='--host db1 --primary-ip 10.2.1.100/24 --secondary-ips 192.168.1.1/24'  # Add host with secondary IP"
+	@echo "  sudo -E make hostdel ARGS='--host web1 --remove'                         # Remove host from network"
+	@echo "  sudo -E make hostlist                                                     # List all registered hosts"
+	@echo "  sudo -E make hostclean                                                    # Remove all registered hosts"
+	@echo "  sudo -E make netnsclean                                                   # Clean up both routers and hosts"
+	@echo "  sudo -E make svcstart ARGS='10.1.1.1:8080'                                                   # Start TCP echo service on IP"
+	@echo "  sudo -E make svcstart ARGS='10.2.1.1:53 -p udp --name dns'                                  # Start UDP service on IP with name"
+	@echo "  sudo -E make svcstop ARGS='10.1.1.1:8080'                                                    # Stop service on IP:port"
+	@echo "  sudo -E make svctest ARGS='-s 10.1.1.1 -d 10.2.1.1:8080'                                   # Test TCP service (auto-detect namespaces)"
+	@echo "  sudo -E make svctest ARGS='-s 10.1.1.1 -d 10.2.1.1:53 -p udp -m \"Query\"'                   # Test UDP service with message"
+	@echo "  sudo -E make svclist                                                                          # List all running services"
+	@echo "  sudo -E make svclist ARGS='-j'                                                                # List services in JSON format"
+	@echo "  sudo -E make svcclean                                                                         # Stop all services"
 	@echo ""
 	@echo "Facts Collection Examples:"
 	@echo "  # Collect raw network facts from production environment"
@@ -302,7 +302,7 @@ test: check-deps
 		echo "✓ All namespace make targets tests completed successfully"; \
 	else \
 		echo "⚠ Skipping namespace make targets tests (requires sudo privileges)"; \
-		echo "  To run make targets tests: sudo make test"; \
+		echo "  To run make targets tests: sudo -E make test"; \
 	fi
 	@echo ""
 	
@@ -316,7 +316,7 @@ test: check-deps
 		echo "⚠ Namespace simulation tests completed with warnings (may require sudo)"; \
 	else \
 		echo "⚠ Skipping namespace simulation tests (requires sudo privileges)"; \
-		echo "  To run namespace tests: sudo make test"; \
+		echo "  To run namespace tests: sudo -E make test"; \
 	fi
 	@echo ""
 	@echo "All tests completed successfully!"
@@ -521,25 +521,25 @@ netlog:
 	@$(PYTHON) scripts/netlog $(ARGS)
 
 # Set up Linux namespace network simulation (requires sudo)
-# Usage: sudo make netsetup [ARGS="-v|-vv|-vvv"]
+# Usage: sudo -E make netsetup [ARGS="-v|-vv|-vvv"]
 netsetup:
 	@if [ "$$(id -u)" != "0" ]; then \
 		echo "Error: netsetup requires root privileges"; \
-		echo "Please run: sudo make netsetup"; \
+		echo "Please run: sudo -E make netsetup"; \
 		exit 1; \
 	fi
-	@TRACEROUTE_SIMULATOR_FACTS=/tmp/traceroute_test_output $(PYTHON) src/simulators/network_namespace_setup.py $(ARGS)
+	@env TRACEROUTE_SIMULATOR_RAW_FACTS="$(TRACEROUTE_SIMULATOR_RAW_FACTS)" TRACEROUTE_SIMULATOR_FACTS=/tmp/traceroute_test_output $(PYTHON) src/simulators/network_namespace_setup.py $(ARGS)
 
 # Test network connectivity in namespace simulation (requires sudo)  
-# Usage: sudo make nettest ARGS="-s 10.1.1.1 -d 10.2.1.1 -p tcp --dport 80"
+# Usage: sudo -E make nettest ARGS="-s 10.1.1.1 -d 10.2.1.1 -p tcp --dport 80"
 nettest:
 	@if [ "$$(id -u)" != "0" ]; then \
 		echo "Error: nettest requires root privileges"; \
-		echo "Please run: sudo make nettest ARGS='<arguments>'"; \
+		echo "Please run: sudo -E make nettest ARGS='<arguments>'"; \
 		exit 1; \
 	fi
 	@if [ -z "$(ARGS)" ]; then \
-		echo "Usage: sudo make nettest ARGS='<arguments>'"; \
+		echo "Usage: sudo -E make nettest ARGS='<arguments>'"; \
 		echo ""; \
 		echo "Required arguments:"; \
 		echo "  Either: -s <source_ip> -d <destination_ip>  # Test specific connection"; \
@@ -551,25 +551,25 @@ nettest:
 		echo "  --wait <seconds>               # Wait time between tests (default: 0.1)"; \
 		echo ""; \
 		echo "Examples:"; \
-		echo "  sudo make nettest ARGS='-s 10.1.1.1 -d 10.2.1.1'                      # Basic ping test"; \
-		echo "  sudo make nettest ARGS='-s 10.1.1.1 -d 10.2.1.1 --test-type mtr'     # MTR traceroute test"; \
-		echo "  sudo make nettest ARGS='-s 10.1.1.1 -d 8.8.8.8 --test-type both -v'  # Both ping and MTR with verbosity"; \
-		echo "  sudo make nettest ARGS='--all'                                        # Test all routers (ping)"; \
-		echo "  sudo make nettest ARGS='--all --test-type mtr -v'                     # Test all routers (MTR, verbose)"; \
+		echo "  sudo -E make nettest ARGS='-s 10.1.1.1 -d 10.2.1.1'                      # Basic ping test"; \
+		echo "  sudo -E make nettest ARGS='-s 10.1.1.1 -d 10.2.1.1 --test-type mtr'     # MTR traceroute test"; \
+		echo "  sudo -E make nettest ARGS='-s 10.1.1.1 -d 8.8.8.8 --test-type both -v'  # Both ping and MTR with verbosity"; \
+		echo "  sudo -E make nettest ARGS='--all'                                        # Test all routers (ping)"; \
+		echo "  sudo -E make nettest ARGS='--all --test-type mtr -v'                     # Test all routers (MTR, verbose)"; \
 		exit 1; \
 	fi
 	@TRACEROUTE_SIMULATOR_FACTS=/tmp/traceroute_test_output $(PYTHON) src/simulators/network_namespace_tester.py $(ARGS)
 
 # Test services with automatic namespace detection (requires sudo)
-# Usage: sudo make svctest ARGS="-s <source_ip[:port]> -d <dest_ip:port> [-p tcp|udp]"
+# Usage: sudo -E make svctest ARGS="-s <source_ip[:port]> -d <dest_ip:port> [-p tcp|udp]"
 svctest:
 	@if [ "$$(id -u)" != "0" ]; then \
 		echo "Error: svctest requires root privileges"; \
-		echo "Please run: sudo make svctest ARGS='<arguments>'"; \
+		echo "Please run: sudo -E make svctest ARGS='<arguments>'"; \
 		exit 1; \
 	fi
 	@if [ -z "$(ARGS)" ]; then \
-		echo "Usage: sudo make svctest ARGS='<arguments>'"; \
+		echo "Usage: sudo -E make svctest ARGS='<arguments>'"; \
 		echo ""; \
 		echo "Test service connectivity:"; \
 		echo "  -s <source_ip[:port]>    # Source IP and optional port"; \
@@ -584,25 +584,25 @@ svctest:
 		echo "  --name <name>            # Service name (optional)"; \
 		echo ""; \
 		echo "Examples:"; \
-		echo "  sudo make svctest ARGS='-s 10.1.1.1 -d 10.2.1.1:80'               # Test TCP service"; \
-		echo "  sudo make svctest ARGS='-s 10.1.1.1:5000 -d 10.2.1.1:80 -p tcp'  # With source port"; \
-		echo "  sudo make svctest ARGS='-s 10.1.1.1 -d 10.2.1.1:53 -p udp'       # Test UDP service"; \
-		echo "  sudo make svctest ARGS='--start 10.1.1.1:8080'                    # Start TCP service"; \
-		echo "  sudo make svctest ARGS='--start 10.2.1.1:53 -p udp --name dns'    # Start UDP service"; \
+		echo "  sudo -E make svctest ARGS='-s 10.1.1.1 -d 10.2.1.1:80'               # Test TCP service"; \
+		echo "  sudo -E make svctest ARGS='-s 10.1.1.1:5000 -d 10.2.1.1:80 -p tcp'  # With source port"; \
+		echo "  sudo -E make svctest ARGS='-s 10.1.1.1 -d 10.2.1.1:53 -p udp'       # Test UDP service"; \
+		echo "  sudo -E make svctest ARGS='--start 10.1.1.1:8080'                    # Start TCP service"; \
+		echo "  sudo -E make svctest ARGS='--start 10.2.1.1:53 -p udp --name dns'    # Start UDP service"; \
 		exit 1; \
 	fi
 	@TRACEROUTE_SIMULATOR_FACTS=/tmp/traceroute_test_output $(PYTHON) src/simulators/service_tester.py $(ARGS)
 
 # Start a service on an IP address (requires sudo)
-# Usage: sudo make svcstart ARGS="<ip:port> [-p tcp|udp] [--name <name>]"
+# Usage: sudo -E make svcstart ARGS="<ip:port> [-p tcp|udp] [--name <name>]"
 svcstart:
 	@if [ "$$(id -u)" != "0" ]; then \
 		echo "Error: svcstart requires root privileges"; \
-		echo "Please run: sudo make svcstart ARGS='<ip:port>'"; \
+		echo "Please run: sudo -E make svcstart ARGS='<ip:port>'"; \
 		exit 1; \
 	fi
 	@if [ -z "$(ARGS)" ]; then \
-		echo "Usage: sudo make svcstart ARGS='<ip:port> [options]'"; \
+		echo "Usage: sudo -E make svcstart ARGS='<ip:port> [options]'"; \
 		echo ""; \
 		echo "Required:"; \
 		echo "  <ip:port>         # IP address and port to bind service"; \
@@ -613,56 +613,56 @@ svcstart:
 		echo "  -v, -vv           # Verbosity levels"; \
 		echo ""; \
 		echo "Examples:"; \
-		echo "  sudo make svcstart ARGS='10.1.1.1:8080'                  # Start TCP echo service"; \
-		echo "  sudo make svcstart ARGS='10.2.1.1:53 -p udp --name dns'  # Start UDP service with name"; \
+		echo "  sudo -E make svcstart ARGS='10.1.1.1:8080'                  # Start TCP echo service"; \
+		echo "  sudo -E make svcstart ARGS='10.2.1.1:53 -p udp --name dns'  # Start UDP service with name"; \
 		exit 1; \
 	fi
 	@TRACEROUTE_SIMULATOR_FACTS=/tmp/traceroute_test_output $(PYTHON) src/simulators/service_tester.py --start $(ARGS)
 
 # Stop a service on an IP address (requires sudo)
-# Usage: sudo make svcstop ARGS="<ip:port>"
+# Usage: sudo -E make svcstop ARGS="<ip:port>"
 svcstop:
 	@if [ "$$(id -u)" != "0" ]; then \
 		echo "Error: svcstop requires root privileges"; \
-		echo "Please run: sudo make svcstop ARGS='<ip:port>'"; \
+		echo "Please run: sudo -E make svcstop ARGS='<ip:port>'"; \
 		exit 1; \
 	fi
 	@if [ -z "$(ARGS)" ]; then \
-		echo "Usage: sudo make svcstop ARGS='<ip:port>'"; \
+		echo "Usage: sudo -E make svcstop ARGS='<ip:port>'"; \
 		echo ""; \
 		echo "Examples:"; \
-		echo "  sudo make svcstop ARGS='10.1.1.1:8080'  # Stop service on port 8080"; \
-		echo "  sudo make svcstop ARGS='10.2.1.1:53'     # Stop service on port 53"; \
+		echo "  sudo -E make svcstop ARGS='10.1.1.1:8080'  # Stop service on port 8080"; \
+		echo "  sudo -E make svcstop ARGS='10.2.1.1:53'     # Stop service on port 53"; \
 		exit 1; \
 	fi
 	@TRACEROUTE_SIMULATOR_FACTS=/tmp/traceroute_test_output $(PYTHON) src/simulators/service_tester.py --stop $(ARGS)
 
 # List all services across all namespaces (requires sudo)
-# Usage: sudo make svclist [ARGS="-j|--json"]
+# Usage: sudo -E make svclist [ARGS="-j|--json"]
 svclist:
 	@if [ "$$(id -u)" != "0" ]; then \
 		echo "Error: svclist requires root privileges"; \
-		echo "Please run: sudo make svclist"; \
+		echo "Please run: sudo -E make svclist"; \
 		exit 1; \
 	fi
 	@$(PYTHON) src/simulators/service_manager.py status $(ARGS)
 
 # Stop all services across all namespaces (requires sudo)
-# Usage: sudo make svcclean
+# Usage: sudo -E make svcclean
 svcclean:
 	@if [ "$$(id -u)" != "0" ]; then \
 		echo "Error: svcclean requires root privileges"; \
-		echo "Please run: sudo make svcclean"; \
+		echo "Please run: sudo -E make svcclean"; \
 		exit 1; \
 	fi
 	@$(PYTHON) src/simulators/service_manager.py cleanup
 
 # Clean up namespace network simulation (requires sudo)
-# Usage: sudo make netclean [ARGS="-v|-f|--force"]
+# Usage: sudo -E make netclean [ARGS="-v|-f|--force"]
 netclean:
 	@if [ "$$(id -u)" != "0" ]; then \
 		echo "Error: netclean requires root privileges"; \
-		echo "Please run: sudo make netclean"; \
+		echo "Please run: sudo -E make netclean"; \
 		exit 1; \
 	fi
 	@$(PYTHON) src/simulators/network_namespace_cleanup.py $(ARGS)
@@ -699,17 +699,17 @@ netshow:
 	@TRACEROUTE_SIMULATOR_FACTS=/tmp/traceroute_test_output $(PYTHON) src/simulators/network_topology_viewer.py $(ARGS)
 
 # Show live network namespace status (requires sudo)
-# Usage: sudo make netstatus ARGS="<namespace> <function> [-v]"
+# Usage: sudo -E make netstatus ARGS="<namespace> <function> [-v]"
 # Functions: interfaces, routes, rules, summary, all
 # Namespace names: any running namespace (routers or hosts) or 'all'
 netstatus:
 	@if [ "$$(id -u)" != "0" ]; then \
 		echo "Error: netstatus requires root privileges to access namespaces"; \
-		echo "Please run: sudo make netstatus ARGS='<namespace> <function>'"; \
+		echo "Please run: sudo -E make netstatus ARGS='<namespace> <function>'"; \
 		exit 1; \
 	fi
 	@if [ -z "$(ARGS)" ]; then \
-		echo "Usage: sudo make netstatus ARGS='<namespace> <function> [options]'"; \
+		echo "Usage: sudo -E make netstatus ARGS='<namespace> <function> [options]'"; \
 		echo ""; \
 		echo "Shows LIVE status of running namespaces only (no static facts)"; \
 		echo ""; \
@@ -718,23 +718,23 @@ netstatus:
 		echo "Options: -v (verbose debug output)"; \
 		echo ""; \
 		echo "Examples:"; \
-		echo "  sudo make netstatus ARGS='hq-gw interfaces'         # Show live interface config"; \
-		echo "  sudo make netstatus ARGS='br-core routes'           # Show live routing table"; \
-		echo "  sudo make netstatus ARGS='hq-core ipsets'           # Show live ipset configuration"; \
-		echo "  sudo make netstatus ARGS='web1 summary'             # Show live host summary"; \
-		echo "  sudo make netstatus ARGS='all summary'              # Show live status of all namespaces"; \
-		echo "  sudo make netstatus ARGS='hq-gw all'                # Show complete live config"; \
-		echo "  sudo make netstatus ARGS='dc-srv rules -v'          # Show live rules with verbose output"; \
+		echo "  sudo -E make netstatus ARGS='hq-gw interfaces'         # Show live interface config"; \
+		echo "  sudo -E make netstatus ARGS='br-core routes'           # Show live routing table"; \
+		echo "  sudo -E make netstatus ARGS='hq-core ipsets'           # Show live ipset configuration"; \
+		echo "  sudo -E make netstatus ARGS='web1 summary'             # Show live host summary"; \
+		echo "  sudo -E make netstatus ARGS='all summary'              # Show live status of all namespaces"; \
+		echo "  sudo -E make netstatus ARGS='hq-gw all'                # Show complete live config"; \
+		echo "  sudo -E make netstatus ARGS='dc-srv rules -v'          # Show live rules with verbose output"; \
 		exit 1; \
 	fi
 	@TRACEROUTE_SIMULATOR_FACTS=/tmp/traceroute_test_output $(PYTHON) src/simulators/network_namespace_status.py $(ARGS)
 
 # Run namespace simulation tests independently (requires sudo)
-# Usage: sudo make test-namespace
+# Usage: sudo -E make test-namespace
 test-namespace:
 	@if [ "$$(id -u)" != "0" ]; then \
 		echo "Error: Namespace simulation tests require root privileges"; \
-		echo "Please run: sudo make test-namespace"; \
+		echo "Please run: sudo -E make test-namespace"; \
 		exit 1; \
 	fi
 	@if [ ! -d "/tmp/traceroute_test_output" ] || [ -z "$$(ls -A /tmp/traceroute_test_output 2>/dev/null)" ]; then \
@@ -912,11 +912,11 @@ test-packet-tracing:
 	@echo "   - Export formats: JSON and text trace reports"
 
 # Run comprehensive network connectivity tests (requires sudo)
-# Usage: sudo make test-network
+# Usage: sudo -E make test-network
 test-network:
 	@if [ "$$(id -u)" != "0" ]; then \
 		echo "Error: Network connectivity tests require root privileges"; \
-		echo "Please run: sudo make test-network"; \
+		echo "Please run: sudo -E make test-network"; \
 		exit 1; \
 	fi
 	@if [ ! -d "/tmp/traceroute_test_output" ] || [ -z "$$(ls -A /tmp/traceroute_test_output 2>/dev/null)" ]; then \
@@ -938,15 +938,15 @@ test-network:
 	@TRACEROUTE_SIMULATOR_FACTS=/tmp/traceroute_test_output $(PYTHON) -B tests/test_make_targets_network.py
 
 # Add dynamic host to network using bridge infrastructure (requires sudo)
-# Usage: sudo make hostadd ARGS="--host <name> --primary-ip <ip/prefix> [--secondary-ips <ips>] [--connect-to <router>]"
+# Usage: sudo -E make hostadd ARGS="--host <name> --primary-ip <ip/prefix> [--secondary-ips <ips>] [--connect-to <router>]"
 hostadd:
 	@if [ "$$(id -u)" != "0" ]; then \
 		echo "Error: hostadd requires root privileges"; \
-		echo "Please run: sudo make hostadd ARGS='<arguments>'"; \
+		echo "Please run: sudo -E make hostadd ARGS='<arguments>'"; \
 		exit 1; \
 	fi
 	@if [ -z "$(ARGS)" ]; then \
-		echo "Usage: sudo make hostadd ARGS='--host <name> --primary-ip <ip/prefix> [options]'"; \
+		echo "Usage: sudo -E make hostadd ARGS='--host <name> --primary-ip <ip/prefix> [options]'"; \
 		echo ""; \
 		echo "Required arguments:"; \
 		echo "  --host <name>               Host name"; \
@@ -959,58 +959,58 @@ hostadd:
 		echo "  -v                          Verbose output (-vv for debug)"; \
 		echo ""; \
 		echo "Examples:"; \
-		echo "  sudo make hostadd ARGS='--host web1 --primary-ip 10.1.1.100/24 --connect-to hq-gw'"; \
-		echo "  sudo make hostadd ARGS='--host srv1 --primary-ip 10.1.11.100/24 --connect-to hq-lab --router-interface eth2'"; \
-		echo "  sudo make hostadd ARGS='--host db1 --primary-ip 10.2.1.100/24 --secondary-ips 192.168.1.1/24,172.16.1.1/24'"; \
-		echo "  sudo make hostadd ARGS='--host client1 --primary-ip 10.3.1.100/24 -v'"; \
+		echo "  sudo -E make hostadd ARGS='--host web1 --primary-ip 10.1.1.100/24 --connect-to hq-gw'"; \
+		echo "  sudo -E make hostadd ARGS='--host srv1 --primary-ip 10.1.11.100/24 --connect-to hq-lab --router-interface eth2'"; \
+		echo "  sudo -E make hostadd ARGS='--host db1 --primary-ip 10.2.1.100/24 --secondary-ips 192.168.1.1/24,172.16.1.1/24'"; \
+		echo "  sudo -E make hostadd ARGS='--host client1 --primary-ip 10.3.1.100/24 -v'"; \
 		exit 1; \
 	fi
 	@TRACEROUTE_SIMULATOR_FACTS=/tmp/traceroute_test_output $(PYTHON) src/simulators/host_namespace_setup.py $(ARGS)
 
 # Remove host from network (requires sudo)
-# Usage: sudo make hostdel ARGS="--host <name> --remove"
+# Usage: sudo -E make hostdel ARGS="--host <name> --remove"
 hostdel:
 	@if [ "$$(id -u)" != "0" ]; then \
 		echo "Error: hostdel requires root privileges"; \
-		echo "Please run: sudo make hostdel ARGS='--host <name> --remove'"; \
+		echo "Please run: sudo -E make hostdel ARGS='--host <name> --remove'"; \
 		exit 1; \
 	fi
 	@if [ -z "$(ARGS)" ]; then \
-		echo "Usage: sudo make hostdel ARGS='--host <name> --remove'"; \
+		echo "Usage: sudo -E make hostdel ARGS='--host <name> --remove'"; \
 		echo ""; \
 		echo "Examples:"; \
-		echo "  sudo make hostdel ARGS='--host web1 --remove'"; \
-		echo "  sudo make hostdel ARGS='--host db1 --remove -v'"; \
+		echo "  sudo -E make hostdel ARGS='--host web1 --remove'"; \
+		echo "  sudo -E make hostdel ARGS='--host db1 --remove -v'"; \
 		exit 1; \
 	fi
 	@TRACEROUTE_SIMULATOR_FACTS=/tmp/traceroute_test_output $(PYTHON) src/simulators/host_namespace_setup.py $(ARGS)
 
 # List all registered hosts (requires sudo)
-# Usage: sudo make hostlist
+# Usage: sudo -E make hostlist
 hostlist:
 	@if [ "$$(id -u)" != "0" ]; then \
 		echo "Error: hostlist requires root privileges to check namespace status"; \
-		echo "Please run: sudo make hostlist"; \
+		echo "Please run: sudo -E make hostlist"; \
 		exit 1; \
 	fi
 	@TRACEROUTE_SIMULATOR_FACTS=/tmp/traceroute_test_output $(PYTHON) src/simulators/host_namespace_setup.py --list-hosts
 
 # Clean up all registered hosts (requires sudo)
-# Usage: sudo make hostclean [ARGS="-v|-vv"]
+# Usage: sudo -E make hostclean [ARGS="-v|-vv"]
 hostclean:
 	@if [ "$$(id -u)" != "0" ]; then \
 		echo "Error: hostclean requires root privileges"; \
-		echo "Please run: sudo make hostclean"; \
+		echo "Please run: sudo -E make hostclean"; \
 		exit 1; \
 	fi
 	@$(PYTHON) src/utils/host_cleanup.py $(ARGS)
 
 # Clean up both network namespaces and hosts (requires sudo)
-# Usage: sudo make netnsclean [ARGS="-v|-f|--force"]
+# Usage: sudo -E make netnsclean [ARGS="-v|-f|--force"]
 netnsclean:
 	@if [ "$$(id -u)" != "0" ]; then \
 		echo "Error: netnsclean requires root privileges"; \
-		echo "Please run: sudo make netnsclean"; \
+		echo "Please run: sudo -E make netnsclean"; \
 		exit 1; \
 	fi
 	@$(PYTHON) src/utils/host_cleanup.py $(ARGS)
@@ -1024,15 +1024,15 @@ netnsclean:
 
 # Service management targets
 # Start a service in a namespace
-# Usage: sudo make service-start ARGS="--namespace <ns> --name <name> --port <port> [--protocol tcp|udp] [--bind <ip>]"
+# Usage: sudo -E make service-start ARGS="--namespace <ns> --name <name> --port <port> [--protocol tcp|udp] [--bind <ip>]"
 service-start:
 	@if [ "$$(id -u)" != "0" ]; then \
 		echo "Error: service-start requires root privileges"; \
-		echo "Please run: sudo make service-start ARGS='<arguments>'"; \
+		echo "Please run: sudo -E make service-start ARGS='<arguments>'"; \
 		exit 1; \
 	fi
 	@if [ -z "$(ARGS)" ]; then \
-		echo "Usage: sudo make service-start ARGS='--namespace <ns> --name <name> --port <port> [options]'"; \
+		echo "Usage: sudo -E make service-start ARGS='--namespace <ns> --name <name> --port <port> [options]'"; \
 		echo ""; \
 		echo "Required arguments:"; \
 		echo "  --namespace <ns>     Namespace to run service in"; \
@@ -1045,66 +1045,66 @@ service-start:
 		echo "  -v                   Verbose output (-vv for debug)"; \
 		echo ""; \
 		echo "Examples:"; \
-		echo "  sudo make service-start ARGS='--namespace hq-gw --name echo --port 8080'"; \
-		echo "  sudo make service-start ARGS='--namespace br-core --name dns --port 53 --protocol udp'"; \
+		echo "  sudo -E make service-start ARGS='--namespace hq-gw --name echo --port 8080'"; \
+		echo "  sudo -E make service-start ARGS='--namespace br-core --name dns --port 53 --protocol udp'"; \
 		exit 1; \
 	fi
 	@$(PYTHON) src/simulators/service_manager.py start $(ARGS)
 
 # Stop a service
-# Usage: sudo make service-stop ARGS="--namespace <ns> --name <name> --port <port>"
+# Usage: sudo -E make service-stop ARGS="--namespace <ns> --name <name> --port <port>"
 service-stop:
 	@if [ "$$(id -u)" != "0" ]; then \
 		echo "Error: service-stop requires root privileges"; \
-		echo "Please run: sudo make service-stop ARGS='<arguments>'"; \
+		echo "Please run: sudo -E make service-stop ARGS='<arguments>'"; \
 		exit 1; \
 	fi
 	@if [ -z "$(ARGS)" ]; then \
-		echo "Usage: sudo make service-stop ARGS='--namespace <ns> --name <name> --port <port>'"; \
+		echo "Usage: sudo -E make service-stop ARGS='--namespace <ns> --name <name> --port <port>'"; \
 		echo ""; \
 		echo "Examples:"; \
-		echo "  sudo make service-stop ARGS='--namespace hq-gw --name echo --port 8080'"; \
+		echo "  sudo -E make service-stop ARGS='--namespace hq-gw --name echo --port 8080'"; \
 		exit 1; \
 	fi
 	@$(PYTHON) src/simulators/service_manager.py stop $(ARGS)
 
 # Restart a service
-# Usage: sudo make service-restart ARGS="--namespace <ns> --name <name> --port <port> [--protocol tcp|udp]"
+# Usage: sudo -E make service-restart ARGS="--namespace <ns> --name <name> --port <port> [--protocol tcp|udp]"
 service-restart:
 	@if [ "$$(id -u)" != "0" ]; then \
 		echo "Error: service-restart requires root privileges"; \
-		echo "Please run: sudo make service-restart ARGS='<arguments>'"; \
+		echo "Please run: sudo -E make service-restart ARGS='<arguments>'"; \
 		exit 1; \
 	fi
 	@if [ -z "$(ARGS)" ]; then \
-		echo "Usage: sudo make service-restart ARGS='--namespace <ns> --name <name> --port <port> [--protocol tcp|udp]'"; \
+		echo "Usage: sudo -E make service-restart ARGS='--namespace <ns> --name <name> --port <port> [--protocol tcp|udp]'"; \
 		echo ""; \
 		echo "Examples:"; \
-		echo "  sudo make service-restart ARGS='--namespace hq-gw --name echo --port 8080'"; \
+		echo "  sudo -E make service-restart ARGS='--namespace hq-gw --name echo --port 8080'"; \
 		exit 1; \
 	fi
 	@$(PYTHON) src/simulators/service_manager.py restart $(ARGS)
 
 # Show service status
-# Usage: sudo make service-status [ARGS="--namespace <ns>"]
+# Usage: sudo -E make service-status [ARGS="--namespace <ns>"]
 service-status:
 	@if [ "$$(id -u)" != "0" ]; then \
 		echo "Error: service-status requires root privileges"; \
-		echo "Please run: sudo make service-status"; \
+		echo "Please run: sudo -E make service-status"; \
 		exit 1; \
 	fi
 	@$(PYTHON) src/simulators/service_manager.py status $(ARGS)
 
 # Test a service
-# Usage: sudo make service-test ARGS="--source <ns> --dest <ip> --port <port> [--protocol tcp|udp] [--message <msg>] [--timeout <sec>]"
+# Usage: sudo -E make service-test ARGS="--source <ns> --dest <ip> --port <port> [--protocol tcp|udp] [--message <msg>] [--timeout <sec>]"
 service-test:
 	@if [ "$$(id -u)" != "0" ]; then \
 		echo "Error: service-test requires root privileges"; \
-		echo "Please run: sudo make service-test ARGS='<arguments>'"; \
+		echo "Please run: sudo -E make service-test ARGS='<arguments>'"; \
 		exit 1; \
 	fi
 	@if [ -z "$(ARGS)" ]; then \
-		echo "Usage: sudo make service-test ARGS='--source <ns> --dest <ip> --port <port> [options]'"; \
+		echo "Usage: sudo -E make service-test ARGS='--source <ns> --dest <ip> --port <port> [options]'"; \
 		echo ""; \
 		echo "Required arguments:"; \
 		echo "  --source <ns>        Source namespace"; \
@@ -1118,29 +1118,29 @@ service-test:
 		echo "  -v                   Verbose output (-vv for debug)"; \
 		echo ""; \
 		echo "Examples:"; \
-		echo "  sudo make service-test ARGS='--source hq-core --dest 10.1.1.1 --port 8080'"; \
-		echo "  sudo make service-test ARGS='--source br-gw --dest 10.2.1.2 --port 53 --protocol udp --message QUERY'"; \
+		echo "  sudo -E make service-test ARGS='--source hq-core --dest 10.1.1.1 --port 8080'"; \
+		echo "  sudo -E make service-test ARGS='--source br-gw --dest 10.2.1.2 --port 53 --protocol udp --message QUERY'"; \
 		exit 1; \
 	fi
 	@$(PYTHON) src/simulators/service_manager.py test $(ARGS)
 
 # Clean up all services
-# Usage: sudo make service-clean
+# Usage: sudo -E make service-clean
 service-clean:
 	@if [ "$$(id -u)" != "0" ]; then \
 		echo "Error: service-clean requires root privileges"; \
-		echo "Please run: sudo make service-clean"; \
+		echo "Please run: sudo -E make service-clean"; \
 		exit 1; \
 	fi
 	@echo "Cleaning up all services..."
 	@$(PYTHON) src/simulators/service_manager.py cleanup
 
 # Run service manager test suite
-# Usage: sudo make test-services
+# Usage: sudo -E make test-services
 test-services:
 	@if [ "$$(id -u)" != "0" ]; then \
 		echo "Error: Service tests require root privileges"; \
-		echo "Please run: sudo make test-services"; \
+		echo "Please run: sudo -E make test-services"; \
 		exit 1; \
 	fi
 	@echo "Running Service Manager Test Suite"

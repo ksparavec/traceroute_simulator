@@ -17,10 +17,14 @@ License: MIT
 
 import re
 import subprocess
-import logging
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Any
 from dataclasses import dataclass, field
+
+# Import logging module explicitly to avoid circular import
+import sys
+import importlib
+std_logging = importlib.import_module('logging')
 
 
 @dataclass
@@ -80,7 +84,7 @@ class RawFactsBlockLoader:
     
     def __init__(self, verbose: int = 0):
         self.verbose = verbose
-        self.logger = logging.getLogger(__name__)
+        self.logger = std_logging.getLogger(__name__)
         self.routers: Dict[str, RouterRawFacts] = {}
     
     def load_raw_facts_directory(self, facts_dir: Path) -> Dict[str, RouterRawFacts]:
@@ -370,8 +374,8 @@ def main():
     args = parser.parse_args()
     
     # Setup logging
-    logging.basicConfig(
-        level=logging.DEBUG if args.verbose >= 2 else logging.INFO if args.verbose >= 1 else logging.WARNING,
+    std_logging.basicConfig(
+        level=std_logging.DEBUG if args.verbose >= 2 else std_logging.INFO if args.verbose >= 1 else std_logging.WARNING,
         format='%(levelname)s: %(message)s'
     )
     

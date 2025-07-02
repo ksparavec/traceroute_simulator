@@ -38,9 +38,8 @@ class HiddenMeshNetworkSetup:
     Routers see only their actual interfaces, mesh is hidden.
     """
     
-    def __init__(self, verbose: int = 0, enable_policy_routing: bool = False):
+    def __init__(self, verbose: int = 0):
         self.verbose = verbose
-        self.enable_policy_routing = enable_policy_routing
         self.setup_logging()
         
         # Determine facts directories
@@ -81,11 +80,10 @@ class HiddenMeshNetworkSetup:
         
     def load_raw_facts_only(self):
         """Load router facts from raw facts directory ONLY."""
-        raw_facts_path = os.environ.get('TRACEROUTE_SIMULATOR_RAW_FACTS', 'tests/raw_facts')
-        raw_facts_dir = Path(raw_facts_path)
+        raw_facts_dir = self.raw_facts_dir
         
         if not raw_facts_dir.exists():
-            raise FileNotFoundError(f"Raw facts directory not found: {raw_facts_path}")
+            raise FileNotFoundError(f"Raw facts directory not found: {raw_facts_dir}")
         
         self.logger.info(f"Loading raw facts from {raw_facts_dir}")
         self.routers = self.raw_loader.load_raw_facts_directory(raw_facts_dir)
@@ -222,7 +220,9 @@ class HiddenMeshNetworkSetup:
         except Exception as e:
             self.logger.error(f"Setup failed: {e}")
             self.cleanup_network()
-            raise
+            return False
+        
+        return True
             
     def create_hidden_infrastructure(self):
         """Create hidden mesh infrastructure namespace."""
@@ -460,15 +460,29 @@ class HiddenMeshNetworkSetup:
                 # Create unique veth pair names using compressed router codes (max 15 chars for Linux interface names)
                 router_code = self.router_codes[router_name]  # e.g. r00, r01, r02
                 
-                # Create unique interface abbreviation to avoid conflicts like wlan0/wlan1
-                if len(interface_name) <= 5:
-                    interface_abbrev = interface_name  # eth0, wg0, etc. - use full name
+                # Create safe interface abbreviation for Linux interface names
+                # Remove problematic characters and ensure uniqueness
+                safe_name = re.sub(r'[^a-zA-Z0-9]', '', interface_name)  # Remove dots, hyphens, etc.
+                
+                if len(safe_name) <= 5:
+                    interface_abbrev = safe_name  # eth0, wg0, etc. - use safe name
                 else:
-                    # For longer names, include distinguishing character
-                    interface_abbrev = interface_name[:4] + interface_name[-1]  # wlan0 -> wlan0, wlan1 -> wlan1
+                    # For longer names, use first 4 chars + hash of full name for uniqueness
+                    import hashlib
+                    name_hash = hashlib.md5(interface_name.encode()).hexdigest()[:2]
+                    interface_abbrev = safe_name[:3] + name_hash  # e.g. ens2f080 -> ens + 2-char hash
                     
                 veth_router = f"{router_code}{interface_abbrev}r"  # e.g. r00eth0r, r02wlan0r (max 10 chars)
                 veth_hidden = f"{router_code}{interface_abbrev}h"  # e.g. r00eth0h, r02wlan0h (max 10 chars)
+                
+                # Ensure interface names are valid (max 15 chars for Linux)
+                if len(veth_router) > 15 or len(veth_hidden) > 15:
+                    self.logger.warning(f"Interface names too long for {interface_name}: {veth_router}, {veth_hidden}")
+                    # Truncate to fit Linux limits
+                    veth_router = veth_router[:15]
+                    veth_hidden = veth_hidden[:15]
+                
+                self.logger.debug(f"Creating veth pair {veth_router} <-> {veth_hidden} for {router_name}:{interface_name}")
                 
                 # Create veth pair in host namespace (required by Linux kernel)
                 try:
@@ -477,7 +491,8 @@ class HiddenMeshNetworkSetup:
                 except subprocess.CalledProcessError as e:
                     error_msg = f"CRITICAL: Failed to create veth pair {veth_router}/{veth_hidden} for {router_name}:{interface_name}: {e}"
                     self.logger.error(error_msg)
-                    raise Exception(error_msg)
+                    # Continue with other interfaces instead of failing completely
+                    continue
                 
                 # Move router end to router namespace
                 try:
@@ -486,19 +501,18 @@ class HiddenMeshNetworkSetup:
                 except subprocess.CalledProcessError as e:
                     # Clean up the veth pair from host namespace
                     self.run_cmd(f"ip link del {veth_router}", check=False)
-                    error_msg = f"CRITICAL: Failed to move {veth_router} to namespace {router_name}: {e}"
-                    self.logger.error(error_msg)
-                    raise Exception(error_msg)
+                    self.logger.error(f"Failed to move {veth_router} to namespace {router_name}: {e}")
+                    continue
                 
                 # Move hidden end to hidden infrastructure namespace
                 try:
                     self.run_cmd(f"ip link set {veth_hidden} netns {self.hidden_ns}")
                     self.logger.debug(f"Moved {veth_hidden} to namespace {self.hidden_ns}")
                 except subprocess.CalledProcessError as e:
-                    # The router end is already moved, can't clean up easily - this is a critical failure
-                    error_msg = f"CRITICAL: Failed to move {veth_hidden} to namespace {self.hidden_ns}: {e}. Router interface {veth_router} is stranded in {router_name}."
-                    self.logger.error(error_msg)
-                    raise Exception(error_msg)
+                    # Clean up the stranded router interface
+                    self.run_cmd(f"ip netns exec {router_name} ip link del {veth_router}", check=False)
+                    self.logger.error(f"Failed to move {veth_hidden} to namespace {self.hidden_ns}: {e}")
+                    continue
                 
                 # Verify both interfaces exist in their target namespaces
                 try:
@@ -592,12 +606,16 @@ class HiddenMeshNetworkSetup:
                         # Connect hidden interface to bridge
                         router_code = self.router_codes[router_name]
                         
-                        # Use same interface abbreviation logic as in interface creation
-                        if len(interface_name) <= 5:
-                            interface_abbrev = interface_name  # eth0, wg0, etc. - use full name
+                        # Use SAME interface abbreviation logic as in interface creation
+                        safe_name = re.sub(r'[^a-zA-Z0-9]', '', interface_name)  # Remove dots, hyphens, etc.
+                        
+                        if len(safe_name) <= 5:
+                            interface_abbrev = safe_name  # eth0, wg0, etc. - use safe name
                         else:
-                            # For longer names, include distinguishing character
-                            interface_abbrev = interface_name[:4] + interface_name[-1]  # wlan0 -> wlan0, wlan1 -> wlan1
+                            # For longer names, use first 4 chars + hash of full name for uniqueness
+                            import hashlib
+                            name_hash = hashlib.md5(interface_name.encode()).hexdigest()[:2]
+                            interface_abbrev = safe_name[:3] + name_hash  # e.g. ens2f080 -> ens + 2-char hash
                         
                         veth_hidden = f"{router_code}{interface_abbrev}h"
                         
@@ -605,7 +623,8 @@ class HiddenMeshNetworkSetup:
                             self.run_cmd(f"ip link set {veth_hidden} master {bridge_name}", self.hidden_ns)
                             self.logger.debug(f"Connected {router_name}:{interface_name} to {bridge_name}")
                         except subprocess.CalledProcessError as e:
-                            self.logger.warning(f"Failed to connect {veth_hidden} to {bridge_name}: {e}")
+                            self.logger.error(f"CRITICAL: Failed to connect {veth_hidden} to {bridge_name}: {e}")
+                            raise Exception(f"Bridge connection failed for {router_name}:{interface_name}")
                             
                     except Exception as e:
                         self.logger.warning(f"Failed to process IP {ip_addr}: {e}")
@@ -622,11 +641,11 @@ class HiddenMeshNetworkSetup:
                 # Apply routing configuration
                 self._apply_routing_configuration(router_name, router_facts)
                 
-                # Apply iptables configuration
-                self._apply_iptables_configuration(router_name, router_facts)
-                
-                # Apply ipsets configuration
+                # Apply ipsets configuration first (iptables rules reference ipsets)
                 self._apply_ipsets_configuration(router_name, router_facts)
+                
+                # Apply iptables configuration after ipsets
+                self._apply_iptables_configuration(router_name, router_facts)
                 
                 self.logger.debug(f"Successfully configured {router_name}")
                 
@@ -637,26 +656,22 @@ class HiddenMeshNetworkSetup:
     def _apply_routing_configuration(self, router_name: str, router_facts: RouterRawFacts):
         """Apply routing tables and policy rules (policy routing conditional)."""
         # Always apply main routing table
-        routing_section = router_facts.get_section('routing_table')
+        routing_section = router_facts.get_section('routing_table_main')
         if routing_section:
             self._apply_routes(router_name, routing_section.content, 'main')
         
-        # Apply policy rules and additional tables only if enabled
-        if self.enable_policy_routing:
-            # Apply policy rules
-            policy_section = router_facts.get_section('policy_rules')
-            if policy_section:
-                self._apply_policy_rules(router_name, policy_section.content)
-            
-            # Apply additional routing tables
-            for section_name, section in router_facts.sections.items():
-                if section_name.startswith('routing_table_') and section_name != 'routing_table':
-                    table_name = section_name.replace('routing_table_', '')
-                    table_id = self._get_table_id(table_name)
-                    if table_id:
-                        self._apply_routes(router_name, section.content, table_id)
-        else:
-            self.logger.debug(f"Policy routing disabled for {router_name} (use --policy-routing to enable)")
+        # Apply policy rules and additional routing tables
+        policy_section = router_facts.get_section('policy_rules')
+        if policy_section:
+            self._apply_policy_rules(router_name, policy_section.content)
+        
+        # Apply additional routing tables
+        for section_name, section in router_facts.sections.items():
+            if section_name.startswith('routing_table_') and section_name != 'routing_table_main':
+                table_name = section_name.replace('routing_table_', '')
+                table_id = self._get_table_id(table_name)
+                if table_id:
+                    self._apply_routes(router_name, section.content, table_id)
     
     def _get_table_id(self, table_name: str) -> Optional[str]:
         """Get numeric table ID for named table."""
@@ -685,15 +700,32 @@ class HiddenMeshNetworkSetup:
             if not line or line.startswith('#'):
                 continue
             
+            # Skip auto-generated direct network routes (these are created when IPs are assigned)
+            if 'proto kernel scope link' in line:
+                self.logger.debug(f"Skipping auto-generated route: {line}")
+                continue
+            
             # Apply route
             cmd = f"ip route add {line}"
             if table != 'main':
                 cmd += f" table {table}"
             
             try:
-                self.run_cmd(cmd, router_name, check=False)
+                self.run_cmd(cmd, router_name)
+                self.logger.debug(f"Added route: {line}")
+            except subprocess.CalledProcessError as e:
+                # Check if route already exists (expected for direct network routes)
+                error_msg = str(e) + (e.stderr if e.stderr else "")
+                if "File exists" in error_msg or "RTNETLINK answers: File exists" in error_msg:
+                    self.logger.debug(f"Route already exists (expected): {line}")
+                else:
+                    self.logger.error(f"CRITICAL: Route add failed for {line}: {e}")
+                    if e.stderr:
+                        self.logger.error(f"Stderr: {e.stderr}")
+                    raise Exception(f"Failed to add route: {line}")
             except Exception as e:
-                self.logger.debug(f"Route add failed (expected): {e}")
+                self.logger.error(f"CRITICAL: Route add failed for {line}: {e}")
+                raise Exception(f"Failed to add route: {line}")
                 
     def _apply_policy_rules(self, router_name: str, rules_content: str):
         """Apply policy routing rules."""
@@ -899,8 +931,6 @@ def main():
                        help='Clean up existing setup and exit')
     parser.add_argument('--verify', action='store_true',
                        help='Verify setup after creation')
-    parser.add_argument('--policy-routing', action='store_true',
-                       help='Enable policy routing rules and additional routing tables (disabled by default)')
     
     args = parser.parse_args()
     
@@ -908,7 +938,7 @@ def main():
         print("Error: This script must be run as root (use sudo)")
         return 1
     
-    setup = HiddenMeshNetworkSetup(verbose=args.verbose, enable_policy_routing=args.policy_routing)
+    setup = HiddenMeshNetworkSetup(verbose=args.verbose)
     
     try:
         if args.cleanup:
@@ -920,7 +950,10 @@ def main():
         setup.load_raw_facts_only()
         
         # Set up hidden mesh network
-        setup.setup_hidden_mesh_network()
+        success = setup.setup_hidden_mesh_network()
+        if not success:
+            print("Network setup failed!")
+            return 1
         
         # Verify if requested
         if args.verify:

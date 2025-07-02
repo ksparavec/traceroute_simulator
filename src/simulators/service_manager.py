@@ -35,7 +35,7 @@ from src.core.exceptions import (
     PortValidationError, ConfigurationError, ErrorHandler
 )
 from src.core.models import IptablesRule
-from src.core.logging import get_logger, setup_logging
+from src.core.structured_logging import get_logger, setup_logging
 
 
 class ServiceProtocol(str, Enum):

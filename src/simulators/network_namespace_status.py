@@ -16,11 +16,11 @@ Features:
 Usage:
     python3 network_namespace_status.py <namespace_name> <function>
     python3 network_namespace_status.py all summary
-    python3 network_namespace_status.py hq-gw interfaces
-    python3 network_namespace_status.py br-core routes
-    python3 network_namespace_status.py web1 summary
-    python3 network_namespace_status.py dc-srv rules
-    python3 network_namespace_status.py hq-core ipsets
+    python3 network_namespace_status.py <router> interfaces
+    python3 network_namespace_status.py <router> routes
+    python3 network_namespace_status.py <host> summary
+    python3 network_namespace_status.py <router> rules
+    python3 network_namespace_status.py <router> ipsets
 
 Functions:
     interfaces  - Show live IP configuration (ip addr show equivalent)
@@ -667,12 +667,9 @@ class NetworkNamespaceStatus:
     
     def show_ipsets(self, namespace: str) -> str:
         """Show ipset configuration for routers only."""
-        # Check if this is a router namespace
-        if namespace not in self.known_routers:
-            if namespace in self.hosts:
-                return f"Ipsets are not applicable for host {namespace} (hosts don't have ipsets)"
-            else:
-                return f"Ipsets are only available for known routers, not {namespace}"
+        # Check if this is a host namespace (hosts don't typically have ipsets)
+        if namespace in self.hosts:
+            return f"Ipsets are not applicable for host {namespace} (hosts don't have ipsets)"
         
         if namespace not in self.available_namespaces:
             return f"Router {namespace} namespace not found"
@@ -810,17 +807,17 @@ def main():
         epilog="""
 Examples:
   %(prog)s all summary                    # Overview of all live namespaces
-  %(prog)s hq-gw interfaces              # Live interface config for hq-gw
-  %(prog)s br-core routes                # Live routing table for br-core
-  %(prog)s web1 summary                  # Live host summary for web1
-  %(prog)s web1 interfaces               # Live interface config for host web1
-  %(prog)s dc-srv rules                  # Live policy rules for dc-srv
-  %(prog)s hq-core iptables              # Live iptables configuration for hq-core
-  %(prog)s hq-core ipsets                # Live ipset configuration for hq-core
-  %(prog)s hq-dmz all                    # Complete live config for hq-dmz
-  %(prog)s hq-gw interfaces -v           # Live interface config with basic verbosity
+  %(prog)s <router> interfaces            # Live interface config for router
+  %(prog)s <router> routes               # Live routing table for router
+  %(prog)s <host> summary                # Live host summary for host
+  %(prog)s <host> interfaces             # Live interface config for host
+  %(prog)s <router> rules                # Live policy rules for router
+  %(prog)s <router> iptables             # Live iptables configuration for router
+  %(prog)s <router> ipsets               # Live ipset configuration for router
+  %(prog)s <router> all                  # Complete live config for router
+  %(prog)s <router> interfaces -v        # Live interface config with basic verbosity
   %(prog)s all summary -vv               # Live overview with info messages
-  %(prog)s br-core routes -vvv           # Live routing table with debug output
+  %(prog)s <router> routes -vvv          # Live routing table with debug output
   
 Functions:
   interfaces  - Live IP configuration (ip addr show equivalent)
@@ -845,7 +842,7 @@ Environment Variables:
     parser.add_argument(
         'namespace',
         type=str,
-        help='Namespace name (e.g., hq-gw, br-core, dc-srv, web1) or "all" for all namespaces'
+        help='Namespace name (router or host) or "all" for all namespaces'
     )
     
     parser.add_argument(

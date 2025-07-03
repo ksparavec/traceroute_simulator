@@ -7,10 +7,10 @@
 # 3. Store raw facts files in TRACEROUTE_SIMULATOR_RAW_FACTS directory
 # 4. Raw facts are preserved without modification for later processing
 
-- name: Collect network facts from all hosts
-  hosts: all
+- name: Collect network facts from hosts
+  hosts: "{{ host | default('all') }}"
   gather_facts: no # Don't gather facts using standard Ansible plugins
-  strategy: free   # Process tasks on each host as fast as possible
+  strategy: linear # Process tasks on hosts in order
   serial: 3        # Process so many hosts in parallel
   vars:
     # Directory configuration from environment variables
@@ -109,6 +109,70 @@
           - "Raw facts location: {{ raw_facts_dir }}/{{ inventory_hostname }}_facts.txt"
           - "Raw facts preserved for later processing"
 
+    - name: Create JSON facts output directory
+      file:
+        path: "{{ lookup('env', 'TRACEROUTE_SIMULATOR_FACTS') | default('/tmp/tsim/json_facts', true) }}"
+        state: directory
+        mode: '0755'
+      run_once: true
+      delegate_to: localhost
+      tags: 
+        - process
+        - json
+        - parse
+
+    - name: Process raw facts to JSON format
+      shell: |
+        cd {{ playbook_dir }}
+        python3 process_facts.py "{{ raw_facts_dir }}/{{ inventory_hostname }}_facts.txt" "{{ lookup('env', 'TRACEROUTE_SIMULATOR_FACTS') | default('/tmp/tsim/json_facts', true) }}/{{ inventory_hostname }}.json" --verbose
+      delegate_to: localhost
+      register: processing_result
+      tags: 
+        - process
+        - json
+        - parse
+
+    - name: Get JSON facts statistics
+      shell: |
+        cd {{ playbook_dir }}
+        jq '{
+          hostname: .metadata.hostname,
+          interfaces: (.network.interfaces.parsed | keys | length),
+          policy_rules: (.routing.rules | length),
+          routing_tables: (.routing.rules | map(.table) | unique | map(select(. != "local" and . != "default")) | length),
+          routing_table_entries: (.routing.tables | length),
+          routing_tables_with_entries: (.routing.tables | group_by(.table) | length),
+          iptables_chains: ([.firewall.iptables.filter, .firewall.iptables.nat, .firewall.iptables.mangle] | map(map(keys)) | add | add | unique | length),
+          total_iptables_rules: ([.firewall.iptables.filter, .firewall.iptables.nat, .firewall.iptables.mangle] | map(map(to_entries[0].value | length)) | add | add),
+          ipsets: (.firewall.ipset.lists | map(keys) | add | length),
+          total_ipset_members: (.firewall.ipset.lists | map(to_entries[0].value.members | length) | add),
+          active_interfaces: (.network.interfaces.parsed | to_entries | map(select(.value.state == "UP")) | length)
+        }' "{{ lookup('env', 'TRACEROUTE_SIMULATOR_FACTS') | default('/tmp/tsim/json_facts', true) }}/{{ inventory_hostname }}.json"
+      delegate_to: localhost
+      register: json_stats
+      when: processing_result.rc == 0
+      tags: 
+        - process
+        - json
+        - parse
+
+    - name: Display processing summary
+      debug:
+        msg:
+          - "Raw facts processing completed for {{ inventory_hostname }}"
+          - "Processing result: {{ 'SUCCESS' if processing_result.rc == 0 else 'FAILED' }}"
+          - "Input: {{ raw_facts_dir }}/{{ inventory_hostname }}_facts.txt"
+          - "Output: {{ lookup('env', 'TRACEROUTE_SIMULATOR_FACTS') | default('/tmp/tsim/json_facts', true) }}/{{ inventory_hostname }}.json"
+          - "Network Statistics:"
+          - "  → Interfaces: {{ (json_stats.stdout | from_json).interfaces if processing_result.rc == 0 else 'N/A' }} ({{ (json_stats.stdout | from_json).active_interfaces if processing_result.rc == 0 else 'N/A' }} active)"
+          - "  → Routing: {{ (json_stats.stdout | from_json).policy_rules if processing_result.rc == 0 else 'N/A' }} policy rules, {{ (json_stats.stdout | from_json).routing_tables if processing_result.rc == 0 else 'N/A' }} custom tables, {{ (json_stats.stdout | from_json).routing_table_entries if processing_result.rc == 0 else 'N/A' }} total entries"
+          - "  → Iptables: {{ (json_stats.stdout | from_json).iptables_chains if processing_result.rc == 0 else 'N/A' }} chains, {{ (json_stats.stdout | from_json).total_iptables_rules if processing_result.rc == 0 else 'N/A' }} rules"
+          - "  → Ipsets: {{ (json_stats.stdout | from_json).ipsets if processing_result.rc == 0 else 'N/A' }} sets, {{ (json_stats.stdout | from_json).total_ipset_members if processing_result.rc == 0 else 'N/A' }} members"
+      tags: 
+        - process
+        - json
+        - parse
+
 
   post_tasks:
     - name: Display overall collection summary
@@ -132,14 +196,30 @@
 
 # Usage Examples:
 #
-# Basic usage with default raw facts directory (/tmp/tsim/raw_facts):
+# Basic usage with automatic JSON processing:
 #   ansible-playbook -i inventory.ini get_tsim_facts.yml
 #
-# Using environment variable for raw facts directory:
+# Collect raw facts only (skip JSON processing):
+#   ansible-playbook -i inventory.ini get_tsim_facts.yml --skip-tags process
+#
+# Process existing raw facts to JSON only (all files):
+#   ansible-playbook -i inventory.ini get_tsim_facts.yml --tags process
+#
+# Process existing raw facts for specific hosts only:
+#   ansible-playbook -i inventory.ini get_tsim_facts.yml --tags process -e host="hq-*"
+#
+# Using environment variables for directories:
 #   export TRACEROUTE_SIMULATOR_RAW_FACTS=/path/to/raw_facts
+#   export TRACEROUTE_SIMULATOR_FACTS=/path/to/json_facts
 #   ansible-playbook -i inventory.ini get_tsim_facts.yml
 #
-# Limit to specific hosts:
+# Target specific hosts (using host parameter):
+#   ansible-playbook -i inventory.ini get_tsim_facts.yml -e host="hq-*"
+#
+# Target specific host group:
+#   ansible-playbook -i inventory.ini get_tsim_facts.yml -e host="gateways"
+#
+# Alternative: Limit to specific hosts (using --limit):
 #   ansible-playbook -i inventory.ini get_tsim_facts.yml --limit "hq-*"
 #
 # Increase verbosity for debugging:
@@ -149,7 +229,7 @@
 #   ansible-playbook -i inventory.ini get_tsim_facts.yml -e collection_timeout=600
 #
 # Notes:
-# - Uses 'free' strategy for maximum parallelism (all hosts process simultaneously)
+# - Uses 'linear' strategy for ordered processing with controlled parallelism
 # - Each host executes the unified get_facts.sh script once
 # - Raw facts are stored without modification in TRACEROUTE_SIMULATOR_RAW_FACTS directory
 # - Final output is one raw facts file per host: {hostname}_facts.txt

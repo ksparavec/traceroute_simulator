@@ -154,14 +154,20 @@ collect_facts() {
     
     echo "# Found routing tables: $FINAL_TABLES"
     
-    # Collect routing tables for each discovered table
+    # === ROUTING TABLE NAMES MAPPING ===
+    # Collect routing table names mapping file
+    if [ -f "/etc/iproute2/rt_tables" ]; then
+        exec_section "rt_tables" "Routing Table Names Mapping" "${CAT_CMD:-cat} /etc/iproute2/rt_tables"
+    fi
+    
+    # Collect routing tables for each discovered table (using numeric IDs)
     for table in $FINAL_TABLES; do
         if [ -n "$table" ]; then
-            table_name=$(echo "$table" | tr -d ' ')
-            if [ "$table_name" = "main" ]; then
+            table_id=$(echo "$table" | tr -d ' ')
+            if [ "$table_id" = "main" ]; then
                 exec_section "routing_table_main" "Main Routing Table" "$IP_CMD route show table main"
             else
-                exec_section "routing_table_$table_name" "Routing Table $table_name" "$IP_CMD route show table $table_name"
+                exec_section "routing_table_$table_id" "Routing Table $table_id" "$IP_CMD route show table $table_id"
             fi
         fi
     done

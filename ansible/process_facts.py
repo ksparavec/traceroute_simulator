@@ -221,28 +221,81 @@ class FactsProcessor:
     
     def _process_routing_sections(self):
         """Process routing-related sections."""
-        # Process routing table
-        if 'routing_table' in self.sections:
-            section = self.sections['routing_table']
-            if section['exit_code'] == 0 and self.ip_parser:
-                try:
-                    self.facts['routing']['tables'] = self.ip_parser.parse_route_output(section['output'])
-                except Exception as e:
-                    # Fallback to text storage if parsing fails
-                    fallback_data = {
-                        'parsing_error': str(e)
-                    }
+        # Process routing tables - look for all routing_table_* sections
+        all_routing_entries = []
+        routing_errors = []
+        
+        # Find all routing table sections (using numeric IDs, with 'main' as special case)
+        routing_table_sections = {name: section for name, section in self.sections.items() 
+                                if name.startswith('routing_table_')}
+        
+        if routing_table_sections:
+            for section_name, section in routing_table_sections.items():
+                # Extract table ID: routing_table_main -> main, routing_table_220 -> 220
+                table_id = section_name.replace('routing_table_', '')
+                
+                if section['exit_code'] == 0 and self.ip_parser:
+                    try:
+                        # Parse this routing table's entries
+                        table_entries = self.ip_parser.parse_route_output(section['output'])
+                        # Add table ID to each entry for identification
+                        for entry in table_entries:
+                            if isinstance(entry, dict):
+                                entry['table'] = table_id
+                        all_routing_entries.extend(table_entries)
+                    except Exception as e:
+                        # Track parsing errors but continue with other tables
+                        routing_errors.append({
+                            'table': table_id,
+                            'error': str(e),
+                            'section': section_name
+                        })
+                        if self.store_raw:
+                            routing_errors[-1]['raw_output'] = section['output']
+                else:
+                    # Track failed sections
+                    routing_errors.append({
+                        'table': table_id,
+                        'error': 'Command failed or IP wrapper not available',
+                        'exit_code': section['exit_code'],
+                        'section': section_name
+                    })
                     if self.store_raw:
-                        fallback_data['raw_output'] = section['output']
-                    self.facts['routing']['tables'] = fallback_data
+                        routing_errors[-1]['raw_output'] = section['output']
+            
+            # Store results
+            self.facts['routing']['tables'] = all_routing_entries
+            if routing_errors:
+                self.facts['routing']['table_errors'] = routing_errors
+                
+        else:
+            # No routing table sections found
+            self.facts['routing']['tables'] = []
+        
+        # Process routing table names mapping
+        if 'rt_tables' in self.sections:
+            section = self.sections['rt_tables']
+            if section['exit_code'] == 0:
+                try:
+                    # Parse rt_tables file to get table ID to name mapping
+                    table_mapping = {}
+                    for line in section['output'].split('\n'):
+                        line = line.strip()
+                        if line and not line.startswith('#'):
+                            parts = line.split(None, 1)  # Split on whitespace, max 2 parts
+                            if len(parts) >= 2:
+                                table_id = parts[0]
+                                table_name = parts[1]
+                                table_mapping[table_id] = table_name
+                    self.facts['routing']['table_names'] = table_mapping
+                except Exception as e:
+                    self.facts['routing']['table_names'] = {'error': str(e)}
+                    if self.store_raw:
+                        self.facts['routing']['table_names']['raw_output'] = section['output']
             else:
-                error_data = {
-                    'error': 'Command failed or IP wrapper not available',
-                    'exit_code': section['exit_code']
-                }
-                if self.store_raw:
-                    error_data['raw_output'] = section['output']
-                self.facts['routing']['tables'] = error_data
+                self.facts['routing']['table_names'] = {'error': 'rt_tables file not accessible'}
+        else:
+            self.facts['routing']['table_names'] = {}
         
         # Process policy rules
         if 'policy_rules' in self.sections:
@@ -279,16 +332,39 @@ class FactsProcessor:
                 except:
                     self.facts['network']['ip_forwarding_enabled'] = False
         
-        # Process interfaces - conditionally store raw data
+        # Process interfaces - parse interface data into structured format
         if 'interfaces' in self.sections:
             section = self.sections['interfaces']
-            interface_data = {
-                'command': section['command'],
-                'exit_code': section['exit_code']
-            }
-            if self.store_raw:
-                interface_data['raw_output'] = section['output']
-            self.facts['network']['interfaces'] = interface_data
+            if section['exit_code'] == 0:
+                try:
+                    parsed_interfaces = self._parse_interfaces_output(section['output'])
+                    self.facts['network']['interfaces'] = {
+                        'command': section['command'],
+                        'exit_code': section['exit_code'],
+                        'parsed': parsed_interfaces
+                    }
+                    if self.store_raw:
+                        self.facts['network']['interfaces']['raw_output'] = section['output']
+                except Exception as e:
+                    # Fallback to basic metadata if parsing fails
+                    interface_data = {
+                        'command': section['command'],
+                        'exit_code': section['exit_code'],
+                        'parsing_error': str(e)
+                    }
+                    if self.store_raw:
+                        interface_data['raw_output'] = section['output']
+                    self.facts['network']['interfaces'] = interface_data
+            else:
+                # Command failed
+                interface_data = {
+                    'command': section['command'],
+                    'exit_code': section['exit_code'],
+                    'error': 'Command failed'
+                }
+                if self.store_raw:
+                    interface_data['raw_output'] = section['output']
+                self.facts['network']['interfaces'] = interface_data
         
         # Process interface statistics - conditionally store raw data
         if 'interface_stats' in self.sections:
@@ -1639,6 +1715,309 @@ class FactsProcessor:
             rule_data["raw_rule_text"] = rule_text
             
         return rule_data
+
+    def _parse_interfaces_output(self, interfaces_output: str) -> Dict[str, Dict[str, Any]]:
+        """
+        Parse 'ip addr show' output into structured interface information.
+        
+        Args:
+            interfaces_output: Raw output from 'ip addr show' command
+            
+        Returns:
+            Dictionary with interface names as keys and interface data as values
+            
+        Example output format:
+        {
+            "lo": {
+                "index": 1,
+                "flags": ["LOOPBACK", "UP", "LOWER_UP"],
+                "mtu": 65536,
+                "qdisc": "noqueue",
+                "state": "UNKNOWN",
+                "group": "default",
+                "qlen": 1000,
+                "link_type": "loopback",
+                "addresses": [
+                    {
+                        "family": "inet",
+                        "address": "127.0.0.1",
+                        "prefixlen": 8,
+                        "scope": "host",
+                        "label": "lo"
+                    },
+                    {
+                        "family": "inet6", 
+                        "address": "::1",
+                        "prefixlen": 128,
+                        "scope": "host"
+                    }
+                ]
+            }
+        }
+        """
+        interfaces = {}
+        current_interface = None
+        current_data = None
+        
+        for line in interfaces_output.split('\n'):
+            line = line.strip()
+            
+            if not line:
+                continue
+                
+            # Check for interface header line
+            # Format: "1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN group default qlen 1000"
+            if re.match(r'^\d+:', line):
+                # Save previous interface if exists
+                if current_interface and current_data:
+                    interfaces[current_interface] = current_data
+                
+                # Parse interface header
+                parts = line.split()
+                if len(parts) >= 2:
+                    # Extract interface index and name
+                    index_name = parts[0] + ' ' + parts[1]  # "1: lo:"
+                    index_match = re.match(r'^(\d+):\s*([^:@]+)[@:]?', index_name)
+                    
+                    if index_match:
+                        index = int(index_match.group(1))
+                        interface_name = index_match.group(2)
+                        
+                        # Initialize interface data
+                        current_interface = interface_name
+                        current_data = {
+                            'index': index,
+                            'flags': [],
+                            'addresses': []
+                        }
+                        
+                        # Parse flags if present: <LOOPBACK,UP,LOWER_UP>
+                        flags_match = re.search(r'<([^>]+)>', line)
+                        if flags_match:
+                            flags_str = flags_match.group(1)
+                            current_data['flags'] = flags_str.split(',')
+                        
+                        # Parse additional attributes
+                        remaining_line = line
+                        
+                        # MTU
+                        mtu_match = re.search(r'mtu (\d+)', remaining_line)
+                        if mtu_match:
+                            current_data['mtu'] = int(mtu_match.group(1))
+                        
+                        # QDISC
+                        qdisc_match = re.search(r'qdisc (\S+)', remaining_line)
+                        if qdisc_match:
+                            current_data['qdisc'] = qdisc_match.group(1)
+                        
+                        # State
+                        state_match = re.search(r'state (\S+)', remaining_line)
+                        if state_match:
+                            current_data['state'] = state_match.group(1)
+                        
+                        # Group
+                        group_match = re.search(r'group (\S+)', remaining_line)
+                        if group_match:
+                            current_data['group'] = group_match.group(1)
+                        
+                        # Queue length
+                        qlen_match = re.search(r'qlen (\d+)', remaining_line)
+                        if qlen_match:
+                            current_data['qlen'] = int(qlen_match.group(1))
+                            
+            # Check for link information line
+            # Format: "    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00"
+            elif line.startswith('link/') and current_data is not None:
+                link_parts = line.split()
+                if len(link_parts) >= 1:
+                    link_type = link_parts[0].split('/', 1)
+                    if len(link_type) == 2:
+                        current_data['link_type'] = link_type[1]
+                    
+                    # MAC address
+                    if len(link_parts) >= 2 and link_parts[1] != 'brd':
+                        current_data['mac_address'] = link_parts[1]
+                    
+                    # Broadcast address
+                    if len(link_parts) >= 4 and link_parts[2] == 'brd':
+                        current_data['broadcast_address'] = link_parts[3]
+                        
+            # Check for IP address lines
+            # Format: "    inet 127.0.0.1/8 scope host lo"
+            # Format: "    inet6 ::1/128 scope host"
+            elif (line.startswith('inet ') or line.startswith('inet6 ')) and current_data is not None:
+                addr_parts = line.split()
+                if len(addr_parts) >= 2:
+                    family = addr_parts[0]  # inet or inet6
+                    addr_cidr = addr_parts[1]  # IP/prefix
+                    
+                    # Parse IP and prefix length
+                    if '/' in addr_cidr:
+                        address, prefix_str = addr_cidr.split('/', 1)
+                        try:
+                            prefixlen = int(prefix_str)
+                        except ValueError:
+                            prefixlen = None
+                    else:
+                        address = addr_cidr
+                        prefixlen = None
+                    
+                    # Build address entry
+                    addr_entry = {
+                        'family': family,
+                        'address': address
+                    }
+                    
+                    if prefixlen is not None:
+                        addr_entry['prefixlen'] = prefixlen
+                    
+                    # Parse additional attributes
+                    remaining_parts = addr_parts[2:]
+                    i = 0
+                    while i < len(remaining_parts):
+                        if remaining_parts[i] == 'scope' and i + 1 < len(remaining_parts):
+                            addr_entry['scope'] = remaining_parts[i + 1]
+                            i += 2
+                        elif remaining_parts[i] == 'brd' and i + 1 < len(remaining_parts):
+                            addr_entry['broadcast'] = remaining_parts[i + 1]
+                            i += 2
+                        elif remaining_parts[i] == 'peer' and i + 1 < len(remaining_parts):
+                            addr_entry['peer'] = remaining_parts[i + 1]
+                            i += 2
+                        elif remaining_parts[i] == 'label' and i + 1 < len(remaining_parts):
+                            addr_entry['label'] = remaining_parts[i + 1]
+                            i += 2
+                        elif remaining_parts[i] == 'secondary':
+                            addr_entry['secondary'] = True
+                            i += 1
+                        elif remaining_parts[i] == 'dynamic':
+                            addr_entry['dynamic'] = True
+                            i += 1
+                        elif remaining_parts[i] == 'noprefixroute':
+                            addr_entry['noprefixroute'] = True
+                            i += 1
+                        elif remaining_parts[i] == 'tentative':
+                            addr_entry['tentative'] = True
+                            i += 1
+                        elif remaining_parts[i] == 'deprecated':
+                            addr_entry['deprecated'] = True
+                            i += 1
+                        elif remaining_parts[i] == 'dadfailed':
+                            addr_entry['dadfailed'] = True
+                            i += 1
+                        elif remaining_parts[i] == 'valid_lft' and i + 1 < len(remaining_parts):
+                            addr_entry['valid_lifetime'] = remaining_parts[i + 1]
+                            i += 2
+                        elif remaining_parts[i] == 'preferred_lft' and i + 1 < len(remaining_parts):
+                            addr_entry['preferred_lifetime'] = remaining_parts[i + 1]
+                            i += 2
+                        else:
+                            # Unknown attribute, skip
+                            i += 1
+                    
+                    current_data['addresses'].append(addr_entry)
+        
+        # Save last interface
+        if current_interface and current_data:
+            interfaces[current_interface] = current_data
+        
+        return interfaces
+
+    @staticmethod
+    def extract_interface_info(json_facts_file: str, interface_name: str = None) -> Dict[str, Any]:
+        """
+        Extract interface information from a processed JSON facts file.
+        
+        Args:
+            json_facts_file: Path to JSON facts file
+            interface_name: Specific interface name to extract (optional)
+            
+        Returns:
+            Dictionary containing interface information
+            
+        Examples:
+            # Get all interfaces
+            interfaces = FactsProcessor.extract_interface_info('/path/to/router.json')
+            
+            # Get specific interface
+            eth0_info = FactsProcessor.extract_interface_info('/path/to/router.json', 'eth0')
+        """
+        try:
+            with open(json_facts_file, 'r') as f:
+                facts = json.load(f)
+            
+            interfaces_data = facts.get('network', {}).get('interfaces', {})
+            
+            if 'parsed' not in interfaces_data:
+                return {'error': 'Interface data not parsed', 'available': False}
+            
+            parsed_interfaces = interfaces_data['parsed']
+            
+            if interface_name:
+                if interface_name in parsed_interfaces:
+                    return {
+                        'interface': interface_name,
+                        'data': parsed_interfaces[interface_name],
+                        'available': True
+                    }
+                else:
+                    return {
+                        'error': f'Interface {interface_name} not found',
+                        'available_interfaces': list(parsed_interfaces.keys()),
+                        'available': False
+                    }
+            else:
+                return {
+                    'interfaces': parsed_interfaces,
+                    'count': len(parsed_interfaces),
+                    'available': True
+                }
+                
+        except Exception as e:
+            return {'error': str(e), 'available': False}
+
+    @staticmethod
+    def extract_interface_ips(json_facts_file: str, family: str = 'all') -> Dict[str, List[str]]:
+        """
+        Extract IP addresses from all interfaces in a JSON facts file.
+        
+        Args:
+            json_facts_file: Path to JSON facts file
+            family: IP family to extract ('inet', 'inet6', or 'all')
+            
+        Returns:
+            Dictionary with interface names as keys and IP addresses as values
+            
+        Example:
+            # Get all IP addresses
+            all_ips = FactsProcessor.extract_interface_ips('/path/to/router.json')
+            
+            # Get only IPv4 addresses
+            ipv4_ips = FactsProcessor.extract_interface_ips('/path/to/router.json', 'inet')
+        """
+        try:
+            interface_info = FactsProcessor.extract_interface_info(json_facts_file)
+            
+            if not interface_info.get('available', False):
+                return {'error': interface_info.get('error', 'Interface data not available')}
+            
+            result = {}
+            
+            for interface_name, interface_data in interface_info['interfaces'].items():
+                addresses = interface_data.get('addresses', [])
+                ip_list = []
+                
+                for addr in addresses:
+                    addr_family = addr.get('family', '')
+                    if family == 'all' or addr_family == family:
+                        ip_list.append(addr['address'])
+                
+                result[interface_name] = ip_list
+            
+            return result
+            
+        except Exception as e:
+            return {'error': str(e)}
 
 
 def main():

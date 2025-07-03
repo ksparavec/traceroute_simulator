@@ -127,6 +127,17 @@ The project includes a complete Linux namespace-based network simulation system 
 - **Validate collected JSON**: `python3 -m json.tool /tmp/traceroute_test_output/*.json`
 - **Test IP wrapper compatibility**: `python3 -B ansible/ip_json_wrapper.py route show`
 
+#### **Facts Processing**
+- **Process all raw facts to JSON**: `python3 -B ansible/process_all_facts.py --verbose --create-dirs` (batch process all raw facts files)
+- **Process raw facts via Ansible**: `ansible-playbook -i inventory.ini get_tsim_facts.yml --tags process` (process existing raw facts only)
+- **Process single raw facts file**: `python3 -B ansible/process_facts.py raw_facts.txt output.json --verbose`
+
+#### **Interface Information Extraction**
+- **Extract all interface information**: `python3 -B ansible/extract_interfaces.py router.json`
+- **Extract specific interface**: `python3 -B ansible/extract_interfaces.py router.json --interface eth0`
+- **Extract IP addresses only**: `python3 -B ansible/extract_interfaces.py router.json --ips-only --family inet`
+- **Extract interfaces as JSON**: `python3 -B ansible/extract_interfaces.py router.json --json`
+
 #### **Utility Scripts**
 - **Update interface data in JSON facts**: `python3 -B src/utils/update_tsim_facts.py` (extracts interfaces from routing tables)
 - **Verify namespace setup**: `sudo python3 -B src/utils/verify_network_setup.py` (comprehensive configuration verification)

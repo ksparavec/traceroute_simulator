@@ -9,7 +9,7 @@
 
 - name: Collect network facts from hosts
   hosts: "{{ host | default('all') }}"
-  gather_facts: no # Don't gather facts using standard Ansible plugins
+  gather_facts: yes
   strategy: linear # Process tasks on hosts in order
   serial: 3        # Process so many hosts in parallel
   vars:
@@ -62,12 +62,12 @@
     - name: Copy facts collection script to remote host
       copy:
         src: "{{ playbook_dir }}/{{ facts_script }}"
-        dest: "/tmp/{{ facts_script_temp }}"
+        dest: "./{{ facts_script_temp }}"
         mode: '0755'
       register: script_copy
 
     - name: Execute unified facts collection script on remote host
-      shell: "/tmp/{{ facts_script_temp }}"
+      shell: "./{{ facts_script_temp }}"
       become: yes
       become_method: sudo
       register: facts_output
@@ -77,7 +77,7 @@
 
     - name: Remove facts collection script from remote host
       file:
-        path: "/tmp/{{ facts_script_temp }}"
+        path: "./{{ facts_script_temp }}"
         state: absent
 
     - name: Save raw facts output to final location

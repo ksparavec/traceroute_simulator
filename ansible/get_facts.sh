@@ -126,7 +126,7 @@ collect_facts() {
     TABLE_REFS=$(echo "$RULES_OUTPUT" | grep -o 'lookup [a-zA-Z0-9_]*' | cut -d' ' -f2 | sort -u || echo "")
     
     # Add standard tables
-    ALL_TABLES="main local"
+    ALL_TABLES="main local default"
     if [ -n "$TABLE_REFS" ]; then
         ALL_TABLES="$ALL_TABLES $TABLE_REFS"
     fi
@@ -134,7 +134,7 @@ collect_facts() {
     # Convert table names to numbers using rt_tables if available
     FINAL_TABLES=""
     for table in $ALL_TABLES; do
-        if [ "$table" = "local" ]; then
+        if [[ "$table" = "local" || "$table" = "default" ]]; then
             continue  # Skip local table as requested
         fi
         

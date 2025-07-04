@@ -74,6 +74,7 @@
       failed_when: facts_output.rc != 0
       async: "{{ collection_timeout }}"
       poll: 10
+      no_log: true
 
     - name: Remove facts collection script from remote host
       file:
@@ -85,6 +86,7 @@
         content: "{{ facts_output.stdout }}"
         dest: "{{ raw_facts_dir }}/{{ inventory_hostname }}_facts.txt"
       delegate_to: localhost
+      no_log: true
 
     - name: Display raw facts collection summary
       debug:
@@ -127,6 +129,7 @@
         python3 process_facts.py "{{ raw_facts_dir }}/{{ inventory_hostname }}_facts.txt" "{{ lookup('env', 'TRACEROUTE_SIMULATOR_FACTS') | default('/tmp/tsim/json_facts', true) }}/{{ inventory_hostname }}.json" --verbose
       delegate_to: localhost
       register: processing_result
+      no_log: true
       tags: 
         - process
         - json
@@ -151,6 +154,7 @@
       delegate_to: localhost
       register: json_stats
       when: processing_result.rc == 0
+      no_log: true
       tags: 
         - process
         - json

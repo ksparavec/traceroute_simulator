@@ -696,7 +696,7 @@ netshow:
 		echo "  make netshow ARGS='hq-gw interfaces -v'             # Show static interfaces with verbose output"; \
 		exit 1; \
 	fi
-	@TRACEROUTE_SIMULATOR_FACTS=/tmp/traceroute_test_output $(PYTHON) src/simulators/network_topology_viewer.py $(ARGS)
+	@$(PYTHON) src/simulators/network_topology_viewer.py $(ARGS)
 
 # Show live network namespace status (requires sudo)
 # Usage: sudo -E make netstatus ARGS="<namespace> <function> [-v]"
@@ -727,7 +727,7 @@ netstatus:
 		echo "  sudo -E make netstatus ARGS='dc-srv rules -v'          # Show live rules with verbose output"; \
 		exit 1; \
 	fi
-	@TRACEROUTE_SIMULATOR_FACTS=/tmp/traceroute_test_output $(PYTHON) src/simulators/network_namespace_status.py $(ARGS)
+	@$(PYTHON) src/simulators/network_namespace_status.py $(ARGS)
 
 # Run namespace simulation tests independently (requires sudo)
 # Usage: sudo -E make test-namespace

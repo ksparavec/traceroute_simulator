@@ -550,13 +550,17 @@ class FactsProcessor:
                     parsed_tables[table_name] = chains
                     chain_references.update(refs)
         
-        # If no individual table sections found, try to parse iptables-save
-        if not parsed_tables and 'iptables_save' in self.sections:
+        # Always prefer iptables-save if available as it contains complete rule sets
+        if 'iptables_save' in self.sections:
             section = self.sections['iptables_save']
             if section['exit_code'] == 0:
                 save_tables, save_refs = self._parse_iptables_save(section['output'])
                 parsed_tables.update(save_tables)
                 chain_references.update(save_refs)
+        # Only use individual table sections as fallback if iptables-save not available
+        elif not parsed_tables:
+            # Individual table sections may miss rules or entire tables (like raw)
+            pass  # parsed_tables already populated above
         
         # Also parse iptables-save if available for additional validation/raw config
         if 'iptables_save' in self.sections and self.store_raw:

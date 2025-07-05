@@ -19,6 +19,7 @@ Environment Variables:
 """
 
 import argparse
+import json
 import logging
 import os
 import subprocess
@@ -38,8 +39,9 @@ class HiddenMeshNetworkSetup:
     Routers see only their actual interfaces, mesh is hidden.
     """
     
-    def __init__(self, verbose: int = 0):
+    def __init__(self, verbose: int = 0, limit_pattern: str = None):
         self.verbose = verbose
+        self.limit_pattern = limit_pattern
         self.setup_logging()
         
         # Determine facts directories
@@ -60,23 +62,33 @@ class HiddenMeshNetworkSetup:
         self.router_codes: Dict[str, str] = {}  # full_name -> short_code
         self.code_to_router: Dict[str, str] = {}  # short_code -> full_name
         
+        # Router registry for persistent code mapping
+        self.router_registry_file = Path("/tmp/traceroute_routers_registry.json")
+        
         # Hidden infrastructure namespace
         self.hidden_ns = "hidden-mesh"
         
     def setup_logging(self):
         """Configure logging based on verbosity level."""
         if self.verbose == 0:
-            level = logging.CRITICAL
+            level = logging.WARNING
         elif self.verbose == 1:
             level = logging.INFO
-        else:
+        elif self.verbose == 2:
+            level = logging.DEBUG
+        else:  # verbose >= 3 (-vvv)
             level = logging.DEBUG
             
         logging.basicConfig(
             level=level,
-            format='%(levelname)s: %(message)s'
+            format='%(message)s'  # Simplified format for cleaner output
         )
         self.logger = logging.getLogger(__name__)
+        
+        # Track router setup statistics
+        self.router_stats = {}
+        self.setup_errors = []
+        self.setup_warnings = []
         
     def load_raw_facts_only(self):
         """Load router facts from raw facts directory ONLY."""
@@ -86,7 +98,21 @@ class HiddenMeshNetworkSetup:
             raise FileNotFoundError(f"Raw facts directory not found: {raw_facts_dir}")
         
         self.logger.info(f"Loading raw facts from {raw_facts_dir}")
-        self.routers = self.raw_loader.load_raw_facts_directory(raw_facts_dir)
+        all_routers = self.raw_loader.load_raw_facts_directory(raw_facts_dir)
+        
+        # Apply router filtering if limit pattern is specified
+        if self.limit_pattern:
+            self.routers = self._filter_routers(all_routers, self.limit_pattern)
+            if self.verbose >= 1:
+                print(f"Filtered {len(all_routers)} routers to {len(self.routers)} using pattern '{self.limit_pattern}'")
+                if self.verbose >= 2:
+                    filtered_names = list(self.routers.keys())
+                    print(f"Selected routers: {', '.join(filtered_names)}")
+        else:
+            self.routers = all_routers
+        
+        if not self.routers:
+            raise ValueError(f"No routers found matching pattern '{self.limit_pattern}' in {raw_facts_dir}")
         
         # Extract interface configurations from raw facts interfaces section
         self._extract_interface_configurations()
@@ -95,33 +121,86 @@ class HiddenMeshNetworkSetup:
         
         # Generate compressed router codes
         self._generate_router_codes()
+    
+    def _filter_routers(self, all_routers: Dict, pattern: str) -> Dict:
+        """Filter routers based on glob pattern."""
+        import fnmatch
         
+        filtered_routers = {}
+        
+        for router_name, router_facts in all_routers.items():
+            if fnmatch.fnmatch(router_name, pattern):
+                filtered_routers[router_name] = router_facts
+        
+        return filtered_routers
+        
+    def load_router_registry(self) -> Dict[str, str]:
+        """Load registry of router name to code mappings."""
+        if not self.router_registry_file.exists():
+            return {}
+            
+        try:
+            with open(self.router_registry_file, 'r') as f:
+                return json.load(f)
+        except (json.JSONDecodeError, IOError) as e:
+            self.logger.warning(f"Could not load router registry: {e}")
+            return {}
+            
+    def save_router_registry(self):
+        """Save registry of router name to code mappings."""
+        try:
+            with open(self.router_registry_file, 'w') as f:
+                json.dump(self.router_codes, f, indent=2)
+        except IOError as e:
+            self.logger.error(f"Could not save router registry: {e}")
+
     def _generate_router_codes(self):
         """Generate compressed router codes for hidden infrastructure naming."""
-        import hashlib
+        # Load existing registry first
+        existing_registry = self.load_router_registry()
+        self.router_codes.update(existing_registry)
+        
+        # Build reverse mapping
+        for router_name, router_code in self.router_codes.items():
+            self.code_to_router[router_code] = router_name
         
         # Sort router names for consistent ordering
         router_names = sorted(self.routers.keys())
         
-        for i, router_name in enumerate(router_names):
-            # Method 1: Use simple index-based codes (r000, r001, r002, etc.)
-            # This ensures uniqueness and supports up to 1000 routers
-            router_code = f"r{i:03d}"
-            
-            # Ensure uniqueness (shouldn't happen with index-based approach)
-            while router_code in self.code_to_router:
-                i += 1
-                router_code = f"r{i:03d}"
+        # Find the next available code number
+        used_numbers = set()
+        for code in self.router_codes.values():
+            if code.startswith('r') and len(code) == 4 and code[1:].isdigit():
+                used_numbers.add(int(code[1:]))
+        
+        next_code_num = 0
+        
+        for router_name in router_names:
+            # Skip if router already has a code
+            if router_name in self.router_codes:
+                self.logger.debug(f"Router {router_name} -> {self.router_codes[router_name]} (from registry)")
+                continue
+                
+            # Find next available code number
+            while next_code_num in used_numbers:
+                next_code_num += 1
+                
+            router_code = f"r{next_code_num:03d}"
+            used_numbers.add(next_code_num)
+            next_code_num += 1
             
             self.router_codes[router_name] = router_code
             self.code_to_router[router_code] = router_name
             
-            self.logger.debug(f"Router {router_name} -> {router_code}")
+            self.logger.debug(f"Router {router_name} -> {router_code} (new)")
         
         self.logger.info(f"Generated {len(self.router_codes)} router codes")
         
+        # Save the updated registry
+        self.save_router_registry()
+        
     def _extract_interface_configurations(self):
-        """Extract interface configurations from raw facts interfaces section."""
+        """Extract complete interface configurations from raw facts interfaces section."""
         for router_name, router_facts in self.routers.items():
             self.logger.debug(f"Extracting interface config for {router_name}")
             
@@ -140,47 +219,103 @@ class HiddenMeshNetworkSetup:
                 if not line:
                     continue
                 
-                # Interface line: "2: eth0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500..."
-                if_match = re.match(r'^\d+:\s+([^@:]+)(@\S+)?:\s+<([^>]+)>', line)
+                # Interface line: "2: eth0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast state UP group default qlen 1000"
+                if_match = re.match(r'^\d+:\s+([^@:]+)(@\S+)?:\s+<([^>]+)>(.*)$', line)
                 if if_match:
                     interface_name = if_match.group(1)
                     interface_flags = if_match.group(3)
+                    interface_details = if_match.group(4).strip() if if_match.group(4) else ""
                     
                     # Skip loopback
                     if interface_name == 'lo':
                         current_interface = None
                         continue
                     
+                    # Extract interface properties from details line
+                    mtu = self._extract_interface_property(interface_details, r'mtu\s+(\d+)')
+                    qdisc = self._extract_interface_property(interface_details, r'qdisc\s+(\S+)')
+                    state = self._extract_interface_property(interface_details, r'state\s+(\S+)')
+                    
+                    # Determine if interface should be UP based on flags and state
+                    flags_list = [f.strip() for f in interface_flags.split(',')]
+                    should_be_up = 'UP' in flags_list and state != 'DOWN'
+                    
                     current_interface = {
                         'name': interface_name,
                         'flags': interface_flags,
+                        'flags_list': flags_list,
+                        'mtu': mtu,
+                        'qdisc': qdisc,
+                        'state': state,
+                        'should_be_up': should_be_up,
                         'addresses': []
                     }
                     interfaces.append(current_interface)
                     continue
                 
+                # Link line: "    link/ether 52:54:00:12:34:56 brd ff:ff:ff:ff:ff:ff"
+                if current_interface and line.startswith('link/'):
+                    link_match = re.search(r'link/\w+\s+([a-f0-9:]+)(?:\s+brd\s+([a-f0-9:]+))?', line)
+                    if link_match:
+                        current_interface['mac_address'] = link_match.group(1)
+                        if link_match.group(2):
+                            current_interface['link_broadcast'] = link_match.group(2)
+                    continue
+                
                 # IP address line: "    inet 10.1.1.1/24 brd 10.1.1.255 scope global eth1"
                 if current_interface and 'inet ' in line:
-                    ip_match = re.search(r'inet\s+(\d+\.\d+\.\d+\.\d+/\d+)', line)
+                    ip_match = re.search(r'inet\s+(\d+\.\d+\.\d+\.\d+/\d+)(?:\s+brd\s+(\d+\.\d+\.\d+\.\d+))?(?:\s+scope\s+(\S+))?', line)
                     if ip_match:
                         ip_with_prefix = ip_match.group(1)
-                        current_interface['addresses'].append(ip_with_prefix)
+                        broadcast = ip_match.group(2)
+                        scope = ip_match.group(3) if ip_match.group(3) else 'global'
+                        
+                        # Check if this is a secondary address
+                        is_secondary = 'secondary' in line
+                        
+                        addr_info = {
+                            'ip': ip_with_prefix,
+                            'broadcast': broadcast,
+                            'scope': scope,
+                            'secondary': is_secondary
+                        }
+                        current_interface['addresses'].append(addr_info)
             
             self.router_interfaces[router_name] = interfaces
             self.logger.debug(f"Found {len(interfaces)} interfaces for {router_name}: {[i['name'] for i in interfaces]}")
+    
+    def _extract_interface_property(self, details_line: str, regex_pattern: str) -> Optional[str]:
+        """Extract a specific property from interface details line."""
+        match = re.search(regex_pattern, details_line)
+        return match.group(1) if match else None
             
-    def run_cmd(self, cmd: str, namespace: str = None, check: bool = True):
+    def run_cmd(self, cmd: str, namespace: str = None, check: bool = True, log_cmd: bool = False):
         """Run a command, optionally in a namespace."""
         if namespace:
             full_cmd = f"ip netns exec {namespace} {cmd}"
         else:
             full_cmd = cmd
             
+        # Log command details for -vvv level
+        if self.verbose >= 3 and log_cmd:
+            print(f"      CMD: {full_cmd}")
+        
         self.logger.debug(f"Running: {full_cmd}")
         
         result = subprocess.run(
             full_cmd, shell=True, capture_output=True, text=True, check=check
         )
+        
+        # Log command response for -vvv level
+        if self.verbose >= 3 and log_cmd:
+            if result.returncode == 0:
+                print(f"      OK: Command succeeded")
+                if result.stdout.strip():
+                    print(f"      OUT: {result.stdout.strip()}")
+            else:
+                print(f"      ERR: Command failed (exit {result.returncode})")
+                if result.stderr.strip():
+                    print(f"      STDERR: {result.stderr.strip()}")
         
         if result.returncode != 0 and check:
             self.logger.error(f"Command failed: {full_cmd}")
@@ -215,7 +350,10 @@ class HiddenMeshNetworkSetup:
             # Final cleanup: ensure no simulation interfaces remain in host namespace
             self._cleanup_host_namespace_interfaces()
             
-            self.logger.info("Hidden mesh network setup complete")
+            if self.verbose >= 1:
+                self._print_final_summary()
+            else:
+                self.logger.info("Hidden mesh network setup complete")
             
         except Exception as e:
             self.logger.error(f"Setup failed: {e}")
@@ -223,10 +361,58 @@ class HiddenMeshNetworkSetup:
             return False
         
         return True
+    
+    def _print_final_summary(self):
+        """Print final setup summary with overall statistics."""
+        total_routers = len(self.routers)
+        successful = sum(1 for stats in self.router_stats.values() 
+                        if stats['namespace_created'] and not stats['errors'])
+        partial = sum(1 for stats in self.router_stats.values() 
+                     if stats['namespace_created'] and stats['interfaces_failed'] > 0)
+        failed = sum(1 for stats in self.router_stats.values() 
+                    if not stats['namespace_created'] or stats['errors'])
+        
+        total_interfaces = sum(stats['total_interfaces'] for stats in self.router_stats.values())
+        created_interfaces = sum(stats['interfaces_created'] for stats in self.router_stats.values())
+        failed_interfaces = sum(stats['interfaces_failed'] for stats in self.router_stats.values())
+        
+        total_warnings = sum(len(stats['warnings']) for stats in self.router_stats.values())
+        total_errors = sum(len(stats['errors']) for stats in self.router_stats.values())
+        
+        # Count skipped sections
+        routers_with_skipped = [name for name, stats in self.router_stats.items() 
+                               if stats['skipped_sections']]
+        
+        print("\n=== SETUP SUMMARY ===")
+        print(f"Routers: {successful} successful, {partial} partial, {failed} failed (total: {total_routers})")
+        print(f"Interfaces: {created_interfaces}/{total_interfaces} created, {failed_interfaces} failed")
+        
+        if total_warnings > 0:
+            print(f"Warnings: {total_warnings}")
+        if total_errors > 0:
+            print(f"Errors: {total_errors}")
+        
+        # Report skipped sections
+        if routers_with_skipped:
+            print(f"\nSkipped sections due to failures:")
+            for router_name in routers_with_skipped:
+                stats = self.router_stats[router_name]
+                skipped = ', '.join(stats['skipped_sections'])
+                print(f"  • {router_name}: {skipped}")
+        
+        if failed == 0 and failed_interfaces == 0:
+            print("\n✓ Network setup completed successfully!")
+        elif failed == 0:
+            print("\n⚠ Network setup completed with some interface issues")
+        else:
+            print("\n✗ Network setup completed with router failures")
+        
+        print(f"\nUse 'sudo make netshow ROUTER=<name> FUNC=<function>' to check status")
             
     def create_hidden_infrastructure(self):
         """Create hidden mesh infrastructure namespace."""
-        self.logger.info("Creating hidden mesh infrastructure")
+        if self.verbose >= 1:
+            print("\n=== Creating hidden mesh infrastructure ===")
         
         try:
             self.run_cmd(f"ip netns add {self.hidden_ns}")
@@ -300,16 +486,19 @@ class HiddenMeshNetworkSetup:
         
         for router_name, interfaces in self.router_interfaces.items():
             for interface in interfaces:
-                for ip_addr in interface['addresses']:
-                    # Extract network from IP/prefix
+                for addr_info in interface['addresses']:
+                    # Extract network from IP/prefix (handle both dict and string formats)
                     try:
                         import ipaddress
+                        # Extract IP address from the address info dictionary
+                        ip_addr = addr_info['ip'] if isinstance(addr_info, dict) else addr_info
                         network = ipaddress.IPv4Network(ip_addr, strict=False)
                         subnets.add(str(network))
                     except:
                         continue
         
-        self.logger.info(f"Creating bridges for {len(subnets)} subnets")
+        if self.verbose >= 1:
+            print(f"  → Creating {len(subnets)} subnet bridges")
         
         for subnet in subnets:
             # Create bridge name from subnet (abbreviated to fit 15 char limit)
@@ -320,11 +509,12 @@ class HiddenMeshNetworkSetup:
                 self.run_cmd(f"ip link set {bridge_name} up", self.hidden_ns)
                 self.created_bridges.add(bridge_name)
                 
-                
-                self.logger.debug(f"Created bridge {bridge_name} for subnet {subnet}")
+                if self.verbose >= 2:
+                    print(f"    ✓ Bridge {bridge_name} for {subnet}")
                 
             except subprocess.CalledProcessError:
-                self.logger.warning(f"Bridge {bridge_name} already exists")
+                if self.verbose >= 2:
+                    print(f"    ⚠ Bridge {bridge_name} already exists")
                 
     def _add_vpn_latency(self, bridge_name: str):
         """Add realistic VPN latency (10ms) to VPN interfaces."""
@@ -423,38 +613,174 @@ class HiddenMeshNetworkSetup:
                 
     def create_router_namespaces(self):
         """Create namespaces for routers with ONLY their actual interfaces."""
-        self.logger.info(f"Creating {len(self.routers)} router namespaces")
+        if self.verbose >= 1:
+            print(f"\n=== Creating {len(self.routers)} router namespaces ===")
         
-        for router_name in self.routers.keys():
-            self.logger.debug(f"Creating namespace for {router_name}")
+        for i, router_name in enumerate(self.routers.keys(), 1):
+            if self.verbose >= 1:
+                print(f"\n[{i}/{len(self.routers)}] Setting up router: {router_name}")
+            
+            # Initialize router statistics
+            self.router_stats[router_name] = {
+                'namespace_created': False,
+                'interfaces_created': 0,
+                'interfaces_failed': 0,
+                'total_interfaces': len(self.router_interfaces.get(router_name, [])),
+                'interfaces_success': False,  # True only if ALL interfaces successful
+                'routing_applied': False,
+                'routing_success': False,
+                'ipsets_applied': False,
+                'ipsets_success': False,
+                'iptables_applied': False,
+                'iptables_success': False,
+                'errors': [],
+                'warnings': [],
+                'failed_interfaces': [],  # Track detailed failure info
+                'skipped_sections': []  # Track sections skipped due to failures
+            }
             
             try:
-                self.run_cmd(f"ip netns add {router_name}")
-                self.created_namespaces.add(router_name)
+                # Create namespace
+                if self.verbose >= 1:
+                    print(f"  → Creating namespace {router_name}")
+                
+                try:
+                    self.run_cmd(f"ip netns add {router_name}")
+                    self.created_namespaces.add(router_name)
+                    self.router_stats[router_name]['namespace_created'] = True
+                    if self.verbose >= 2:
+                        print(f"    ✓ Namespace created")
+                except subprocess.CalledProcessError as e:
+                    # Check if namespace already exists
+                    result = self.run_cmd(f"ip netns list | grep -w {router_name}", check=False)
+                    if result.returncode == 0:
+                        if self.verbose >= 1:
+                            print(f"    ⚠ Namespace already exists")
+                        self.router_stats[router_name]['warnings'].append("Namespace already existed")
+                        self.created_namespaces.add(router_name)
+                        self.router_stats[router_name]['namespace_created'] = True
+                    else:
+                        error_msg = f"Failed to create namespace: {e}"
+                        self.router_stats[router_name]['errors'].append(error_msg)
+                        self.logger.error(f"Critical error for {router_name}: {error_msg}")
+                        continue
                 
                 # Enable IP forwarding
-                self.run_cmd(f"echo 1 > /proc/sys/net/ipv4/ip_forward", router_name)
+                if self.verbose >= 2:
+                    print(f"    → Enabling IP forwarding")
+                try:
+                    self.run_cmd(f"echo 1 > /proc/sys/net/ipv4/ip_forward", router_name)
+                    if self.verbose >= 2:
+                        print(f"    ✓ IP forwarding enabled")
+                except subprocess.CalledProcessError as e:
+                    warning_msg = f"Failed to enable IP forwarding: {e}"
+                    self.router_stats[router_name]['warnings'].append(warning_msg)
                 
                 # Enable loopback
-                self.run_cmd(f"ip link set lo up", router_name)
+                if self.verbose >= 2:
+                    print(f"    → Enabling loopback interface")
+                try:
+                    self.run_cmd(f"ip link set lo up", router_name)
+                    if self.verbose >= 2:
+                        print(f"    ✓ Loopback enabled")
+                except subprocess.CalledProcessError as e:
+                    warning_msg = f"Failed to enable loopback: {e}"
+                    self.router_stats[router_name]['warnings'].append(warning_msg)
                 
-            except subprocess.CalledProcessError:
-                self.logger.warning(f"Namespace {router_name} already exists")
+                # Create ONLY the actual interfaces from raw facts
+                self._create_router_actual_interfaces(router_name)
+                
+            except Exception as e:
+                error_msg = f"Unexpected error during setup: {e}"
+                self.router_stats[router_name]['errors'].append(error_msg)
+                self.logger.error(f"Critical error for {router_name}: {error_msg}")
             
-            # Create ONLY the actual interfaces from raw facts
-            self._create_router_actual_interfaces(router_name)
+            # Check if all interfaces were created successfully
+            stats = self.router_stats[router_name]
+            if stats['interfaces_created'] == stats['total_interfaces'] and stats['interfaces_failed'] == 0:
+                stats['interfaces_success'] = True
+            
+            # Print router completion summary
+            self._print_router_summary(router_name)
+    
+    def _print_router_summary(self, router_name: str):
+        """Print one-line summary of router setup completion."""
+        stats = self.router_stats[router_name]
+        
+        # Determine overall status - SUCCESS only if ALL sections successful
+        if not stats['namespace_created']:
+            status = "FAILED"
+            status_icon = "✗"
+        elif stats['errors']:
+            status = "FAILED"
+            status_icon = "✗"
+        elif not stats['interfaces_success']:
+            status = "FAILED"
+            status_icon = "✗"
+        elif stats['routing_applied'] and not stats['routing_success']:
+            status = "FAILED"
+            status_icon = "✗"
+        elif stats['ipsets_applied'] and not stats['ipsets_success']:
+            status = "FAILED"
+            status_icon = "✗"
+        elif stats['iptables_applied'] and not stats['iptables_success']:
+            status = "FAILED"
+            status_icon = "✗"
+        elif stats['warnings']:
+            status = "SUCCESS"
+            status_icon = "✓"
+        else:
+            status = "SUCCESS"
+            status_icon = "✓"
+        
+        # Build summary line
+        if self.verbose >= 1:
+            interfaces_info = f"{stats['interfaces_created']}/{stats['total_interfaces']} interfaces"
+            missing_info = ""
+            
+            if stats['interfaces_failed'] > 0:
+                missing_info += f", {stats['interfaces_failed']} failed"
+            
+            if stats['warnings']:
+                missing_info += f", {len(stats['warnings'])} warnings"
+            
+            if stats['errors']:
+                missing_info += f", {len(stats['errors'])} errors"
+            
+            if stats['skipped_sections']:
+                missing_info += f", skipped: {', '.join(stats['skipped_sections'])}"
+            
+            print(f"  {status_icon} {router_name}: {status} - {interfaces_info}{missing_info}")
+            
+            # Print failed interface details
+            if stats['failed_interfaces']:
+                print(f"    Failed interfaces:")
+                for failed_if in stats['failed_interfaces']:
+                    print(f"      • {failed_if['name']}: {failed_if['error']}")
+                    if failed_if.get('command'):
+                        print(f"        Command: {failed_if['command']}")
+                    if failed_if.get('kernel_error'):
+                        print(f"        Kernel: {failed_if['kernel_error']}")
+            
+            # Print specific errors/warnings if verbose
+            if self.verbose >= 2:
+                for error in stats['errors']:
+                    print(f"    ERROR: {error}")
+                for warning in stats['warnings']:
+                    print(f"    WARNING: {warning}")
                 
     def _create_router_actual_interfaces(self, router_name: str):
         """Create ONLY the actual interfaces from raw facts."""
         interfaces = self.router_interfaces.get(router_name, [])
         
-        self.logger.debug(f"Creating actual interfaces for {router_name}")
+        if self.verbose >= 1:
+            print(f"  → Creating {len(interfaces)} interfaces")
         
-        for interface_config in interfaces:
+        for i, interface_config in enumerate(interfaces, 1):
             interface_name = interface_config['name']
             addresses = interface_config['addresses']
             
-            self.logger.debug(f"Creating interface {interface_name} for {router_name}")
+            # We'll print the result on one line after processing
             
             try:
                 # Create unique veth pair names using compressed router codes (max 15 chars for Linux interface names)
@@ -486,32 +812,72 @@ class HiddenMeshNetworkSetup:
                 
                 # Create veth pair in host namespace (required by Linux kernel)
                 try:
-                    self.run_cmd(f"ip link add {veth_router} type veth peer name {veth_hidden}")
-                    self.logger.debug(f"Created veth pair {veth_router} <-> {veth_hidden}")
+                    self.run_cmd(f"ip link add {veth_router} type veth peer name {veth_hidden}", log_cmd=(self.verbose >= 3))
+                    if self.verbose >= 2:
+                        print(f"      → Created veth pair {veth_router} <-> {veth_hidden}")
                 except subprocess.CalledProcessError as e:
-                    error_msg = f"CRITICAL: Failed to create veth pair {veth_router}/{veth_hidden} for {router_name}:{interface_name}: {e}"
-                    self.logger.error(error_msg)
-                    # Continue with other interfaces instead of failing completely
+                    error_msg = f"Failed to create veth pair {veth_router}/{veth_hidden}"
+                    
+                    # Track detailed failure info
+                    failed_interface = {
+                        'name': interface_name,
+                        'error': error_msg,
+                        'command': f"ip link add {veth_router} type veth peer name {veth_hidden}",
+                        'kernel_error': str(e.stderr) if hasattr(e, 'stderr') and e.stderr else str(e)
+                    }
+                    self.router_stats[router_name]['failed_interfaces'].append(failed_interface)
+                    self.router_stats[router_name]['interfaces_failed'] += 1
+                    
+                    if self.verbose >= 1:
+                        print(f"    ✗ {interface_name}: {error_msg}")
                     continue
                 
                 # Move router end to router namespace
                 try:
-                    self.run_cmd(f"ip link set {veth_router} netns {router_name}")
-                    self.logger.debug(f"Moved {veth_router} to namespace {router_name}")
+                    self.run_cmd(f"ip link set {veth_router} netns {router_name}", log_cmd=(self.verbose >= 3))
+                    if self.verbose >= 2:
+                        print(f"      → Moved {veth_router} to namespace {router_name}")
                 except subprocess.CalledProcessError as e:
                     # Clean up the veth pair from host namespace
                     self.run_cmd(f"ip link del {veth_router}", check=False)
-                    self.logger.error(f"Failed to move {veth_router} to namespace {router_name}: {e}")
+                    error_msg = f"Failed to move {veth_router} to namespace {router_name}"
+                    
+                    # Track detailed failure info
+                    failed_interface = {
+                        'name': interface_name,
+                        'error': error_msg,
+                        'command': f"ip link set {veth_router} netns {router_name}",
+                        'kernel_error': str(e.stderr) if hasattr(e, 'stderr') and e.stderr else str(e)
+                    }
+                    self.router_stats[router_name]['failed_interfaces'].append(failed_interface)
+                    self.router_stats[router_name]['interfaces_failed'] += 1
+                    
+                    if self.verbose >= 1:
+                        print(f"    ✗ {interface_name}: {error_msg}")
                     continue
                 
                 # Move hidden end to hidden infrastructure namespace
                 try:
-                    self.run_cmd(f"ip link set {veth_hidden} netns {self.hidden_ns}")
-                    self.logger.debug(f"Moved {veth_hidden} to namespace {self.hidden_ns}")
+                    self.run_cmd(f"ip link set {veth_hidden} netns {self.hidden_ns}", log_cmd=(self.verbose >= 3))
+                    if self.verbose >= 2:
+                        print(f"      → Moved {veth_hidden} to hidden namespace")
                 except subprocess.CalledProcessError as e:
                     # Clean up the stranded router interface
                     self.run_cmd(f"ip netns exec {router_name} ip link del {veth_router}", check=False)
-                    self.logger.error(f"Failed to move {veth_hidden} to namespace {self.hidden_ns}: {e}")
+                    error_msg = f"Failed to move {veth_hidden} to hidden namespace"
+                    
+                    # Track detailed failure info
+                    failed_interface = {
+                        'name': interface_name,
+                        'error': error_msg,
+                        'command': f"ip link set {veth_hidden} netns {self.hidden_ns}",
+                        'kernel_error': str(e.stderr) if hasattr(e, 'stderr') and e.stderr else str(e)
+                    }
+                    self.router_stats[router_name]['failed_interfaces'].append(failed_interface)
+                    self.router_stats[router_name]['interfaces_failed'] += 1
+                    
+                    if self.verbose >= 1:
+                        print(f"    ✗ {interface_name}: {error_msg}")
                     continue
                 
                 # Verify both interfaces exist in their target namespaces
@@ -543,52 +909,119 @@ class HiddenMeshNetworkSetup:
                 
                 # Rename router interface to exact name from raw facts
                 try:
-                    self.run_cmd(f"ip link set {veth_router} name {interface_name}", router_name)
-                    self.logger.debug(f"Renamed {veth_router} to {interface_name} in {router_name}")
+                    self.run_cmd(f"ip link set {veth_router} name {interface_name}", router_name, log_cmd=(self.verbose >= 3))
+                    if self.verbose >= 2:
+                        print(f"      → Renamed to {interface_name}")
                 except subprocess.CalledProcessError as e:
-                    error_msg = f"CRITICAL: Failed to rename {veth_router} to {interface_name} in {router_name}: {e}"
-                    self.logger.error(error_msg)
-                    raise Exception(error_msg)
+                    error_msg = f"Failed to rename {veth_router} to {interface_name}"
+                    
+                    # Track detailed failure info
+                    failed_interface = {
+                        'name': interface_name,
+                        'error': error_msg,
+                        'command': f"ip netns exec {router_name} ip link set {veth_router} name {interface_name}",
+                        'kernel_error': str(e.stderr) if hasattr(e, 'stderr') and e.stderr else str(e)
+                    }
+                    self.router_stats[router_name]['failed_interfaces'].append(failed_interface)
+                    self.router_stats[router_name]['interfaces_failed'] += 1
+                    
+                    if self.verbose >= 1:
+                        print(f"    ✗ {interface_name}: {error_msg}")
+                    continue
                 
-                # Configure IP addresses on router interface
-                for ip_addr in addresses:
+                # Configure IP addresses on router interface with proper broadcast addresses
+                ip_success = 0
+                applied_addresses = []
+                for addr_info in addresses:
                     try:
-                        self.run_cmd(f"ip addr add {ip_addr} dev {interface_name}", router_name)
-                        self.logger.debug(f"Added IP {ip_addr} to {interface_name} in {router_name}")
+                        # Build proper ip addr add command with broadcast address
+                        cmd_parts = ["ip", "addr", "add", addr_info['ip'], "dev", interface_name]
+                        
+                        # Add broadcast address if available
+                        if addr_info.get('broadcast'):
+                            cmd_parts.extend(["broadcast", addr_info['broadcast']])
+                        
+                        # Add scope if not global (global is default)
+                        if addr_info.get('scope') and addr_info['scope'] != 'global':
+                            cmd_parts.extend(["scope", addr_info['scope']])
+                        
+                        # Add secondary flag if needed
+                        if addr_info.get('secondary'):
+                            cmd_parts.append("secondary")
+                        
+                        cmd = " ".join(cmd_parts)
+                        self.run_cmd(cmd, router_name, log_cmd=(self.verbose >= 3))
+                        ip_success += 1
+                        applied_addresses.append(addr_info['ip'])
+                        if self.verbose >= 2:
+                            brd_info = f" brd {addr_info['broadcast']}" if addr_info.get('broadcast') else ""
+                            print(f"      → Added IP {addr_info['ip']}{brd_info}")
                     except subprocess.CalledProcessError as e:
-                        error_msg = f"CRITICAL: Failed to add IP {ip_addr} to {interface_name} in {router_name}: {e}"
-                        self.logger.error(error_msg)
-                        raise Exception(error_msg)
+                        error_msg = f"Failed to add IP {addr_info['ip']}"
+                        self.router_stats[router_name]['warnings'].append(error_msg)
+                        if self.verbose >= 1:
+                            print(f"      ⚠ IP add failed: {addr_info['ip']}")
                 
-                # Bring up router interface
-                try:
-                    self.run_cmd(f"ip link set {interface_name} up", router_name)
-                    self.logger.debug(f"Brought up interface {interface_name} in {router_name}")
-                except subprocess.CalledProcessError as e:
-                    error_msg = f"CRITICAL: Failed to bring up interface {interface_name} in {router_name}: {e}"
-                    self.logger.error(error_msg)
-                    raise Exception(error_msg)
+                # Set interface state based on raw facts (UP/DOWN)
+                should_be_up = interface_config.get('should_be_up', True)
+                if should_be_up:
+                    try:
+                        self.run_cmd(f"ip link set {interface_name} up", router_name, log_cmd=(self.verbose >= 3))
+                        if self.verbose >= 2:
+                            print(f"      → Interface UP")
+                    except subprocess.CalledProcessError as e:
+                        error_msg = f"Failed to bring up interface {interface_name}"
+                        self.router_stats[router_name]['warnings'].append(error_msg)
+                        if self.verbose >= 1:
+                            print(f"      ⚠ Failed to bring up interface")
+                else:
+                    # Keep interface DOWN as per raw facts
+                    if self.verbose >= 2:
+                        print(f"      → Interface DOWN (as per raw facts)")
+                    # Note: interfaces are created DOWN by default, so no action needed
                 
                 # Bring up hidden interface
                 try:
-                    self.run_cmd(f"ip link set {veth_hidden} up", self.hidden_ns)
-                    self.logger.debug(f"Brought up hidden interface {veth_hidden} in {self.hidden_ns}")
+                    self.run_cmd(f"ip link set {veth_hidden} up", self.hidden_ns, log_cmd=(self.verbose >= 3))
+                    if self.verbose >= 2:
+                        print(f"      → Hidden interface up")
                 except subprocess.CalledProcessError as e:
-                    error_msg = f"CRITICAL: Failed to bring up hidden interface {veth_hidden} in {self.hidden_ns}: {e}"
-                    self.logger.error(error_msg)
-                    raise Exception(error_msg)
+                    error_msg = f"Failed to bring up hidden interface {veth_hidden}"
+                    self.router_stats[router_name]['warnings'].append(error_msg)
+                    if self.verbose >= 2:
+                        print(f"      ⚠ Hidden interface failed")
                 
-                self.logger.info(f"Successfully created and configured {interface_name} with IPs: {addresses}")
+                # Mark interface as successfully created
+                self.router_stats[router_name]['interfaces_created'] += 1
+                if self.verbose >= 1:
+                    ip_info = f" ({', '.join(applied_addresses)})" if applied_addresses else " (no IPs)"
+                    if ip_success < len(addresses):
+                        ip_info += f" [{ip_success}/{len(addresses)} IPs]"
+                    print(f"    ✓ {interface_name}{ip_info}")
                 
             except Exception as e:
-                # Any unhandled exception in interface creation is critical
-                error_msg = f"CRITICAL: Unexpected error creating interface {interface_name} for {router_name}: {e}"
-                self.logger.error(error_msg)
-                raise Exception(error_msg)
+                # Any unhandled exception in interface creation
+                error_msg = f"Unexpected error creating interface {interface_name}"
+                self.router_stats[router_name]['errors'].append(error_msg)
+                self.router_stats[router_name]['interfaces_failed'] += 1
+                
+                # Track detailed failure info
+                failed_interface = {
+                    'name': interface_name,
+                    'error': error_msg,
+                    'command': 'Interface creation process',
+                    'kernel_error': str(e)
+                }
+                self.router_stats[router_name]['failed_interfaces'].append(failed_interface)
+                
+                if self.verbose >= 1:
+                    print(f"    ✗ {interface_name}: {error_msg}")
+                continue  # Continue with next interface instead of failing completely
                 
     def connect_routers_to_infrastructure(self):
         """Connect router interfaces to appropriate bridges in hidden infrastructure."""
-        self.logger.info("Connecting routers to hidden infrastructure")
+        if self.verbose >= 1:
+            print("\n=== Connecting routers to infrastructure ===")
         
         for router_name, interfaces in self.router_interfaces.items():
             for interface_config in interfaces:
@@ -596,9 +1029,11 @@ class HiddenMeshNetworkSetup:
                 addresses = interface_config['addresses']
                 
                 # Find which bridge this interface should connect to
-                for ip_addr in addresses:
+                for addr_info in addresses:
                     try:
                         import ipaddress
+                        # Extract IP address from the address info dictionary
+                        ip_addr = addr_info['ip'] if isinstance(addr_info, dict) else addr_info
                         network = ipaddress.IPv4Network(ip_addr, strict=False)
                         subnet = str(network)
                         bridge_name = self._generate_bridge_name(subnet)
@@ -621,57 +1056,126 @@ class HiddenMeshNetworkSetup:
                         
                         try:
                             self.run_cmd(f"ip link set {veth_hidden} master {bridge_name}", self.hidden_ns)
-                            self.logger.debug(f"Connected {router_name}:{interface_name} to {bridge_name}")
+                            if self.verbose >= 2:
+                                print(f"    ✓ Connected {interface_name} to {bridge_name}")
                         except subprocess.CalledProcessError as e:
+                            if self.verbose >= 1:
+                                print(f"    ✗ Bridge connection failed: {e}")
                             self.logger.error(f"CRITICAL: Failed to connect {veth_hidden} to {bridge_name}: {e}")
                             raise Exception(f"Bridge connection failed for {router_name}:{interface_name}")
                             
                     except Exception as e:
-                        self.logger.warning(f"Failed to process IP {ip_addr}: {e}")
+                        self.logger.warning(f"Failed to process IP {addr_info}: {e}")
                         continue
                         
     def apply_complete_configurations(self):
         """Apply complete router configurations from raw facts."""
-        self.logger.info("Applying complete router configurations from raw facts")
+        if self.verbose >= 1:
+            print("\n=== Applying router configurations ===")
         
-        for router_name, router_facts in self.routers.items():
-            self.logger.info(f"Configuring {router_name} with complete raw facts")
+        for i, (router_name, router_facts) in enumerate(self.routers.items(), 1):
+            if self.verbose >= 1:
+                print(f"\n[{i}/{len(self.routers)}] Configuring {router_name}")
+            
+            stats = self.router_stats[router_name]
+            
+            # Only proceed if interfaces were 100% successful
+            if not stats['interfaces_success']:
+                if self.verbose >= 1:
+                    print(f"  ⚠ Skipping configuration due to interface failures")
+                stats['skipped_sections'] = ['routing', 'ipsets', 'iptables']
+                continue
             
             try:
                 # Apply routing configuration
+                if self.verbose >= 1:
+                    print(f"  → Applying routing configuration")
                 self._apply_routing_configuration(router_name, router_facts)
                 
-                # Apply ipsets configuration first (iptables rules reference ipsets)
-                self._apply_ipsets_configuration(router_name, router_facts)
+                # Only proceed with ipsets if routing was 100% successful
+                if stats['routing_success']:
+                    if self.verbose >= 1:
+                        print(f"  → Applying ipsets configuration")
+                    self._apply_ipsets_configuration(router_name, router_facts)
+                    
+                    # Only proceed with iptables if ipsets was 100% successful
+                    if stats['ipsets_success']:
+                        if self.verbose >= 1:
+                            print(f"  → Applying iptables configuration")
+                        self._apply_iptables_configuration(router_name, router_facts)
+                    else:
+                        if self.verbose >= 1:
+                            print(f"  ⚠ Skipping iptables due to ipsets failures")
+                        stats['skipped_sections'].append('iptables')
+                else:
+                    if self.verbose >= 1:
+                        print(f"  ⚠ Skipping ipsets and iptables due to routing failures")
+                    stats['skipped_sections'].extend(['ipsets', 'iptables'])
                 
-                # Apply iptables configuration after ipsets
-                self._apply_iptables_configuration(router_name, router_facts)
-                
-                self.logger.debug(f"Successfully configured {router_name}")
+                if self.verbose >= 2:
+                    print(f"  ✓ Configuration applied")
                 
             except Exception as e:
-                self.logger.error(f"Failed to configure {router_name}: {e}")
+                if self.verbose >= 1:
+                    print(f"  ✗ Configuration failed: {e}")
                 # Continue with other routers
                 
     def _apply_routing_configuration(self, router_name: str, router_facts: RouterRawFacts):
         """Apply routing tables and policy rules (policy routing conditional)."""
-        # Always apply main routing table
-        routing_section = router_facts.get_section('routing_table_main')
-        if routing_section:
-            self._apply_routes(router_name, routing_section.content, 'main')
+        stats = self.router_stats[router_name]
+        stats['routing_applied'] = True
         
-        # Apply policy rules and additional routing tables
-        policy_section = router_facts.get_section('policy_rules')
-        if policy_section:
-            self._apply_policy_rules(router_name, policy_section.content)
+        routes_applied = 0
+        rules_applied = 0
+        tables_applied = 0
+        errors = []
         
-        # Apply additional routing tables
-        for section_name, section in router_facts.sections.items():
-            if section_name.startswith('routing_table_') and section_name != 'routing_table_main':
-                table_name = section_name.replace('routing_table_', '')
-                table_id = self._get_table_id(table_name)
-                if table_id:
-                    self._apply_routes(router_name, section.content, table_id)
+        try:
+            # Always apply main routing table
+            routing_section = router_facts.get_section('routing_table_main')
+            if routing_section:
+                route_count = self._apply_routes(router_name, routing_section.content, 'main')
+                routes_applied += route_count
+                tables_applied += 1
+            
+            # Apply policy rules and additional routing tables
+            policy_section = router_facts.get_section('policy_rules')
+            if policy_section:
+                rule_count = self._apply_policy_rules(router_name, policy_section.content)
+                rules_applied += rule_count
+            
+            # Apply additional routing tables
+            for section_name, section in router_facts.sections.items():
+                if section_name.startswith('routing_table_') and section_name != 'routing_table_main':
+                    table_name = section_name.replace('routing_table_', '')
+                    table_id = self._get_table_id(table_name)
+                    if table_id:
+                        route_count = self._apply_routes(router_name, section.content, table_id)
+                        routes_applied += route_count
+                        tables_applied += 1
+            
+            # Clean up duplicate kernel routes (remove auto-generated routes if explicit metric routes exist)
+            removed_duplicates = self._remove_duplicate_kernel_routes(router_name, router_facts)
+            
+            # Mark as successful
+            stats['routing_success'] = True
+            
+            if self.verbose >= 1:
+                summary = f"    ✓ routing: {routes_applied} routes"
+                if rules_applied > 0:
+                    summary += f", {rules_applied} rules"
+                if tables_applied > 1:
+                    summary += f", {tables_applied} tables"
+                print(summary)
+                
+        except Exception as e:
+            stats['routing_success'] = False
+            error_msg = str(e)
+            stats['errors'].append(f"Routing configuration failed: {error_msg}")
+            
+            if self.verbose >= 1:
+                print(f"    ✗ routing: {error_msg}")
+            raise  # Re-raise to be caught by caller
     
     def _get_table_id(self, table_name: str) -> Optional[str]:
         """Get numeric table ID for named table."""
@@ -690,7 +1194,9 @@ class HiddenMeshNetworkSetup:
     def _apply_routes(self, router_name: str, routes_content: str, table: str):
         """Apply routing table entries."""
         if not routes_content.strip():
-            return
+            return 0
+        
+        routes_count = 0
         
         # Handle embedded newlines in content
         routes_content = routes_content.replace('\\n', '\n')
@@ -700,9 +1206,10 @@ class HiddenMeshNetworkSetup:
             if not line or line.startswith('#'):
                 continue
             
-            # Skip auto-generated direct network routes (these are created when IPs are assigned)
-            if 'proto kernel scope link' in line:
-                self.logger.debug(f"Skipping auto-generated route: {line}")
+            # Skip auto-generated direct network routes WITHOUT explicit metrics
+            # Kernel routes with explicit metrics should be applied as they indicate specific configuration
+            if 'proto kernel scope link' in line and 'metric' not in line:
+                self.logger.debug(f"Skipping auto-generated route without metric: {line}")
                 continue
             
             # Apply route
@@ -712,6 +1219,7 @@ class HiddenMeshNetworkSetup:
             
             try:
                 self.run_cmd(cmd, router_name)
+                routes_count += 1
                 self.logger.debug(f"Added route: {line}")
             except subprocess.CalledProcessError as e:
                 # Check if route already exists (expected for direct network routes)
@@ -726,15 +1234,23 @@ class HiddenMeshNetworkSetup:
             except Exception as e:
                 self.logger.error(f"CRITICAL: Route add failed for {line}: {e}")
                 raise Exception(f"Failed to add route: {line}")
+        
+        return routes_count
                 
     def _apply_policy_rules(self, router_name: str, rules_content: str):
         """Apply policy routing rules."""
         if not rules_content.strip():
-            return
+            return 0
+        
+        rules_count = 0
         
         for line in rules_content.split('\n'):
             line = line.strip()
-            if not line or line.startswith('#') or line.startswith('0:') or 'lookup local' in line:
+            # Skip empty lines, comments, and default system rules that are automatically created
+            if (not line or line.startswith('#') or 
+                line.startswith('0:') or 'lookup local' in line or
+                line.startswith('32766:') and 'lookup main' in line or
+                line.startswith('32767:') and 'lookup default' in line):
                 continue
             
             # Parse rule and convert to ip rule add command
@@ -756,19 +1272,98 @@ class HiddenMeshNetworkSetup:
                 
                 try:
                     self.run_cmd(cmd, router_name, check=False)
+                    rules_count += 1
                 except Exception as e:
                     self.logger.debug(f"Rule add failed (expected): {e}")
+        
+        return rules_count
+    
+    def _remove_duplicate_kernel_routes(self, router_name: str, router_facts: RouterRawFacts):
+        """Remove duplicate kernel routes when explicit metric routes exist."""
+        removed_count = 0
+        
+        # Get main routing table facts to identify routes with explicit metrics
+        routing_section = router_facts.get_section('routing_table_main')
+        if not routing_section:
+            return removed_count
+        
+        # Parse routes from raw facts to find kernel routes with metrics
+        explicit_metric_routes = []
+        for line in routing_section.content.split('\n'):
+            line = line.strip()
+            if 'proto kernel scope link' in line and 'metric' in line:
+                # Extract network and device from the route
+                # Format: "10.128.9.0/24 dev ens1f0 proto kernel scope link src 10.128.9.60 metric 100"
+                parts = line.split()
+                if len(parts) >= 4:
+                    network = parts[0]
+                    device = None
+                    for i, part in enumerate(parts):
+                        if part == 'dev' and i + 1 < len(parts):
+                            device = parts[i + 1]
+                            break
+                    
+                    if network and device:
+                        explicit_metric_routes.append((network, device))
+                        self.logger.debug(f"Found explicit metric route: {network} dev {device}")
+        
+        # Remove duplicate auto-generated routes (those without metrics)
+        for network, device in explicit_metric_routes:
+            try:
+                # Try to remove the auto-generated route (without metric)
+                cmd = f"ip route del {network} dev {device} proto kernel scope link"
+                result = self.run_cmd(cmd, router_name, check=False, log_cmd=(self.verbose >= 3))
+                
+                if result.returncode == 0:
+                    removed_count += 1
+                    self.logger.debug(f"Removed duplicate route: {network} dev {device}")
+                else:
+                    # Route might not exist or have different parameters, this is fine
+                    self.logger.debug(f"No duplicate route to remove: {network} dev {device}")
+                    
+            except Exception as e:
+                # Route removal failures are not critical, just log
+                self.logger.debug(f"Failed to remove duplicate route {network} dev {device}: {e}")
+        
+        if removed_count > 0 and self.verbose >= 2:
+            print(f"      → Removed {removed_count} duplicate kernel routes")
+        
+        return removed_count
                     
     def _apply_iptables_configuration(self, router_name: str, router_facts: RouterRawFacts):
         """Apply iptables configuration."""
-        iptables_save_section = router_facts.get_section('iptables_save')
-        if iptables_save_section:
-            self._apply_iptables_save(router_name, iptables_save_section.content)
+        stats = self.router_stats[router_name]
+        stats['iptables_applied'] = True
+        
+        try:
+            iptables_save_section = router_facts.get_section('iptables_save')
+            if iptables_save_section:
+                success, rule_count = self._apply_iptables_save(router_name, iptables_save_section.content)
+                if success:
+                    stats['iptables_success'] = True
+                    if self.verbose >= 1:
+                        print(f"    ✓ iptables: {rule_count} rules applied")
+                else:
+                    if self.verbose >= 1:
+                        print(f"    ✗ iptables: configuration failed")
+                    raise Exception("Iptables configuration failed")
+            else:
+                stats['iptables_success'] = True  # No iptables to apply
+                if self.verbose >= 1:
+                    print(f"    ✓ iptables: no configuration")
+        except Exception as e:
+            stats['iptables_success'] = False
+            stats['errors'].append(f"Iptables configuration failed: {str(e)}")
+            raise
             
     def _apply_iptables_save(self, router_name: str, iptables_content: str):
         """Apply iptables configuration using iptables-restore."""
         if not iptables_content.strip():
-            return
+            return True, 0
+        
+        # Count rules in the content (lines that don't start with # or :)
+        rule_count = sum(1 for line in iptables_content.split('\n') 
+                        if line.strip() and not line.startswith('#') and not line.startswith(':'))
         
         try:
             if router_name:
@@ -786,22 +1381,49 @@ class HiddenMeshNetworkSetup:
             
             if result.returncode != 0:
                 self.logger.error(f"iptables-restore failed for {router_name}: {result.stderr}")
+                return False, rule_count
             else:
                 self.logger.debug(f"iptables-restore succeeded for {router_name}")
+                return True, rule_count
             
         except Exception as e:
             self.logger.error(f"iptables restore failed for {router_name}: {e}")
+            return False, rule_count
             
     def _apply_ipsets_configuration(self, router_name: str, router_facts: RouterRawFacts):
         """Apply ipsets configuration."""
-        ipset_save_section = router_facts.get_section('ipset_save')
-        if ipset_save_section:
-            self._apply_ipset_save(router_name, ipset_save_section.content)
+        stats = self.router_stats[router_name]
+        stats['ipsets_applied'] = True
+        
+        try:
+            ipset_save_section = router_facts.get_section('ipset_save')
+            if ipset_save_section:
+                success, set_count, member_count = self._apply_ipset_save(router_name, ipset_save_section.content)
+                if success:
+                    stats['ipsets_success'] = True
+                    if self.verbose >= 1:
+                        print(f"    ✓ ipsets: {set_count} sets, {member_count} members")
+                else:
+                    if self.verbose >= 1:
+                        print(f"    ✗ ipsets: configuration failed")
+                    raise Exception("Ipsets configuration failed")
+            else:
+                stats['ipsets_success'] = True  # No ipsets to apply
+                if self.verbose >= 1:
+                    print(f"    ✓ ipsets: no configuration")
+        except Exception as e:
+            stats['ipsets_success'] = False
+            stats['errors'].append(f"Ipsets configuration failed: {str(e)}")
+            raise
             
     def _apply_ipset_save(self, router_name: str, ipset_content: str):
         """Apply ipset configuration using ipset restore."""
         if not ipset_content.strip():
-            return
+            return True, 0, 0
+        
+        # Count creates (sets) and adds (members)
+        set_count = ipset_content.count('create')
+        member_count = ipset_content.count('add')
         
         try:
             if router_name:
@@ -822,11 +1444,14 @@ class HiddenMeshNetworkSetup:
                 self.logger.error(f"Return code: {result.returncode}")
                 if result.stdout:
                     self.logger.error(f"Stdout: {result.stdout}")
+                return False, set_count, member_count
             else:
                 self.logger.info(f"ipset restore succeeded for {router_name}")
+                return True, set_count, member_count
             
         except Exception as e:
             self.logger.error(f"ipset restore failed (exception) for {router_name}: {e}")
+            return False, set_count, member_count
             
     def cleanup_network(self):
         """Clean up all created network resources."""
@@ -926,11 +1551,13 @@ def main():
     """Main function."""
     parser = argparse.ArgumentParser(description='Hidden Mesh Network Namespace Setup')
     parser.add_argument('-v', '--verbose', action='count', default=0,
-                       help='Increase verbosity (-v for info, -vv for debug)')
+                       help='Increase verbosity (-v for info, -vv for debug, -vvv for commands)')
     parser.add_argument('--cleanup', action='store_true',
                        help='Clean up existing setup and exit')
     parser.add_argument('--verify', action='store_true',
                        help='Verify setup after creation')
+    parser.add_argument('--limit', type=str, default=None,
+                       help='Limit routers to create (supports glob patterns, e.g. "br-core", "*core*", "hq-*")')
     
     args = parser.parse_args()
     
@@ -938,7 +1565,7 @@ def main():
         print("Error: This script must be run as root (use sudo)")
         return 1
     
-    setup = HiddenMeshNetworkSetup(verbose=args.verbose)
+    setup = HiddenMeshNetworkSetup(verbose=args.verbose, limit_pattern=args.limit)
     
     try:
         if args.cleanup:
@@ -960,8 +1587,9 @@ def main():
             if not setup.verify_setup():
                 return 1
         
-        print(f"Hidden mesh network setup complete with {len(setup.routers)} routers")
-        print("Use 'sudo make netstatus ARGS=\"<router> <function>\"' to check status")
+        if args.verbose == 0:
+            print(f"Hidden mesh network setup complete with {len(setup.routers)} routers")
+            print("Use 'sudo make netshow ROUTER=<name> FUNC=<function>' to check status")
         
     except KeyboardInterrupt:
         print("\nSetup interrupted")

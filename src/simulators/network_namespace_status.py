@@ -88,7 +88,8 @@ class NetworkNamespaceStatus:
         self.load_known_routers()
         self.load_host_registry()
         self.discover_namespaces()
-        self.rebuild_name_mapping_from_facts()
+        # Only build name mapping for actually running namespaces
+        self.rebuild_name_mapping_for_running_namespaces()
         
     def setup_logging(self):
         """Configure logging based on verbosity level."""
@@ -221,16 +222,17 @@ class NetworkNamespaceStatus:
         subnet_routers: Dict[str, List[tuple]] = {}
         
         for router_name, facts in routers.items():
-            network_data = facts.get('network', {})
-            interfaces_list = network_data.get('interfaces', [])
+            # Get routing table data to extract interface IPs
+            routing_data = facts.get('routing', {})
+            routing_tables = routing_data.get('tables', [])
             
-            # Process interface information from network.interfaces section
-            for interface_info in interfaces_list:
-                prefsrc = interface_info.get('prefsrc')
-                dev = interface_info.get('dev')
-                protocol = interface_info.get('protocol')
-                scope = interface_info.get('scope')
-                dst = interface_info.get('dst')
+            # Process routing table entries to find interface IPs
+            for route_info in routing_tables:
+                prefsrc = route_info.get('prefsrc')
+                dev = route_info.get('dev')
+                protocol = route_info.get('protocol')
+                scope = route_info.get('scope')
+                dst = route_info.get('dst')
                 
                 # Only process kernel routes with preferred source (interface IPs)
                 if (protocol == 'kernel' and scope == 'link' and 
@@ -305,6 +307,23 @@ class NetworkNamespaceStatus:
     def is_router(self, namespace: str) -> bool:
         """Check if a namespace is a known router from facts."""
         return namespace in self.known_routers
+    
+    def _is_system_namespace(self, namespace: str) -> bool:
+        """Check if a namespace is a truly system namespace that should be hidden."""
+        # Hide system namespaces and internal infrastructure
+        system_namespaces = {'default', 'hidden-mesh'}
+        return namespace in system_namespaces
+    
+    def _get_namespace_type(self, namespace: str) -> str:
+        """Determine the type of a namespace using JSON facts and host registry."""
+        if namespace == 'hidden-mesh':
+            return 'INFRASTRUCTURE'
+        elif namespace in self.known_routers:
+            return 'ROUTER'
+        elif namespace in self.hosts:
+            return 'HOST'
+        else:
+            return 'UNKNOWN'
         
     def check_command_availability(self, command: str) -> bool:
         """Check if a command is available on the system."""
@@ -583,37 +602,71 @@ class NetworkNamespaceStatus:
         else:
             summary_lines.append(f"  Type: Router")
         
-        # Get interface count and IPs
+        # Show interface addresses from ip addr show
+        summary_lines.append("")
+        summary_lines.append("  Interfaces:")
         addr_result = self.run_command("ip addr show", namespace=namespace, check=False)
         if addr_result.returncode == 0:
-            interfaces = []
-            current_if = None
-            
             for line in addr_result.stdout.split('\n'):
-                if_match = re.match(r'^\d+:\s+([^@:]+)', line)
-                if if_match:
-                    current_if = if_match.group(1)
-                    if current_if != 'lo':  # Skip loopback
-                        interfaces.append(current_if)
-                        
-                ip_match = re.match(r'^\s*inet\s+([^/]+)/(\d+)', line)
-                if ip_match and current_if and current_if != 'lo':
-                    ip_addr = ip_match.group(1)
-                    prefix = ip_match.group(2)
-                    
-                    # Translate interface name
-                    display_name = current_if
-                    if current_if.startswith('v') and re.match(r'^v\d{3}$', current_if):
-                        original_name = self.get_original_name(current_if)
-                        display_name = f"{current_if}({original_name})"
-                        
-                    summary_lines.append(f"  {display_name}: {ip_addr}/{prefix}")
-                    
-        # Get route count
+                if line:  # Include lines with any content, preserving original indentation
+                    summary_lines.append(f"    {line}")
+        else:
+            summary_lines.append("    (failed to retrieve)")
+        
+        # Show actual policy rules
+        summary_lines.append("")
+        summary_lines.append("  Policy Rules:")
+        rules_result = self.run_command("ip rule show", namespace=namespace, check=False)
+        if rules_result.returncode == 0:
+            for line in rules_result.stdout.split('\n'):
+                if line.strip():
+                    summary_lines.append(f"    {line.strip()}")
+        else:
+            summary_lines.append("    (failed to retrieve)")
+            
+        # Show actual routing table
+        summary_lines.append("")
+        summary_lines.append("  Routing Table:")
         route_result = self.run_command("ip route show", namespace=namespace, check=False)
         if route_result.returncode == 0:
-            route_count = len([line for line in route_result.stdout.split('\n') if line.strip()])
-            summary_lines.append(f"  Routes: {route_count}")
+            for line in route_result.stdout.split('\n'):
+                if line.strip():
+                    summary_lines.append(f"    {line.strip()}")
+        else:
+            summary_lines.append("    (failed to retrieve)")
+            
+        # Get iptables totals using iptables-save
+        summary_lines.append("")
+        iptables_result = self.run_command("iptables-save", namespace=namespace, check=False)
+        if iptables_result.returncode == 0:
+            table_counts = {}
+            current_table = None
+            total_rules = 0
+            
+            for line in iptables_result.stdout.split('\n'):
+                # Start of table
+                table_match = re.match(r'^\*(\w+)', line)
+                if table_match:
+                    current_table = table_match.group(1)
+                    table_counts[current_table] = 0
+                # Actual rule (starts with -A)
+                elif line.startswith('-A ') and current_table:
+                    table_counts[current_table] += 1
+                    total_rules += 1
+            
+            if total_rules > 0:
+                table_summary = ', '.join([f"{table}:{count}" for table, count in table_counts.items() if count > 0])
+                summary_lines.append(f"  Iptables: {total_rules} rules ({table_summary})")
+            else:
+                summary_lines.append("  Iptables: 0 rules")
+        else:
+            summary_lines.append("  Iptables: (failed to retrieve)")
+        
+        # Get ipsets count
+        ipset_result = self.run_command("ipset list -n", namespace=namespace, check=False)
+        if ipset_result.returncode == 0:
+            ipset_count = len([line for line in ipset_result.stdout.split('\n') if line.strip()])
+            summary_lines.append(f"  Ipsets: {ipset_count} sets")
             
         return '\n'.join(summary_lines)
         
@@ -756,39 +809,75 @@ class NetworkNamespaceStatus:
         sections.append(self.show_ipsets(namespace))
         
         return '\n'.join(sections)
+    
+    def rebuild_name_mapping_for_running_namespaces(self):
+        """Build interface name mapping ONLY for actually running namespaces."""
+        self.logger.debug("Building interface name mapping for running namespaces only")
+        
+        # Only process namespaces that are actually running
+        user_namespaces = [ns for ns in self.available_namespaces if not self._is_system_namespace(ns)]
+        
+        # For each running namespace, build name mapping only if it's a known router with facts
+        for namespace in user_namespaces:
+            if namespace in self.known_routers:
+                # Load facts only for this specific running router
+                facts_file = self.facts_dir / f"{namespace}.json"
+                if facts_file.exists():
+                    try:
+                        with open(facts_file, 'r') as f:
+                            facts = json.load(f)
+                        
+                        # Process routing table to extract interface mappings for this router only
+                        routing_data = facts.get('routing', {})
+                        routing_tables = routing_data.get('tables', [])
+                        
+                        for route_info in routing_tables:
+                            prefsrc = route_info.get('prefsrc')
+                            dev = route_info.get('dev')
+                            protocol = route_info.get('protocol')
+                            scope = route_info.get('scope')
+                            dst = route_info.get('dst')
+                            
+                            # Only process kernel routes with preferred source (interface IPs)
+                            if (protocol == 'kernel' and scope == 'link' and 
+                                prefsrc and dev and dst and '/' in dst):
+                                
+                                # Create mapping for this interface
+                                if dev:
+                                    veth_name = f"{namespace}-{dev}"
+                                    self._get_short_name(veth_name)
+                    
+                    except (json.JSONDecodeError, IOError) as e:
+                        self.logger.warning(f"Failed to load facts for running namespace {namespace}: {e}")
+        
+        self.logger.debug(f"Built interface name mapping for {len(self.name_map)} interfaces in running namespaces")
         
         
     def show_all_summary(self) -> str:
-        """Show summary for all available namespaces (routers and hosts)."""
+        """Show summary for all available namespaces."""
         if not self.available_namespaces:
             return "No live namespaces found"
             
-        # Only count routers and hosts, not system namespaces
-        routers = [ns for ns in self.available_namespaces if self.is_router(ns)]
-        hosts = [ns for ns in self.available_namespaces if self.is_host(ns)]
-        router_count = len(routers)
-        host_count = len(hosts)
-        total_user_namespaces = router_count + host_count
+        # Show ALL namespaces except truly system ones (default, etc.)
+        user_namespaces = [ns for ns in self.available_namespaces if not self._is_system_namespace(ns)]
+        total_user_namespaces = len(user_namespaces)
         
         sections = ["=== LIVE NAMESPACE STATUS ==="]
         sections.append(f"Running namespaces: {total_user_namespaces}")
-        sections.append(f"  Routers: {router_count}")
-        sections.append(f"  Hosts: {host_count}")
         sections.append(f"Interface name mappings: {len(self.name_map)}")
         sections.append("")
         
         if total_user_namespaces > 0:
             sections.append("Running namespaces:")
             
-            # Use the already filtered lists
-            for namespace in sorted(routers):
-                sections.append(f"  {namespace} [ROUTER]")
-            for namespace in sorted(hosts):
-                sections.append(f"  {namespace} [HOST]")
+            # Show ALL user namespaces
+            for namespace in sorted(user_namespaces):
+                namespace_type = self._get_namespace_type(namespace)
+                sections.append(f"  {namespace} [{namespace_type}]")
             sections.append("")
             
             # Show detailed summary for each namespace
-            for namespace in sorted(routers) + sorted(hosts):
+            for namespace in sorted(user_namespaces):
                 sections.append(self.show_summary(namespace))
                 sections.append("")
         else:

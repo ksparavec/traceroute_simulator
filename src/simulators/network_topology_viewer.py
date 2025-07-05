@@ -142,16 +142,17 @@ class NetworkTopologyViewer:
         self.logger.debug("Building subnet topology from router facts")
         
         for router_name, facts in self.routers.items():
-            network_data = facts.get('network', {})
-            interfaces_list = network_data.get('interfaces', [])
+            # Use routing table data which is more reliable
+            routing_data = facts.get('routing', {})
+            routing_tables = routing_data.get('tables', [])
             
-            # Extract interface information to build subnet topology
-            for interface_info in interfaces_list:
-                prefsrc = interface_info.get('prefsrc')
-                dev = interface_info.get('dev')
-                protocol = interface_info.get('protocol')
-                scope = interface_info.get('scope')
-                dst = interface_info.get('dst')
+            # Extract interface information from routing tables
+            for route_info in routing_tables:
+                prefsrc = route_info.get('prefsrc')
+                dev = route_info.get('dev')
+                protocol = route_info.get('protocol')
+                scope = route_info.get('scope')
+                dst = route_info.get('dst')
                 
                 # Only process kernel routes with preferred source (interface IPs)
                 if (protocol == 'kernel' and scope == 'link' and 
@@ -384,62 +385,156 @@ class NetworkTopologyViewer:
         return '\n'.join(sections)
         
     def show_summary(self, router: str) -> str:
-        """Show brief summary of router configuration from facts."""
+        """Show router summary in exact same format as netstatus but from JSON facts."""
         if router not in self.routers:
             return f"Router {router} not found in facts"
             
         facts = self.routers[router]
-        sections = [f"=== {router.upper()} SUMMARY (from facts) ==="]
+        summary_lines = [f"=== {router} ROUTER SUMMARY ==="]
+        summary_lines.append(f"  Type: Router")
         
-        # Add metadata information if available
-        metadata = facts.get('metadata', {})
-        if metadata:
-            router_type = metadata.get('type', 'unknown')
-            location = metadata.get('location', 'unknown')
-            vendor = metadata.get('vendor', 'unknown')
-            linux = metadata.get('linux', True)
-            
-            sections.append(f"  Type: {router_type}")
-            sections.append(f"  Location: {location}")
-            sections.append(f"  Vendor: {vendor}")
-            sections.append(f"  Linux: {linux}")
-        
-        # Count interfaces with IPs
+        # Show interface addresses from JSON facts (network.interfaces.parsed)
+        summary_lines.append("")
+        summary_lines.append("  Interfaces:")
         network_data = facts.get('network', {})
-        interfaces_list = network_data.get('interfaces', [])
+        interfaces_data = network_data.get('interfaces', {})
+        parsed_interfaces = interfaces_data.get('parsed', {})
         
-        interface_ips = []
-        for iface in interfaces_list:
-            if (iface.get('protocol') == 'kernel' and 
-                iface.get('scope') == 'link' and
-                iface.get('prefsrc') and iface.get('dev')):
+        if parsed_interfaces:
+            for if_name, if_data in parsed_interfaces.items():
+                # Interface line (like "1: lo: <LOOPBACK,UP,LOWER_UP>...")
+                index = if_data.get('index', 0)
+                flags = if_data.get('flags', [])
+                flags_str = ','.join(flags)
+                mtu = if_data.get('mtu', 0)
+                qdisc = if_data.get('qdisc', 'unknown')
+                state = if_data.get('state', 'UNKNOWN')
+                group = if_data.get('group', 'default')
+                qlen = if_data.get('qlen', 0)
                 
-                dev = iface['dev']
-                ip = iface['prefsrc']
-                dst = iface.get('dst', '')
+                summary_lines.append(f"    {index}: {if_name}: <{flags_str}> mtu {mtu} qdisc {qdisc} state {state} group {group} qlen {qlen}")
                 
-                if not ip.startswith('127.'):  # Skip loopback
-                    prefix_len = dst.split('/')[-1] if '/' in dst else '32'
-                    interface_ips.append(f"  {dev}: {ip}/{prefix_len}")
+                # Link line
+                link_type = if_data.get('link_type', 'ether')
+                mac = if_data.get('mac_address', '00:00:00:00:00:00')
+                broadcast = if_data.get('broadcast_address', 'ff:ff:ff:ff:ff:ff')
+                summary_lines.append(f"        link/{link_type} {mac} brd {broadcast}")
+                
+                # Address lines
+                addresses = if_data.get('addresses', [])
+                for addr in addresses:
+                    family = addr.get('family', 'inet')
+                    address = addr.get('address', '')
+                    prefixlen = addr.get('prefixlen', 0)
+                    scope = addr.get('scope', 'global')
+                    secondary = addr.get('secondary', False)
+                    
+                    addr_line = f"        {family} {address}/{prefixlen}"
+                    if 'broadcast' in addr:
+                        addr_line += f" brd {addr['broadcast']}"
+                    addr_line += f" scope {scope}"
+                    if secondary:
+                        addr_line += " secondary"
+                    addr_line += f" {if_name}"
+                    summary_lines.append(addr_line)
+                    summary_lines.append("           valid_lft forever preferred_lft forever")
+        else:
+            summary_lines.append("    (no interface data in facts)")
         
-        if interface_ips:
-            sections.extend(interface_ips)
-        
-        # Count routes
+        # Show policy rules from JSON facts
+        summary_lines.append("")
+        summary_lines.append("  Policy Rules:")
         routing_data = facts.get('routing', {})
-        routes = routing_data.get('tables', [])
-        route_count = len(routes) if routes else 0
-        sections.append(f"  Routes: {route_count}")
+        rules = routing_data.get('rules', [])
         
-        # Show connected hosts
-        connected_hosts = self.get_connected_hosts(router)
-        if connected_hosts:
-            sections.append(f"  Connected hosts: {len(connected_hosts)}")
-            for host_name, host_config in connected_hosts.items():
-                primary_ip = host_config.get('primary_ip', 'unknown')
-                sections.append(f"    {host_name}: {primary_ip}")
+        if rules:
+            for rule in rules:
+                priority = rule.get('priority', 0)
+                src = rule.get('src', 'all')
+                table = rule.get('table', 'main')
+                summary_lines.append(f"    {priority}:\tfrom {src} lookup {table}")
+        else:
+            summary_lines.append("    (no policy rules in facts)")
         
-        return '\n'.join(sections)
+        # Show routing table from JSON facts
+        summary_lines.append("")
+        summary_lines.append("  Routing Table:")
+        tables = routing_data.get('tables', [])
+        
+        if tables:
+            for route in tables:
+                dst = route.get('dst', '')
+                gateway = route.get('gateway', '')
+                dev = route.get('dev', '')
+                protocol = route.get('protocol', '')
+                scope = route.get('scope', '')
+                metric = route.get('metric', '')
+                prefsrc = route.get('prefsrc', '')
+                
+                route_line = f"    {dst}"
+                if gateway:
+                    route_line += f" via {gateway}"
+                if dev:
+                    route_line += f" dev {dev}"
+                if protocol:
+                    route_line += f" proto {protocol}"
+                if scope:
+                    route_line += f" scope {scope}"
+                if prefsrc:
+                    route_line += f" src {prefsrc}"
+                if metric:
+                    route_line += f" metric {metric}"
+                    
+                summary_lines.append(route_line)
+        else:
+            summary_lines.append("    (no routing table in facts)")
+        
+        # Show iptables totals from JSON facts
+        summary_lines.append("")
+        firewall_data = facts.get('firewall', {})
+        iptables_data = firewall_data.get('iptables', {})
+        
+        if iptables_data.get('available', False):
+            total_rules = 0
+            table_counts = {}
+            
+            for table_name in ['filter', 'nat', 'mangle', 'raw']:
+                if table_name in iptables_data:
+                    table_data = iptables_data[table_name]
+                    if isinstance(table_data, list) and table_data:
+                        for chain_entry in table_data:
+                            for chain_name, rules in chain_entry.items():
+                                if isinstance(rules, list):
+                                    count = len(rules)
+                                    total_rules += count
+                                    if table_name not in table_counts:
+                                        table_counts[table_name] = 0
+                                    table_counts[table_name] += count
+            
+            if total_rules > 0:
+                table_summary = ', '.join([f"{table}:{count}" for table, count in table_counts.items() if count > 0])
+                summary_lines.append(f"  Iptables: {total_rules} rules ({table_summary})")
+            else:
+                summary_lines.append("  Iptables: 0 rules")
+        else:
+            summary_lines.append("  Iptables: (not available in facts)")
+        
+        # Show ipsets count from JSON facts
+        ipset_data = firewall_data.get('ipset', {})
+        if ipset_data.get('available', False):
+            ipset_lists = ipset_data.get('lists', [])
+            if isinstance(ipset_lists, list):
+                ipset_count = 0
+                for ipset_entry in ipset_lists:
+                    if isinstance(ipset_entry, dict):
+                        ipset_count += len(ipset_entry.keys())
+                summary_lines.append(f"  Ipsets: {ipset_count} sets")
+            else:
+                summary_lines.append("  Ipsets: 0 sets")
+        else:
+            summary_lines.append("  Ipsets: (not available in facts)")
+            
+        return '\n'.join(summary_lines)
         
     def show_all_configuration(self, router: str) -> str:
         """Show complete configuration for router from facts."""
@@ -579,31 +674,46 @@ class NetworkTopologyViewer:
         return '\n'.join(sections)
         
     def show_all_summary(self) -> str:
-        """Show summary for all routers and hosts from facts."""
-        sections = ["=== NETWORK SUMMARY (from facts) ==="]
-        sections.append(f"Total routers: {len(self.routers)}")
+        """Show summary in exact same format as netstatus but from JSON facts."""
+        if not self.routers:
+            return "No routers found in facts"
+            
+        # Count available routers and hosts from facts
+        total_routers = len(self.routers)
+        total_hosts = len(self.hosts) if self.hosts else 0
+        total_entities = total_routers + total_hosts
         
-        if self.hosts:
-            sections.append(f"Registered hosts: {len(self.hosts)}")
-        
-        sections.append(f"Network subnets: {len(self.subnets)}")
+        sections = ["=== STATIC FACTS STATUS ==="]
+        sections.append(f"Available routers: {total_entities}")
         sections.append("")
         
-        # Add topology information to all summary
-        sections.append(self.show_topology())
-        sections.append("")
-        
-        # Show all routers
-        for router_name in sorted(self.routers.keys()):
-            sections.append(self.show_summary(router_name))
+        if total_entities > 0:
+            sections.append("Available routers:")
+            
+            # Show all routers
+            for router_name in sorted(self.routers.keys()):
+                sections.append(f"  {router_name} [ROUTER]")
+            
+            # Show all hosts  
+            if self.hosts:
+                for host_name in sorted(self.hosts.keys()):
+                    sections.append(f"  {host_name} [HOST]")
+            
             sections.append("")
             
-        # Show all hosts if any exist
-        if self.hosts:
-            sections.append("=== HOST DETAILS ===")
-            for host_name in sorted(self.hosts.keys()):
-                sections.append(self.show_host_summary(host_name))
+            # Show detailed summary for each router
+            for router_name in sorted(self.routers.keys()):
+                sections.append(self.show_summary(router_name))
                 sections.append("")
+                
+            # Show detailed summary for each host
+            if self.hosts:
+                for host_name in sorted(self.hosts.keys()):
+                    sections.append(self.show_host_summary(host_name))
+                    sections.append("")
+        else:
+            sections.append("No routers available in facts.")
+            sections.append("Check TRACEROUTE_SIMULATOR_FACTS environment variable.")
             
         return '\n'.join(sections)
 

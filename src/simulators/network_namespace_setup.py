@@ -28,6 +28,27 @@ import re
 from pathlib import Path
 from typing import Dict, List, Set, Optional, Tuple
 
+# Configure global output flushing - disable all buffering
+class FlushingWrapper:
+    """Wrapper to ensure immediate flushing of all output."""
+    def __init__(self, stream):
+        self.stream = stream
+    
+    def write(self, data):
+        result = self.stream.write(data)
+        self.stream.flush()
+        return result
+    
+    def flush(self):
+        return self.stream.flush()
+    
+    def __getattr__(self, name):
+        return getattr(self.stream, name)
+
+# Apply immediate flushing to stdout and stderr
+sys.stdout = FlushingWrapper(sys.stdout)
+sys.stderr = FlushingWrapper(sys.stderr)
+
 # Import the raw facts block loader
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from core.raw_facts_block_loader import RawFactsBlockLoader, RouterRawFacts
@@ -65,6 +86,15 @@ class HiddenMeshNetworkSetup:
         # Router registry for persistent code mapping
         self.router_registry_file = Path("/tmp/traceroute_routers_registry.json")
         
+        # Interface registry for persistent interface numbering
+        self.interface_registry_file = Path("/tmp/traceroute_interfaces_registry.json")
+        self.interface_registry: Dict[str, Dict[str, str]] = {}  # router_code -> {interface_name -> interface_code}
+        
+        # Bridge registry for subnet bridge tracking
+        self.bridge_registry_file = Path("/tmp/traceroute_bridges_registry.json")
+        # Enhanced bridge registry: bridge_name -> {"routers": {router_name: {interface, ipv4, state}}, "hosts": {host_name: {interface, ipv4, state}}}
+        self.bridge_registry: Dict[str, Dict[str, Dict[str, Dict[str, str]]]] = {}
+        
         # Hidden infrastructure namespace
         self.hidden_ns = "hidden-mesh"
         
@@ -81,7 +111,8 @@ class HiddenMeshNetworkSetup:
             
         logging.basicConfig(
             level=level,
-            format='%(message)s'  # Simplified format for cleaner output
+            format='%(message)s',  # Simplified format for cleaner output
+            stream=sys.stdout  # Force logging to stdout to match print statements
         )
         self.logger = logging.getLogger(__name__)
         
@@ -89,6 +120,14 @@ class HiddenMeshNetworkSetup:
         self.router_stats = {}
         self.setup_errors = []
         self.setup_warnings = []
+        
+        # Track infrastructure bridge statistics
+        self.infrastructure_stats = {
+            'bridges_total': 0,
+            'bridges_created': 0,
+            'bridges_existing': 0,
+            'bridges_failed': 0
+        }
         
     def load_raw_facts_only(self):
         """Load router facts from raw facts directory ONLY."""
@@ -154,11 +193,280 @@ class HiddenMeshNetworkSetup:
         except IOError as e:
             self.logger.error(f"Could not save router registry: {e}")
 
+    def load_interface_registry(self) -> Dict[str, Dict[str, str]]:
+        """Load registry of interface name to code mappings per router."""
+        if not self.interface_registry_file.exists():
+            return {}
+            
+        try:
+            with open(self.interface_registry_file, 'r') as f:
+                return json.load(f)
+        except (json.JSONDecodeError, IOError) as e:
+            self.logger.warning(f"Could not load interface registry: {e}")
+            return {}
+            
+    def save_interface_registry(self):
+        """Save registry of interface name to code mappings per router."""
+        try:
+            with open(self.interface_registry_file, 'w') as f:
+                json.dump(self.interface_registry, f, indent=2)
+        except IOError as e:
+            self.logger.error(f"Could not save interface registry: {e}")
+    
+    def load_bridge_registry(self):
+        """Load bridge registry from persistent file."""
+        if self.bridge_registry_file.exists():
+            try:
+                import json
+                with open(self.bridge_registry_file, 'r') as f:
+                    self.bridge_registry = json.load(f)
+                self.logger.debug(f"Loaded bridge registry from {self.bridge_registry_file}")
+            except Exception as e:
+                self.logger.warning(f"Failed to load bridge registry: {e}")
+                self.bridge_registry = {}
+        else:
+            self.bridge_registry = {}
+    
+    def save_bridge_registry(self):
+        """Save bridge registry to persistent file."""
+        try:
+            import json
+            with open(self.bridge_registry_file, 'w') as f:
+                json.dump(self.bridge_registry, f, indent=2)
+            self.logger.debug(f"Saved bridge registry to {self.bridge_registry_file}")
+        except Exception as e:
+            self.logger.warning(f"Failed to save bridge registry: {e}")
+    
+    def register_bridge_connection(self, bridge_name: str, router_name: str = None, host_name: str = None, 
+                                  interface_name: str = None, ipv4_address: str = None, state: str = "UP"):
+        """Register a connection between a bridge and router/host with detailed interface information.
+        
+        Args:
+            bridge_name: Name of the bridge
+            router_name: Name of the router (if connecting a router)
+            host_name: Name of the host (if connecting a host)
+            interface_name: Real interface name (e.g., bond1.vlan180)
+            ipv4_address: IPv4 address assigned to the interface
+            state: Interface state (UP/DOWN)
+        """
+        if bridge_name not in self.bridge_registry:
+            self.bridge_registry[bridge_name] = {"routers": {}, "hosts": {}}
+        
+        if router_name:
+            self.bridge_registry[bridge_name]["routers"][router_name] = {
+                "interface": interface_name or "unknown",
+                "ipv4": ipv4_address or "none",
+                "state": state
+            }
+        
+        if host_name:
+            self.bridge_registry[bridge_name]["hosts"][host_name] = {
+                "interface": interface_name or "unknown",
+                "ipv4": ipv4_address or "none",
+                "state": state
+            }
+    
+    def unregister_bridge_connection(self, bridge_name: str, router_name: str = None, host_name: str = None):
+        """Unregister a connection between a bridge and router/host."""
+        if bridge_name not in self.bridge_registry:
+            return
+        
+        if router_name and router_name in self.bridge_registry[bridge_name]["routers"]:
+            del self.bridge_registry[bridge_name]["routers"][router_name]
+        
+        if host_name and host_name in self.bridge_registry[bridge_name]["hosts"]:
+            del self.bridge_registry[bridge_name]["hosts"][host_name]
+    
+    def is_bridge_in_use(self, bridge_name: str) -> bool:
+        """Check if a bridge is connected to any routers or hosts."""
+        if bridge_name not in self.bridge_registry:
+            return False
+        
+        registry_entry = self.bridge_registry[bridge_name]
+        return len(registry_entry["routers"]) > 0 or len(registry_entry["hosts"]) > 0
+    
+    def get_unused_bridges(self) -> List[str]:
+        """Get list of bridges that are not connected to any routers or hosts."""
+        unused_bridges = []
+        for bridge_name, connections in self.bridge_registry.items():
+            if len(connections["routers"]) == 0 and len(connections["hosts"]) == 0:
+                unused_bridges.append(bridge_name)
+        return unused_bridges
+
+    def get_interface_code(self, router_code: str, interface_name: str) -> str:
+        """Get or generate interface code for given router and interface."""
+        # Ensure router exists in registry
+        if router_code not in self.interface_registry:
+            self.interface_registry[router_code] = {}
+        
+        # If interface already has a code, return it
+        if interface_name in self.interface_registry[router_code]:
+            return self.interface_registry[router_code][interface_name]
+        
+        # Generate new interface code (i000 to i999)
+        existing_codes = set(self.interface_registry[router_code].values())
+        
+        for i in range(1000):  # i000 to i999
+            interface_code = f"i{i:03d}"
+            if interface_code not in existing_codes:
+                self.interface_registry[router_code][interface_name] = interface_code
+                return interface_code
+        
+        # If we somehow reach 1000 interfaces, fall back to a hash-based approach
+        import hashlib
+        name_hash = hashlib.md5(interface_name.encode()).hexdigest()[:3]
+        fallback_code = f"i{name_hash}"
+        self.interface_registry[router_code][interface_name] = fallback_code
+        return fallback_code
+
+    def _validate_no_registry_conflicts(self):
+        """Check for existing registry entries and raise exception if found (called during router code generation)."""
+        existing_routers = set()
+        
+        # Check router registry
+        if self.router_registry_file.exists():
+            try:
+                with open(self.router_registry_file, 'r') as f:
+                    router_registry = json.load(f)
+                
+                # Check which of our target routers already exist in registry
+                for router_name in self.routers.keys():
+                    if router_name in router_registry:
+                        existing_routers.add(router_name)
+                        
+            except (json.JSONDecodeError, IOError) as e:
+                self.logger.warning(f"Could not read router registry: {e}")
+        
+        # Check interface registry
+        existing_interface_routers = set()
+        if self.interface_registry_file.exists():
+            try:
+                with open(self.interface_registry_file, 'r') as f:
+                    interface_registry = json.load(f)
+                
+                # Load router registry to map codes back to names
+                router_code_to_name = {}
+                if self.router_registry_file.exists():
+                    try:
+                        with open(self.router_registry_file, 'r') as f:
+                            router_registry = json.load(f)
+                        for router_name, router_code in router_registry.items():
+                            router_code_to_name[router_code] = router_name
+                    except:
+                        pass
+                
+                # Check if any router codes in interface registry match our target routers
+                for router_code in interface_registry.keys():
+                    router_name = router_code_to_name.get(router_code)
+                    if router_name and router_name in self.routers:
+                        existing_interface_routers.add(router_name)
+                        
+            except (json.JSONDecodeError, IOError) as e:
+                self.logger.warning(f"Could not read interface registry: {e}")
+        
+        # Combine all existing routers
+        all_existing = existing_routers.union(existing_interface_routers)
+        
+        if all_existing:
+            existing_list = sorted(all_existing)
+            router_word = "router" if len(all_existing) == 1 else "routers"
+            
+            error_msg = f"""
+Registry entries already exist for {len(all_existing)} {router_word}: {', '.join(existing_list)}
+
+This indicates that network setup has already been run for these routers.
+To avoid conflicts, please clean up existing entries first:
+
+For specific routers:
+  sudo make netclean ARGS='--limit {existing_list[0]}' -v
+  
+For all routers:  
+  sudo make netclean -v
+
+Then run netsetup again.
+"""
+            raise RuntimeError(error_msg.strip())
+
+    def validate_no_existing_registries(self):
+        """Check for existing registry entries and raise exception if found."""
+        existing_routers = set()
+        
+        # Check router registry
+        if self.router_registry_file.exists():
+            try:
+                with open(self.router_registry_file, 'r') as f:
+                    router_registry = json.load(f)
+                
+                # Check which of our target routers already exist in registry
+                for router_name in self.routers.keys():
+                    if router_name in router_registry:
+                        existing_routers.add(router_name)
+                        
+            except (json.JSONDecodeError, IOError) as e:
+                self.logger.warning(f"Could not read router registry: {e}")
+        
+        # Check interface registry
+        existing_interface_routers = set()
+        if self.interface_registry_file.exists():
+            try:
+                with open(self.interface_registry_file, 'r') as f:
+                    interface_registry = json.load(f)
+                
+                # Load router registry to map codes back to names
+                router_code_to_name = {}
+                if self.router_registry_file.exists():
+                    try:
+                        with open(self.router_registry_file, 'r') as f:
+                            router_registry = json.load(f)
+                        for router_name, router_code in router_registry.items():
+                            router_code_to_name[router_code] = router_name
+                    except:
+                        pass
+                
+                # Check if any router codes in interface registry match our target routers
+                for router_code in interface_registry.keys():
+                    router_name = router_code_to_name.get(router_code)
+                    if router_name and router_name in self.routers:
+                        existing_interface_routers.add(router_name)
+                        
+            except (json.JSONDecodeError, IOError) as e:
+                self.logger.warning(f"Could not read interface registry: {e}")
+        
+        # Combine all existing routers
+        all_existing = existing_routers.union(existing_interface_routers)
+        
+        if all_existing:
+            existing_list = sorted(all_existing)
+            router_word = "router" if len(all_existing) == 1 else "routers"
+            
+            error_msg = f"""
+Registry entries already exist for {len(all_existing)} {router_word}: {', '.join(existing_list)}
+
+This indicates that network setup has already been run for these routers.
+To avoid conflicts, please clean up existing entries first:
+
+For specific routers:
+  sudo make netclean ARGS='--limit {existing_list[0]}' -v
+  
+For all routers:  
+  sudo make netclean -v
+
+Then run netsetup again.
+"""
+            raise RuntimeError(error_msg.strip())
+
     def _generate_router_codes(self):
         """Generate compressed router codes for hidden infrastructure naming."""
-        # Load existing registry first
+        # Validate no registry conflicts for target routers before generating codes
+        self._validate_no_registry_conflicts()
+        
+        # Load existing registries first
         existing_registry = self.load_router_registry()
         self.router_codes.update(existing_registry)
+        
+        # Load interface and bridge registries
+        self.interface_registry = self.load_interface_registry()
+        self.load_bridge_registry()
         
         # Build reverse mapping
         for router_name, router_code in self.router_codes.items():
@@ -196,8 +504,9 @@ class HiddenMeshNetworkSetup:
         
         self.logger.info(f"Generated {len(self.router_codes)} router codes")
         
-        # Save the updated registry
+        # Save the updated registries
         self.save_router_registry()
+        self.save_interface_registry()
         
     def _extract_interface_configurations(self):
         """Extract complete interface configurations from raw facts interfaces section."""
@@ -355,12 +664,24 @@ class HiddenMeshNetworkSetup:
             else:
                 self.logger.info("Hidden mesh network setup complete")
             
+            # Save final interface and bridge registries
+            self.save_interface_registry()
+            self.save_bridge_registry()
+            
         except Exception as e:
             self.logger.error(f"Setup failed: {e}")
             self.cleanup_network()
             return False
         
-        return True
+        # Check if setup was successful (no critical failures)
+        failed_routers = sum(1 for stats in self.router_stats.values() 
+                           if not stats['namespace_created'] or stats['errors'])
+        failed_interfaces = sum(stats['interfaces_failed'] for stats in self.router_stats.values())
+        failed_bridges = sum(stats['bridges_failed'] for stats in self.router_stats.values())
+        failed_infrastructure_bridges = self.infrastructure_stats['bridges_failed']
+        
+        # Return False if there are any critical failures
+        return failed_routers == 0 and failed_interfaces == 0 and failed_bridges == 0 and failed_infrastructure_bridges == 0
     
     def _print_final_summary(self):
         """Print final setup summary with overall statistics."""
@@ -376,6 +697,10 @@ class HiddenMeshNetworkSetup:
         created_interfaces = sum(stats['interfaces_created'] for stats in self.router_stats.values())
         failed_interfaces = sum(stats['interfaces_failed'] for stats in self.router_stats.values())
         
+        total_bridges = sum(stats['bridges_total'] for stats in self.router_stats.values())
+        connected_bridges = sum(stats['bridges_connected'] for stats in self.router_stats.values())
+        failed_bridges = sum(stats['bridges_failed'] for stats in self.router_stats.values())
+        
         total_warnings = sum(len(stats['warnings']) for stats in self.router_stats.values())
         total_errors = sum(len(stats['errors']) for stats in self.router_stats.values())
         
@@ -385,8 +710,20 @@ class HiddenMeshNetworkSetup:
         
         print("\n=== SETUP SUMMARY ===")
         print(f"Routers: {successful} successful, {partial} partial, {failed} failed (total: {total_routers})")
-        print(f"Interfaces: {created_interfaces}/{total_interfaces} created, {failed_interfaces} failed")
+        # Format infrastructure bridges summary
+        infra_created = self.infrastructure_stats['bridges_created']
+        infra_existing = self.infrastructure_stats['bridges_existing']
+        infra_total = self.infrastructure_stats['bridges_total']
+        infra_failed = self.infrastructure_stats['bridges_failed']
         
+        if infra_existing > 0:
+            print(f"Infrastructure bridges: {infra_created} created, {infra_existing} existing, {infra_failed} failed (total: {infra_total})")
+        else:
+            print(f"Infrastructure bridges: {infra_created}/{infra_total} created, {infra_failed} failed")
+        print(f"Interfaces: {created_interfaces}/{total_interfaces} created, {failed_interfaces} failed")
+        print(f"Bridge connections: {connected_bridges}/{total_bridges} created, {failed_bridges} failed")
+        
+        # Bridge connections already shown in main summary line above
         if total_warnings > 0:
             print(f"Warnings: {total_warnings}")
         if total_errors > 0:
@@ -400,14 +737,17 @@ class HiddenMeshNetworkSetup:
                 skipped = ', '.join(stats['skipped_sections'])
                 print(f"  • {router_name}: {skipped}")
         
-        if failed == 0 and failed_interfaces == 0:
+        if failed == 0 and failed_interfaces == 0 and failed_bridges == 0 and self.infrastructure_stats['bridges_failed'] == 0:
             print("\n✓ Network setup completed successfully!")
+        elif failed == 0 and failed_interfaces == 0 and failed_bridges == 0:
+            print("\n⚠ Network setup completed with infrastructure bridge issues")
+        elif failed == 0 and failed_interfaces == 0:
+            print("\n⚠ Network setup completed with bridge connection issues")
         elif failed == 0:
-            print("\n⚠ Network setup completed with some interface issues")
+            print("\n⚠ Network setup completed with interface and/or bridge issues")
         else:
             print("\n✗ Network setup completed with router failures")
         
-        print(f"\nUse 'sudo make netshow ROUTER=<name> FUNC=<function>' to check status")
             
     def create_hidden_infrastructure(self):
         """Create hidden mesh infrastructure namespace."""
@@ -452,30 +792,27 @@ class HiddenMeshNetworkSetup:
         self._create_subnet_bridges()
         
     def _generate_bridge_name(self, subnet: str) -> str:
-        """Generate abbreviated bridge name that fits 15 character limit."""
-        # Convert subnet like "10.100.1.0/24" to abbreviated form
-        # Examples: 10.1.1.0/24 -> br111024, 10.100.1.0/24 -> br1001024
+        """Generate bridge name with zero-padded format: b + 4 zero-padded octets + 2-digit prefix.
+        
+        Examples:
+        - 10.11.12.128/25 -> b01001101212825
+        - 192.168.1.0/24 -> b19216800102400
+        - 172.16.0.0/12 -> b17201600001200
+        
+        Format: b + OOOOOOOOOOOO + PP (15 chars total)
+        Where O = zero-padded octets (3 digits each), P = zero-padded prefix (2 digits)
+        """
         ip_part, prefix = subnet.split('/')
         octets = ip_part.split('.')
         
-        # Remove trailing zeros and compress
-        compressed_octets = []
-        for octet in octets:
-            if octet == '0':
-                compressed_octets.append('')  # Skip trailing zeros
-            else:
-                compressed_octets.append(octet)
+        # Zero-pad each octet to 3 digits
+        padded_octets = [f"{int(octet):03d}" for octet in octets]
         
-        # Join and create compact name
-        ip_compressed = ''.join(compressed_octets)
-        bridge_name = f"br{ip_compressed}{prefix}"
+        # Zero-pad prefix to 2 digits
+        padded_prefix = f"{int(prefix):02d}"
         
-        # Ensure it fits in 15 characters
-        if len(bridge_name) > 15:
-            # Fallback: use hash for very long names
-            import hashlib
-            subnet_hash = hashlib.md5(subnet.encode()).hexdigest()[:8]
-            bridge_name = f"br{subnet_hash}"
+        # Create bridge name: b + 12 octet digits + 2 prefix digits = 15 chars
+        bridge_name = f"b{''.join(padded_octets)}{padded_prefix}"
         
         return bridge_name
         
@@ -497,24 +834,43 @@ class HiddenMeshNetworkSetup:
                     except:
                         continue
         
+        # Initialize bridge counters
+        self.infrastructure_stats['bridges_total'] = len(subnets)
+        
         if self.verbose >= 1:
             print(f"  → Creating {len(subnets)} subnet bridges")
         
         for subnet in subnets:
-            # Create bridge name from subnet (abbreviated to fit 15 char limit)
+            # Create bridge name with new zero-padded format
             bridge_name = self._generate_bridge_name(subnet)
             
-            try:
-                self.run_cmd(f"ip link add {bridge_name} type bridge", self.hidden_ns)
-                self.run_cmd(f"ip link set {bridge_name} up", self.hidden_ns)
+            # Check if bridge already exists in registry
+            if bridge_name in self.bridge_registry:
+                # Bridge already exists in registry, mark as existing
                 self.created_bridges.add(bridge_name)
+                self.infrastructure_stats['bridges_existing'] += 1
                 
-                if self.verbose >= 2:
-                    print(f"    ✓ Bridge {bridge_name} for {subnet}")
-                
-            except subprocess.CalledProcessError:
-                if self.verbose >= 2:
-                    print(f"    ⚠ Bridge {bridge_name} already exists")
+                if self.verbose >= 1:
+                    print(f"    ◯ Bridge {bridge_name} for {subnet} (existing)")
+            else:
+                # Bridge doesn't exist in registry, create it
+                try:
+                    self.run_cmd(f"ip link add {bridge_name} type bridge", self.hidden_ns)
+                    self.run_cmd(f"ip link set {bridge_name} up", self.hidden_ns)
+                    self.created_bridges.add(bridge_name)
+                    self.infrastructure_stats['bridges_created'] += 1
+                    
+                    # Initialize bridge in registry (will be populated when routers connect)
+                    self.bridge_registry[bridge_name] = {"routers": {}, "hosts": {}}
+                    
+                    if self.verbose >= 1:
+                        print(f"    ✓ Bridge {bridge_name} for {subnet}")
+                    
+                except subprocess.CalledProcessError as e:
+                    self.infrastructure_stats['bridges_failed'] += 1
+                    if self.verbose >= 1:
+                        print(f"    ✗ Bridge {bridge_name} for {subnet} (failed)")
+                    self.logger.error(f"Failed to create bridge {bridge_name}: {e}")
                 
     def _add_vpn_latency(self, bridge_name: str):
         """Add realistic VPN latency (10ms) to VPN interfaces."""
@@ -627,6 +983,9 @@ class HiddenMeshNetworkSetup:
                 'interfaces_failed': 0,
                 'total_interfaces': len(self.router_interfaces.get(router_name, [])),
                 'interfaces_success': False,  # True only if ALL interfaces successful
+                'bridges_total': 0,
+                'bridges_connected': 0,
+                'bridges_failed': 0,
                 'routing_applied': False,
                 'routing_success': False,
                 'ipsets_applied': False,
@@ -786,17 +1145,9 @@ class HiddenMeshNetworkSetup:
                 # Create unique veth pair names using compressed router codes (max 15 chars for Linux interface names)
                 router_code = self.router_codes[router_name]  # e.g. r00, r01, r02
                 
-                # Create safe interface abbreviation for Linux interface names
-                # Remove problematic characters and ensure uniqueness
-                safe_name = re.sub(r'[^a-zA-Z0-9]', '', interface_name)  # Remove dots, hyphens, etc.
-                
-                if len(safe_name) <= 5:
-                    interface_abbrev = safe_name  # eth0, wg0, etc. - use safe name
-                else:
-                    # For longer names, use first 4 chars + hash of full name for uniqueness
-                    import hashlib
-                    name_hash = hashlib.md5(interface_name.encode()).hexdigest()[:2]
-                    interface_abbrev = safe_name[:3] + name_hash  # e.g. ens2f080 -> ens + 2-char hash
+                # Get sequential interface code (i000 to i999) to ensure uniqueness
+                interface_code = self.get_interface_code(router_code, interface_name)
+                interface_abbrev = interface_code  # e.g. i000, i001, i002
                     
                 veth_router = f"{router_code}{interface_abbrev}r"  # e.g. r00eth0r, r02wlan0r (max 10 chars)
                 veth_hidden = f"{router_code}{interface_abbrev}h"  # e.g. r00eth0h, r02wlan0h (max 10 chars)
@@ -1023,7 +1374,10 @@ class HiddenMeshNetworkSetup:
         if self.verbose >= 1:
             print("\n=== Connecting routers to infrastructure ===")
         
-        for router_name, interfaces in self.router_interfaces.items():
+        for i, (router_name, interfaces) in enumerate(self.router_interfaces.items(), 1):
+            if self.verbose >= 1:
+                print(f"\n[{i}/{len(self.router_interfaces)}] Connecting {router_name}")
+            
             for interface_config in interfaces:
                 interface_name = interface_config['name']
                 addresses = interface_config['addresses']
@@ -1041,28 +1395,41 @@ class HiddenMeshNetworkSetup:
                         # Connect hidden interface to bridge
                         router_code = self.router_codes[router_name]
                         
-                        # Use SAME interface abbreviation logic as in interface creation
-                        safe_name = re.sub(r'[^a-zA-Z0-9]', '', interface_name)  # Remove dots, hyphens, etc.
+                        # Use sequential interface code (same as interface creation)
+                        interface_code = self.get_interface_code(router_code, interface_name)
+                        veth_hidden = f"{router_code}{interface_code}h"
                         
-                        if len(safe_name) <= 5:
-                            interface_abbrev = safe_name  # eth0, wg0, etc. - use safe name
-                        else:
-                            # For longer names, use first 4 chars + hash of full name for uniqueness
-                            import hashlib
-                            name_hash = hashlib.md5(interface_name.encode()).hexdigest()[:2]
-                            interface_abbrev = safe_name[:3] + name_hash  # e.g. ens2f080 -> ens + 2-char hash
-                        
-                        veth_hidden = f"{router_code}{interface_abbrev}h"
+                        # Count bridge connection attempt
+                        self.router_stats[router_name]['bridges_total'] += 1
                         
                         try:
                             self.run_cmd(f"ip link set {veth_hidden} master {bridge_name}", self.hidden_ns)
-                            if self.verbose >= 2:
-                                print(f"    ✓ Connected {interface_name} to {bridge_name}")
-                        except subprocess.CalledProcessError as e:
+                            self.router_stats[router_name]['bridges_connected'] += 1
+                            
+                            # Extract IPv4 address from addr_info
+                            ipv4_addr = ip_addr if ip_addr else "none"
+                            
+                            # Register the bridge connection in registry with detailed info
+                            self.register_bridge_connection(
+                                bridge_name=bridge_name, 
+                                router_name=router_name,
+                                interface_name=interface_name,  # Real interface name (e.g., bond1.vlan180)
+                                ipv4_address=ipv4_addr,
+                                state="UP"  # Assume UP since we successfully connected
+                            )
+                            
                             if self.verbose >= 1:
-                                print(f"    ✗ Bridge connection failed: {e}")
+                                print(f"    ✓ {interface_name} → {bridge_name} ({ipv4_addr} on {subnet}, UP)")
+                        except subprocess.CalledProcessError as e:
+                            self.router_stats[router_name]['bridges_failed'] += 1
+                            if self.verbose >= 1:
+                                print(f"    ✗ {interface_name} → {bridge_name} (on {subnet}, FAILED)")
                             self.logger.error(f"CRITICAL: Failed to connect {veth_hidden} to {bridge_name}: {e}")
-                            raise Exception(f"Bridge connection failed for {router_name}:{interface_name}")
+                            
+                            self.router_stats[router_name]['errors'].append(f"Bridge connection failed for {interface_name}: {e}")
+                            
+                            # Continue processing other interfaces instead of raising exception
+                            continue
                             
                     except Exception as e:
                         self.logger.warning(f"Failed to process IP {addr_info}: {e}")
@@ -1130,9 +1497,29 @@ class HiddenMeshNetworkSetup:
         tables_applied = 0
         applied_tables = []  # Track table names for output
         errors = []
+        broken_tables = set()  # Track tables that don't exist on the production router
         
         try:
-            # Always apply main routing table
+            # First, identify broken routing tables (tables that don't exist on production router)
+            for section_name, section in router_facts.sections.items():
+                if section_name.startswith('routing_table_') and section_name != 'routing_table_main':
+                    table_identifier = section_name.replace('routing_table_', '')
+                    
+                    # Check if the routing table content indicates an error
+                    content = section.content.strip()
+                    if content and ('Error:' in content or 'does not exist' in content):
+                        broken_tables.add(table_identifier)
+                        self.logger.warning(f"Router {router_name} has non-existent table {table_identifier} in production")
+                        stats['warnings'].append(f"Production router error: table {table_identifier} does not exist")
+            
+            # Apply policy rules FIRST to ensure custom routing tables are created
+            # But skip rules that reference broken tables
+            policy_section = router_facts.get_section('policy_rules')
+            if policy_section:
+                rule_count = self._apply_policy_rules(router_name, policy_section.content, router_facts, broken_tables)
+                rules_applied += rule_count
+            
+            # Now apply main routing table
             routing_section = router_facts.get_section('routing_table_main')
             if routing_section:
                 route_count = self._apply_routes(router_name, routing_section.content, 'main')
@@ -1140,16 +1527,15 @@ class HiddenMeshNetworkSetup:
                 tables_applied += 1
                 applied_tables.append('main')
             
-            # Apply policy rules and additional routing tables
-            policy_section = router_facts.get_section('policy_rules')
-            if policy_section:
-                rule_count = self._apply_policy_rules(router_name, policy_section.content, router_facts)
-                rules_applied += rule_count
-            
-            # Apply additional routing tables
+            # Finally apply additional routing tables (custom tables should now exist)
             for section_name, section in router_facts.sections.items():
                 if section_name.startswith('routing_table_') and section_name != 'routing_table_main':
                     table_identifier = section_name.replace('routing_table_', '')
+                    
+                    # Skip broken tables
+                    if table_identifier in broken_tables:
+                        self.logger.info(f"Skipping broken table {table_identifier} for {router_name}")
+                        continue
                     
                     # Check if table_identifier is already a numeric ID
                     if table_identifier.isdigit():
@@ -1226,7 +1612,7 @@ class HiddenMeshNetworkSetup:
         return table_mapping.get(table_name)
         
     def _apply_routes(self, router_name: str, routes_content: str, table: str):
-        """Apply routing table entries."""
+        """Apply routing table entries in dependency order."""
         if not routes_content.strip():
             return 0
         
@@ -1235,6 +1621,9 @@ class HiddenMeshNetworkSetup:
         # Handle embedded newlines and escaped tabs in content
         routes_content = routes_content.replace('\\n', '\n').replace('\\t', ' ')
         
+        # Collect all routes first
+        routes = []
+        import re
         for line in routes_content.split('\n'):
             line = line.strip()
             if not line or line.startswith('#'):
@@ -1244,7 +1633,6 @@ class HiddenMeshNetworkSetup:
             line = line.replace('\\t', ' ').replace('\\', '')
             
             # Normalize multiple spaces to single spaces
-            import re
             line = re.sub(r'\s+', ' ', line)
             
             # Skip auto-generated direct network routes WITHOUT explicit metrics
@@ -1253,36 +1641,65 @@ class HiddenMeshNetworkSetup:
                 self.logger.debug(f"Skipping auto-generated route without metric: {line}")
                 continue
             
+            routes.append(line)
+        
+        # Sort routes by dependency order
+        def route_priority(route):
+            """Return priority for route ordering (lower = higher priority)."""
+            # Priority 1: Host routes (/32) and link-scoped routes
+            if '/32' in route or 'scope link' in route:
+                return 1
+            # Priority 2: Network routes (with prefix)
+            elif re.search(r'\d+\.\d+\.\d+\.\d+/\d+', route) and 'via' not in route:
+                return 2
+            # Priority 3: Routes via gateway (but not default)
+            elif 'via' in route and not route.startswith('default'):
+                return 3
+            # Priority 4: Default routes
+            elif route.startswith('default'):
+                return 4
+            # Priority 5: Everything else
+            else:
+                return 5
+        
+        # Sort routes by priority
+        sorted_routes = sorted(routes, key=route_priority)
+        
+        # Apply routes in order
+        for route in sorted_routes:
             # Apply route
             if table != 'main':
-                cmd = f"ip route add table {table} {line}"
+                cmd = f"ip route add table {table} {route}"
             else:
-                cmd = f"ip route add {line}"
+                cmd = f"ip route add {route}"
             
             try:
                 self.run_cmd(cmd, router_name)
                 routes_count += 1
-                self.logger.debug(f"Added route: {line}")
+                self.logger.debug(f"Added route: {route}")
             except subprocess.CalledProcessError as e:
                 # Check if route already exists (expected for direct network routes)
                 error_msg = str(e) + (e.stderr if e.stderr else "")
                 if "File exists" in error_msg or "RTNETLINK answers: File exists" in error_msg:
-                    self.logger.debug(f"Route already exists (expected): {line}")
+                    self.logger.debug(f"Route already exists (expected): {route}")
                 else:
-                    self.logger.error(f"CRITICAL: Route add failed for {line}: {e}")
+                    self.logger.error(f"CRITICAL: Route add failed for {route}: {e}")
                     if e.stderr:
                         self.logger.error(f"Stderr: {e.stderr}")
-                    raise Exception(f"Failed to add route: {line}")
+                    raise Exception(f"Failed to add route: {route}")
             except Exception as e:
-                self.logger.error(f"CRITICAL: Route add failed for {line}: {e}")
-                raise Exception(f"Failed to add route: {line}")
+                self.logger.error(f"CRITICAL: Route add failed for {route}: {e}")
+                raise Exception(f"Failed to add route: {route}")
         
         return routes_count
                 
-    def _apply_policy_rules(self, router_name: str, rules_content: str, router_facts: RouterRawFacts):
-        """Apply policy routing rules."""
+    def _apply_policy_rules(self, router_name: str, rules_content: str, router_facts: RouterRawFacts, broken_tables: set = None):
+        """Apply policy routing rules, skipping rules for broken tables."""
         if not rules_content.strip():
             return 0
+        
+        if broken_tables is None:
+            broken_tables = set()
         
         # Build table name to ID mapping from rt_tables
         table_name_to_id = {}
@@ -1298,6 +1715,7 @@ class HiddenMeshNetworkSetup:
                     table_name_to_id[table_name] = table_id
         
         rules_count = 0
+        import re
         
         for line in rules_content.split('\n'):
             line = line.strip()
@@ -1313,6 +1731,17 @@ class HiddenMeshNetworkSetup:
             if rule_match:
                 priority = rule_match.group(1)
                 rule_spec = rule_match.group(2)
+                
+                # Check if rule references a broken table
+                skip_rule = False
+                for broken_table in broken_tables:
+                    if f'lookup {broken_table}' in rule_spec:
+                        self.logger.warning(f"Skipping rule that references broken table {broken_table}: {line}")
+                        skip_rule = True
+                        break
+                
+                if skip_rule:
+                    continue
                 
                 # Convert table names to IDs using dynamic mapping
                 for table_name, table_id in table_name_to_id.items():
@@ -1475,6 +1904,60 @@ class HiddenMeshNetworkSetup:
         # Count creates (sets) and adds (members)
         set_count = ipset_content.count('create')
         member_count = ipset_content.count('add')
+        
+        # Parse ipset content to adjust maxelem for sets that need it
+        import re
+        lines = ipset_content.split('\n')
+        
+        # First pass: count members per set
+        set_members = {}
+        current_set = None
+        
+        for line in lines:
+            if line.startswith('create '):
+                # Extract set name
+                match = re.match(r'create (\w+)', line)
+                if match:
+                    current_set = match.group(1)
+                    set_members[current_set] = 0
+            elif line.startswith('add ') and current_set:
+                # Count members for current set
+                if line.startswith(f'add {current_set} '):
+                    set_members[current_set] += 1
+        
+        # Second pass: adjust maxelem where needed
+        adjusted_lines = []
+        sets_adjusted = []
+        
+        for line in lines:
+            if line.startswith('create '):
+                # Parse create line
+                match = re.match(r'create (\w+) .* maxelem (\d+)', line)
+                if match:
+                    set_name = match.group(1)
+                    maxelem = int(match.group(2))
+                    actual_members = set_members.get(set_name, 0)
+                    
+                    # Keep doubling maxelem until it's larger than actual members
+                    original_maxelem = maxelem
+                    while actual_members >= maxelem:
+                        maxelem *= 2
+                    
+                    if maxelem != original_maxelem:
+                        # Replace maxelem value in line
+                        line = re.sub(r'maxelem \d+', f'maxelem {maxelem}', line)
+                        sets_adjusted.append(f"{set_name}: {actual_members} members, maxelem {original_maxelem}->{maxelem}")
+                
+            adjusted_lines.append(line)
+        
+        if sets_adjusted:
+            self.logger.info(f"Adjusted maxelem for {len(sets_adjusted)} ipsets in {router_name}:")
+            for adjustment in sets_adjusted[:5]:  # Show first 5
+                self.logger.info(f"  {adjustment}")
+            if len(sets_adjusted) > 5:
+                self.logger.info(f"  ... and {len(sets_adjusted) - 5} more")
+        
+        ipset_content = '\n'.join(adjusted_lines)
         
         try:
             if router_name:
@@ -1640,7 +2123,6 @@ def main():
         
         if args.verbose == 0:
             print(f"Hidden mesh network setup complete with {len(setup.routers)} routers")
-            print("Use 'sudo make netshow ROUTER=<name> FUNC=<function>' to check status")
         
     except KeyboardInterrupt:
         print("\nSetup interrupted")

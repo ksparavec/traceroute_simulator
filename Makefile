@@ -658,7 +658,12 @@ svcclean:
 	@$(PYTHON) src/simulators/service_manager.py cleanup
 
 # Clean up namespace network simulation (requires sudo)
-# Usage: sudo -E make netclean [ARGS="-v|-f|--force"]
+# Usage: sudo -E make netclean [ARGS="-v|-f|--force|--limit <pattern>"]
+# Examples:
+#   sudo -E make netclean                           # Clean all routers
+#   sudo -E make netclean ARGS="-v"                 # Clean all with verbose output
+#   sudo -E make netclean ARGS="--limit pmfw-*"     # Clean routers matching pattern
+#   sudo -E make netclean ARGS="--limit hq-gw -v"  # Clean specific router with verbose
 netclean:
 	@if [ "$$(id -u)" != "0" ]; then \
 		echo "Error: netclean requires root privileges"; \

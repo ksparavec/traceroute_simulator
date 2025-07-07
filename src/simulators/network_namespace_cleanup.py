@@ -43,21 +43,29 @@ class NetworkNamespaceCleanup:
     while preserving system network configuration.
     """
     
-    def __init__(self, force: bool = False, verbose: int = 0):
+    def __init__(self, force: bool = False, verbose: int = 0, limit_pattern: str = None):
         """
         Initialize the cleanup system.
         
         Args:
             force: Force removal of stuck resources
             verbose: Verbosity level (0=silent, 1=basic, 2=info, 3=debug)
+            limit_pattern: Optional pattern to limit cleanup to specific routers (supports glob patterns)
         """
         self.force = force
         self.verbose = verbose
+        self.limit_pattern = limit_pattern
         self.setup_logging()
         
-        # Dynamic router discovery from facts
+        # Registry file paths
+        self.router_registry_file = Path("/tmp/traceroute_routers_registry.json")
+        self.interface_registry_file = Path("/tmp/traceroute_interfaces_registry.json")
+        self.host_registry_file = Path("/tmp/traceroute_hosts_registry.json")
+        self.bridge_registry_file = Path("/tmp/traceroute_bridges_registry.json")
+        
+        # Dynamic router discovery from existing registries and namespaces
         self.known_routers: Set[str] = set()
-        self.load_router_names_from_facts()
+        self.load_router_names_from_registries_and_namespaces()
         
         # General namespace patterns (no hardcoded router names)
         self.namespace_patterns = [
@@ -100,44 +108,82 @@ class NetworkNamespaceCleanup:
         )
         self.logger = logging.getLogger(__name__)
         
-    def load_router_names_from_facts(self):
-        """Load router names dynamically from facts directories."""
+    def load_router_names_from_registries_and_namespaces(self):
+        """Load router names from existing registries and running namespaces."""
         self.known_routers = set()
         
-        # Check multiple possible facts locations
-        facts_locations = [
-            os.environ.get('TRACEROUTE_SIMULATOR_FACTS', 'tests/tsim_facts'),
-            os.environ.get('TRACEROUTE_SIMULATOR_RAW_FACTS', 'tests/raw_facts'),
-            '/tmp/traceroute_test_output',
-            'tests/tsim_facts',
-            'tests/raw_facts'
-        ]
+        # Load router names from router registry
+        if self.router_registry_file.exists():
+            try:
+                import json
+                with open(self.router_registry_file, 'r') as f:
+                    router_registry = json.load(f)
+                for router_name in router_registry.keys():
+                    self.known_routers.add(router_name)
+                    self.logger.debug(f"Found router from registry: {router_name}")
+            except (json.JSONDecodeError, IOError) as e:
+                self.logger.debug(f"Could not read router registry: {e}")
         
-        for facts_dir in facts_locations:
-            if not facts_dir:
-                continue
+        # Load router names from interface registry (map codes back to names)
+        if self.interface_registry_file.exists():
+            try:
+                import json
+                router_code_to_name = {}
                 
-            facts_path = Path(facts_dir)
-            if not facts_path.exists():
-                continue
+                # First get router code mapping
+                if self.router_registry_file.exists():
+                    try:
+                        with open(self.router_registry_file, 'r') as f:
+                            router_registry = json.load(f)
+                        for router_name, router_code in router_registry.items():
+                            router_code_to_name[router_code] = router_name
+                    except:
+                        pass
                 
-            self.logger.debug(f"Checking facts directory: {facts_path}")
-            
-            # Look for JSON facts files
-            for json_file in facts_path.glob("*.json"):
-                if json_file.name.endswith('_metadata.json'):
-                    continue  # Skip metadata files
-                router_name = json_file.stem
-                self.known_routers.add(router_name)
-                self.logger.debug(f"Found router from JSON: {router_name}")
-            
-            # Look for raw facts files
-            for raw_file in facts_path.glob("*_facts.txt"):
-                router_name = raw_file.stem.replace('_facts', '')
-                self.known_routers.add(router_name)
-                self.logger.debug(f"Found router from raw facts: {router_name}")
+                # Then check interface registry
+                with open(self.interface_registry_file, 'r') as f:
+                    interface_registry = json.load(f)
+                for router_code in interface_registry.keys():
+                    router_name = router_code_to_name.get(router_code)
+                    if router_name:
+                        self.known_routers.add(router_name)
+                        self.logger.debug(f"Found router from interface registry: {router_name}")
+            except (json.JSONDecodeError, IOError) as e:
+                self.logger.debug(f"Could not read interface registry: {e}")
         
-        self.logger.info(f"Discovered {len(self.known_routers)} routers from facts: {sorted(self.known_routers)}")
+        # Discover router names from existing namespaces
+        try:
+            result = self.run_command("ip netns list", check=False)
+            if result.returncode == 0:
+                for line in result.stdout.split('\n'):
+                    line = line.strip()
+                    if not line:
+                        continue
+                    
+                    # Extract namespace name (format: "namespace_name (id: X)")
+                    ns_match = re.match(r'^([^\s(]+)', line)
+                    if ns_match:
+                        namespace = ns_match.group(1)
+                        
+                        # Skip infrastructure namespaces
+                        if namespace in ['hidden-mesh', 'netsim']:
+                            continue
+                        
+                        # Skip generic patterns (these are handled by patterns, not router names)
+                        if (re.match(r'^[hp][a-f0-9]+', namespace) or  # Host patterns
+                            re.match(r'^test', namespace) or             # Test patterns
+                            re.match(r'^web\d*$', namespace) or          # Web hosts
+                            re.match(r'^db\d*$', namespace) or           # DB hosts
+                            re.match(r'^app\d*$', namespace)):           # App hosts
+                            continue
+                        
+                        # Everything else is likely a router namespace
+                        self.known_routers.add(namespace)
+                        self.logger.debug(f"Found router from namespace: {namespace}")
+        except Exception as e:
+            self.logger.debug(f"Error discovering namespaces: {e}")
+        
+        self.logger.info(f"Discovered {len(self.known_routers)} routers from registries and namespaces: {sorted(self.known_routers)}")
         
     def check_command_availability(self, command: str) -> bool:
         """Check if a command is available on the system."""
@@ -345,6 +391,61 @@ class NetworkNamespaceCleanup:
                 print(f"  Error removing mesh bridge {bridge}: {e}")
             return False
         
+    def cleanup_orphaned_interface_entries(self) -> int:
+        """Clean up orphaned interface registry entries that no longer have corresponding router/host entries."""
+        orphaned_count = 0
+        
+        if not self.interface_registry_file.exists():
+            return 0
+            
+        try:
+            import json
+            # Load interface registry
+            with open(self.interface_registry_file, 'r') as f:
+                interface_registry = json.load(f)
+            
+            if not self.router_registry_file.exists():
+                # No router registry means all interface entries are orphaned
+                orphaned_count = sum(len(interfaces) for interfaces in interface_registry.values())
+                self.interface_registry_file.unlink()
+                self.logger.info(f"Removed entire interface registry ({orphaned_count} orphaned entries) - no router registry found")
+                return orphaned_count
+            
+            # Load router registry to get valid codes
+            with open(self.router_registry_file, 'r') as f:
+                router_registry = json.load(f)
+            
+            # Get all valid router/host codes
+            valid_codes = set(router_registry.values())
+            
+            # Find orphaned codes
+            orphaned_codes = []
+            for router_code in interface_registry.keys():
+                if router_code not in valid_codes:
+                    orphaned_codes.append(router_code)
+            
+            # Remove orphaned entries
+            for orphaned_code in orphaned_codes:
+                orphaned_count += len(interface_registry[orphaned_code])
+                del interface_registry[orphaned_code]
+                self.logger.debug(f"Removed orphaned interface entries for code {orphaned_code}")
+            
+            if orphaned_count > 0:
+                if interface_registry:
+                    # Save cleaned registry
+                    with open(self.interface_registry_file, 'w') as f:
+                        json.dump(interface_registry, f, indent=2)
+                    self.logger.info(f"Cleaned {orphaned_count} orphaned interface registry entries")
+                else:
+                    # Registry is now empty
+                    self.interface_registry_file.unlink()
+                    self.logger.info(f"Removed empty interface registry after cleaning {orphaned_count} orphaned entries")
+            
+        except (Exception, IOError) as e:
+            self.logger.error(f"Error cleaning orphaned interface entries: {e}")
+            
+        return orphaned_count
+        
     def cleanup_namespace(self, namespace: str) -> bool:
         """
         Clean up a single namespace.
@@ -443,6 +544,292 @@ class NetworkNamespaceCleanup:
                 
         except Exception as e:
             self.logger.debug(f"Error cleaning up ipsets: {e}")
+
+    def cleanup_registries(self, target_routers: Set[str] = None):
+        """Clean up registry entries for specified routers or all routers."""
+        self.logger.info("Cleaning up registry files")
+        
+        cleaned_router_entries = 0
+        cleaned_interface_entries = 0
+        cleaned_host_entries = 0
+        cleaned_bridge_entries = 0
+        unused_bridges_removed = 0
+        
+        # Clean router registry
+        if self.router_registry_file.exists():
+            try:
+                import json
+                with open(self.router_registry_file, 'r') as f:
+                    router_registry = json.load(f)
+                
+                if target_routers is None:
+                    # Clean all entries
+                    cleaned_router_entries = len(router_registry)
+                    self.router_registry_file.unlink()
+                    self.logger.info(f"Removed entire router registry ({cleaned_router_entries} entries)")
+                else:
+                    # Clean only specified routers
+                    original_count = len(router_registry)
+                    for router_name in target_routers:
+                        if router_name in router_registry:
+                            del router_registry[router_name]
+                            cleaned_router_entries += 1
+                    
+                    # Also remove hosts connected to target routers
+                    if self.host_registry_file.exists():
+                        try:
+                            with open(self.host_registry_file, 'r') as f:
+                                host_registry = json.load(f)
+                            
+                            hosts_to_remove = []
+                            for host_name, host_info in host_registry.items():
+                                connected_router = host_info.get('connected_to') or host_info.get('connected_router')
+                                if connected_router in target_routers and host_name in router_registry:
+                                    hosts_to_remove.append(host_name)
+                            
+                            for host_name in hosts_to_remove:
+                                del router_registry[host_name]
+                                cleaned_router_entries += 1
+                                
+                        except:
+                            pass
+                    
+                    if cleaned_router_entries > 0:
+                        if router_registry:
+                            # Save updated registry
+                            with open(self.router_registry_file, 'w') as f:
+                                json.dump(router_registry, f, indent=2)
+                            self.logger.info(f"Cleaned {cleaned_router_entries} router registry entries")
+                        else:
+                            # Registry is now empty, remove file
+                            self.router_registry_file.unlink()
+                            self.logger.info(f"Removed empty router registry")
+                            
+            except (json.JSONDecodeError, IOError) as e:
+                error_msg = f"Error cleaning router registry: {e}"
+                self.logger.error(error_msg)
+                self.cleanup_errors.append(error_msg)
+        
+        # Clean interface registry
+        if self.interface_registry_file.exists():
+            try:
+                import json
+                with open(self.interface_registry_file, 'r') as f:
+                    interface_registry = json.load(f)
+                
+                if target_routers is None:
+                    # Clean all entries
+                    cleaned_interface_entries = sum(len(interfaces) for interfaces in interface_registry.values())
+                    self.interface_registry_file.unlink()
+                    self.logger.info(f"Removed entire interface registry ({cleaned_interface_entries} interface entries)")
+                else:
+                    # Find router codes for target routers from router registry
+                    router_codes_to_clean = set()
+                    if self.router_registry_file.exists():
+                        try:
+                            with open(self.router_registry_file, 'r') as f:
+                                router_registry = json.load(f)
+                            for router_name in target_routers:
+                                if router_name in router_registry:
+                                    router_codes_to_clean.add(router_registry[router_name])
+                        except:
+                            pass
+                    
+                    # Also find host codes for hosts connected to target routers
+                    if self.host_registry_file.exists():
+                        try:
+                            with open(self.host_registry_file, 'r') as f:
+                                host_registry = json.load(f)
+                            if self.router_registry_file.exists():
+                                with open(self.router_registry_file, 'r') as f:
+                                    router_registry = json.load(f)
+                                
+                                for host_name, host_info in host_registry.items():
+                                    connected_router = host_info.get('connected_to') or host_info.get('connected_router')
+                                    if connected_router in target_routers and host_name in router_registry:
+                                        router_codes_to_clean.add(router_registry[host_name])
+                        except:
+                            pass
+                    
+                    # Clean interface entries for target router codes
+                    original_interfaces = sum(len(interfaces) for interfaces in interface_registry.values())
+                    for router_code in router_codes_to_clean:
+                        if router_code in interface_registry:
+                            cleaned_interface_entries += len(interface_registry[router_code])
+                            del interface_registry[router_code]
+                    
+                    # Clean up orphaned interface entries (codes that no longer exist in router registry)
+                    orphaned_interface_entries = 0
+                    if self.router_registry_file.exists():
+                        try:
+                            with open(self.router_registry_file, 'r') as f:
+                                current_router_registry = json.load(f)
+                            
+                            # Get all valid router/host codes currently in router registry
+                            valid_codes = set(current_router_registry.values())
+                            
+                            # Find orphaned codes in interface registry
+                            orphaned_codes = []
+                            for router_code in interface_registry.keys():
+                                if router_code not in valid_codes:
+                                    orphaned_codes.append(router_code)
+                            
+                            # Remove orphaned interface entries
+                            for orphaned_code in orphaned_codes:
+                                orphaned_interface_entries += len(interface_registry[orphaned_code])
+                                del interface_registry[orphaned_code]
+                                self.logger.debug(f"Removed orphaned interface entries for code {orphaned_code}")
+                                
+                        except:
+                            pass
+                    
+                    total_cleaned_interfaces = cleaned_interface_entries + orphaned_interface_entries
+                    
+                    if total_cleaned_interfaces > 0:
+                        if interface_registry:
+                            # Save updated registry
+                            with open(self.interface_registry_file, 'w') as f:
+                                json.dump(interface_registry, f, indent=2)
+                            if cleaned_interface_entries > 0 and orphaned_interface_entries > 0:
+                                self.logger.info(f"Cleaned {cleaned_interface_entries} interface registry entries and {orphaned_interface_entries} orphaned entries")
+                            elif cleaned_interface_entries > 0:
+                                self.logger.info(f"Cleaned {cleaned_interface_entries} interface registry entries")
+                            elif orphaned_interface_entries > 0:
+                                self.logger.info(f"Cleaned {orphaned_interface_entries} orphaned interface registry entries")
+                        else:
+                            # Registry is now empty, remove file
+                            self.interface_registry_file.unlink()
+                            self.logger.info(f"Removed empty interface registry")
+                            
+            except (json.JSONDecodeError, IOError) as e:
+                error_msg = f"Error cleaning interface registry: {e}"
+                self.logger.error(error_msg)
+                self.cleanup_errors.append(error_msg)
+        
+        # Clean host registry
+        if self.host_registry_file.exists():
+            try:
+                import json
+                with open(self.host_registry_file, 'r') as f:
+                    host_registry = json.load(f)
+                
+                if target_routers is None:
+                    # Clean all entries
+                    cleaned_host_entries = len(host_registry)
+                    self.host_registry_file.unlink()
+                    self.logger.info(f"Removed entire host registry ({cleaned_host_entries} entries)")
+                else:
+                    # Clean only hosts connected to specified routers
+                    original_count = len(host_registry)
+                    hosts_to_remove = []
+                    for host_name, host_info in host_registry.items():
+                        # Check if host is connected to any of the target routers
+                        connected_router = host_info.get('connected_to') or host_info.get('connected_router')
+                        if connected_router in target_routers:
+                            hosts_to_remove.append(host_name)
+                    
+                    for host_name in hosts_to_remove:
+                        del host_registry[host_name]
+                        cleaned_host_entries += 1
+                    
+                    if cleaned_host_entries > 0:
+                        if host_registry:
+                            # Save updated registry
+                            with open(self.host_registry_file, 'w') as f:
+                                json.dump(host_registry, f, indent=2)
+                            self.logger.info(f"Cleaned {cleaned_host_entries} host registry entries")
+                        else:
+                            # Registry is now empty, remove file
+                            self.host_registry_file.unlink()
+                            self.logger.info(f"Removed empty host registry")
+                            
+            except (json.JSONDecodeError, IOError) as e:
+                error_msg = f"Error cleaning host registry: {e}"
+                self.logger.error(error_msg)
+                self.cleanup_errors.append(error_msg)
+        
+        # Clean bridge registry - remove connections to target routers/hosts and cleanup unused bridges
+        if self.bridge_registry_file.exists():
+            try:
+                import json
+                with open(self.bridge_registry_file, 'r') as f:
+                    bridge_registry = json.load(f)
+                
+                if target_routers is None:
+                    # Clean all entries
+                    cleaned_bridge_entries = len(bridge_registry)
+                    self.bridge_registry_file.unlink()
+                    self.logger.info(f"Removed entire bridge registry ({cleaned_bridge_entries} entries)")
+                else:
+                    # Clean connections to specified routers
+                    bridges_to_remove = []
+                    for bridge_name, connections in bridge_registry.items():
+                        # Remove target routers from bridge connections
+                        for router_name in target_routers:
+                            if router_name in connections["routers"]:
+                                del connections["routers"][router_name]
+                                cleaned_bridge_entries += 1
+                        
+                        # Check if bridge is now unused (no routers or hosts connected)
+                        if len(connections["routers"]) == 0 and len(connections["hosts"]) == 0:
+                            bridges_to_remove.append(bridge_name)
+                    
+                    # Remove unused bridges from registry and from hidden namespace
+                    for bridge_name in bridges_to_remove:
+                        del bridge_registry[bridge_name]
+                        unused_bridges_removed += 1
+                        
+                        # Try to remove the actual bridge from hidden namespace
+                        try:
+                            result = self.run_command(f"ip netns exec hidden-mesh ip link del {bridge_name}", check=False)
+                            if result.returncode == 0:
+                                self.logger.debug(f"Removed unused bridge: {bridge_name}")
+                            else:
+                                self.logger.debug(f"Bridge {bridge_name} already removed or doesn't exist")
+                        except Exception as e:
+                            self.logger.debug(f"Failed to remove bridge {bridge_name}: {e}")
+                    
+                    if cleaned_bridge_entries > 0 or unused_bridges_removed > 0:
+                        if bridge_registry:
+                            # Save updated registry
+                            with open(self.bridge_registry_file, 'w') as f:
+                                json.dump(bridge_registry, f, indent=2)
+                            self.logger.info(f"Updated bridge registry: {cleaned_bridge_entries} connections removed, {unused_bridges_removed} unused bridges cleaned")
+                        else:
+                            # Registry is now empty, remove file
+                            self.bridge_registry_file.unlink()
+                            self.logger.info(f"Removed empty bridge registry")
+                            
+            except (json.JSONDecodeError, IOError) as e:
+                error_msg = f"Error cleaning bridge registry: {e}"
+                self.logger.error(error_msg)
+                self.cleanup_errors.append(error_msg)
+        
+        if self.verbose >= 1 and (cleaned_router_entries > 0 or cleaned_interface_entries > 0 or cleaned_host_entries > 0 or cleaned_bridge_entries > 0):
+            print(f"Cleaned registry entries: {cleaned_router_entries} routers, {cleaned_interface_entries} interfaces, {cleaned_host_entries} hosts, {cleaned_bridge_entries} bridge connections")
+            if unused_bridges_removed > 0:
+                print(f"Removed {unused_bridges_removed} unused bridges")
+
+    def filter_routers_by_pattern(self, routers: Set[str]) -> Set[str]:
+        """Filter router set by limit pattern (supports glob patterns)."""
+        if not self.limit_pattern:
+            return routers
+        
+        import fnmatch
+        filtered_routers = set()
+        
+        for router_name in routers:
+            if fnmatch.fnmatch(router_name, self.limit_pattern):
+                filtered_routers.add(router_name)
+        
+        self.logger.info(f"Filtered {len(routers)} routers to {len(filtered_routers)} using pattern '{self.limit_pattern}'")
+        
+        if self.verbose >= 1 and filtered_routers:
+            print(f"Filtered routers: {', '.join(sorted(filtered_routers))}")
+        elif self.verbose >= 1:
+            print(f"No routers match pattern '{self.limit_pattern}'")
+        
+        return filtered_routers
             
     def perform_cleanup(self):
         """Execute the complete cleanup process."""
@@ -468,10 +855,33 @@ class NetworkNamespaceCleanup:
             if self.verbose >= 1:
                 print("Warning: ipset not available - ipset cleanup skipped")
         
+        # Apply router filtering if limit pattern is specified
+        target_routers = None
+        if self.limit_pattern:
+            # Filter known routers by pattern
+            all_routers = self.known_routers.copy()
+            target_routers = self.filter_routers_by_pattern(all_routers)
+            
+            if not target_routers:
+                if self.verbose >= 1:
+                    print(f"No routers match pattern '{self.limit_pattern}' - nothing to clean")
+                return 0
+        
         # Discover what needs cleanup
         self.discover_namespaces()
         self.discover_veth_interfaces()
         self.discover_mesh_bridges()
+        
+        # Filter discovered namespaces by target routers if pattern specified
+        if target_routers is not None:
+            filtered_namespaces = set()
+            for namespace in self.found_namespaces:
+                if namespace in target_routers:
+                    filtered_namespaces.add(namespace)
+            self.found_namespaces = filtered_namespaces
+            
+            if self.verbose >= 1 and len(self.found_namespaces) > 0:
+                print(f"Found {len(self.found_namespaces)} matching namespaces to clean")
         
         cleanup_count = 0
         
@@ -499,6 +909,14 @@ class NetworkNamespaceCleanup:
         # Clean up ipsets (only if ipset is available)
         if ipset_available:
             self.cleanup_ipsets()
+        
+        # Clean up registry entries
+        self.cleanup_registries(target_routers)
+        
+        # Clean up any orphaned interface entries
+        orphaned_count = self.cleanup_orphaned_interface_entries()
+        if self.verbose >= 1 and orphaned_count > 0:
+            print(f"Cleaned {orphaned_count} orphaned interface registry entries")
         
         # Final verification
         self.verify_cleanup()
@@ -618,6 +1036,13 @@ Safety:
         help='Increase verbosity: -v (basic), -vv (info), -vvv (debug)'
     )
     
+    parser.add_argument(
+        '--limit',
+        type=str,
+        default=None,
+        help='Limit cleanup to specific routers (supports glob patterns, e.g. "pmfw-*", "*core*")'
+    )
+    
     args = parser.parse_args()
     
     # Check for root privileges
@@ -628,7 +1053,7 @@ Safety:
         sys.exit(1)
         
     try:
-        cleanup = NetworkNamespaceCleanup(args.force, args.verbose)
+        cleanup = NetworkNamespaceCleanup(args.force, args.verbose, args.limit)
         exit_code = cleanup.perform_cleanup()
         sys.exit(exit_code)
         

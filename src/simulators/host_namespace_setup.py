@@ -62,6 +62,11 @@ class HostNamespaceManager:
         self.available_namespaces: Set[str] = set()
         self.host_registry_file = Path("/tmp/traceroute_hosts_registry.json")
         
+        # Registry files for interface tracking
+        self.router_registry_file = Path("/tmp/traceroute_routers_registry.json")
+        self.interface_registry_file = Path("/tmp/traceroute_interfaces_registry.json")
+        self.interface_registry: Dict[str, Dict[str, str]] = {}  # host_code -> {interface_name -> interface_code}
+        
     def setup_logging(self):
         """Configure logging based on verbosity level."""
         if self.verbose == 0:
@@ -161,6 +166,138 @@ class HostNamespaceManager:
             raise subprocess.CalledProcessError(result.returncode, full_command, result.stderr)
             
         return result
+        
+    def load_router_registry(self) -> Dict[str, str]:
+        """Load registry of router/host name to code mappings."""
+        if not self.router_registry_file.exists():
+            return {}
+            
+        try:
+            with open(self.router_registry_file, 'r') as f:
+                return json.load(f)
+        except (json.JSONDecodeError, IOError) as e:
+            self.logger.warning(f"Could not load router registry: {e}")
+            return {}
+            
+    def save_router_registry(self, registry: Dict[str, str]):
+        """Save registry of router/host name to code mappings."""
+        try:
+            with open(self.router_registry_file, 'w') as f:
+                json.dump(registry, f, indent=2)
+        except IOError as e:
+            self.logger.error(f"Could not save router registry: {e}")
+
+    def load_interface_registry(self) -> Dict[str, Dict[str, str]]:
+        """Load registry of interface name to code mappings per router/host."""
+        if not self.interface_registry_file.exists():
+            return {}
+            
+        try:
+            with open(self.interface_registry_file, 'r') as f:
+                return json.load(f)
+        except (json.JSONDecodeError, IOError) as e:
+            self.logger.warning(f"Could not load interface registry: {e}")
+            return {}
+            
+    def save_interface_registry(self):
+        """Save registry of interface name to code mappings per router/host."""
+        try:
+            with open(self.interface_registry_file, 'w') as f:
+                json.dump(self.interface_registry, f, indent=2)
+        except IOError as e:
+            self.logger.error(f"Could not save interface registry: {e}")
+
+    def get_host_code(self, host_name: str) -> str:
+        """Get or generate host code for given host name."""
+        router_registry = self.load_router_registry()
+        
+        # If host already has a code, return it
+        if host_name in router_registry:
+            return router_registry[host_name]
+        
+        # Generate new host code (h000 to h999)
+        existing_codes = set(router_registry.values())
+        
+        for i in range(1000):  # h000 to h999
+            host_code = f"h{i:03d}"
+            if host_code not in existing_codes:
+                router_registry[host_name] = host_code
+                self.save_router_registry(router_registry)
+                return host_code
+        
+        # If we somehow reach 1000 hosts, fall back to a hash-based approach
+        import hashlib
+        name_hash = hashlib.md5(host_name.encode()).hexdigest()[:3]
+        fallback_code = f"h{name_hash}"
+        router_registry[host_name] = fallback_code
+        self.save_router_registry(router_registry)
+        return fallback_code
+
+    def get_interface_code(self, host_code: str, interface_name: str) -> str:
+        """Get or generate interface code for given host and interface."""
+        # Ensure host exists in registry
+        if host_code not in self.interface_registry:
+            self.interface_registry[host_code] = {}
+        
+        # If interface already has a code, return it
+        if interface_name in self.interface_registry[host_code]:
+            return self.interface_registry[host_code][interface_name]
+        
+        # Generate new interface code (i000 to i999)
+        existing_codes = set(self.interface_registry[host_code].values())
+        
+        for i in range(1000):  # i000 to i999
+            interface_code = f"i{i:03d}"
+            if interface_code not in existing_codes:
+                self.interface_registry[host_code][interface_name] = interface_code
+                return interface_code
+        
+        # If we somehow reach 1000 interfaces, fall back to a hash-based approach
+        import hashlib
+        name_hash = hashlib.md5(interface_name.encode()).hexdigest()[:3]
+        fallback_code = f"i{name_hash}"
+        self.interface_registry[host_code][interface_name] = fallback_code
+        return fallback_code
+
+    def register_host_interfaces(self, host_name: str, interfaces: List[str]):
+        """Register all interfaces for a host in the interface registry."""
+        host_code = self.get_host_code(host_name)
+        
+        # Load current interface registry
+        self.interface_registry = self.load_interface_registry()
+        
+        # Register each interface
+        for interface_name in interfaces:
+            interface_code = self.get_interface_code(host_code, interface_name)
+            self.logger.debug(f"Registered interface {interface_name} as {interface_code} for host {host_name} ({host_code})")
+        
+        # Save updated registry
+        self.save_interface_registry()
+
+    def unregister_host_interfaces(self, host_name: str):
+        """Unregister all interfaces for a host from the interface registry."""
+        router_registry = self.load_router_registry()
+        
+        # Find host code
+        host_code = router_registry.get(host_name)
+        if not host_code:
+            self.logger.warning(f"Host {host_name} not found in router registry")
+            return
+        
+        # Load current interface registry
+        self.interface_registry = self.load_interface_registry()
+        
+        # Remove host's interfaces from registry
+        if host_code in self.interface_registry:
+            del self.interface_registry[host_code]
+            self.save_interface_registry()
+            self.logger.debug(f"Unregistered all interfaces for host {host_name} ({host_code})")
+        
+        # Remove host from router registry
+        if host_name in router_registry:
+            del router_registry[host_name]
+            self.save_router_registry(router_registry)
+            self.logger.debug(f"Unregistered host {host_name} from router registry")
         
     def check_command_availability(self, command: str) -> bool:
         """Check if a command is available on the system."""
@@ -527,6 +664,11 @@ class HostNamespaceManager:
             # Configure routing (direct network route is automatic, only add default route)
             self.run_command(f"ip route add default via {gateway_ip} dev eth0", namespace=host_name)
             
+            # Register host interfaces in interface registry
+            host_interfaces = ["lo", "eth0"]  # Standard interfaces for all hosts
+            host_interfaces.extend([f"dummy{i}" for i in range(len(secondary_ips))])  # Add dummy interfaces
+            self.register_host_interfaces(host_name, host_interfaces)
+            
             # Register host
             host_config = {
                 "primary_ip": primary_ip,
@@ -570,6 +712,9 @@ class HostNamespaceManager:
         host_config = registry[host_name]
         
         try:
+            # Unregister host interfaces from interface registry
+            self.unregister_host_interfaces(host_name)
+            
             # Remove host resources
             self.cleanup_host_resources(host_name, host_config)
             

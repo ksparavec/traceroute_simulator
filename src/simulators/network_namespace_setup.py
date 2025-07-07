@@ -1128,6 +1128,7 @@ class HiddenMeshNetworkSetup:
         routes_applied = 0
         rules_applied = 0
         tables_applied = 0
+        applied_tables = []  # Track table names for output
         errors = []
         
         try:
@@ -1137,22 +1138,45 @@ class HiddenMeshNetworkSetup:
                 route_count = self._apply_routes(router_name, routing_section.content, 'main')
                 routes_applied += route_count
                 tables_applied += 1
+                applied_tables.append('main')
             
             # Apply policy rules and additional routing tables
             policy_section = router_facts.get_section('policy_rules')
             if policy_section:
-                rule_count = self._apply_policy_rules(router_name, policy_section.content)
+                rule_count = self._apply_policy_rules(router_name, policy_section.content, router_facts)
                 rules_applied += rule_count
             
             # Apply additional routing tables
             for section_name, section in router_facts.sections.items():
                 if section_name.startswith('routing_table_') and section_name != 'routing_table_main':
-                    table_name = section_name.replace('routing_table_', '')
-                    table_id = self._get_table_id(table_name)
+                    table_identifier = section_name.replace('routing_table_', '')
+                    
+                    # Check if table_identifier is already a numeric ID
+                    if table_identifier.isdigit():
+                        table_id = table_identifier
+                    else:
+                        # Look up table name in rt_tables mapping
+                        table_id = self._get_table_id(table_identifier, router_facts)
+                    
                     if table_id:
                         route_count = self._apply_routes(router_name, section.content, table_id)
                         routes_applied += route_count
                         tables_applied += 1
+                        
+                        # Find table name for output
+                        rt_tables_section = router_facts.get_section('rt_tables')
+                        table_name = table_identifier
+                        if table_identifier.isdigit() and rt_tables_section:
+                            # Look up actual table name from rt_tables
+                            for line in rt_tables_section.content.split('\n'):
+                                line = line.strip()
+                                if not line or line.startswith('#'):
+                                    continue
+                                parts = line.split()
+                                if len(parts) == 2 and parts[0] == table_id:
+                                    table_name = parts[1]
+                                    break
+                        applied_tables.append(f"{table_name}({table_id})")
             
             # Clean up duplicate kernel routes (remove auto-generated routes if explicit metric routes exist)
             removed_duplicates = self._remove_duplicate_kernel_routes(router_name, router_facts)
@@ -1164,8 +1188,8 @@ class HiddenMeshNetworkSetup:
                 summary = f"    ✓ routing: {routes_applied} routes"
                 if rules_applied > 0:
                     summary += f", {rules_applied} rules"
-                if tables_applied > 1:
-                    summary += f", {tables_applied} tables"
+                if applied_tables:
+                    summary += f", {len(applied_tables)} tables ({', '.join(applied_tables)})"
                 print(summary)
                 
         except Exception as e:
@@ -1177,18 +1201,28 @@ class HiddenMeshNetworkSetup:
                 print(f"    ✗ routing: {error_msg}")
             raise  # Re-raise to be caught by caller
     
-    def _get_table_id(self, table_name: str) -> Optional[str]:
-        """Get numeric table ID for named table."""
-        table_mapping = {
-            'priority_table': '100',
-            'service_table': '200', 
-            'backup_table': '300',
-            'qos_table': '400',
-            'management_table': '500',
-            'database_table': '600',
-            'web_table': '700',
-            'emergency_table': '800'
-        }
+    def _get_table_id(self, table_name: str, router_facts: RouterRawFacts) -> Optional[str]:
+        """Get numeric table ID for named table from router's rt_tables section."""
+        rt_tables_section = router_facts.get_section('rt_tables')
+        if not rt_tables_section:
+            return None
+            
+        # Parse rt_tables content to build table_name -> table_id mapping
+        table_mapping = {}
+        
+        for line in rt_tables_section.content.split('\n'):
+            line = line.strip()
+            
+            # Skip empty lines and comments
+            if not line or line.startswith('#'):
+                continue
+                
+            # Split on whitespace - expect exactly 2 parts: <table_id> <table_name>
+            parts = line.split()
+            if len(parts) == 2:
+                table_id, name = parts
+                table_mapping[name] = table_id
+                
         return table_mapping.get(table_name)
         
     def _apply_routes(self, router_name: str, routes_content: str, table: str):
@@ -1198,13 +1232,20 @@ class HiddenMeshNetworkSetup:
         
         routes_count = 0
         
-        # Handle embedded newlines in content
-        routes_content = routes_content.replace('\\n', '\n')
+        # Handle embedded newlines and escaped tabs in content
+        routes_content = routes_content.replace('\\n', '\n').replace('\\t', ' ')
         
         for line in routes_content.split('\n'):
             line = line.strip()
             if not line or line.startswith('#'):
                 continue
+            
+            # Additional cleanup for escaped characters
+            line = line.replace('\\t', ' ').replace('\\', '')
+            
+            # Normalize multiple spaces to single spaces
+            import re
+            line = re.sub(r'\s+', ' ', line)
             
             # Skip auto-generated direct network routes WITHOUT explicit metrics
             # Kernel routes with explicit metrics should be applied as they indicate specific configuration
@@ -1213,9 +1254,10 @@ class HiddenMeshNetworkSetup:
                 continue
             
             # Apply route
-            cmd = f"ip route add {line}"
             if table != 'main':
-                cmd += f" table {table}"
+                cmd = f"ip route add table {table} {line}"
+            else:
+                cmd = f"ip route add {line}"
             
             try:
                 self.run_cmd(cmd, router_name)
@@ -1237,10 +1279,23 @@ class HiddenMeshNetworkSetup:
         
         return routes_count
                 
-    def _apply_policy_rules(self, router_name: str, rules_content: str):
+    def _apply_policy_rules(self, router_name: str, rules_content: str, router_facts: RouterRawFacts):
         """Apply policy routing rules."""
         if not rules_content.strip():
             return 0
+        
+        # Build table name to ID mapping from rt_tables
+        table_name_to_id = {}
+        rt_tables_section = router_facts.get_section('rt_tables')
+        if rt_tables_section:
+            for line in rt_tables_section.content.split('\n'):
+                line = line.strip()
+                if not line or line.startswith('#'):
+                    continue
+                parts = line.split()
+                if len(parts) == 2:
+                    table_id, table_name = parts
+                    table_name_to_id[table_name] = table_id
         
         rules_count = 0
         
@@ -1259,13 +1314,8 @@ class HiddenMeshNetworkSetup:
                 priority = rule_match.group(1)
                 rule_spec = rule_match.group(2)
                 
-                # Convert table names to IDs
-                for table_name, table_id in [
-                    ('priority_table', '100'), ('service_table', '200'),
-                    ('backup_table', '300'), ('qos_table', '400'),
-                    ('management_table', '500'), ('database_table', '600'),
-                    ('web_table', '700'), ('emergency_table', '800')
-                ]:
+                # Convert table names to IDs using dynamic mapping
+                for table_name, table_id in table_name_to_id.items():
                     rule_spec = rule_spec.replace(f'lookup {table_name}', f'table {table_id}')
                 
                 cmd = f"ip rule add pref {priority} {rule_spec}"
@@ -1273,6 +1323,7 @@ class HiddenMeshNetworkSetup:
                 try:
                     self.run_cmd(cmd, router_name, check=False)
                     rules_count += 1
+                    self.logger.debug(f"Added rule: {rule_spec}")
                 except Exception as e:
                     self.logger.debug(f"Rule add failed (expected): {e}")
         

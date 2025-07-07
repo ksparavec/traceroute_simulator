@@ -624,16 +624,29 @@ class NetworkNamespaceStatus:
         else:
             summary_lines.append("    (failed to retrieve)")
             
-        # Show actual routing table
+        # Show all routing tables
         summary_lines.append("")
-        summary_lines.append("  Routing Table:")
-        route_result = self.run_command("ip route show", namespace=namespace, check=False)
-        if route_result.returncode == 0:
-            for line in route_result.stdout.split('\n'):
-                if line.strip():
-                    summary_lines.append(f"    {line.strip()}")
-        else:
-            summary_lines.append("    (failed to retrieve)")
+        summary_lines.append("  Routing Tables:")
+        
+        # Discover all routing tables dynamically
+        discovered_tables = self._discover_routing_tables(namespace)
+        
+        for table_id, table_name in discovered_tables:
+            if table_name == 'main':
+                summary_lines.append(f"    Main routing table:")
+                result = self.run_command("ip route show", namespace=namespace, check=False)
+            else:
+                summary_lines.append(f"    Table {table_id} ({table_name}):")
+                result = self.run_command(f"ip route show table {table_id}", namespace=namespace, check=False)
+            
+            if result.returncode == 0 and result.stdout.strip():
+                for line in result.stdout.split('\n'):
+                    if line.strip():
+                        summary_lines.append(f"      {line.strip()}")
+            else:
+                summary_lines.append(f"      (failed to retrieve)")
+            
+            summary_lines.append("")  # Add blank line between tables
             
         # Get iptables totals using iptables-save
         summary_lines.append("")

@@ -165,9 +165,9 @@ collect_facts() {
         if [ -n "$table" ]; then
             table_id=$(echo "$table" | tr -d ' ')
             if [ "$table_id" = "main" ]; then
-                exec_section "routing_table_main" "Main Routing Table" "$IP_CMD route show table main"
+                exec_section "routing_table_main" "Main Routing Table" "$IP_CMD -o route show table main"
             else
-                exec_section "routing_table_$table_id" "Routing Table $table_id" "$IP_CMD route show table $table_id"
+                exec_section "routing_table_$table_id" "Routing Table $table_id" "$IP_CMD -o route show table $table_id"
             fi
         fi
     done

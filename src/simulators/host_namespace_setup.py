@@ -84,7 +84,7 @@ class HostNamespaceManager:
         
     def load_router_facts(self):
         """Load router facts to understand network topology."""
-        facts_path = os.environ.get('TRACEROUTE_SIMULATOR_FACTS', '/tmp/traceroute_test_output')
+        facts_path = os.environ.get('TRACEROUTE_SIMULATOR_FACTS', 'tests/tsim_facts')
         facts_dir = Path(facts_path)
         
         if not facts_dir.exists():
@@ -108,15 +108,16 @@ class HostNamespaceManager:
                 
         # Build subnet mapping from router facts
         for router_name, facts in self.routers.items():
-            interfaces = facts.get('network', {}).get('interfaces', [])
-            for iface in interfaces:
-                if (iface.get('protocol') == 'kernel' and 
-                    iface.get('scope') == 'link' and
-                    iface.get('prefsrc') and iface.get('dev') and iface.get('dst')):
+            # Check routing tables for interface subnets
+            routing_tables = facts.get('routing', {}).get('tables', [])
+            for route in routing_tables:
+                if (route.get('protocol') == 'kernel' and 
+                    route.get('scope') == 'link' and
+                    route.get('prefsrc') and route.get('dev') and route.get('dst')):
                     
-                    subnet = iface['dst']
-                    router_iface = iface['dev'] 
-                    ip = iface['prefsrc']
+                    subnet = route['dst']
+                    router_iface = route['dev'] 
+                    ip = route['prefsrc']
                     
                     if subnet not in self.router_subnets:
                         self.router_subnets[subnet] = []
@@ -274,6 +275,42 @@ class HostNamespaceManager:
         # Save updated registry
         self.save_interface_registry()
 
+    def register_host_in_bridge_registry(self, host_name: str, primary_ip: str, bridge_name: str):
+        """Register host in the bridge registry."""
+        try:
+            registry_file = Path("/tmp/traceroute_bridges_registry.json")
+            if not registry_file.exists():
+                self.logger.error("Bridge registry not found")
+                return False
+                
+            with open(registry_file, 'r') as f:
+                bridge_registry = json.load(f)
+            
+            # Add host to the bridge
+            if bridge_name in bridge_registry:
+                if 'hosts' not in bridge_registry[bridge_name]:
+                    bridge_registry[bridge_name]['hosts'] = {}
+                
+                bridge_registry[bridge_name]['hosts'][host_name] = {
+                    "interface": "eth0",
+                    "ipv4": primary_ip,
+                    "state": "UP"
+                }
+                
+                # Save updated registry
+                with open(registry_file, 'w') as f:
+                    json.dump(bridge_registry, f, indent=2)
+                    
+                self.logger.debug(f"Registered host {host_name} in bridge {bridge_name}")
+                return True
+            else:
+                self.logger.error(f"Bridge {bridge_name} not found in registry")
+                return False
+                
+        except Exception as e:
+            self.logger.error(f"Error registering host in bridge registry: {e}")
+            return False
+
     def unregister_host_interfaces(self, host_name: str):
         """Unregister all interfaces for a host from the interface registry."""
         router_registry = self.load_router_registry()
@@ -298,6 +335,30 @@ class HostNamespaceManager:
             del router_registry[host_name]
             self.save_router_registry(router_registry)
             self.logger.debug(f"Unregistered host {host_name} from router registry")
+
+    def unregister_host_from_bridge_registry(self, host_name: str):
+        """Unregister host from the bridge registry."""
+        try:
+            registry_file = Path("/tmp/traceroute_bridges_registry.json")
+            if not registry_file.exists():
+                return
+                
+            with open(registry_file, 'r') as f:
+                bridge_registry = json.load(f)
+            
+            # Find and remove host from all bridges
+            for bridge_name, bridge_info in bridge_registry.items():
+                hosts = bridge_info.get('hosts', {})
+                if host_name in hosts:
+                    del hosts[host_name]
+                    self.logger.debug(f"Unregistered host {host_name} from bridge {bridge_name}")
+            
+            # Save updated registry
+            with open(registry_file, 'w') as f:
+                json.dump(bridge_registry, f, indent=2)
+                
+        except Exception as e:
+            self.logger.error(f"Error unregistering host from bridge registry: {e}")
         
     def check_command_availability(self, command: str) -> bool:
         """Check if a command is available on the system."""
@@ -420,13 +481,13 @@ class HostNamespaceManager:
             
             # Get router's IP addresses from facts
             if router_name in self.routers:
-                interfaces = self.routers[router_name].get('network', {}).get('interfaces', [])
-                for iface in interfaces:
-                    if (iface.get('protocol') == 'kernel' and 
-                        iface.get('scope') == 'link' and
-                        iface.get('prefsrc') and iface.get('dst')):
+                routing_tables = self.routers[router_name].get('routing', {}).get('tables', [])
+                for route in routing_tables:
+                    if (route.get('protocol') == 'kernel' and 
+                        route.get('scope') == 'link' and
+                        route.get('prefsrc') and route.get('dst')):
                         
-                        dst_subnet = iface['dst']
+                        dst_subnet = route['dst']
                         try:
                             iface_net = ipaddress.IPv4Network(dst_subnet, strict=False)
                             if subnet_net.overlaps(iface_net):
@@ -444,48 +505,51 @@ class HostNamespaceManager:
         if router_name not in self.routers:
             return None
             
-        interfaces = self.routers[router_name].get('network', {}).get('interfaces', [])
-        for iface in interfaces:
-            if (iface.get('protocol') == 'kernel' and 
-                iface.get('scope') == 'link' and
-                iface.get('prefsrc') and iface.get('dev') == interface_name and iface.get('dst')):
+        routing_tables = self.routers[router_name].get('routing', {}).get('tables', [])
+        for route in routing_tables:
+            if (route.get('protocol') == 'kernel' and 
+                route.get('scope') == 'link' and
+                route.get('prefsrc') and route.get('dev') == interface_name and route.get('dst')):
                 
-                subnet = iface['dst']
-                router_ip = iface['prefsrc']
+                subnet = route['dst']
+                router_ip = route['prefsrc']
                 return (subnet, router_ip)
                 
         return None
         
     def find_shared_mesh_bridge(self, primary_ip: str) -> Optional[str]:
-        """Find the shared mesh bridge for the host's subnet in hidden-mesh namespace."""
+        """Find the shared mesh bridge for the host's subnet using bridge registry."""
         try:
             host_network = ipaddress.IPv4Network(primary_ip, strict=False)
             
-            # Find the exact subnet that contains this host IP from router facts
-            target_subnet = None
-            for subnet, members in self.router_subnets.items():
-                try:
-                    subnet_network = ipaddress.IPv4Network(subnet, strict=False)
-                    if host_network.subnet_of(subnet_network) or host_network.overlaps(subnet_network):
-                        target_subnet = subnet
-                        break
-                except ipaddress.AddressValueError:
-                    continue
-                    
-            if not target_subnet:
+            # Load bridge registry
+            registry_file = Path("/tmp/traceroute_bridges_registry.json")
+            if not registry_file.exists():
+                self.logger.error("Bridge registry not found. Run netsetup first.")
                 return None
                 
-            # Convert subnet to bridge name using same logic as network setup
-            # Use abbreviated bridge naming to fit 15 character limit
-            bridge_name = self._generate_bridge_name(target_subnet)
+            with open(registry_file, 'r') as f:
+                bridge_registry = json.load(f)
             
-            # Check if this bridge exists in hidden-mesh namespace
-            result = self.run_command(f"ip netns exec hidden-mesh ip link show {bridge_name}", check=False)
-            if result.returncode == 0:
-                return bridge_name
+            # Find bridge that contains this IP
+            for bridge_name, bridge_info in bridge_registry.items():
+                routers = bridge_info.get('routers', {})
+                for router_name, router_info in routers.items():
+                    router_ip = router_info.get('ipv4', '')
+                    if router_ip:
+                        try:
+                            router_network = ipaddress.IPv4Network(router_ip, strict=False)
+                            if host_network.subnet_of(router_network) or host_network.overlaps(router_network):
+                                # Check if this bridge exists in hidden-mesh namespace
+                                result = self.run_command(f"ip netns exec hidden-mesh ip link show {bridge_name}", check=False)
+                                if result.returncode == 0:
+                                    return bridge_name
+                        except ipaddress.AddressValueError:
+                            continue
                     
             return None
-        except Exception:
+        except Exception as e:
+            self.logger.error(f"Error finding bridge: {e}")
             return None
 
     def _generate_bridge_name(self, subnet: str) -> str:
@@ -669,6 +733,11 @@ class HostNamespaceManager:
             host_interfaces.extend([f"dummy{i}" for i in range(len(secondary_ips))])  # Add dummy interfaces
             self.register_host_interfaces(host_name, host_interfaces)
             
+            # Register host in bridge registry
+            bridge_name = connection_info.get('mesh_bridge')
+            if bridge_name:
+                self.register_host_in_bridge_registry(host_name, primary_ip, bridge_name)
+            
             # Register host
             host_config = {
                 "primary_ip": primary_ip,
@@ -714,6 +783,9 @@ class HostNamespaceManager:
         try:
             # Unregister host interfaces from interface registry
             self.unregister_host_interfaces(host_name)
+            
+            # Unregister host from bridge registry
+            self.unregister_host_from_bridge_registry(host_name)
             
             # Remove host resources
             self.cleanup_host_resources(host_name, host_config)

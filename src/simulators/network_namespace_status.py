@@ -988,7 +988,7 @@ Environment Variables:
     facts_dir = os.environ.get('TRACEROUTE_SIMULATOR_FACTS')
     if not facts_dir:
         print("Error: TRACEROUTE_SIMULATOR_FACTS environment variable must be set")
-        print("Example: TRACEROUTE_SIMULATOR_FACTS=/tmp/traceroute_test_output")
+        print("Example: TRACEROUTE_SIMULATOR_FACTS=tests/tsim_facts")
         sys.exit(1)
     
     # Check for root privileges

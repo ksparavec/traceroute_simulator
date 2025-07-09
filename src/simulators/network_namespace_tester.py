@@ -51,7 +51,7 @@ class SequentialConnectivityTester:
     """Sequential network connectivity testing for namespace simulation."""
     
     def __init__(self, verbose: int = 0, wait_time: float = 0.1, test_type: str = 'ping'):
-        self.facts_dir = Path(os.environ.get('TRACEROUTE_SIMULATOR_FACTS', '/tmp/traceroute_test_output'))
+        self.facts_dir = Path(os.environ.get('TRACEROUTE_SIMULATOR_FACTS', 'tests/tsim_facts'))
         self.verbose = verbose
         self.wait_time = wait_time
         self.test_type = test_type

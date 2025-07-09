@@ -268,15 +268,15 @@ test: check-deps
 	@echo "3. Running Integration Tests"
 	@echo "---------------------------------"
 	@echo "Testing basic routing scenarios..."
-	@TRACEROUTE_SIMULATOR_FACTS=/tmp/traceroute_test_output $(MAKE) tsim ARGS="-s 10.1.1.1 -d 10.2.1.1" > /dev/null && \
+	@$(MAKE) tsim ARGS="-s 10.1.1.1 -d 10.2.1.1" > /dev/null && \
 		echo "✓ Inter-location routing test passed" || \
 		echo "✗ Inter-location routing test failed"
 	
-	@TRACEROUTE_SIMULATOR_FACTS=/tmp/traceroute_test_output $(MAKE) tsim ARGS="-s 10.100.1.1 -d 10.100.1.3" > /dev/null && \
+	@$(MAKE) tsim ARGS="-s 10.100.1.1 -d 10.100.1.3" > /dev/null && \
 		echo "✓ VPN mesh routing test passed" || \
 		echo "✗ VPN mesh routing test failed"
 	
-	@TRACEROUTE_SIMULATOR_FACTS=/tmp/traceroute_test_output $(MAKE) tsim ARGS="-j -s 10.1.10.1 -d 10.3.20.1" > /dev/null && \
+	@$(MAKE) tsim ARGS="-j -s 10.1.10.1 -d 10.3.20.1" > /dev/null && \
 		echo "✓ JSON output test passed" || \
 		echo "✗ JSON output test failed"
 	
@@ -536,7 +536,7 @@ netsetup:
 		echo "Please run: sudo -E make netsetup"; \
 		exit 1; \
 	fi
-	@env TRACEROUTE_SIMULATOR_RAW_FACTS="$(TRACEROUTE_SIMULATOR_RAW_FACTS)" TRACEROUTE_SIMULATOR_FACTS=/tmp/traceroute_test_output $(PYTHON) src/simulators/network_namespace_setup.py $(ARGS)
+	@env TRACEROUTE_SIMULATOR_RAW_FACTS="$(TRACEROUTE_SIMULATOR_RAW_FACTS)" $(PYTHON) src/simulators/network_namespace_setup.py $(ARGS)
 
 # Test network connectivity in namespace simulation (requires sudo)  
 # Usage: sudo -E make nettest ARGS="-s 10.1.1.1 -d 10.2.1.1 -p tcp --dport 80"
@@ -566,7 +566,7 @@ nettest:
 		echo "  sudo -E make nettest ARGS='--all --test-type mtr -v'                     # Test all routers (MTR, verbose)"; \
 		exit 1; \
 	fi
-	@TRACEROUTE_SIMULATOR_FACTS=/tmp/traceroute_test_output $(PYTHON) src/simulators/network_namespace_tester.py $(ARGS)
+	@$(PYTHON) src/simulators/network_namespace_tester.py $(ARGS)
 
 # Test services with automatic namespace detection (requires sudo)
 # Usage: sudo -E make svctest ARGS="-s <source_ip[:port]> -d <dest_ip:port> [-p tcp|udp]"
@@ -599,7 +599,7 @@ svctest:
 		echo "  sudo -E make svctest ARGS='--start 10.2.1.1:53 -p udp --name dns'    # Start UDP service"; \
 		exit 1; \
 	fi
-	@TRACEROUTE_SIMULATOR_FACTS=/tmp/traceroute_test_output $(PYTHON) src/simulators/service_tester.py $(ARGS)
+	@$(PYTHON) src/simulators/service_tester.py $(ARGS)
 
 # Start a service on an IP address (requires sudo)
 # Usage: sudo -E make svcstart ARGS="<ip:port> [-p tcp|udp] [--name <name>]"
@@ -625,7 +625,7 @@ svcstart:
 		echo "  sudo -E make svcstart ARGS='10.2.1.1:53 -p udp --name dns'  # Start UDP service with name"; \
 		exit 1; \
 	fi
-	@TRACEROUTE_SIMULATOR_FACTS=/tmp/traceroute_test_output $(PYTHON) src/simulators/service_tester.py --start $(ARGS)
+	@$(PYTHON) src/simulators/service_tester.py --start $(ARGS)
 
 # Stop a service on an IP address (requires sudo)
 # Usage: sudo -E make svcstop ARGS="<ip:port>"
@@ -643,7 +643,7 @@ svcstop:
 		echo "  sudo -E make svcstop ARGS='10.2.1.1:53'     # Stop service on port 53"; \
 		exit 1; \
 	fi
-	@TRACEROUTE_SIMULATOR_FACTS=/tmp/traceroute_test_output $(PYTHON) src/simulators/service_tester.py --stop $(ARGS)
+	@$(PYTHON) src/simulators/service_tester.py --stop $(ARGS)
 
 # List all services across all namespaces (requires sudo)
 # Usage: sudo -E make svclist [ARGS="-j|--json"]
@@ -963,7 +963,7 @@ hostadd:
 		echo "  sudo -E make hostadd ARGS='--host client1 --primary-ip 10.3.1.100/24 -v'"; \
 		exit 1; \
 	fi
-	@TRACEROUTE_SIMULATOR_FACTS=/tmp/traceroute_test_output $(PYTHON) src/simulators/host_namespace_setup.py $(ARGS)
+	@$(PYTHON) src/simulators/host_namespace_setup.py $(ARGS)
 
 # Remove host from network (requires sudo)
 # Usage: sudo -E make hostdel ARGS="--host <name> --remove"
@@ -981,7 +981,7 @@ hostdel:
 		echo "  sudo -E make hostdel ARGS='--host db1 --remove -v'"; \
 		exit 1; \
 	fi
-	@TRACEROUTE_SIMULATOR_FACTS=/tmp/traceroute_test_output $(PYTHON) src/simulators/host_namespace_setup.py $(ARGS)
+	@$(PYTHON) src/simulators/host_namespace_setup.py $(ARGS)
 
 # List all registered hosts (requires sudo)
 # Usage: sudo -E make hostlist
@@ -991,7 +991,7 @@ hostlist:
 		echo "Please run: sudo -E make hostlist"; \
 		exit 1; \
 	fi
-	@TRACEROUTE_SIMULATOR_FACTS=/tmp/traceroute_test_output $(PYTHON) src/simulators/host_namespace_setup.py --list-hosts
+	@$(PYTHON) src/simulators/host_namespace_setup.py --list-hosts
 
 # Clean up all registered hosts (requires sudo)
 # Usage: sudo -E make hostclean [ARGS="-v|-vv"]
@@ -1012,7 +1012,7 @@ netnsclean:
 		exit 1; \
 	fi
 	@$(PYTHON) src/utils/host_cleanup.py $(ARGS)
-	@TRACEROUTE_SIMULATOR_FACTS=/tmp/traceroute_test_output $(PYTHON) src/simulators/network_namespace_cleanup.py $(ARGS)
+	@$(PYTHON) src/simulators/network_namespace_cleanup.py $(ARGS)
 
 # Check if we're running in a git repository (for future enhancements)
 .git-check:

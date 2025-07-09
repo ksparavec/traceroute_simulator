@@ -441,7 +441,7 @@ class ServiceManager:
                 pass
                 
         # Load known routers from facts
-        facts_dir = os.environ.get('TRACEROUTE_SIMULATOR_FACTS', '/tmp/traceroute_test_output')
+        facts_dir = os.environ.get('TRACEROUTE_SIMULATOR_FACTS', 'tests/tsim_facts')
         known_routers = set()
         facts_path = Path(facts_dir)
         if facts_path.exists():

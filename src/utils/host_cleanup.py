@@ -53,6 +53,69 @@ class HostCleanup:
         except (json.JSONDecodeError, IOError) as e:
             self.logger.warning(f"Could not load host registry: {e}")
             return {}
+
+    def unregister_host_from_bridge_registry(self, host_name: str):
+        """Unregister host from the bridge registry."""
+        try:
+            registry_file = Path("/tmp/traceroute_bridges_registry.json")
+            if not registry_file.exists():
+                return
+                
+            with open(registry_file, 'r') as f:
+                bridge_registry = json.load(f)
+            
+            # Find and remove host from all bridges
+            for bridge_name, bridge_info in bridge_registry.items():
+                hosts = bridge_info.get('hosts', {})
+                if host_name in hosts:
+                    del hosts[host_name]
+                    self.logger.debug(f"Unregistered host {host_name} from bridge {bridge_name}")
+            
+            # Save updated registry
+            with open(registry_file, 'w') as f:
+                json.dump(bridge_registry, f, indent=2)
+                
+        except Exception as e:
+            self.logger.error(f"Error unregistering host from bridge registry: {e}")
+
+    def unregister_host_from_router_and_interface_registries(self, host_name: str):
+        """Unregister host from router and interface registries."""
+        try:
+            # Load router registry
+            router_registry_file = Path("/tmp/traceroute_routers_registry.json")
+            if not router_registry_file.exists():
+                return
+                
+            with open(router_registry_file, 'r') as f:
+                router_registry = json.load(f)
+            
+            # Find host code
+            host_code = router_registry.get(host_name)
+            if not host_code:
+                self.logger.debug(f"Host {host_name} not found in router registry")
+                return
+            
+            # Remove host from router registry
+            del router_registry[host_name]
+            with open(router_registry_file, 'w') as f:
+                json.dump(router_registry, f, indent=2)
+            self.logger.debug(f"Unregistered host {host_name} from router registry")
+            
+            # Load and update interface registry
+            interface_registry_file = Path("/tmp/traceroute_interfaces_registry.json")
+            if interface_registry_file.exists():
+                with open(interface_registry_file, 'r') as f:
+                    interface_registry = json.load(f)
+                
+                # Remove host's interfaces from registry
+                if host_code in interface_registry:
+                    del interface_registry[host_code]
+                    with open(interface_registry_file, 'w') as f:
+                        json.dump(interface_registry, f, indent=2)
+                    self.logger.debug(f"Unregistered interfaces for host {host_name} ({host_code})")
+                
+        except Exception as e:
+            self.logger.error(f"Error unregistering host from router/interface registries: {e}")
             
     def run_command(self, command: str, check: bool = True) -> subprocess.CompletedProcess:
         """Execute command."""
@@ -127,6 +190,10 @@ class HostCleanup:
         for host_name, host_config in registry.items():
             try:
                 self.cleanup_host_resources(host_name, host_config)
+                # Unregister from bridge registry
+                self.unregister_host_from_bridge_registry(host_name)
+                # Unregister from router and interface registries
+                self.unregister_host_from_router_and_interface_registries(host_name)
                 success_count += 1
                 if self.verbose >= 1:
                     print(f"✓ Removed host {host_name}")

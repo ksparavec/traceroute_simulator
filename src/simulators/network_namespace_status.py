@@ -14,13 +14,13 @@ Features:
 - Live namespace status overview only
 
 Usage:
-    python3 network_namespace_status.py <namespace_name> <function>
-    python3 network_namespace_status.py all summary
-    python3 network_namespace_status.py <router> interfaces
-    python3 network_namespace_status.py <router> routes
-    python3 network_namespace_status.py <host> summary
-    python3 network_namespace_status.py <router> rules
-    python3 network_namespace_status.py <router> ipsets
+    python3 network_namespace_status.py [function] [--limit <pattern>]
+    python3 network_namespace_status.py summary                          # Overview of all namespaces (default)
+    python3 network_namespace_status.py interfaces --limit hq-gw         # Interfaces for specific router
+    python3 network_namespace_status.py routes --limit "*-core"          # Routes for core routers
+    python3 network_namespace_status.py summary --limit "hq-*"           # Summary for HQ routers
+    python3 network_namespace_status.py rules --limit br-gw              # Policy rules for specific router
+    python3 network_namespace_status.py ipsets --limit dc-srv            # Ipsets for specific router
 
 Functions:
     interfaces  - Show live IP configuration (ip addr show equivalent)
@@ -572,7 +572,7 @@ class NetworkNamespaceStatus:
         return result.stdout
         
     def show_summary(self, namespace: str) -> str:
-        """Show brief summary of namespace configuration."""
+        """Show brief summary of namespace configuration with counts only."""
         if namespace not in self.available_namespaces:
             # For non-existent namespaces, we can't determine the type, so use generic term
             if namespace in self.hosts:
@@ -602,51 +602,59 @@ class NetworkNamespaceStatus:
         else:
             summary_lines.append(f"  Type: Router")
         
-        # Show interface addresses from ip addr show
+        # Count interfaces
         summary_lines.append("")
-        summary_lines.append("  Interfaces:")
-        addr_result = self.run_command("ip addr show", namespace=namespace, check=False)
+        addr_result = self.run_command("ip -j addr show", namespace=namespace, check=False)
         if addr_result.returncode == 0:
-            for line in addr_result.stdout.split('\n'):
-                if line:  # Include lines with any content, preserving original indentation
-                    summary_lines.append(f"    {line}")
+            try:
+                interfaces = json.loads(addr_result.stdout)
+                # Count only non-loopback interfaces
+                iface_count = len([iface for iface in interfaces if iface.get('ifname') != 'lo'])
+                summary_lines.append(f"  Interfaces: {iface_count}")
+            except json.JSONDecodeError:
+                # Fallback to counting lines method
+                addr_result = self.run_command("ip addr show", namespace=namespace, check=False)
+                if addr_result.returncode == 0:
+                    # Count lines that start with a number (interface definitions)
+                    iface_count = len([line for line in addr_result.stdout.split('\n') 
+                                     if re.match(r'^\d+:', line) and 'lo:' not in line])
+                    summary_lines.append(f"  Interfaces: {iface_count}")
+                else:
+                    summary_lines.append("  Interfaces: (failed to retrieve)")
         else:
-            summary_lines.append("    (failed to retrieve)")
+            summary_lines.append("  Interfaces: (failed to retrieve)")
         
-        # Show actual policy rules
-        summary_lines.append("")
-        summary_lines.append("  Policy Rules:")
+        # Count policy rules
         rules_result = self.run_command("ip rule show", namespace=namespace, check=False)
         if rules_result.returncode == 0:
-            for line in rules_result.stdout.split('\n'):
-                if line.strip():
-                    summary_lines.append(f"    {line.strip()}")
+            rule_count = len([line for line in rules_result.stdout.split('\n') if line.strip()])
+            summary_lines.append(f"  Policy rules: {rule_count}")
         else:
-            summary_lines.append("    (failed to retrieve)")
+            summary_lines.append("  Policy rules: (failed to retrieve)")
             
-        # Show all routing tables
-        summary_lines.append("")
-        summary_lines.append("  Routing Tables:")
+        # Count routes per routing table
+        summary_lines.append("  Routing tables:")
         
         # Discover all routing tables dynamically
         discovered_tables = self._discover_routing_tables(namespace)
         
         for table_id, table_name in discovered_tables:
             if table_name == 'main':
-                summary_lines.append(f"    Main routing table:")
                 result = self.run_command("ip route show", namespace=namespace, check=False)
             else:
-                summary_lines.append(f"    Table {table_id} ({table_name}):")
                 result = self.run_command(f"ip route show table {table_id}", namespace=namespace, check=False)
             
             if result.returncode == 0 and result.stdout.strip():
-                for line in result.stdout.split('\n'):
-                    if line.strip():
-                        summary_lines.append(f"      {line.strip()}")
+                route_count = len([line for line in result.stdout.split('\n') if line.strip()])
+                if table_name == 'main':
+                    summary_lines.append(f"    main: {route_count} routes")
+                else:
+                    summary_lines.append(f"    {table_name} (id {table_id}): {route_count} routes")
             else:
-                summary_lines.append(f"      (failed to retrieve)")
-            
-            summary_lines.append("")  # Add blank line between tables
+                if table_name == 'main':
+                    summary_lines.append(f"    main: (failed to retrieve)")
+                else:
+                    summary_lines.append(f"    {table_name} (id {table_id}): (failed to retrieve)")
             
         # Get iptables totals using iptables-save
         summary_lines.append("")
@@ -908,18 +916,18 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  %(prog)s all summary                    # Overview of all live namespaces
-  %(prog)s <router> interfaces            # Live interface config for router
-  %(prog)s <router> routes               # Live routing table for router
-  %(prog)s <host> summary                # Live host summary for host
-  %(prog)s <host> interfaces             # Live interface config for host
-  %(prog)s <router> rules                # Live policy rules for router
-  %(prog)s <router> iptables             # Live iptables configuration for router
-  %(prog)s <router> ipsets               # Live ipset configuration for router
-  %(prog)s <router> all                  # Complete live config for router
-  %(prog)s <router> interfaces -v        # Live interface config with basic verbosity
-  %(prog)s all summary -vv               # Live overview with info messages
-  %(prog)s <router> routes -vvv          # Live routing table with debug output
+  %(prog)s summary                          # Overview of all live namespaces (default)
+  %(prog)s interfaces --limit hq-gw         # Live interface config for specific router
+  %(prog)s routes --limit br-core           # Live routing table for specific router
+  %(prog)s summary --limit "hq-*"           # Live summary for routers matching pattern
+  %(prog)s interfaces --limit web1          # Live interface config for host
+  %(prog)s rules --limit "*-core"           # Live policy rules for core routers
+  %(prog)s iptables --limit hq-gw           # Live iptables configuration for router
+  %(prog)s ipsets --limit hq-core           # Live ipset configuration for router
+  %(prog)s all --limit dc-srv               # Complete live config for router
+  %(prog)s interfaces --limit hq-gw -v      # Live interface config with basic verbosity
+  %(prog)s summary -vv                      # Live overview with info messages
+  %(prog)s routes --limit "*" -vvv          # Live routing table for all with debug output
   
 Functions:
   interfaces  - Live IP configuration (ip addr show equivalent)
@@ -927,8 +935,13 @@ Functions:
   rules       - Live policy rules (ip rule show equivalent)
   iptables    - Live iptables configuration (iptables -L equivalent)
   ipsets      - Live ipset configuration (ipset list equivalent)  
-  summary     - Brief live overview
+  summary     - Brief live overview (default if no function specified)
   all         - Complete live configuration
+  
+Limit Options:
+  --limit <pattern>  - Limit to specific namespaces (supports glob patterns)
+                       If not specified, shows all namespaces
+                       Examples: "hq-gw", "br-*", "*-core", "web1"
   
 Verbosity Levels:
   (none)  - Silent mode: minimal output
@@ -942,16 +955,18 @@ Environment Variables:
     )
     
     parser.add_argument(
-        'namespace',
+        'function',
         type=str,
-        help='Namespace name (router or host) or "all" for all namespaces'
+        nargs='?',
+        default='summary',
+        choices=['interfaces', 'routes', 'rules', 'iptables', 'ipsets', 'summary', 'all'],
+        help='Live information to display (default: summary)'
     )
     
     parser.add_argument(
-        'function',
+        '--limit',
         type=str,
-        choices=['interfaces', 'routes', 'rules', 'iptables', 'ipsets', 'summary', 'all'],
-        help='Live information to display'
+        help='Limit to specific namespaces (supports glob patterns like "hq-*", "*-core")'
     )
     
     parser.add_argument(
@@ -986,47 +1001,71 @@ Environment Variables:
     try:
         status_tool = NetworkNamespaceStatus(facts_dir, args.verbose)
         
+        # Get target namespaces based on --limit parameter
+        active_routers = [ns for ns in status_tool.known_routers if ns in status_tool.available_namespaces]
+        active_hosts = [ns for ns in status_tool.hosts.keys() if ns in status_tool.available_namespaces]
+        all_active_entities = active_routers + active_hosts
+        
+        if args.limit:
+            # Apply glob pattern matching
+            import fnmatch
+            target_namespaces = []
+            for ns in all_active_entities:
+                if fnmatch.fnmatch(ns, args.limit):
+                    target_namespaces.append(ns)
+            if not target_namespaces:
+                print(f"No namespaces found matching pattern: {args.limit}")
+                sys.exit(0)
+        else:
+            # No limit specified - show all
+            target_namespaces = all_active_entities
+        
+        # Sort namespaces for consistent output
+        target_namespaces = sorted(target_namespaces)
+        
         if args.json:
             # JSON output mode
-            if args.namespace == 'all':
-                # Collect data for known routers and hosts only
-                data = {}
-                # Get only known routers and hosts that are actually running
-                active_routers = [ns for ns in status_tool.known_routers if ns in status_tool.available_namespaces]
-                active_hosts = [ns for ns in status_tool.hosts.keys() if ns in status_tool.available_namespaces]
-                all_active_entities = sorted(active_routers + active_hosts)
-                
-                for namespace in all_active_entities:
-                    if args.function == 'interfaces':
-                        data[namespace] = status_tool.get_interfaces_data(namespace)
-                    elif args.function in ['routes', 'rules', 'iptables', 'ipsets', 'summary', 'all']:
-                        # For now, just return interfaces for JSON mode
-                        # TODO: Implement get_routes_data, get_rules_data, etc.
-                        data[namespace] = {"error": f"JSON output for '{args.function}' not yet implemented"}
-                output = json.dumps(data, indent=2)
-            else:
-                # Single namespace
+            data = {}
+            for namespace in target_namespaces:
                 if args.function == 'interfaces':
-                    data = status_tool.get_interfaces_data(args.namespace)
-                else:
-                    data = {"error": f"JSON output for '{args.function}' not yet implemented"}
-                output = json.dumps(data, indent=2)
+                    data[namespace] = status_tool.get_interfaces_data(namespace)
+                elif args.function in ['routes', 'rules', 'iptables', 'ipsets', 'summary', 'all']:
+                    # For now, just return interfaces for JSON mode
+                    # TODO: Implement get_routes_data, get_rules_data, etc.
+                    data[namespace] = {"error": f"JSON output for '{args.function}' not yet implemented"}
+            output = json.dumps(data, indent=2)
         else:
-            # Text output mode (existing code)
-            if args.namespace == 'all' and args.function == 'summary':
+            # Text output mode
+            if args.function == 'summary' and not args.limit:
+                # Special case: summary with no limit shows the all summary view
                 output = status_tool.show_all_summary()
-            elif args.namespace == 'all':
-                # Show function for known routers and hosts only
+            elif len(target_namespaces) == 1:
+                # Single namespace - show without headers
+                namespace = target_namespaces[0]
+                if args.function == 'interfaces':
+                    output = status_tool.show_interfaces(namespace)
+                elif args.function == 'routes':
+                    output = status_tool.show_routes(namespace)
+                elif args.function == 'rules':
+                    output = status_tool.show_rules(namespace)
+                elif args.function == 'iptables':
+                    output = status_tool.show_iptables(namespace)
+                elif args.function == 'ipsets':
+                    output = status_tool.show_ipsets(namespace)
+                elif args.function == 'summary':
+                    output = status_tool.show_summary(namespace)
+                elif args.function == 'all':
+                    output = status_tool.show_all_configuration(namespace)
+                else:
+                    print(f"Unknown function: {args.function}")
+                    sys.exit(1)
+            else:
+                # Multiple namespaces - show with headers
                 output_sections = []
-                # Get only known routers and hosts that are actually running
-                active_routers = [ns for ns in status_tool.known_routers if ns in status_tool.available_namespaces]
-                active_hosts = [ns for ns in status_tool.hosts.keys() if ns in status_tool.available_namespaces]
                 
                 # For ipsets, only show routers (not hosts)
                 if args.function == 'ipsets':
-                    target_namespaces = sorted(active_routers)
-                else:
-                    target_namespaces = sorted(active_routers + active_hosts)
+                    target_namespaces = [ns for ns in target_namespaces if ns in active_routers]
                 
                 for namespace in target_namespaces:
                     entity_type = "HOST" if status_tool.is_host(namespace) else "ROUTER"
@@ -1045,29 +1084,12 @@ Environment Variables:
                     elif args.function == 'ipsets':
                         output_sections.append(f"=== {namespace} {entity_type} LIVE IPSETS ===")
                         output_sections.append(status_tool.show_ipsets(namespace))
+                    elif args.function == 'summary':
+                        output_sections.append(status_tool.show_summary(namespace))
                     elif args.function == 'all':
                         output_sections.append(status_tool.show_all_configuration(namespace))
                     output_sections.append("")
                 output = '\n'.join(output_sections)
-            else:
-                # Show specific function for specific namespace
-                if args.function == 'interfaces':
-                    output = status_tool.show_interfaces(args.namespace)
-                elif args.function == 'routes':
-                    output = status_tool.show_routes(args.namespace)
-                elif args.function == 'rules':
-                    output = status_tool.show_rules(args.namespace)
-                elif args.function == 'iptables':
-                    output = status_tool.show_iptables(args.namespace)
-                elif args.function == 'ipsets':
-                    output = status_tool.show_ipsets(args.namespace)
-                elif args.function == 'summary':
-                    output = status_tool.show_summary(args.namespace)
-                elif args.function == 'all':
-                    output = status_tool.show_all_configuration(args.namespace)
-                else:
-                    print(f"Unknown function: {args.function}")
-                    sys.exit(1)
                 
         print(output)
         

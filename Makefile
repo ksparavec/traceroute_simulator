@@ -9,6 +9,13 @@ TESTS_DIR := tests
 ROUTING_FACTS_DIR := tests/tsim_facts
 ANSIBLE_DIR := ansible
 
+# Build configuration
+CC := gcc
+CFLAGS := -std=c99 -Wall -Wextra -O2 -D_GNU_SOURCE
+INSTALL_DIR := /usr/local/bin
+WRAPPER_SRC := src/utils/netns_reader.c
+WRAPPER_BIN := netns_reader
+
 # Global environment variables
 export PYTHONDONTWRITEBYTECODE := 1
 
@@ -17,7 +24,7 @@ REQUIRED_MODULES := json sys argparse ipaddress os glob typing subprocess re dif
 
 # Colors removed for better terminal compatibility
 
-.PHONY: help check-deps test test-iptables-enhanced test-policy-routing test-ipset-enhanced test-raw-facts-loading test-mtr-options test-iptables-logging test-packet-tracing test-network facts clean tsim ifa netsetup nettest netclean netshow netstatus test-namespace hostadd hostdel hostlist hostclean netnsclean service-start service-stop service-restart service-status service-test service-clean test-services svctest svcstart svcstop svclist svcclean
+.PHONY: help check-deps test test-iptables-enhanced test-policy-routing test-ipset-enhanced test-raw-facts-loading test-mtr-options test-iptables-logging test-packet-tracing test-network facts clean tsim ifa netsetup nettest netclean netshow netstatus test-namespace hostadd hostdel hostlist hostclean netnsclean service-start service-stop service-restart service-status service-test service-clean test-services svctest svcstart svcstop svclist svcclean install-wrapper
 
 # Default target
 help:
@@ -27,6 +34,7 @@ help:
 	@echo "test              - Execute all test scripts with test setup and report results (includes make targets tests)"
 	@echo "facts             - Run Ansible playbook to collect network facts (requires INVENTORY_FILE or INVENTORY)"
 	@echo "clean             - Clean up generated files and cache"
+	@echo "install-wrapper   - Build and install the netns_reader wrapper with proper capabilities (requires sudo)"
 	@echo "tsim              - Run traceroute simulator with command line arguments (e.g., make tsim ARGS='-s 10.1.1.1 -d 10.2.1.1')"
 	@echo "ifa               - Run iptables forward analyzer with command line arguments (e.g., make ifa ARGS='--router hq-gw -s 10.1.1.1 -d 8.8.8.8')"
 	@echo "netlog            - Analyze iptables logs with filtering and correlation (e.g., make netlog ARGS='--source 10.1.1.1 --dest 10.2.1.1')"
@@ -38,7 +46,7 @@ help:
 	@echo "svclist           - List all services across all namespaces (sudo -E make svclist [ARGS='-j'])"
 	@echo "svcclean          - Stop all services across all namespaces (sudo -E make svcclean)"
 	@echo "netshow           - Show static network topology from facts (e.g., make netshow ARGS='hq-gw interfaces' or 'all hosts')"
-	@echo "netstatus         - Show live namespace status (e.g., make netstatus ARGS='hq-gw interfaces' or 'all summary')"
+	@echo "netstatus         - Show live namespace status (e.g., make netstatus ARGS='interfaces --limit hq-gw' or just 'make netstatus')"
 	@echo "netclean          - Clean up namespace network simulation (requires sudo -E, ARGS='-v/-f/--force' for options)"
 	@echo "test-iptables-enhanced - Test enhanced iptables rules for ping/mtr connectivity"
 	@echo "test-policy-routing   - Test enhanced policy routing with multiple routing tables"
@@ -79,9 +87,9 @@ help:
 	@echo "  make netshow ARGS='hq-gw hosts'                                       # Show hosts connected to hq-gw from registry"
 	@echo "  make netshow ARGS='web1 summary'                                      # Show host summary for web1 from registry"
 	@echo "  make netshow ARGS='br-core routes -v'                                 # Show static routing table from facts"
-	@echo "  sudo -E make netstatus ARGS='hq-gw interfaces'                           # Show live interface config"
-	@echo "  sudo -E make netstatus ARGS='web1 summary'                               # Show live host summary"
-	@echo "  sudo -E make netstatus ARGS='all summary'                                # Show live status of all namespaces"
+	@echo "  sudo -E make netstatus                                                     # Show live summary of all namespaces (default)"
+	@echo "  sudo -E make netstatus ARGS='interfaces --limit hq-gw'                    # Show live interface config for router"
+	@echo "  sudo -E make netstatus ARGS='summary --limit \"hq-*\"'                      # Show live summary for HQ routers"
 	@echo "  sudo -E make netclean                                                     # Clean up namespace simulation (silent)"
 	@echo "  sudo -E make netclean ARGS='-v'                                          # Clean up with verbose output"
 	@echo "  sudo -E make netclean ARGS='-f'                                          # Force cleanup of stuck resources"
@@ -704,35 +712,20 @@ netshow:
 	@$(PYTHON) src/simulators/network_topology_viewer.py $(ARGS)
 
 # Show live network namespace status (requires sudo)
-# Usage: sudo -E make netstatus ARGS="<namespace> <function> [-v]"
-# Functions: interfaces, routes, rules, summary, all
-# Namespace names: any running namespace (routers or hosts) or 'all'
+# Usage: sudo -E make netstatus [ARGS="<function> [--limit <pattern>] [-v]"]
+# Functions: interfaces, routes, rules, ipsets, summary (default), all
+# Limit patterns: "hq-*", "*-core", "web1", etc. (supports glob patterns)
 netstatus:
 	@if [ "$$(id -u)" != "0" ]; then \
 		echo "Error: netstatus requires root privileges to access namespaces"; \
-		echo "Please run: sudo -E make netstatus ARGS='<namespace> <function>'"; \
+		echo "Please run: sudo -E make netstatus [ARGS='<function> [--limit <pattern>]']"; \
 		exit 1; \
 	fi
 	@if [ -z "$(ARGS)" ]; then \
-		echo "Usage: sudo -E make netstatus ARGS='<namespace> <function> [options]'"; \
-		echo ""; \
-		echo "Shows LIVE status of running namespaces only (no static facts)"; \
-		echo ""; \
-		echo "Namespace names: any running router or host namespace, or 'all'"; \
-		echo "Functions: interfaces, routes, rules, ipsets, summary, all"; \
-		echo "Options: -v (verbose debug output)"; \
-		echo ""; \
-		echo "Examples:"; \
-		echo "  sudo -E make netstatus ARGS='hq-gw interfaces'         # Show live interface config"; \
-		echo "  sudo -E make netstatus ARGS='br-core routes'           # Show live routing table"; \
-		echo "  sudo -E make netstatus ARGS='hq-core ipsets'           # Show live ipset configuration"; \
-		echo "  sudo -E make netstatus ARGS='web1 summary'             # Show live host summary"; \
-		echo "  sudo -E make netstatus ARGS='all summary'              # Show live status of all namespaces"; \
-		echo "  sudo -E make netstatus ARGS='hq-gw all'                # Show complete live config"; \
-		echo "  sudo -E make netstatus ARGS='dc-srv rules -v'          # Show live rules with verbose output"; \
-		exit 1; \
+		$(PYTHON) src/simulators/network_namespace_status.py summary; \
+	else \
+		$(PYTHON) src/simulators/network_namespace_status.py $(ARGS); \
 	fi
-	@$(PYTHON) src/simulators/network_namespace_status.py $(ARGS)
 
 # Run namespace simulation tests independently (requires sudo)
 # Usage: sudo -E make test-namespace
@@ -1151,3 +1144,33 @@ test-services:
 	@echo "Running Service Manager Test Suite"
 	@echo "=================================="
 	@$(PYTHON) -B tests/test_service_manager.py
+
+# Build and install the netns_reader wrapper with proper capabilities
+install-wrapper:
+	@echo "Building and installing netns_reader wrapper..."
+	@if [ "$$(id -u)" != "0" ]; then \
+		echo "Error: Installation requires root privileges"; \
+		echo "Please run: sudo make install-wrapper"; \
+		exit 1; \
+	fi
+	@if [ ! -f "$(WRAPPER_SRC)" ]; then \
+		echo "Error: Source file $(WRAPPER_SRC) not found"; \
+		exit 1; \
+	fi
+	@echo "Building $(WRAPPER_BIN)..."
+	@$(CC) $(CFLAGS) -o $(WRAPPER_BIN) $(WRAPPER_SRC)
+	@echo "✓ Built $(WRAPPER_BIN)"
+	@echo "Installing to $(INSTALL_DIR)..."
+	@cp $(WRAPPER_BIN) $(INSTALL_DIR)/$(WRAPPER_BIN)
+	@chown root:root $(INSTALL_DIR)/$(WRAPPER_BIN)
+	@chmod 755 $(INSTALL_DIR)/$(WRAPPER_BIN)
+	@setcap 'cap_sys_admin,cap_net_admin+ep' $(INSTALL_DIR)/$(WRAPPER_BIN)
+	@echo "✓ Installed $(WRAPPER_BIN) to $(INSTALL_DIR)"
+	@echo "✓ Set ownership: root:root"
+	@echo "✓ Set permissions: 755"
+	@echo "✓ Set capabilities: cap_sys_admin,cap_net_admin+ep"
+	@rm -f $(WRAPPER_BIN)
+	@echo "✓ Cleaned up build artifacts"
+	@echo ""
+	@echo "Installation complete!"
+	@echo "You can now use: $(INSTALL_DIR)/$(WRAPPER_BIN) <namespace> <command>"

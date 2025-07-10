@@ -966,22 +966,22 @@ hostadd:
 	@$(PYTHON) src/simulators/host_namespace_setup.py $(ARGS)
 
 # Remove host from network (requires sudo)
-# Usage: sudo -E make hostdel ARGS="--host <name> --remove"
+# Usage: sudo -E make hostdel ARGS="--host <name>"
 hostdel:
 	@if [ "$$(id -u)" != "0" ]; then \
 		echo "Error: hostdel requires root privileges"; \
-		echo "Please run: sudo -E make hostdel ARGS='--host <name> --remove'"; \
+		echo "Please run: sudo -E make hostdel ARGS='--host <name>'"; \
 		exit 1; \
 	fi
 	@if [ -z "$(ARGS)" ]; then \
-		echo "Usage: sudo -E make hostdel ARGS='--host <name> --remove'"; \
+		echo "Usage: sudo -E make hostdel ARGS='--host <name>'"; \
 		echo ""; \
 		echo "Examples:"; \
-		echo "  sudo -E make hostdel ARGS='--host web1 --remove'"; \
-		echo "  sudo -E make hostdel ARGS='--host db1 --remove -v'"; \
+		echo "  sudo -E make hostdel ARGS='--host web1'"; \
+		echo "  sudo -E make hostdel ARGS='--host db1 -v'"; \
 		exit 1; \
 	fi
-	@$(PYTHON) src/simulators/host_namespace_setup.py $(ARGS)
+	@$(PYTHON) src/simulators/host_namespace_setup.py --remove $(ARGS)
 
 # List all registered hosts (requires sudo)
 # Usage: sudo -E make hostlist
@@ -991,7 +991,7 @@ hostlist:
 		echo "Please run: sudo -E make hostlist"; \
 		exit 1; \
 	fi
-	@$(PYTHON) src/simulators/host_namespace_setup.py --list-hosts
+	@$(PYTHON) src/simulators/host_namespace_setup.py --list-hosts $(ARGS)
 
 # Clean up all registered hosts (requires sudo)
 # Usage: sudo -E make hostclean [ARGS="-v|-vv"]

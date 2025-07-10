@@ -580,6 +580,160 @@ class HostNamespaceManager:
         
         return bridge_name
 
+    def get_all_registered_ips(self) -> Dict[str, Dict]:
+        """Get all IP addresses registered in the bridge registry."""
+        try:
+            registry_file = Path("/tmp/traceroute_bridges_registry.json")
+            if not registry_file.exists():
+                return {}
+                
+            with open(registry_file, 'r') as f:
+                bridge_registry = json.load(f)
+            
+            all_ips = {}
+            
+            for bridge_name, bridge_info in bridge_registry.items():
+                # Check router IPs
+                routers = bridge_info.get('routers', {})
+                for router_name, router_info in routers.items():
+                    ip_address = router_info.get('ipv4', '')
+                    if ip_address:
+                        # Extract IP without prefix
+                        ip_without_prefix = ip_address.split('/')[0] if '/' in ip_address else ip_address
+                        all_ips[ip_without_prefix] = {
+                            'type': 'router',
+                            'name': router_name,
+                            'bridge': bridge_name,
+                            'interface': router_info.get('interface', 'unknown'),
+                            'full_ip': ip_address
+                        }
+                
+                # Check host IPs
+                hosts = bridge_info.get('hosts', {})
+                for host_name, host_info in hosts.items():
+                    ip_address = host_info.get('ipv4', '')
+                    if ip_address:
+                        # Extract IP without prefix
+                        ip_without_prefix = ip_address.split('/')[0] if '/' in ip_address else ip_address
+                        all_ips[ip_without_prefix] = {
+                            'type': 'host',
+                            'name': host_name,
+                            'bridge': bridge_name,
+                            'interface': host_info.get('interface', 'unknown'),
+                            'full_ip': ip_address
+                        }
+            
+            return all_ips
+            
+        except Exception as e:
+            self.logger.error(f"Error reading bridge registry: {e}")
+            return {}
+
+    def get_active_router_ips(self) -> Dict[str, Dict]:
+        """Get all IP addresses from active routers using netstatus tool."""
+        all_ips = {}
+        
+        try:
+            # Get all router interfaces in single call
+            result = self.run_command(
+                f"python3 {Path(__file__).parent}/network_namespace_status.py interfaces -j",
+                check=False
+            )
+            
+            if result.returncode == 0:
+                try:
+                    routers_data = json.loads(result.stdout)
+                    
+                    # Check if routers_data is a dictionary and iterate properly
+                    if isinstance(routers_data, dict):
+                        for router_name, router_info in routers_data.items():
+                            if isinstance(router_info, dict):
+                                # Get all interfaces and their IPs for this router
+                                interfaces = router_info.get('interfaces', [])
+                                for interface in interfaces:
+                                    if isinstance(interface, dict):
+                                        for addr_info in interface.get('addr_info', []):
+                                            if isinstance(addr_info, dict) and addr_info.get('family') == 'inet':
+                                                ip_addr = addr_info.get('local', '')
+                                                if ip_addr and ip_addr != '127.0.0.1':  # Skip loopback
+                                                    all_ips[ip_addr] = {
+                                                        'type': 'router',
+                                                        'name': router_name,
+                                                        'interface': interface.get('ifname', 'unknown'),
+                                                        'full_ip': f"{ip_addr}/{addr_info.get('prefixlen', 24)}"
+                                                    }
+                    else:
+                        self.logger.warning(f"Unexpected router data format: {type(routers_data)}")
+                except json.JSONDecodeError as e:
+                    self.logger.warning(f"Failed to parse router interfaces JSON output: {e}")
+        except Exception as e:
+            self.logger.warning(f"Failed to get active router IPs: {e}")
+        
+        return all_ips
+    
+    def get_active_host_ips(self) -> Dict[str, Dict]:
+        """Get all IP addresses from active hosts using hostlist tool."""
+        all_ips = {}
+        
+        try:
+            # Get all active hosts using host_namespace_setup.py with JSON output
+            result = self.run_command(
+                f"python3 {Path(__file__).resolve()} --list-hosts -j",
+                check=False
+            )
+            
+            if result.returncode == 0:
+                try:
+                    hosts_data = json.loads(result.stdout)
+                    
+                    for host_name, host_info in hosts_data.get('hosts', {}).items():
+                        if host_info.get('status') == 'running':
+                            # Add primary IP
+                            primary_ip = host_info.get('primary_ip', '')
+                            if primary_ip and '/' in primary_ip:
+                                ip_without_prefix = primary_ip.split('/')[0]
+                                all_ips[ip_without_prefix] = {
+                                    'type': 'host',
+                                    'name': host_name,
+                                    'interface': 'eth0',
+                                    'full_ip': primary_ip
+                                }
+                            
+                            # Add secondary IPs
+                            secondary_ips = host_info.get('secondary_ips', [])
+                            for i, secondary_ip in enumerate(secondary_ips):
+                                if secondary_ip and '/' in secondary_ip:
+                                    ip_without_prefix = secondary_ip.split('/')[0]
+                                    all_ips[ip_without_prefix] = {
+                                        'type': 'host',
+                                        'name': host_name,
+                                        'interface': f'dummy{i}',
+                                        'full_ip': secondary_ip
+                                    }
+                except json.JSONDecodeError:
+                    self.logger.warning("Failed to parse host list JSON output")
+        except Exception as e:
+            self.logger.warning(f"Failed to get active host IPs: {e}")
+        
+        return all_ips
+
+    def check_ip_collision(self, ip_address: str) -> Tuple[bool, Dict]:
+        """Check if an IP address is already in use by any router or host using active status."""
+        # Extract IP without prefix if provided
+        ip_without_prefix = ip_address.split('/')[0] if '/' in ip_address else ip_address
+        
+        # Check active router IPs
+        router_ips = self.get_active_router_ips()
+        if ip_without_prefix in router_ips:
+            return True, router_ips[ip_without_prefix]
+        
+        # Check active host IPs
+        host_ips = self.get_active_host_ips()
+        if ip_without_prefix in host_ips:
+            return True, host_ips[ip_without_prefix]
+        
+        return False, {}
+
     def create_mesh_connection(self, host_name: str, primary_ip: str) -> Tuple[bool, Dict]:
         """Connect host directly to specific mesh bridge in simulation namespace."""
         
@@ -650,6 +804,29 @@ class HostNamespaceManager:
         except ipaddress.AddressValueError as e:
             self.logger.error(f"Invalid primary IP format: {e}")
             return False
+            
+        # Check for IP collision on primary IP
+        collision_detected, collision_info = self.check_ip_collision(primary_ip)
+        if collision_detected:
+            entity_type = collision_info.get('type', 'unknown')
+            entity_name = collision_info.get('name', 'unknown')
+            entity_interface = collision_info.get('interface', 'unknown')
+            full_ip = collision_info.get('full_ip', primary_ip)
+            
+            error_msg = f"IP address collision detected: {primary_ip.split('/')[0]} is already in use by {entity_type} '{entity_name}' on interface '{entity_interface}' (configured as {full_ip})"
+            raise ValueError(error_msg)
+            
+        # Check for IP collision on secondary IPs
+        for secondary_ip in secondary_ips:
+            collision_detected, collision_info = self.check_ip_collision(secondary_ip)
+            if collision_detected:
+                entity_type = collision_info.get('type', 'unknown')
+                entity_name = collision_info.get('name', 'unknown')
+                entity_interface = collision_info.get('interface', 'unknown')
+                full_ip = collision_info.get('full_ip', secondary_ip)
+                
+                error_msg = f"IP address collision detected: {secondary_ip.split('/')[0]} is already in use by {entity_type} '{entity_name}' on interface '{entity_interface}' (configured as {full_ip})"
+                raise ValueError(error_msg)
             
         # Validate router interface option
         if router_interface and not connect_to:
@@ -764,6 +941,9 @@ class HostNamespaceManager:
                     
             return True
             
+        except ValueError as e:
+            # IP collision or other validation error - no cleanup needed since nothing was created
+            return False
         except subprocess.CalledProcessError as e:
             self.logger.error(f"Failed to create host {host_name}: {e}")
             # Cleanup on failure
@@ -870,29 +1050,55 @@ class HostNamespaceManager:
         except Exception as e:
             self.logger.debug(f"Error during cleanup: {e}")
             
-    def list_hosts(self) -> bool:
+    def list_hosts(self, json_output: bool = False) -> bool:
         """List all registered hosts."""
         registry = self.load_host_registry()
         
         if not registry:
-            print("No hosts currently registered")
+            if json_output:
+                print(json.dumps({"hosts": {}, "count": 0}))
+            else:
+                print("No hosts currently registered")
             return True
-            
-        print(f"Registered hosts ({len(registry)}):")
-        print("=" * 50)
         
-        for host_name, config in sorted(registry.items()):
-            status = "running" if host_name in self.available_namespaces else "stopped"
-            print(f"Host: {host_name} [{status}]")
-            print(f"  Primary IP: {config.get('primary_ip', 'unknown')}")
-            print(f"  Connected to: {config.get('connected_to', 'unknown')} (gateway: {config.get('gateway_ip', 'unknown')})")
+        if json_output:
+            # JSON output format
+            hosts_data = {}
+            for host_name, config in sorted(registry.items()):
+                status = "running" if host_name in self.available_namespaces else "stopped"
+                hosts_data[host_name] = {
+                    "status": status,
+                    "primary_ip": config.get('primary_ip', 'unknown'),
+                    "connected_to": config.get('connected_to', 'unknown'),
+                    "gateway_ip": config.get('gateway_ip', 'unknown'),
+                    "secondary_ips": config.get('secondary_ips', []),
+                    "created_at": config.get('created_at', 'unknown'),
+                    "connection_type": config.get('connection_type', 'unknown'),
+                    "mesh_bridge": config.get('mesh_bridge', 'unknown')
+                }
             
-            secondary_ips = config.get('secondary_ips', [])
-            if secondary_ips:
-                print(f"  Secondary IPs: {', '.join(secondary_ips)}")
+            output = {
+                "hosts": hosts_data,
+                "count": len(registry)
+            }
+            print(json.dumps(output, indent=2))
+        else:
+            # Text output format
+            print(f"Registered hosts ({len(registry)}):")
+            print("=" * 50)
+            
+            for host_name, config in sorted(registry.items()):
+                status = "running" if host_name in self.available_namespaces else "stopped"
+                print(f"Host: {host_name} [{status}]")
+                print(f"  Primary IP: {config.get('primary_ip', 'unknown')}")
+                print(f"  Connected to: {config.get('connected_to', 'unknown')} (gateway: {config.get('gateway_ip', 'unknown')})")
                 
-            print(f"  Created: {config.get('created_at', 'unknown')}")
-            print()
+                secondary_ips = config.get('secondary_ips', [])
+                if secondary_ips:
+                    print(f"  Secondary IPs: {', '.join(secondary_ips)}")
+                    
+                print(f"  Created: {config.get('created_at', 'unknown')}")
+                print()
             
         return True
         
@@ -958,6 +1164,8 @@ Notes:
     # General arguments
     parser.add_argument('-v', '--verbose', action='count', default=0,
                        help='Increase verbosity (-v for info, -vv for debug)')
+    parser.add_argument('-j', '--json', action='store_true',
+                       help='Output in JSON format (applies to --list-hosts)')
     
     args = parser.parse_args()
     
@@ -995,7 +1203,7 @@ Notes:
             sys.exit(0 if success else 1)
             
         elif args.list_hosts:
-            success = manager.list_hosts()
+            success = manager.list_hosts(json_output=args.json)
             sys.exit(0 if success else 1)
             
     except Exception as e:

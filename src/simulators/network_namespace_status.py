@@ -571,6 +571,121 @@ class NetworkNamespaceStatus:
             
         return result.stdout
         
+    def get_summary_data(self, namespace: str) -> Dict[str, Any]:
+        """Get summary data for a namespace in structured format, matching text summary exactly."""
+        if namespace not in self.available_namespaces:
+            return {
+                "namespace": namespace,
+                "status": "not_found",
+                "error": f"Namespace {namespace} not found"
+            }
+            
+        entity_type = "host" if self.is_host(namespace) else "router"
+        summary_data = {
+            "namespace": namespace,
+            "type": entity_type,
+            "status": "running"
+        }
+        
+        # Add host-specific information if this is a host
+        if self.is_host(namespace):
+            host_config = self.hosts[namespace]
+            summary_data.update({
+                "primary_ip": host_config.get('primary_ip', 'unknown'),
+                "connected_to": host_config.get('connected_to', 'unknown'),
+                "gateway_ip": host_config.get('gateway_ip', 'unknown'),
+                "secondary_ips": host_config.get('secondary_ips', []),
+                "created_at": host_config.get('created_at', 'unknown')
+            })
+        
+        # Count interfaces (same as text version)
+        addr_result = self.run_command("ip -j addr show", namespace=namespace, check=False)
+        if addr_result.returncode == 0:
+            try:
+                interfaces = json.loads(addr_result.stdout)
+                # Count only non-loopback interfaces
+                iface_count = len([iface for iface in interfaces if iface.get('ifname') != 'lo'])
+                summary_data["interface_count"] = iface_count
+            except json.JSONDecodeError:
+                # Fallback to counting lines method
+                addr_result = self.run_command("ip addr show", namespace=namespace, check=False)
+                if addr_result.returncode == 0:
+                    # Count lines that start with a number (interface definitions)
+                    iface_count = len([line for line in addr_result.stdout.split('\n') 
+                                     if re.match(r'^\d+:', line) and 'lo:' not in line])
+                    summary_data["interface_count"] = iface_count
+                else:
+                    summary_data["interface_count"] = "failed to retrieve"
+        else:
+            summary_data["interface_count"] = "failed to retrieve"
+        
+        # Count policy rules (same as text version)
+        rules_result = self.run_command("ip rule show", namespace=namespace, check=False)
+        if rules_result.returncode == 0:
+            rule_count = len([line for line in rules_result.stdout.split('\n') if line.strip()])
+            summary_data["policy_rules"] = rule_count
+        else:
+            summary_data["policy_rules"] = "failed to retrieve"
+            
+        # Count routes per routing table (same as text version)
+        routing_tables = {}
+        discovered_tables = self._discover_routing_tables(namespace)
+        
+        for table_id, table_name in discovered_tables:
+            if table_name == 'main':
+                result = self.run_command("ip route show", namespace=namespace, check=False)
+            else:
+                result = self.run_command(f"ip route show table {table_id}", namespace=namespace, check=False)
+            
+            if result.returncode == 0 and result.stdout.strip():
+                route_count = len([line for line in result.stdout.split('\n') if line.strip()])
+                if table_name == 'main':
+                    routing_tables["main"] = route_count
+                else:
+                    routing_tables[f"{table_name} (id {table_id})"] = route_count
+            else:
+                if table_name == 'main':
+                    routing_tables["main"] = "failed to retrieve"
+                else:
+                    routing_tables[f"{table_name} (id {table_id})"] = "failed to retrieve"
+        
+        summary_data["routing_tables"] = routing_tables
+        
+        # Get iptables totals using iptables-save (same as text version)
+        iptables_result = self.run_command("iptables-save", namespace=namespace, check=False)
+        if iptables_result.returncode == 0:
+            table_counts = {}
+            current_table = None
+            total_rules = 0
+            
+            for line in iptables_result.stdout.split('\n'):
+                # Start of table
+                table_match = re.match(r'^\*(\w+)', line)
+                if table_match:
+                    current_table = table_match.group(1)
+                    table_counts[current_table] = 0
+                # Actual rule (starts with -A)
+                elif line.startswith('-A ') and current_table:
+                    table_counts[current_table] += 1
+                    total_rules += 1
+            
+            summary_data["iptables"] = {
+                "total_rules": total_rules,
+                "table_counts": {table: count for table, count in table_counts.items() if count > 0}
+            }
+        else:
+            summary_data["iptables"] = "failed to retrieve"
+        
+        # Get ipsets count (same as text version)
+        ipset_result = self.run_command("ipset list -n", namespace=namespace, check=False)
+        if ipset_result.returncode == 0:
+            ipset_count = len([line for line in ipset_result.stdout.split('\n') if line.strip()])
+            summary_data["ipsets"] = ipset_count
+        else:
+            summary_data["ipsets"] = "failed to retrieve"
+            
+        return summary_data
+        
     def show_summary(self, namespace: str) -> str:
         """Show brief summary of namespace configuration with counts only."""
         if namespace not in self.available_namespaces:
@@ -1029,7 +1144,9 @@ Environment Variables:
             for namespace in target_namespaces:
                 if args.function == 'interfaces':
                     data[namespace] = status_tool.get_interfaces_data(namespace)
-                elif args.function in ['routes', 'rules', 'iptables', 'ipsets', 'summary', 'all']:
+                elif args.function == 'summary':
+                    data[namespace] = status_tool.get_summary_data(namespace)
+                elif args.function in ['routes', 'rules', 'iptables', 'ipsets', 'all']:
                     # For now, just return interfaces for JSON mode
                     # TODO: Implement get_routes_data, get_rules_data, etc.
                     data[namespace] = {"error": f"JSON output for '{args.function}' not yet implemented"}

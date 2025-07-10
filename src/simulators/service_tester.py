@@ -37,73 +37,111 @@ class ServiceTester:
         self.ip_to_namespace = self._build_ip_namespace_map()
         
     def _load_known_routers(self) -> set:
-        """Load list of known routers from facts directory."""
+        """Load list of active routers from bridge registry."""
         routers = set()
-        if self.facts_dir.exists():
-            for facts_file in self.facts_dir.glob("*.json"):
-                if "_metadata.json" not in facts_file.name and "_" not in facts_file.stem:
-                    routers.add(facts_file.stem)
+        try:
+            registry_file = Path("/tmp/traceroute_bridges_registry.json")
+            if registry_file.exists():
+                with open(registry_file, 'r') as f:
+                    bridge_registry = json.load(f)
+                
+                for bridge_name, bridge_info in bridge_registry.items():
+                    router_data = bridge_info.get('routers', {})
+                    for router_name in router_data.keys():
+                        routers.add(router_name)
+                        
+        except (json.JSONDecodeError, IOError) as e:
+            if self.verbose >= 1:
+                print(f"Warning: Error loading bridge registry: {e}")
+        
         return routers
         
     def _load_known_hosts(self) -> Dict[str, Dict]:
         """Load registered hosts from host registry."""
-        host_registry_file = Path("/tmp/traceroute_hosts_registry.json")
-        if host_registry_file.exists():
-            try:
+        hosts = {}
+        try:
+            host_registry_file = Path("/tmp/traceroute_hosts_registry.json")
+            if host_registry_file.exists():
                 with open(host_registry_file, 'r') as f:
-                    return json.load(f)
-            except (json.JSONDecodeError, IOError):
-                pass
-        return {}
+                    hosts = json.load(f)
+        except (json.JSONDecodeError, IOError) as e:
+            if self.verbose >= 1:
+                print(f"Warning: Error loading host registry: {e}")
+        
+        return hosts
         
     def _is_user_namespace(self, namespace: str) -> bool:
         """Check if namespace is a known router or host (not a system namespace)."""
         return namespace in self.known_routers or namespace in self.known_hosts
         
     def _build_ip_namespace_map(self) -> Dict[str, str]:
-        """Build a map of IP addresses to namespace names using live namespace status."""
+        """Build a map of IP addresses to namespace names using bridge and host registries."""
         ip_map = {}
         
-        # Get live namespace information using JSON output
+        # Get router IPs from bridge registry
         try:
-            cmd = [
-                sys.executable,
-                str(Path(__file__).parent / "network_namespace_status.py"),
-                "all", "interfaces", "-j"
-            ]
-            
-            # Set environment variable
-            env = os.environ.copy()
-            env['TRACEROUTE_SIMULATOR_FACTS'] = str(self.facts_dir)
-            
-            result = subprocess.run(cmd, capture_output=True, text=True, env=env)
-            if result.returncode != 0:
-                if self.verbose >= 1:
-                    print(f"Warning: Could not get namespace status: {result.stderr}")
-                return ip_map
+            registry_file = Path("/tmp/traceroute_bridges_registry.json")
+            if registry_file.exists():
+                with open(registry_file, 'r') as f:
+                    bridge_registry = json.load(f)
                 
-            # Parse JSON output
-            try:
-                data = json.loads(result.stdout)
-                for namespace, ns_data in data.items():
-                    # Only include known routers and hosts, skip system namespaces
-                    if self._is_user_namespace(namespace) and "interfaces" in ns_data:
-                        for iface_name, iface_data in ns_data["interfaces"].items():
-                            for address in iface_data.get("addresses", []):
-                                # Extract IP without CIDR notation
-                                if "/" in address:
-                                    ip = address.split("/")[0]
-                                    if ip != "127.0.0.1":  # Skip loopback
-                                        ip_map[ip] = namespace
-                                        if self.verbose >= 2:
-                                            print(f"Found IP {ip} in namespace {namespace}")
-            except json.JSONDecodeError as e:
-                if self.verbose >= 1:
-                    print(f"Warning: Failed to parse JSON output: {e}")
+                for bridge_name, bridge_info in bridge_registry.items():
+                    # Get router IPs
+                    routers = bridge_info.get('routers', {})
+                    for router_name, router_info in routers.items():
+                        ip_address = router_info.get('ipv4', '')
+                        if ip_address and '/' in ip_address:
+                            ip = ip_address.split('/')[0]
+                            if ip and ip != "127.0.0.1":
+                                ip_map[ip] = router_name
+                                if self.verbose >= 3:
+                                    print(f"Found router IP {ip} in namespace {router_name}")
                     
-        except Exception as e:
+                    # Get host IPs from bridge registry
+                    hosts = bridge_info.get('hosts', {})
+                    for host_name, host_info in hosts.items():
+                        ip_address = host_info.get('ipv4', '')
+                        if ip_address and '/' in ip_address:
+                            ip = ip_address.split('/')[0]
+                            if ip and ip != "127.0.0.1":
+                                ip_map[ip] = host_name
+                                if self.verbose >= 3:
+                                    print(f"Found host IP {ip} in namespace {host_name}")
+                                    
+        except (json.JSONDecodeError, IOError) as e:
             if self.verbose >= 1:
-                print(f"Warning: Error getting namespace status: {e}")
+                print(f"Warning: Error loading bridge registry: {e}")
+        
+        # Get additional host IPs from host registry (for secondary IPs)
+        try:
+            host_registry_file = Path("/tmp/traceroute_hosts_registry.json")
+            if host_registry_file.exists():
+                with open(host_registry_file, 'r') as f:
+                    host_registry = json.load(f)
+                
+                for host_name, host_info in host_registry.items():
+                    # Add primary IP (might override bridge registry, but should be same)
+                    primary_ip = host_info.get('primary_ip', '')
+                    if primary_ip and '/' in primary_ip:
+                        ip = primary_ip.split('/')[0]
+                        if ip and ip != "127.0.0.1":
+                            ip_map[ip] = host_name
+                            if self.verbose >= 3:
+                                print(f"Found host primary IP {ip} in namespace {host_name}")
+                    
+                    # Add secondary IPs (only available in host registry)
+                    secondary_ips = host_info.get('secondary_ips', [])
+                    for secondary_ip in secondary_ips:
+                        if secondary_ip and '/' in secondary_ip:
+                            ip = secondary_ip.split('/')[0]
+                            if ip and ip != "127.0.0.1":
+                                ip_map[ip] = host_name
+                                if self.verbose >= 3:
+                                    print(f"Found host secondary IP {ip} in namespace {host_name}")
+                                    
+        except (json.JSONDecodeError, IOError) as e:
+            if self.verbose >= 1:
+                print(f"Warning: Error loading host registry: {e}")
                 
         return ip_map
     
@@ -228,6 +266,7 @@ class ServiceTester:
         # Find service with matching namespace, IP and port
         service_found = False
         service_name = None
+        service_protocol = None
         
         for key, config in registry.items():
             if (config.get('namespace') == namespace and 
@@ -235,6 +274,7 @@ class ServiceTester:
                 config.get('port') == port):
                 service_found = True
                 service_name = config.get('name', f'svc-{port}')
+                service_protocol = config.get('protocol', 'tcp')
                 break
                 
         if not service_found:
@@ -245,7 +285,7 @@ class ServiceTester:
             
         # Stop the service
         manager = ServiceManager(self.verbose)
-        manager.stop_service(namespace, service_name, port)
+        manager.stop_service(namespace, service_name, port, service_protocol)
         
         if self.verbose >= 1:
             print(f"Service stopped on {ip}:{port} in namespace {namespace}")
@@ -320,6 +360,14 @@ def main():
             return 2
             
     except Exception as e:
+        # Check if it's a service-related error (should return 1) vs configuration error (should return 2)
+        from src.simulators.service_manager import ServiceError
+        
+        if isinstance(e, ServiceError):
+            exit_code = 1  # Service operation failed
+        else:
+            exit_code = 2  # Configuration or system error
+            
         if args.verbose >= 2:
             import traceback
             traceback.print_exc()
@@ -328,7 +376,7 @@ def main():
         else:
             # In silent mode, print minimal error to stderr
             print(f"Error: {e}", file=sys.stderr)
-        return 2
+        return exit_code
 
 
 if __name__ == "__main__":

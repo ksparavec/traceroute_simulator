@@ -207,8 +207,10 @@ class ServiceManager:
         with open(self.registry_file, 'w') as f:
             json.dump(data, f, indent=2)
     
-    def _get_service_key(self, namespace: str, name: str, port: int) -> str:
+    def _get_service_key(self, namespace: str, name: str, port: int, protocol: str = None) -> str:
         """Generate unique service key."""
+        if protocol:
+            return f"{namespace}:{name}:{port}:{protocol}"
         return f"{namespace}:{name}:{port}"
     
     def _check_socat_available(self) -> None:
@@ -236,16 +238,17 @@ class ServiceManager:
             )
     
     def _is_port_available(self, namespace: str, port: int, protocol: str) -> bool:
-        """Check if port is available in namespace."""
-        # Use ss to check all listeners (TCP and UDP) on the specified port
+        """Check if port is available for the specific protocol in namespace."""
+        # Use ss to check specific protocol listeners on the specified port
+        protocol_flag = "-t" if protocol.lower() == "tcp" else "-u"
         cmd = [
             "ip", "netns", "exec", namespace,
-            "sh", "-c", f"ss -tunl | grep ':{port}\\s'"
+            "sh", "-c", f"ss {protocol_flag}nl | grep ':{port}\\s'"
         ]
         
         try:
             result = subprocess.run(cmd, capture_output=True, text=True)
-            # If grep finds anything, the port is in use
+            # If grep finds anything, the port is in use for this protocol
             return result.returncode != 0  # grep returns 0 if found, 1 if not found
         except subprocess.CalledProcessError:
             # If command fails, assume port is available
@@ -271,10 +274,12 @@ class ServiceManager:
         self._check_namespace_exists(config.namespace)
         
         # Check if service already running
-        key = self._get_service_key(config.namespace, config.name, config.port)
+        key = self._get_service_key(config.namespace, config.name, config.port, config.protocol.value)
         if key in self.services and self.is_service_running(config):
-            self.logger.warning(f"Service {config.name} already running")
-            return
+            raise ServiceStartError(
+                config.name,
+                f"Service already running on {config.namespace}:{config.port}/{config.protocol.value}"
+            )
         
         # Check port availability
         if not self._is_port_available(config.namespace, config.port, config.protocol.value):
@@ -336,9 +341,16 @@ class ServiceManager:
         except Exception as e:
             raise ServiceStartError(config.name, str(e), cause=e)
     
-    def stop_service(self, namespace: str, name: str, port: int) -> None:
+    def stop_service(self, namespace: str, name: str, port: int, protocol: str = None) -> None:
         """Stop a running service."""
-        key = self._get_service_key(namespace, name, port)
+        # Try to find service with protocol first, fall back to old format for compatibility
+        key = None
+        if protocol:
+            key = self._get_service_key(namespace, name, port, protocol)
+        
+        # If not found with protocol or no protocol specified, try old format
+        if not key or key not in self.services:
+            key = self._get_service_key(namespace, name, port)
         
         if key not in self.services:
             self.logger.warning(f"Service {name} not found in registry")
@@ -386,11 +398,11 @@ class ServiceManager:
     
     def restart_service(self, config: ServiceConfig) -> None:
         """Restart a service."""
-        key = self._get_service_key(config.namespace, config.name, config.port)
+        key = self._get_service_key(config.namespace, config.name, config.port, config.protocol.value)
         
         # Stop if running
         if key in self.services:
-            self.stop_service(config.namespace, config.name, config.port)
+            self.stop_service(config.namespace, config.name, config.port, config.protocol.value)
             time.sleep(0.5)  # Brief pause
         
         # Start again
@@ -412,9 +424,16 @@ class ServiceManager:
         except (ValueError, OSError, ProcessLookupError):
             return False
     
-    def get_service_status(self, namespace: str, name: str, port: int) -> ServiceStatus:
+    def get_service_status(self, namespace: str, name: str, port: int, protocol: str = None) -> ServiceStatus:
         """Get service status."""
-        key = self._get_service_key(namespace, name, port)
+        # Try to find service with protocol first, fall back to old format for compatibility
+        key = None
+        if protocol:
+            key = self._get_service_key(namespace, name, port, protocol)
+        
+        # If not found with protocol or no protocol specified, try old format
+        if not key or key not in self.services:
+            key = self._get_service_key(namespace, name, port)
         
         if key not in self.services:
             return ServiceStatus.UNKNOWN
@@ -430,24 +449,30 @@ class ServiceManager:
         """List all services or services in a namespace."""
         services = []
         
-        # Load host registry to distinguish hosts from routers
-        host_registry_file = Path("/tmp/traceroute_hosts_registry.json")
+        # Get active routers from bridge registry
+        known_routers = set()
+        try:
+            registry_file = Path("/tmp/traceroute_bridges_registry.json")
+            if registry_file.exists():
+                with open(registry_file, 'r') as f:
+                    bridge_registry = json.load(f)
+                
+                for bridge_name, bridge_info in bridge_registry.items():
+                    router_data = bridge_info.get('routers', {})
+                    for router_name in router_data.keys():
+                        known_routers.add(router_name)
+        except (json.JSONDecodeError, IOError):
+            pass
+        
+        # Get active hosts from host registry
         hosts = {}
-        if host_registry_file.exists():
-            try:
+        try:
+            host_registry_file = Path("/tmp/traceroute_hosts_registry.json")
+            if host_registry_file.exists():
                 with open(host_registry_file, 'r') as f:
                     hosts = json.load(f)
-            except (json.JSONDecodeError, IOError):
-                pass
-                
-        # Load known routers from facts
-        facts_dir = os.environ.get('TRACEROUTE_SIMULATOR_FACTS', 'tests/tsim_facts')
-        known_routers = set()
-        facts_path = Path(facts_dir)
-        if facts_path.exists():
-            for facts_file in facts_path.glob("*.json"):
-                if "_metadata.json" not in facts_file.name and "_" not in facts_file.stem:
-                    known_routers.add(facts_file.stem)
+        except (json.JSONDecodeError, IOError):
+            pass
         
         for key, config in self.services.items():
             if namespace and config.namespace != namespace:
@@ -457,7 +482,7 @@ class ServiceManager:
             if config.namespace not in known_routers and config.namespace not in hosts:
                 continue
                 
-            status = self.get_service_status(config.namespace, config.name, config.port)
+            status = self.get_service_status(config.namespace, config.name, config.port, config.protocol.value)
             
             # Determine if this is a host or router
             is_host = config.namespace in hosts

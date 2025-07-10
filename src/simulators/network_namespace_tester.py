@@ -70,87 +70,111 @@ class SequentialConnectivityTester:
         self.failed_pairs = []
         
     def load_facts(self):
-        """Load all router facts and build IP mappings."""
-        if not self.facts_dir.exists():
-            raise FileNotFoundError(f"Facts directory not found: {self.facts_dir}")
-            
-        json_files = list(self.facts_dir.glob("*.json"))
-        if not json_files:
-            raise FileNotFoundError(f"No JSON files found in {self.facts_dir}")
-            
-        for json_file in json_files:
-            router_name = json_file.stem
-            with open(json_file, 'r') as f:
-                facts = json.load(f)
-                self.routers[router_name] = facts
+        """Load router and host information from registries."""
+        # Load routers from bridge registry
+        try:
+            registry_file = Path("/tmp/traceroute_bridges_registry.json")
+            if registry_file.exists():
+                with open(registry_file, 'r') as f:
+                    bridge_registry = json.load(f)
                 
-                # Extract all IP addresses for this router
-                interfaces = facts.get('network', {}).get('interfaces', [])
-                router_ips = []
-                
-                for iface in interfaces:
-                    if (iface.get('protocol') == 'kernel' and 
-                        iface.get('scope') == 'link' and
-                        iface.get('prefsrc')):
-                        
-                        ip = iface['prefsrc']
-                        if not ip.startswith('127.'):  # Skip loopback
-                            router_ips.append(ip)
-                            self.ip_to_router[ip] = router_name
+                for bridge_name, bridge_info in bridge_registry.items():
+                    # Load router IPs
+                    routers = bridge_info.get('routers', {})
+                    for router_name, router_info in routers.items():
+                        if router_name not in self.routers:
+                            self.routers[router_name] = {}  # Placeholder for router data
                             
-                self.router_ips[router_name] = router_ips
+                        ip_address = router_info.get('ipv4', '')
+                        if ip_address and '/' in ip_address:
+                            ip = ip_address.split('/')[0]
+                            if not ip.startswith('127.'):
+                                self.ip_to_router[ip] = router_name
+                                if router_name in self.router_ips:
+                                    self.router_ips[router_name].append(ip)
+                                else:
+                                    self.router_ips[router_name] = [ip]
+                    
+                    # Load host IPs from bridge registry
+                    hosts = bridge_info.get('hosts', {})
+                    for host_name, host_info in hosts.items():
+                        ip_address = host_info.get('ipv4', '')
+                        if ip_address and '/' in ip_address:
+                            ip = ip_address.split('/')[0]
+                            if not ip.startswith('127.'):
+                                self.ip_to_router[ip] = host_name
+                                if host_name in self.router_ips:
+                                    self.router_ips[host_name].append(ip)
+                                else:
+                                    self.router_ips[host_name] = [ip]
+                                    
+        except (json.JSONDecodeError, IOError) as e:
+            if self.verbose >= 1:
+                print(f"Warning: Could not load bridge registry: {e}")
+        
+        # Load additional host information from host registry
+        try:
+            host_registry_file = Path("/tmp/traceroute_hosts_registry.json")
+            if host_registry_file.exists():
+                with open(host_registry_file, 'r') as f:
+                    hosts = json.load(f)
+                    
+                for host_name, host_config in hosts.items():
+                    # Add primary IP
+                    primary_ip = host_config.get('primary_ip', '')
+                    if primary_ip and '/' in primary_ip:
+                        ip = primary_ip.split('/')[0]
+                        if not ip.startswith('127.'):
+                            self.ip_to_router[ip] = host_name
+                            if host_name in self.router_ips:
+                                if ip not in self.router_ips[host_name]:
+                                    self.router_ips[host_name].append(ip)
+                            else:
+                                self.router_ips[host_name] = [ip]
+                    
+                    # Add secondary IPs
+                    secondary_ips = host_config.get('secondary_ips', [])
+                    for secondary_ip in secondary_ips:
+                        if secondary_ip and '/' in secondary_ip:
+                            ip = secondary_ip.split('/')[0]
+                            if not ip.startswith('127.'):
+                                self.ip_to_router[ip] = host_name
+                                if host_name in self.router_ips:
+                                    if ip not in self.router_ips[host_name]:
+                                        self.router_ips[host_name].append(ip)
+                                else:
+                                    self.router_ips[host_name] = [ip]
+                                    
+        except (json.JSONDecodeError, IOError) as e:
+            if self.verbose >= 1:
+                print(f"Warning: Could not load host registry: {e}")
+        
+        # Load gateway router information from metadata (if available)
+        try:
+            if self.facts_dir and self.facts_dir.exists():
+                for metadata_file in self.facts_dir.glob("*_metadata.json"):
+                    with open(metadata_file, 'r') as f:
+                        metadata = json.load(f)
+                        if metadata.get('type') == 'gateway':
+                            router_name = metadata_file.stem.replace('_metadata', '')
+                            self.gateway_routers.add(router_name)
+        except (json.JSONDecodeError, IOError):
+            pass
                 
-                # Identify gateway routers using metadata.type field
-                metadata = facts.get('metadata', {})
-                if metadata.get('type') == 'gateway':
-                    self.gateway_routers.add(router_name)
+        total_routers = len(self.routers)
+        total_hosts = len([k for k in self.router_ips.keys() if k not in self.routers])
+        if self.verbose >= 3:
+            print(f"Loaded {total_routers} routers and {total_hosts} hosts from registries")
                     
-        # Load host information
-        self.load_hosts()
-                    
-        if self.verbose >= 1:
+        if self.verbose >= 3:
             print(f"Loaded {len(self.routers)} routers:")
             for router, ips in self.router_ips.items():
-                location = "HQ" if router.startswith('hq-') else "Branch" if router.startswith('br-') else "DC"
                 gateway_marker = " [GATEWAY]" if router in self.gateway_routers else ""
-                print(f"  {router} ({location}): {', '.join(ips)}{gateway_marker}")
+                print(f"  {router}: {', '.join(ips)}{gateway_marker}")
                 
     def load_hosts(self):
         """Load host information from host registry."""
-        if not self.host_registry_file.exists():
-            return  # No hosts registered
-            
-        try:
-            with open(self.host_registry_file, 'r') as f:
-                host_registry = json.load(f)
-                
-            for host_name, host_config in host_registry.items():
-                self.hosts[host_name] = host_config
-                
-                # Extract primary IP from host config
-                primary_ip = host_config.get('primary_ip', '')
-                if primary_ip and '/' in primary_ip:
-                    # Extract IP address without prefix
-                    ip = primary_ip.split('/')[0]
-                    self.ip_to_router[ip] = host_name
-                    
-                # Extract secondary IPs
-                secondary_ips = host_config.get('secondary_ips', [])
-                for secondary_ip in secondary_ips:
-                    if secondary_ip and '/' in secondary_ip:
-                        ip = secondary_ip.split('/')[0]
-                        self.ip_to_router[ip] = host_name
-                        
-            if self.verbose >= 1 and self.hosts:
-                print(f"\nLoaded {len(self.hosts)} hosts:")
-                for host_name, host_config in self.hosts.items():
-                    primary_ip = host_config.get('primary_ip', 'unknown')
-                    connected_to = host_config.get('connected_to', 'unknown')
-                    print(f"  {host_name}: {primary_ip} -> {connected_to} [HOST]")
-                    
-        except (json.JSONDecodeError, IOError) as e:
-            if self.verbose >= 2:
-                print(f"Warning: Could not load host registry: {e}")
+        pass
                 
     def is_public_routable_ip(self, ip_str: str) -> bool:
         """Check if an IP address is publicly routable (not RFC 1918 or other private ranges)."""
@@ -649,16 +673,11 @@ class SequentialConnectivityTester:
         for dest_router in sorted(other_routers):
             dest_ips = self.router_ips[dest_router]
             
-            # Determine location relationship
-            src_loc = "HQ" if source_router.startswith('hq-') else "Branch" if source_router.startswith('br-') else "DC"
-            dst_loc = "HQ" if dest_router.startswith('hq-') else "Branch" if dest_router.startswith('br-') else "DC"
-            relationship = "Intra-location" if src_loc == dst_loc else f"{src_loc}-to-{dst_loc}"
-            
             if self.verbose >= 2:
-                print(f"\n  → {dest_router} ({relationship})")
+                print(f"\n  → {dest_router}")
                 print(f"    Target IPs: {', '.join(dest_ips)}")
             elif self.verbose == 1:
-                print(f"\n  → {dest_router} ({relationship})")
+                print(f"\n  → {dest_router}")
             
             # Test from first source IP to all destination IPs
             source_ip = source_ips[0]  # Use first IP to keep it simple

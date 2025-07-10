@@ -53,10 +53,15 @@ class MTRExecutor:
         self.verbose = verbose
         self.verbose_level = verbose_level
         self.linux_routers = linux_routers or set()
+        self.ip_to_router_lookup = {}  # Will be set later via set_ip_lookup
     
     def add_linux_router(self, hostname: str):
         """Add a Linux router hostname to the known routers set."""
         self.linux_routers.add(hostname)
+    
+    def set_ip_lookup(self, ip_lookup: dict):
+        """Set the IP to router name lookup table for router identification."""
+        self.ip_to_router_lookup = ip_lookup
     
     def _perform_reverse_dns(self, ip: str) -> Optional[str]:
         """
@@ -103,10 +108,8 @@ class MTRExecutor:
         """
         Determine if an IP/hostname represents a Linux router in our inventory.
         
-        Checks if the given IP address or hostname corresponds to a Linux router
-        that we can manage. Uses reverse DNS lookup if hostname is not provided
-        and ip is actually an IP address. Handles both short names and FQDNs
-        by comparing the short hostname portion against all known routers.
+        First checks the IP lookup table for direct IP-to-router mapping,
+        then falls back to hostname-based matching with reverse DNS.
         
         Args:
             ip: IP address or hostname to check
@@ -115,6 +118,26 @@ class MTRExecutor:
         Returns:
             True if IP/hostname represents a known Linux router, False otherwise
         """
+        # Debug output to see what's being passed in
+        if self.verbose and self.verbose_level >= 3:
+            print(f"MTR DEBUG: _is_linux_router called with ip='{ip}', hostname='{hostname}'", file=sys.stderr)
+            print(f"MTR DEBUG: ip_to_router_lookup available: {bool(self.ip_to_router_lookup)}", file=sys.stderr)
+            if self.ip_to_router_lookup:
+                print(f"MTR DEBUG: Lookup table keys: {list(self.ip_to_router_lookup.keys())[:5]}...", file=sys.stderr)
+        
+        # First check direct IP lookup
+        if ip and self.ip_to_router_lookup:
+            router_name = self.ip_to_router_lookup.get(ip)
+            if self.verbose and self.verbose_level >= 3:
+                print(f"MTR DEBUG: IP lookup result: {ip} -> {router_name}", file=sys.stderr)
+            if router_name:
+                is_linux = router_name in self.linux_routers
+                if self.verbose and self.verbose_level >= 3:
+                    print(f"MTR DEBUG: Router {router_name} is_linux: {is_linux}", file=sys.stderr)
+                    print(f"MTR DEBUG: Linux routers: {list(self.linux_routers)[:5]}...", file=sys.stderr)
+                return is_linux
+        
+        # Fallback to hostname-based matching
         if not hostname:
             # Only try reverse DNS if ip is actually an IP address
             try:
@@ -136,15 +159,15 @@ class MTRExecutor:
         
         # Debug output for production troubleshooting
         if self.verbose and self.verbose_level >= 3:
-            print(f"DEBUG: Checking hostname '{hostname}' -> short: '{short_hostname}'")
-            print(f"DEBUG: Known Linux routers: {list(self.linux_routers)}")
-            print(f"DEBUG: Known short names: {list(known_short_names)}")
+            print(f"DEBUG: Checking hostname '{hostname}' -> short: '{short_hostname}'", file=sys.stderr)
+            print(f"DEBUG: Known Linux routers: {list(self.linux_routers)}", file=sys.stderr)
+            print(f"DEBUG: Known short names: {list(known_short_names)}", file=sys.stderr)
         
         # Check if short hostname matches any known router short name
         is_match = short_hostname in known_short_names
         
         if self.verbose and self.verbose_level >= 3:
-            print(f"DEBUG: Match result for '{hostname}': {is_match}")
+            print(f"DEBUG: Match result for '{hostname}': {is_match}", file=sys.stderr)
         
         return is_match
     
@@ -375,6 +398,9 @@ class MTRExecutor:
         """
         all_hops = self.execute_mtr(source_router, destination_ip)
         linux_hops = self.filter_linux_hops(all_hops)
+        
+        if self.verbose and self.verbose_level >= 3:
+            print(f"MTR execute_and_filter result: all_hops={len(all_hops)}, linux_hops={len(linux_hops)}", file=sys.stderr)
         
         if not linux_hops and self.verbose:
             print("Warning: No Linux routers found in mtr tool trace", file=sys.stderr)

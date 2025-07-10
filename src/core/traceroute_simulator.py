@@ -40,8 +40,24 @@ try:
     MTR_AVAILABLE = True
     REVERSE_TRACER_AVAILABLE = True
 except ImportError:
-    MTR_AVAILABLE = False
-    REVERSE_TRACER_AVAILABLE = False
+    # Try absolute imports for direct script execution
+    try:
+        import sys
+        import os
+        # Add parent directories to path
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        parent_dir = os.path.dirname(current_dir)
+        if parent_dir not in sys.path:
+            sys.path.insert(0, parent_dir)
+        
+        from executors.mtr_executor import MTRExecutor
+        from core.route_formatter import RouteFormatter
+        from core.reverse_path_tracer import ReversePathTracer
+        MTR_AVAILABLE = True
+        REVERSE_TRACER_AVAILABLE = True
+    except ImportError:
+        MTR_AVAILABLE = False
+        REVERSE_TRACER_AVAILABLE = False
 
 # Exit codes for quiet mode operation
 # These codes allow automated scripts to determine the result without parsing output
@@ -59,7 +75,7 @@ class Router:
     This class encapsulates all routing information for a single router including:
     - Routing table entries (from 'ip route' command)
     - Policy routing rules (from 'ip rule' command)  
-    - Interface to IP address mappings
+    - Interface to IP address mappings (primary and secondary)
     - Router metadata (Linux status, type, location, etc.)
     - Route selection and next-hop determination logic
     
@@ -67,11 +83,13 @@ class Router:
         name (str): Router identifier/hostname
         routes (List[Dict]): Routing table entries in JSON format
         rules (List[Dict]): Policy routing rules in JSON format
-        interfaces (Dict[str, str]): Interface name to IP address mapping
+        interfaces (Dict[str, str]): Interface name to primary IP address mapping
+        all_interfaces (Dict[str, List[str]]): Interface name to all IP addresses mapping
         metadata (Dict): Router metadata including linux flag, type, location, etc.
+        facts_data (Dict): Complete facts data for comprehensive lookups
     """
     
-    def __init__(self, name: str, routes: List[Dict], rules: List[Dict], metadata: Dict[str, Any]):
+    def __init__(self, name: str, routes: List[Dict], rules: List[Dict], metadata: Dict[str, Any], facts_data: Dict[str, Any]):
         """
         Initialize router with routing data and metadata.
         
@@ -80,24 +98,28 @@ class Router:
             routes: List of routing table entries from 'ip --json route list'
             rules: List of policy rules from 'ip --json rule list'
             metadata: Router metadata including linux flag, type, location, etc.
+            facts_data: Complete facts data for comprehensive lookups
         """
         self.name = name
         self.routes = routes
         self.rules = rules
         self.metadata = metadata
+        self.facts_data = facts_data
         # Build interface mapping for quick lookups
         self.interfaces = self._extract_interfaces()
+        # Build comprehensive interface mapping (primary and secondary IPs)
+        self.all_interfaces = self._extract_all_interfaces()
     
     def _extract_interfaces(self) -> Dict[str, str]:
         """
-        Extract interface to IP address mapping from routing table.
+        Extract interface to primary IP address mapping from routing table.
         
         Scans routing table entries for 'prefsrc' (preferred source) addresses
-        which indicate the IP address configured on each interface. This mapping
+        which indicate the primary IP address configured on each interface. This mapping
         is used to determine which router owns specific IP addresses.
         
         Returns:
-            Dict mapping interface names to their IP addresses
+            Dict mapping interface names to their primary IP addresses
             Example: {'eth0': '192.168.1.1', 'wg0': '10.0.0.1'}
         """
         interfaces = {}
@@ -107,6 +129,66 @@ class Router:
             if route.get('prefsrc') and route.get('dev'):
                 interfaces[route['dev']] = route['prefsrc']
         return interfaces
+    
+    def _extract_all_interfaces(self) -> Dict[str, List[str]]:
+        """
+        Extract comprehensive interface to IP addresses mapping from facts data.
+        
+        Parses the network.interfaces section to extract all IP addresses
+        (primary and secondary) configured on each interface.
+        
+        Returns:
+            Dict mapping interface names to lists of all their IP addresses
+            Example: {'eth0': ['192.168.1.1', '192.168.1.2'], 'wg0': ['10.0.0.1']}
+        """
+        all_interfaces = {}
+        
+        # Extract from network.interfaces section
+        network_data = self.facts_data.get('network', {})
+        interfaces_data = network_data.get('interfaces', [])
+        
+        # Handle different interface data formats
+        if isinstance(interfaces_data, dict):
+            # Format: network.interfaces.parsed structure
+            parsed_interfaces = interfaces_data.get('parsed', {})
+            for interface_name, interface_info in parsed_interfaces.items():
+                ip_addresses = []
+                addresses = interface_info.get('addresses', [])
+                
+                for addr_info in addresses:
+                    if addr_info.get('family') == 'inet':  # IPv4 only
+                        ip_addresses.append(addr_info.get('address'))
+                
+                if ip_addresses:
+                    all_interfaces[interface_name] = ip_addresses
+        elif isinstance(interfaces_data, list):
+            # Format: list of interface entries with dev and prefsrc
+            for interface_entry in interfaces_data:
+                if 'dev' in interface_entry and 'prefsrc' in interface_entry:
+                    dev = interface_entry['dev']
+                    prefsrc = interface_entry['prefsrc']
+                    
+                    # Initialize interface if not seen before
+                    if dev not in all_interfaces:
+                        all_interfaces[dev] = []
+                    
+                    # Add IP if not already present
+                    if prefsrc not in all_interfaces[dev]:
+                        all_interfaces[dev].append(prefsrc)
+        
+        return all_interfaces
+    
+    def get_all_ip_addresses(self) -> List[str]:
+        """
+        Get all IP addresses configured on this router.
+        
+        Returns:
+            List of all IP addresses (primary and secondary) on all interfaces
+        """
+        all_ips = []
+        for interface_ips in self.all_interfaces.values():
+            all_ips.extend(interface_ips)
+        return all_ips
     
     def get_best_route(self, dst_ip: str, src_ip: Optional[str] = None) -> Optional[Dict]:
         """
@@ -306,7 +388,9 @@ def get_default_config() -> Dict[str, Any]:
         'quiet': False,
         'json_output': False,
         'enable_mtr_fallback': True,
-        'enable_reverse_trace': False,
+        'enable_reverse_trace': True,  # Reverse tracing is now default
+        'force_forward_trace': False,
+        'software_simulation_only': False,
         'controller_ip': None
     }
 
@@ -352,8 +436,14 @@ def merge_config(defaults: Dict[str, Any], config_file: Dict[str, Any],
         config['json_output'] = True
     if hasattr(args, 'no_mtr') and args.no_mtr:
         config['enable_mtr_fallback'] = False
-    if hasattr(args, 'reverse_trace') and args.reverse_trace:
-        config['enable_reverse_trace'] = True
+    if hasattr(args, 'forward_trace') and args.forward_trace:
+        config['enable_reverse_trace'] = False
+        config['force_forward_trace'] = True
+    if hasattr(args, 'software_sim') and args.software_sim:
+        config['software_simulation_only'] = True
+        # If both forward_trace and software_sim specified, disable reverse tracing
+        if hasattr(args, 'forward_trace') and args.forward_trace:
+            config['enable_reverse_trace'] = False
     if hasattr(args, 'controller_ip') and args.controller_ip:
         config['controller_ip'] = args.controller_ip
     if hasattr(args, 'tsim_facts') and args.tsim_facts:
@@ -407,12 +497,16 @@ class TracerouteSimulator:
         self.routers = self._load_routers(tsim_facts)
         # Build fast lookup table for IP-to-router mapping
         self.router_lookup = self._build_router_lookup()
+        # Build comprehensive IP lookup table
+        self.comprehensive_ip_lookup = self._build_comprehensive_ip_lookup()
         
         # Initialize MTR executor and route formatter if available
         if MTR_AVAILABLE:
             # Filter to only Linux routers for MTR execution
             linux_routers = {name for name, router in self.routers.items() if router.is_linux()}
             self.mtr_executor = MTRExecutor(linux_routers, verbose, verbose_level)
+            # Pass comprehensive IP lookup to MTR executor for proper router identification
+            self.mtr_executor.set_ip_lookup(self.comprehensive_ip_lookup)
             self.route_formatter = RouteFormatter(verbose)
         else:
             self.mtr_executor = None
@@ -502,36 +596,21 @@ class TracerouteSimulator:
                                 print(f"Warning: Policy rules parsing error for {name}: {facts['routing']['rules']['parsing_error']}", file=sys.stderr)
                             rules = []
                 
-                # Extract metadata from unified format (equivalent to old _metadata.json)
+                # For production format, metadata is embedded in facts structure or use defaults
                 metadata = default_metadata.copy()
-                if 'metadata' in facts:
-                    # Map from facts metadata to router metadata format
-                    facts_metadata = facts['metadata']
-                    
-                    # Direct mappings for router classification
-                    if 'linux' in facts_metadata:
-                        metadata['linux'] = facts_metadata['linux']
-                    if 'type' in facts_metadata:
-                        metadata['type'] = facts_metadata['type']
-                    if 'location' in facts_metadata:
-                        metadata['location'] = facts_metadata['location']
-                    if 'role' in facts_metadata:
-                        metadata['role'] = facts_metadata['role']
-                    if 'vendor' in facts_metadata:
-                        metadata['vendor'] = facts_metadata['vendor']
-                    if 'manageable' in facts_metadata:
-                        metadata['manageable'] = facts_metadata['manageable']
-                    if 'ansible_controller' in facts_metadata:
-                        metadata['ansible_controller'] = facts_metadata['ansible_controller']
-                    
-                    if self.verbose and self.verbose_level >= 3:
-                        print(f"Loaded metadata for {name}: {metadata}", file=sys.stderr)
-                else:
-                    if self.verbose and self.verbose_level >= 3:
-                        print(f"Warning: No metadata section for {name}, using defaults: {metadata}", file=sys.stderr)
+                # Production format may not have explicit metadata section
+                # Use hostname from metadata section if available, otherwise infer from filename
+                facts_metadata = facts.get('metadata', {})
+                hostname = facts_metadata.get('hostname', name)
                 
-                # Create router object with extracted data
-                routers[name] = Router(name, routes, rules, metadata)
+                # Set basic metadata - production routers are typically Linux
+                metadata['hostname'] = hostname
+                
+                if self.verbose and self.verbose_level >= 3:
+                    print(f"Using metadata for {name}: {metadata}", file=sys.stderr)
+                
+                # Create router object with extracted data and full facts
+                routers[name] = Router(name, routes, rules, metadata, facts)
                 if self.verbose and self.verbose_level >= 3:
                     print(f"Loaded router: {name} (Linux: {metadata['linux']}, Type: {metadata['type']})", file=sys.stderr)
                     
@@ -554,7 +633,7 @@ class TracerouteSimulator:
         
         Creates a reverse mapping from IP addresses to router names,
         allowing quick determination of which router owns a specific IP.
-        Only includes router interface IPs, not network ranges.
+        Only includes primary router interface IPs for backward compatibility.
         
         Returns:
             Dictionary mapping IP addresses to router names
@@ -567,9 +646,55 @@ class TracerouteSimulator:
                 lookup[ip] = name
         return lookup
     
+    def _build_comprehensive_ip_lookup(self) -> Dict[str, str]:
+        """
+        Build comprehensive IP address to router name lookup table.
+        
+        Creates a reverse mapping from all IP addresses (primary and secondary)
+        to router names, allowing complete determination of router ownership.
+        
+        Returns:
+            Dictionary mapping all IP addresses to router names
+            Example: {'192.168.1.1': 'router1', '192.168.1.2': 'router1', '10.0.0.1': 'router2'}
+        """
+        lookup = {}
+        for name, router in self.routers.items():
+            # Add all IP addresses (primary and secondary) for this router
+            all_ips = router.get_all_ip_addresses()
+            for ip in all_ips:
+                if ip:  # Skip None/empty IPs
+                    lookup[ip] = name
+        return lookup
+    
     def _find_router_by_ip(self, ip: str) -> Optional[str]:
-        """Find which router owns an IP address."""
-        return self.router_lookup.get(ip)
+        """Find which router owns an IP address using comprehensive lookup."""
+        return self.comprehensive_ip_lookup.get(ip)
+    
+    def _resolve_ip_to_name(self, ip: str) -> str:
+        """
+        Comprehensive IP resolution with three-tier strategy:
+        1. Check if IP is present in router facts - if yes, show router name
+        2. Check if reverse DNS works - if yes, show DNS name  
+        3. Leave IP as is, if both 1. and 2. fail
+        
+        Args:
+            ip: IP address to resolve
+            
+        Returns:
+            Router name, DNS name, or original IP address
+        """
+        # Step 1: Check router facts
+        router_name = self._find_router_by_ip(ip)
+        if router_name:
+            return router_name
+        
+        # Step 2: Try reverse DNS
+        dns_name = self._resolve_ip_to_fqdn(ip)
+        if dns_name != ip:  # DNS resolution succeeded
+            return dns_name
+        
+        # Step 3: Return original IP
+        return ip
     
     def _get_incoming_interface(self, router_name: str, from_ip: str) -> Optional[str]:
         """
@@ -766,6 +891,7 @@ class TracerouteSimulator:
         
         Searches through all routers to find the one with ansible_controller=true
         in its metadata, then returns its primary outgoing IP address.
+        Note: This method is kept for compatibility but external controllers are now allowed.
         
         Returns:
             IP address of the Ansible controller router, or None if not found
@@ -891,19 +1017,23 @@ class TracerouteSimulator:
             src_interface = ""
             dst_interface = ""
             
-            # Get source interface
-            for interface, ip in self.routers[src_router_name].interfaces.items():
-                if ip == src_ip:
+            # Get source interface from comprehensive interface mapping
+            for interface, ip_list in self.routers[src_router_name].all_interfaces.items():
+                if src_ip in ip_list:
                     src_interface = interface
                     break
             
-            # Get destination interface
-            for interface, ip in self.routers[dst_router_name].interfaces.items():
-                if ip == dst_ip:
+            # Get destination interface from comprehensive interface mapping
+            for interface, ip_list in self.routers[dst_router_name].all_interfaces.items():
+                if dst_ip in ip_list:
                     dst_interface = interface
                     break
             
-            return [(1, f"{src_router_name} -> {dst_router_name}", f"{src_ip} -> {dst_ip}", 
+            # Resolve router names using comprehensive resolution
+            src_label = self._resolve_ip_to_name(src_ip)
+            dst_label = self._resolve_ip_to_name(dst_ip)
+            
+            return [(1, f"{src_label} -> {dst_label}", f"{src_ip} -> {dst_ip}", 
                     f"{src_interface} -> {dst_interface}", False, "", "")]
         
         path = []
@@ -938,8 +1068,8 @@ class TracerouteSimulator:
                             break
                     except (ValueError, ipaddress.AddressValueError):
                         continue
-            # Try to resolve source IP to FQDN
-            src_label = self._resolve_ip_to_fqdn(src_ip)
+            # Use comprehensive IP resolution
+            src_label = self._resolve_ip_to_name(src_ip)
             path.append((hop, src_label, src_ip, src_interface or "", False, current_router, ""))
             hop += 1
             # Add the router that the source connects through - will get outgoing interface from next hop
@@ -996,8 +1126,8 @@ class TracerouteSimulator:
                                         break
                                 except (ValueError, ipaddress.AddressValueError):
                                     continue
-                        # Try to resolve destination IP to FQDN
-                        dst_label = self._resolve_ip_to_fqdn(dst_ip)
+                        # Use comprehensive IP resolution
+                        dst_label = self._resolve_ip_to_name(dst_ip)
                         path.append((hop, dst_label, dst_ip, dst_interface, False, current_router, ""))
                 break
             
@@ -1018,7 +1148,7 @@ class TracerouteSimulator:
                         path[-1] = (prev_hop_num, prev_router_name, prev_ip, prev_incoming, prev_owned, prev_connected, outgoing_interface or "")
                 
                 # Add destination as reachable via internet
-                dst_label = self._resolve_ip_to_fqdn(dst_ip)
+                dst_label = self._resolve_ip_to_name(dst_ip)
                 path.append((hop, dst_label, dst_ip, outgoing_interface or "", False, current_router, ""))
                 break
             
@@ -1281,7 +1411,8 @@ Configuration File Support:
   
   Command line arguments override configuration file values.
   
-  Note: Reverse path tracing requires 'controller_ip' in configuration file or an Ansible controller router.
+  Note: Reverse path tracing is the default behavior and requires controller_ip to be configured.
+        Use --forward-trace to disable reverse tracing.
 
 Exit codes (for -q/--quiet mode):
   0: Path found successfully
@@ -1298,7 +1429,8 @@ Examples:
   %(prog)s -s 10.1.1.1 -d 10.2.1.1 -q                 # Quiet mode (check $?)
   %(prog)s -s 10.100.1.1 -d 10.100.1.3 -j             # JSON output (WireGuard tunnel)
   %(prog)s -s 10.1.10.1 -d 10.3.20.1                  # Complex multi-hop
-  %(prog)s -s 10.1.1.1 -d 192.168.1.1 --reverse-trace # Enable reverse path tracing
+  %(prog)s -s 10.1.1.1 -d 192.168.1.1 --forward-trace  # Force forward tracing only
+  %(prog)s -s 10.1.1.1 -d 192.168.1.1 --software-sim   # Software simulation only
         """)
     parser.add_argument('-s', '--source', required=True, help='Source IP address')
     parser.add_argument('-d', '--destination', required=True, help='Destination IP address')
@@ -1310,10 +1442,12 @@ Examples:
                        help='Output traceroute path in JSON format')
     parser.add_argument('--no-mtr', action='store_true',
                        help='Disable MTR fallback (simulation only)')
-    parser.add_argument('--reverse-trace', action='store_true',
-                       help='Enable reverse path tracing when forward simulation fails')
+    parser.add_argument('--forward-trace', action='store_true',
+                       help='Force forward tracing only (disables reverse tracing default)')
+    parser.add_argument('--software-sim', action='store_true',
+                       help='Force software simulation only (no MTR execution)')
     parser.add_argument('--controller-ip', 
-                       help='Ansible controller IP address (for reverse tracing; auto-detected from metadata if not specified)')
+                       help='Ansible controller IP address (required for reverse tracing)')
     parser.add_argument('--tsim-facts', 
                        help='Directory containing unified tsim facts files (overrides config and environment)')
     
@@ -1336,72 +1470,85 @@ Examples:
     try:
         simulator = TracerouteSimulator(config['tsim_facts'], verbose=config['verbose'], verbose_level=config['verbose_level'])
         
-        # Decide which simulation method to use
+        # Decide which simulation method to use based on new logic
         path = None
         used_mtr = False
         used_reverse = False
         
-        if not config['enable_mtr_fallback'] or not MTR_AVAILABLE:
-            # Use original simulation only
+        # Check for explicit user method selection
+        if config['software_simulation_only']:
+            # User explicitly requested software simulation only
             path = simulator.simulate_traceroute(args.source, args.destination)
             used_mtr = False
+            
+            # If software simulation fails and forward_trace also specified, that's an error
+            if config['force_forward_trace'] and any("No route" in str(item) for item in path):
+                if not config['quiet']:
+                    print("Error: Software simulation failed and forward tracing forced", file=sys.stderr)
+                sys.exit(EXIT_NO_PATH)
+        
+        elif config['force_forward_trace']:
+            # User explicitly requested forward tracing (with MTR fallback if enabled)
+            if config['enable_mtr_fallback'] and MTR_AVAILABLE:
+                try:
+                    path_data, used_mtr = simulator.simulate_traceroute_with_fallback(args.source, args.destination)
+                    path = path_data
+                except ValueError as e:
+                    if not config['quiet']:
+                        print(f"Error: Forward tracing failed - {e}", file=sys.stderr)
+                    sys.exit(EXIT_NO_PATH)
+            else:
+                # Use original simulation only
+                path = simulator.simulate_traceroute(args.source, args.destination)
+                used_mtr = False
+        
         else:
-            # Use enhanced simulation with MTR fallback
+            # Default behavior: Use reverse path tracing ONLY (no fallbacks)
+            if not REVERSE_TRACER_AVAILABLE:
+                if not config['quiet']:
+                    print("Error: Reverse path tracing not available", file=sys.stderr)
+                sys.exit(EXIT_ERROR)
+            
+            controller_ip = config.get('controller_ip')
+            
+            if not controller_ip:
+                if not config['quiet']:
+                    print("Error: No controller IP configured for reverse path tracing. "
+                          "Set 'controller_ip' in YAML configuration file or use --controller-ip option.", file=sys.stderr)
+                sys.exit(EXIT_ERROR)
+            
+            if config['verbose']:
+                print(f"Using reverse path tracing with controller: {controller_ip}", file=sys.stderr)
+            
             try:
-                path_data, used_mtr = simulator.simulate_traceroute_with_fallback(args.source, args.destination)
-                path = path_data
-            except ValueError as e:
-                # If both simulation and MTR failed, try reverse path tracing
-                if config['enable_reverse_trace'] and REVERSE_TRACER_AVAILABLE:
+                # Initialize reverse path tracer with external controller support
+                reverse_tracer = ReversePathTracer(
+                    simulator, 
+                    controller_ip, 
+                    verbose=config['verbose'], 
+                    verbose_level=config['verbose_level']
+                )
+                
+                # Perform reverse path tracing
+                success, reverse_path, reverse_exit_code = reverse_tracer.perform_reverse_trace(
+                    args.source, args.destination
+                )
+                
+                if success:
+                    path = reverse_path
+                    used_reverse = True
                     if config['verbose']:
-                        print(f"Forward methods failed ({e}), attempting reverse path tracing", file=sys.stderr)
-                    
-                    # Check if controller IP is provided for reverse tracing
-                    controller_ip = config.get('controller_ip')
-                    if not controller_ip:
-                        # Try to auto-detect Ansible controller IP from metadata
-                        controller_ip = simulator.get_ansible_controller_ip()
-                        if config['verbose'] and controller_ip:
-                            print(f"Auto-detected Ansible controller IP: {controller_ip}", file=sys.stderr)
-                    
-                    if not controller_ip:
-                        if not config['quiet']:
-                            print("Error: Reverse path tracing requires controller_ip to be set "
-                                  "in configuration file or an Ansible controller router in routing data", 
-                                  file=sys.stderr)
-                        sys.exit(EXIT_ERROR)
-                    
-                    # Initialize reverse path tracer
-                    try:
-                        reverse_tracer = ReversePathTracer(
-                            simulator, 
-                            controller_ip, 
-                            verbose=config['verbose'], 
-                            verbose_level=config['verbose_level']
-                        )
-                    except ValueError as rev_e:
-                        if not config['quiet']:
-                            print(f"Error: {rev_e}", file=sys.stderr)
-                        sys.exit(EXIT_ERROR)
-                    
-                    # Perform reverse path tracing
-                    success, reverse_path, reverse_exit_code = reverse_tracer.perform_reverse_trace(
-                        args.source, args.destination
-                    )
-                    
-                    if success:
-                        path = reverse_path
-                        used_reverse = True
-                        if config['verbose']:
-                            print("Reverse path tracing successful", file=sys.stderr)
-                    else:
-                        # All methods failed
-                        if not config['quiet']:
-                            print(f"Error: All tracing methods failed - {e}", file=sys.stderr)
-                        sys.exit(reverse_exit_code)
+                        print("Reverse path tracing successful", file=sys.stderr)
                 else:
-                    # Re-raise original error if reverse tracing not enabled
-                    raise
+                    # Reverse tracing failed - exit with appropriate code
+                    if not config['quiet']:
+                        print(f"Error: Reverse path tracing failed", file=sys.stderr)
+                    sys.exit(reverse_exit_code)
+                        
+            except Exception as rev_e:
+                if not config['quiet']:
+                    print(f"Error: Reverse path tracing failed - {rev_e}", file=sys.stderr)
+                sys.exit(EXIT_ERROR)
         
         # Check if path was found successfully (handle both formats)
         has_no_route = False
@@ -1460,10 +1607,14 @@ Examples:
         # Non-quiet output
         if not config['json_output']:
             trace_info = f"traceroute to {args.destination} from {args.source}"
-            if used_mtr:
+            if used_reverse:
+                trace_info += " (using reverse path tracing)"
+            elif used_mtr:
                 trace_info += " (using forward path tracing with mtr tool)"
-            elif used_reverse:
-                trace_info += " (using reverse path tracing with mtr tool)"
+            elif config['software_simulation_only']:
+                trace_info += " (using software simulation only)"
+            elif config['force_forward_trace']:
+                trace_info += " (using forward tracing)"
             print(trace_info)
         
         # Format output using appropriate formatter
@@ -1521,6 +1672,8 @@ Examples:
             sys.exit(EXIT_NOT_FOUND)
         elif "MTR_NO_LINUX_ROUTERS" in error_msg:
             sys.exit(EXIT_NO_LINUX)
+        elif "Software simulation failed" in error_msg:
+            sys.exit(EXIT_NO_PATH)
         else:
             sys.exit(EXIT_ERROR)
             

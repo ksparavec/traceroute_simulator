@@ -30,7 +30,21 @@ try:
     from .route_formatter import RouteFormatter
     MTR_AVAILABLE = True
 except ImportError:
-    MTR_AVAILABLE = False
+    # Try absolute imports for direct script execution
+    try:
+        import sys
+        import os
+        # Add parent directories to path
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        parent_dir = os.path.dirname(current_dir)
+        if parent_dir not in sys.path:
+            sys.path.insert(0, parent_dir)
+        
+        from executors.mtr_executor import MTRExecutor
+        from core.route_formatter import RouteFormatter
+        MTR_AVAILABLE = True
+    except ImportError:
+        MTR_AVAILABLE = False
 
 
 class ReversePathTracer:
@@ -57,7 +71,7 @@ class ReversePathTracer:
         
         Args:
             simulator: TracerouteSimulator instance for routing operations
-            ansible_controller_ip: IP address of Ansible controller (optional, auto-detected if not provided)
+            ansible_controller_ip: IP address of Ansible controller (external controllers allowed)
             verbose: Enable verbose output for debugging operations
             verbose_level: Verbosity level (1=basic, 2=detailed debugging)
             
@@ -68,23 +82,23 @@ class ReversePathTracer:
         self.verbose = verbose
         self.verbose_level = verbose_level
         
-        # Auto-detect ansible controller IP if not provided
+        # Use provided controller IP or try auto-detection
         if ansible_controller_ip:
             self.ansible_controller_ip = ansible_controller_ip
         else:
             detected_ip = simulator.get_ansible_controller_ip()
             if not detected_ip:
-                raise RuntimeError("No Ansible controller found in router metadata. "
-                                 "Ensure at least one router has 'ansible_controller': true in its metadata.")
+                raise RuntimeError("No Ansible controller IP provided and none found in router metadata. "
+                                 "Provide controller_ip or ensure at least one router has 'ansible_controller': true in its metadata.")
             self.ansible_controller_ip = detected_ip
-            
-            if self.verbose:
-                print(f"Auto-detected Ansible controller IP: {self.ansible_controller_ip}")
         
         # Initialize MTR executor and route formatter if available
         if MTR_AVAILABLE:
             linux_routers = set(simulator.routers.keys()) if simulator.routers else set()
             self.mtr_executor = MTRExecutor(linux_routers, verbose, verbose_level)
+            # Set comprehensive IP lookup table for proper router identification
+            if hasattr(simulator, 'comprehensive_ip_lookup'):
+                self.mtr_executor.set_ip_lookup(simulator.comprehensive_ip_lookup)
             self.route_formatter = RouteFormatter(verbose)
         else:
             self.mtr_executor = None
@@ -113,7 +127,6 @@ class ReversePathTracer:
         if self.verbose:
             print(f"\n=== Starting Reverse Path Tracing ===")
             print(f"Original route: {original_src} -> {original_dst}")
-            print(f"Using Ansible controller: {self.ansible_controller_ip}")
         
         # Step 1: Trace from controller to destination
         step1_success, step1_path, step1_exit_code = self._step1_controller_to_destination(original_dst)
@@ -166,69 +179,167 @@ class ReversePathTracer:
         if self.verbose >= 2:
             print(f"\n--- Step 1: Controller ({self.ansible_controller_ip}) -> Destination ({destination}) ---")
         
-        # First try simulation from controller to destination
-        path = self.simulator.simulate_traceroute(self.ansible_controller_ip, destination)
+        # Debug: Always show this
+        if self.verbose and self.verbose_level >= 3:
+            print(f"STEP1 DEBUG: Starting controller to destination trace", file=sys.stderr)
         
-        # Check if simulation was successful (no "No route" or "* * *" entries)
-        if self._is_path_complete(path):
-            if self.verbose >= 2:
-                print(f"Simulation successful: {len(path)} hops from controller to destination")
-            return True, path, 0
+        # Check if controller IP is in router inventory
+        controller_router = self.simulator._find_router_by_ip(self.ansible_controller_ip)
         
-        # If simulation failed, try MTR fallback
-        if MTR_AVAILABLE and self.mtr_executor:
+        if self.verbose and self.verbose_level >= 3:
+            print(f"STEP1 DEBUG: Controller router lookup: {self.ansible_controller_ip} -> {controller_router}", file=sys.stderr)
+        
+        if controller_router:
+            # Controller is internal - try simulation first
             if self.verbose >= 2:
-                print("Simulation incomplete, attempting mtr tool fallback...")
+                print(f"Controller {self.ansible_controller_ip} is internal router {controller_router}")
             
-            # Find the router that owns the Ansible controller IP
-            source_router = self.simulator._find_router_by_ip(self.ansible_controller_ip)
-            if not source_router:
-                if self.verbose:
-                    print(f"Ansible controller IP {self.ansible_controller_ip} not found in router inventory")
-                return False, [], 2  # Controller not reachable
+            path = self.simulator.simulate_traceroute(self.ansible_controller_ip, destination)
             
-            # Execute MTR from the Ansible controller and filter for Linux routers
-            try:
-                all_mtr_hops, filtered_mtr_hops = self.mtr_executor.execute_and_filter(source_router, destination)
-                mtr_success = bool(filtered_mtr_hops)
-                # Convert MTR dictionaries to simulator tuple format
-                mtr_path = self._convert_mtr_to_simulator_format(filtered_mtr_hops)
-                mtr_exit_code = 0 if mtr_success else 1
-            except Exception as e:
-                mtr_success = False
-                mtr_path = []
-                mtr_exit_code = 2
+            # Check if simulation was successful (no "No route" or "* * *" entries)
+            if self._is_path_complete(path):
+                if self.verbose >= 2:
+                    print(f"Simulation successful: {len(path)} hops from controller to destination")
+                return True, path, 0
             
-            if mtr_success and mtr_path:
-                # Add destination hop with timing from all_mtr_hops if not already included
-                destination_in_path = any(hop[2] == destination for hop in mtr_path)
-                if not destination_in_path and all_mtr_hops:
-                    # Check if destination was actually reached in MTR results
-                    destination_reached = False
-                    destination_rtt = 0.0
-                    for hop in all_mtr_hops:
-                        if hop.get('ip') == destination:
-                            destination_reached = True
-                            destination_rtt = hop.get('rtt', 0.0)
-                            break
-                    
-                    # If destination was reached, add it as final hop
-                    if destination_reached:
-                        dest_hop_num = len(mtr_path) + 1
-                        # Try to resolve destination IP to FQDN
-                        dst_label = self.simulator._resolve_ip_to_fqdn(destination)
-                        mtr_path.append((dest_hop_num, dst_label, destination, "", False, "", "", destination_rtt))
-                    else:
-                        # Destination not reached by MTR - this should fail
-                        raise ValueError(f"Destination {destination} not reachable via mtr tool")
+            # If simulation failed, try MTR fallback
+            if MTR_AVAILABLE and self.mtr_executor:
+                if self.verbose >= 2:
+                    print("Simulation incomplete, attempting mtr tool fallback...")
+                
+                # Execute MTR from the controller router
+                try:
+                    all_mtr_hops, filtered_mtr_hops = self.mtr_executor.execute_and_filter(controller_router, destination)
+                    mtr_success = bool(filtered_mtr_hops)
+                    if self.verbose >= 2:
+                        print(f"MTR execution result: all_hops={len(all_mtr_hops)}, filtered_hops={len(filtered_mtr_hops)}, success={mtr_success}")
+                    # Convert MTR dictionaries to simulator tuple format
+                    mtr_path = self._convert_mtr_to_simulator_format(filtered_mtr_hops)
+                    mtr_exit_code = 0 if mtr_success else 1
+                except Exception as e:
+                    if self.verbose >= 2:
+                        print(f"MTR execution failed with exception: {e}")
+                    mtr_success = False
+                    mtr_path = []
+                    mtr_exit_code = 2
                 
                 if self.verbose >= 2:
-                    print(f"mtr tool successful: {len(mtr_path)} hops from {source_router} to destination")
-                return True, mtr_path, 0
+                    print(f"MTR success: {mtr_success}, path length: {len(mtr_path) if mtr_path else 0}")
+                    if mtr_path:
+                        print(f"MTR path: {mtr_path}")
+                
+                if mtr_success and mtr_path:
+                    # Add destination hop with timing from all_mtr_hops if not already included
+                    destination_in_path = any(hop[2] == destination for hop in mtr_path)
+                    if not destination_in_path and all_mtr_hops:
+                        # Check if destination was actually reached in MTR results
+                        destination_reached = False
+                        destination_rtt = 0.0
+                        for hop in all_mtr_hops:
+                            if hop.get('ip') == destination:
+                                destination_reached = True
+                                destination_rtt = hop.get('rtt', 0.0)
+                                break
+                        
+                        # If destination was reached, add it as final hop
+                        if destination_reached:
+                            dest_hop_num = len(mtr_path) + 1
+                            # Try to resolve destination IP to name
+                            dst_label = self.simulator._resolve_ip_to_name(destination)
+                            mtr_path.append((dest_hop_num, dst_label, destination, "", False, "", "", destination_rtt))
+                        else:
+                            # Destination not reached by MTR - this should fail
+                            raise ValueError(f"Destination {destination} not reachable via mtr tool")
+                    
+                    if self.verbose >= 2:
+                        print(f"mtr tool successful: {len(mtr_path)} hops from {controller_router} to destination")
+                    return True, mtr_path, 0
+                else:
+                    if self.verbose:
+                        print(f"mtr tool failed with exit code: {mtr_exit_code}")
+                    return False, [], mtr_exit_code
+        else:
+            # Controller is external - try MTR from any available router
+            if self.verbose and self.verbose_level >= 3:
+                print(f"STEP1 DEBUG: Controller {self.ansible_controller_ip} is external, finding best router for MTR", file=sys.stderr)
+            
+            # Debug: Let's see what MTR and available routers we have
+            if self.verbose >= 2:
+                print(f"MTR_AVAILABLE: {MTR_AVAILABLE}")
+                print(f"mtr_executor: {self.mtr_executor}")
+                print(f"routers available: {bool(self.simulator.routers)}")
+                if self.simulator.routers:
+                    print(f"Total routers: {len(self.simulator.routers)}")
+                    linux_routers = [name for name, router in self.simulator.routers.items() if router.is_linux()]
+                    print(f"Linux routers: {len(linux_routers)}")
+                    if linux_routers:
+                        print(f"First Linux router: {linux_routers[0]}")
+            
+            if self.verbose and self.verbose_level >= 3:
+                print(f"External controller path: MTR_AVAILABLE={MTR_AVAILABLE}, mtr_executor={self.mtr_executor}")
+            
+            if MTR_AVAILABLE and self.mtr_executor:
+                # For external controller, use the controller IP directly for SSH
+                source_router = self.ansible_controller_ip
+                if self.verbose and self.verbose_level >= 3:
+                    print(f"Using external controller {source_router} for MTR execution")
+            
+                # Execute MTR and create path that simulates from controller
+                try:
+                    all_mtr_hops, filtered_mtr_hops = self.mtr_executor.execute_and_filter(source_router, destination)
+                    mtr_success = bool(filtered_mtr_hops)
+                    
+                    if mtr_success:
+                        # Create path starting from external controller
+                        mtr_path = []
+                        # Add controller as first hop
+                        controller_label = self.simulator._resolve_ip_to_name(self.ansible_controller_ip)
+                        mtr_path.append((1, controller_label, self.ansible_controller_ip, "", False, "", "", 0.0))
+                        
+                        # Add MTR hops starting from hop 2
+                        for i, hop_dict in enumerate(filtered_mtr_hops):
+                            hop_num = i + 2
+                            ip = hop_dict.get('ip', '')
+                            hostname = hop_dict.get('hostname', '')
+                            rtt = hop_dict.get('rtt', 0.0)
+                            
+                            # Use hostname as router_name if available, otherwise use IP
+                            router_name = hostname if hostname else ip
+                            is_router = True  # MTR filtered hops are Linux routers
+                            
+                            mtr_path.append((hop_num, router_name, ip, "", is_router, "", "", rtt))
+                    else:
+                        mtr_path = []
+                    mtr_exit_code = 0 if mtr_success else 1
+                except Exception as e:
+                    if self.verbose and self.verbose_level >= 3:
+                        print(f"STEP1 DEBUG: MTR exception: {e}", file=sys.stderr)
+                    mtr_success = False
+                    mtr_path = []
+                    mtr_exit_code = 2
+                
+                if self.verbose and self.verbose_level >= 3:
+                    print(f"STEP1 DEBUG: mtr_success={mtr_success}, path_length={len(mtr_path) if mtr_path else 0}", file=sys.stderr)
+                
+                # Check what happens next
+                if mtr_success and mtr_path:
+                    if self.verbose and self.verbose_level >= 3:
+                        print(f"STEP1 DEBUG: MTR successful, should return success", file=sys.stderr)
+                    return True, mtr_path, 0
+                else:
+                    if self.verbose and self.verbose_level >= 3:
+                        print(f"STEP1 DEBUG: MTR failed, should return failure", file=sys.stderr)
+                    return False, [], mtr_exit_code
             else:
+                # MTR not available
                 if self.verbose:
-                    print(f"mtr tool failed with exit code: {mtr_exit_code}")
-                return False, [], mtr_exit_code
+                    print("MTR not available for external controller")
+                return False, [], 2
+        
+        # This point should not be reached, but handle it gracefully
+        if self.verbose:
+            print("No valid path found")
+        return False, [], 2
         
         # Both simulation and mtr tool failed
         if self.verbose:
@@ -324,8 +435,8 @@ class ReversePathTracer:
                         
                         # Create simple destination path with timing information
                         # Note: Don't include last_linux_router here as it's already in forward_path
-                        # Try to resolve original source IP to FQDN  
-                        src_label = self.simulator._resolve_ip_to_fqdn(original_src)
+                        # Try to resolve original source IP to name
+                        src_label = self.simulator._resolve_ip_to_name(original_src)
                         simple_path = [
                             (1, src_label, original_src, "", False, "", "", destination_rtt)
                         ]
@@ -345,8 +456,8 @@ class ReversePathTracer:
                     # so we create a simple path without timing information
                     # Create simple destination path without timing information
                     # Note: Don't include last_linux_router here as it's already in forward_path
-                    # Try to resolve original source IP to FQDN
-                    src_label = self.simulator._resolve_ip_to_fqdn(original_src)
+                    # Try to resolve original source IP to name
+                    src_label = self.simulator._resolve_ip_to_name(original_src)
                     simple_path = [
                         (1, src_label, original_src, "", False, "", "", 0.0)
                     ]
@@ -404,8 +515,8 @@ class ReversePathTracer:
         # Add the original source as the first hop
         # Check if original source belongs to a router
         src_router_name = self.simulator._find_router_by_ip(original_src)
-        # Try to resolve source IP to FQDN if not a router
-        src_label = src_router_name if src_router_name else self.simulator._resolve_ip_to_fqdn(original_src)
+        # Try to resolve source IP to name using comprehensive resolution
+        src_label = self.simulator._resolve_ip_to_name(original_src)
         src_is_router_owned = src_router_name is not None
         
         final_path.append((hop_counter, src_label, original_src, "", src_is_router_owned, "", "", 0.0))
@@ -422,7 +533,8 @@ class ReversePathTracer:
                 hop_num, router_name, ip, interface, is_router, connected_to, outgoing = hop_data
             # Skip source/destination entries (router_name could be FQDN now) and the starting router
             # Check if this is an endpoint by seeing if is_router is False (endpoints are not routers)
-            if is_router and not router_name.startswith("*"):
+            # Also skip if this IP is the same as original source (to avoid duplication)
+            if is_router and not router_name.startswith("*") and ip != original_src:
                 filtered_reverse.append(hop_data)
         
         # Reverse the filtered path
@@ -460,6 +572,11 @@ class ReversePathTracer:
                 continue
             
             if adding_forward_hops:
+                # Re-resolve IP to name using comprehensive lookup for better names
+                resolved_name = self.simulator._resolve_ip_to_name(ip)
+                if resolved_name != ip:  # If resolution found a better name
+                    router_name = resolved_name
+                
                 if rtt is not None:
                     final_path.append((hop_counter, router_name, ip, interface, is_router, connected_to, outgoing, rtt))
                 else:
@@ -469,8 +586,17 @@ class ReversePathTracer:
         # Ensure we end with the destination
         def get_ip_from_hop(hop_data):
             return hop_data[2]  # IP is always the 3rd element regardless of tuple length
+        
+        # Debug: check if destination is already in the path
+        destination_already_present = any(get_ip_from_hop(hop_data) == original_dst for hop_data in final_path)
+        if self.verbose >= 2:
+            print(f"Destination {original_dst} already in path: {destination_already_present}")
+            if destination_already_present:
+                for i, hop_data in enumerate(final_path):
+                    if get_ip_from_hop(hop_data) == original_dst:
+                        print(f"Destination found at hop {i+1}: {hop_data}")
             
-        if final_path and not any(get_ip_from_hop(hop_data) == original_dst for hop_data in final_path):
+        if final_path and not destination_already_present:
             # Extract timing information for destination from forward_path if available
             destination_rtt = 0.0
             for hop_data in forward_path:
@@ -481,9 +607,14 @@ class ReversePathTracer:
                     destination_rtt = 0.0
                     break
             
-            # Try to resolve destination IP to FQDN
-            dst_label = self.simulator._resolve_ip_to_fqdn(original_dst)
-            final_path.append((hop_counter, dst_label, original_dst, "", False, "", "", destination_rtt))
+            # Try to resolve destination IP to name
+            dst_label = self.simulator._resolve_ip_to_name(original_dst)
+            # Check if destination is a router
+            dst_router_name = self.simulator._find_router_by_ip(original_dst)
+            dst_is_router = dst_router_name is not None
+            if self.verbose >= 2:
+                print(f"Adding destination: {original_dst} -> {dst_label}, is_router: {dst_is_router}")
+            final_path.append((hop_counter, dst_label, original_dst, "", dst_is_router, "", "", destination_rtt))
         
         if self.verbose >= 2:
             print(f"Final combined path has {len(final_path)} hops")
@@ -532,7 +663,10 @@ class ReversePathTracer:
     
     def _find_last_linux_router(self, path: List[Tuple]) -> Optional[str]:
         """
-        Find the last Linux router in a given path.
+        Find the last Linux router in a given path that's closest to the destination.
+        
+        For reverse path tracing, we want the Linux router that's closest to the destination
+        and can perform the reverse trace back to the source.
         
         Args:
             path: List of path tuples to analyze
@@ -542,18 +676,23 @@ class ReversePathTracer:
         """
         last_linux_router = None
         
-        for hop_data in path:
+        # Iterate through path in reverse order to find the router closest to destination
+        for hop_data in reversed(path):
             # Handle both 7-tuple and 8-tuple formats (with optional RTT)
             if len(hop_data) == 8:
                 hop_num, router_name, ip, interface, is_router, connected_to, outgoing, rtt = hop_data
             else:
                 hop_num, router_name, ip, interface, is_router, connected_to, outgoing = hop_data
             
-            # Check if this is a Linux router (not endpoint/failure)
-            # With FQDN resolution, endpoints won't be exactly "source"/"destination" anymore
-            if (is_router and router_name in self.simulator.routers and 
-                not router_name.startswith("*")):
-                last_linux_router = router_name
+            # Check if this is a Linux router using IP lookup (not just router inventory)
+            # This handles cases where router_name might be FQDN from MTR
+            if ip and self.simulator._find_router_by_ip(ip):
+                router_found = self.simulator._find_router_by_ip(ip)
+                if router_found and router_found in self.simulator.routers:
+                    router_obj = self.simulator.routers[router_found]
+                    if router_obj.is_linux():
+                        last_linux_router = router_found
+                        break  # Return the first (closest to destination) Linux router
         
         return last_linux_router
     

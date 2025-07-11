@@ -1,0 +1,36 @@
+#!/usr/bin/env python3
+"""
+Traceroute Simulator Shell (tsimsh)
+Interactive command-line interface for traceroute simulator operations.
+"""
+
+import os
+import sys
+
+# Add src directory to Python path
+script_dir = os.path.dirname(os.path.abspath(__file__))
+src_dir = os.path.join(script_dir, 'src')
+sys.path.insert(0, src_dir)
+
+def main():
+    """Main entry point for the shell."""
+    try:
+        from shell.tsim_shell import TracerouteSimulatorShell
+        
+        # Create and run the shell
+        shell = TracerouteSimulatorShell()
+        shell.cmdloop()
+        
+    except KeyboardInterrupt:
+        print("\nGoodbye!")
+        sys.exit(0)
+    except ImportError as e:
+        print(f"Error importing shell modules: {e}")
+        print("Make sure all dependencies are installed: pip install cmd2 colorama tabulate pyyaml")
+        sys.exit(1)
+    except Exception as e:
+        print(f"Unexpected error: {e}")
+        sys.exit(1)
+
+if __name__ == '__main__':
+    main()

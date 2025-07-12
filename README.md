@@ -4,6 +4,7 @@ A comprehensive network path discovery tool that simulates traceroute behavior u
 
 ## 🌟 Features
 
+- **Interactive Shell (tsimsh)**: Comprehensive command-line interface with tab completion, persistent history, and organized command structure
 - **Real Routing Data**: Uses actual routing tables and policy rules from Linux routers
 - **Router Metadata System**: Comprehensive router classification with Linux/non-Linux differentiation
 - **Gateway Internet Connectivity**: Realistic internet access simulation for gateway routers only
@@ -34,6 +35,7 @@ A comprehensive network path discovery tool that simulates traceroute behavior u
 
 - [Installation](#installation)
 - [Quick Start](#quick-start)
+- [Interactive Shell (tsimsh)](#-interactive-shell-tsimsh)
 - [Configuration](#configuration)
 - [Router Metadata System](#router-metadata-system)
 - [Gateway Internet Connectivity](#gateway-internet-connectivity)
@@ -108,13 +110,95 @@ A comprehensive network path discovery tool that simulates traceroute behavior u
    
    💡 **Tip**: For multiple commands, export once: `export TRACEROUTE_SIMULATOR_FACTS=tests/tsim_facts`
 
-3. **View results**:
+3. **Or use the interactive shell**:
+   ```bash
+   # Launch interactive shell
+   ./tsimsh
+   
+   # Run commands in shell
+   tsimsh> mtr route -s 10.1.1.1 -d 10.2.1.1
+   tsimsh> network setup --verbose
+   tsimsh> service start --ip 10.1.1.1 --port 8080
+   ```
+
+4. **View results**:
    ```
    traceroute to 10.2.1.1 from 10.1.1.1
      1  hq-gw (10.1.1.1) from eth1 to wg0
      2  br-gw (10.100.1.2) from wg0 to eth1
      3  br-gw (10.2.1.1) on eth1
    ```
+
+## 🖥️ Interactive Shell (tsimsh)
+
+The project includes a comprehensive interactive shell (`tsimsh`) built on the `cmd2` framework, providing a user-friendly command-line interface for all simulator operations.
+
+### Key Features
+
+- **Interactive Command Environment**: Full-featured shell with command completion and history
+- **Organized Command Structure**: Commands grouped by functionality (mtr, network, service, host, facts)
+- **Tab Completion**: Intelligent completion for IP addresses, router names, and options
+- **Persistent History**: Command history preserved across sessions (`~/.tsimsh_history.json`)
+- **Context Mode**: Streamlined operation with command contexts
+- **Colored Output**: Enhanced readability with color-coded messages
+- **Comprehensive Help**: Built-in help system for all commands and options
+
+### Quick Start with Shell
+
+```bash
+# Launch the interactive shell
+./tsimsh
+
+# Basic usage examples
+tsimsh> mtr route -s 10.1.1.1 -d 10.2.1.1
+tsimsh> network setup --verbose
+tsimsh> service start --ip 10.1.1.1 --port 8080
+tsimsh> host add --name web1 --primary-ip 10.1.1.100/24 --connect-to hq-gw
+tsimsh> help                    # Show all available commands
+tsimsh> help mtr               # Show help for specific command group
+```
+
+### Shell Dependencies
+
+The shell requires additional Python packages:
+
+```bash
+# Install shell dependencies
+pip install cmd2 colorama tabulate
+
+# Optional: For enhanced YAML configuration support
+pip install pyyaml
+```
+
+### Command Categories
+
+1. **MTR Commands** (`mtr`): Traceroute simulation, analysis, and real MTR execution
+2. **Network Commands** (`network`): Namespace simulation setup, status, testing, and cleanup
+3. **Service Commands** (`service`): TCP/UDP service management and testing
+4. **Host Commands** (`host`): Dynamic host creation, removal, and management
+5. **Facts Commands** (`facts`): Data collection, processing, and validation
+
+### Scripting Support
+
+The shell supports automation through various methods:
+
+```bash
+# Execute single command
+echo "mtr route -s 10.1.1.1 -d 10.2.1.1" | ./tsimsh
+
+# Execute script file
+./tsimsh < network_setup.script
+
+# Create reusable scripts
+cat > deploy.script << EOF
+network setup --verbose
+service start --ip 10.1.1.1 --port 80
+service start --ip 10.2.1.1 --port 53 --protocol udp
+host add --name web1 --primary-ip 10.1.1.100/24 --connect-to hq-gw
+EOF
+```
+
+For complete shell documentation including all commands, options, and scripting examples, see [TSIM_SHELL.md](TSIM_SHELL.md).
 
 ## ⚙️ Configuration
 
@@ -1331,27 +1415,54 @@ We welcome contributions to improve the traceroute simulator!
 
 ```
 traceroute_simulator/
+├── tsimsh                       # Interactive shell entry point
 ├── src/                         # Core application code
 │   ├── core/                    # Main simulator components
 │   │   ├── traceroute_simulator.py  # Main application
 │   │   ├── route_formatter.py       # Output formatting
 │   │   ├── reverse_path_tracer.py   # Reverse path tracing
+│   │   ├── raw_facts_parser.py      # Raw facts text parsing
+│   │   ├── raw_facts_block_loader.py # Block-based facts loading
+│   │   ├── packet_tracer.py         # Packet path tracing
+│   │   ├── rule_database.py         # Rule database management
+│   │   ├── structured_logging.py    # Enhanced logging system
+│   │   ├── log_filter.py            # Log filtering utilities
 │   │   ├── exceptions.py            # Custom exceptions
-│   │   ├── logging.py               # Logging system
 │   │   └── models.py                # Data models
+│   ├── shell/                   # Interactive shell implementation
+│   │   ├── tsim_shell.py            # Main shell class
+│   │   ├── commands/                # Command handlers
+│   │   │   ├── base.py              # Base command handler
+│   │   │   ├── mtr.py               # MTR command group
+│   │   │   ├── network.py           # Network command group
+│   │   │   ├── service.py           # Service command group
+│   │   │   ├── host.py              # Host command group
+│   │   │   ├── facts.py             # Facts command group
+│   │   │   └── completion.py        # Completion support
+│   │   ├── completers/              # Tab completion system
+│   │   │   └── dynamic.py           # Dynamic completers
+│   │   └── utils/                   # Shell utilities
 │   ├── analyzers/               # Analysis tools
-│   │   └── iptables_forward_analyzer.py  # Packet forwarding analysis
+│   │   ├── iptables_forward_analyzer.py  # Packet forwarding analysis
+│   │   └── iptables_log_processor.py     # Iptables log processing
 │   ├── executors/               # External command executors
-│   │   └── mtr_executor.py          # MTR execution and SSH management
+│   │   ├── mtr_executor.py          # MTR execution and SSH management
+│   │   └── enhanced_mtr_executor.py # Enhanced MTR with options
 │   ├── simulators/              # Network simulation tools
-│   │   ├── __init__.py              # Package init
-│   │   ├── network_namespace_*.py   # Namespace management
-│   │   ├── service_*.py             # Service management
-│   │   └── host_*.py                # Host management
+│   │   ├── network_namespace_setup.py    # Namespace creation
+│   │   ├── network_namespace_cleanup.py  # Namespace cleanup
+│   │   ├── network_namespace_status.py   # Status monitoring
+│   │   ├── network_namespace_tester.py   # Connectivity testing
+│   │   ├── network_topology_viewer.py    # Topology visualization
+│   │   ├── service_manager.py            # Service management
+│   │   ├── service_tester.py             # Service testing
+│   │   └── host_namespace_setup.py       # Host management
 │   └── utils/                   # Utility scripts
-│       ├── __init__.py              # Package init
-│       ├── update_tsim_facts.py     # Facts updater
-│       └── verify_network_setup.py  # Setup verifier
+│       ├── update_tsim_facts.py     # Facts file updater
+│       ├── verify_network_setup.py  # Network setup verification
+│       ├── generate_ipsets.py       # Ipset configuration generator
+│       ├── validate_ipsets.py       # Ipset validation
+│       └── host_cleanup.py          # Host cleanup utilities
 ├── tests/                       # Test environment directory
 │   ├── test_traceroute_simulator.py # Main test suite (9 tests)
 │   ├── test_ip_json_comparison.py   # IP wrapper validation (1 test)
@@ -1365,19 +1476,36 @@ traceroute_simulator/
 │   ├── NETWORK_TOPOLOGY.md          # Detailed network documentation
 │   ├── network_topology_diagram.py  # Network visualization generator
 │   └── network_topology.png         # High-resolution network diagram
+├── scripts/                     # Enhancement and processing scripts
+│   ├── enhance_iptables_rules.py    # Iptables rules enhancement
+│   ├── enhance_ipset_configurations.py # Ipset configuration enhancement
+│   ├── enhance_policy_routing.py    # Policy routing enhancement
+│   └── enhance_iptables_logging.py  # Iptables logging enhancement
 ├── ansible/                     # Data collection automation
 │   ├── get_tsim_facts.yml           # Unified facts collection playbook
 │   ├── get_facts.sh                 # Facts collection script
 │   ├── process_facts.py             # Facts processor
+│   ├── process_all_facts.py         # Batch facts processor
+│   ├── extract_interfaces.py        # Interface extraction tool
 │   └── ip_json_wrapper.py           # IP JSON compatibility wrapper
 ├── Makefile                     # Comprehensive build system
 ├── CLAUDE.md                    # Development guidelines
+├── TSIM_SHELL.md               # Interactive shell documentation
 └── README.md                    # This documentation
 ```
 
 ## 🆕 Recent Improvements (2025)
 
-### YAML Configuration Support (Latest)
+### Interactive Shell (tsimsh) - Latest Addition
+- **Comprehensive Interactive Interface**: Full-featured shell built on cmd2 framework with command completion and persistent history
+- **Organized Command Structure**: Commands grouped by functionality (mtr, network, service, host, facts) for intuitive usage
+- **Tab Completion System**: Intelligent completion for IP addresses, router names, command options, and file paths
+- **Context Mode Support**: Streamlined operation within command contexts for repetitive tasks
+- **Scripting Integration**: Support for automation through command files and piped input
+- **Enhanced User Experience**: Colored output, comprehensive help system, and error handling
+- **Professional Interface**: Welcome screen, command history, and user-friendly error messages
+
+### YAML Configuration Support
 - **Comprehensive Configuration**: Full YAML configuration file support with flexible location precedence
 - **Environment Variable Support**: `TRACEROUTE_SIMULATOR_CONF` for custom configuration file paths
 - **Precedence Handling**: Command line → Configuration file → Hard-coded defaults

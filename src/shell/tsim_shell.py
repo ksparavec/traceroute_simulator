@@ -1,3 +1,4 @@
+
 """
 Main TracerouteSimulatorShell class implementation.
 """
@@ -5,6 +6,8 @@ Main TracerouteSimulatorShell class implementation.
 import os
 import sys
 import argparse
+import json
+import subprocess
 from typing import List, Optional
 
 try:
@@ -26,11 +29,17 @@ except ImportError:
     Fore = _FallbackColor()
     Style = _FallbackColor()
 
+# Import the new VariableManager
+from .utils.variable_manager import VariableManager
+
 
 class TracerouteSimulatorShell(cmd2.Cmd):
     """Interactive shell for traceroute simulator operations."""
     
     def __init__(self, *args, **kwargs):
+        # Detect if we are in an interactive session
+        self.is_interactive = sys.stdin.isatty()
+
         # Configure persistent history before calling super().__init__
         history_file = os.path.expanduser('~/.tsimsh_history.json')
         kwargs['persistent_history_file'] = history_file
@@ -40,19 +49,30 @@ class TracerouteSimulatorShell(cmd2.Cmd):
         
         super().__init__(*args, **kwargs)
         
-        # Shell configuration
-        self.intro = f"""{Fore.CYAN}
-╔══════════════════════════════════════════════════════════════════════════════════════╗
-║                        Traceroute Simulator Shell v1.0                              ║
-║                    Interactive Network Simulation Interface                         ║
-╚══════════════════════════════════════════════════════════════════════════════════════╝
+        # Initialize the VariableManager
+        self.variable_manager = VariableManager(self)
+        
+        # --- Mode-specific configuration ---
+        if self.is_interactive:
+            # Shell configuration for interactive mode
+            self.intro = f"""{Fore.CYAN}
+╔═══════════════════════════════════════════════════════════════════════════════════╗
+║                        Traceroute Simulator Shell v1.0                            ║
+║                    Interactive Network Simulation Interface                       ║
+╚═══════════════════════════════════════════════════════════════════════════════════╝
 {Style.RESET_ALL}
 Type 'help' for available commands, 'help <command>' for specific command help.
-Press Tab for command completion.
+Variables are supported: VAR=value, VAR="value", VAR=$(command). Use $VAR to substitute.
+Type 'set' to see all variables.
 """
-        
-        self.prompt = f"{self.base_prompt}> "
-        
+            self.prompt = f"{self.base_prompt}> "
+        else:
+            # Shell configuration for non-interactive (batch) mode
+            self.intro = ""
+            self.prompt = ""
+            # Exit immediately if a command fails in batch mode
+            self.quit_on_error = True
+
         # Get the project root directory
         self.project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         
@@ -62,34 +82,114 @@ Press Tab for command completion.
         # Initialize command handlers
         self._initialize_handlers()
         
-        # Initialize completion
+        # Initialize completion only in interactive mode
         self._setup_completion()
         
         # Load configuration if available
         self._load_config()
+
+    def do_set(self, _):
+        """Display all currently set shell variables."""
+        self.poutput(f"{Fore.CYAN}--- Shell Variables ---{Style.RESET_ALL}")
+        if not self.variable_manager.variables:
+            self.poutput("No variables set.")
+            return
+
+        for key, value in self.variable_manager.variables.items():
+            if isinstance(value, dict):
+                val_str = f"dictionary with {len(value)} keys"
+            elif isinstance(value, list):
+                val_str = f"list with {len(value)} items"
+            else:
+                val_str = f'"{value}"'
+            self.poutput(f"  {Fore.GREEN}{key}{Style.RESET_ALL} = {val_str}")
+
+    print_parser = cmd2.Cmd2ArgumentParser()
+    print_parser.add_argument('text', nargs='*', help='The text or variable to print')
+
+    @cmd2.with_argparser(print_parser)
+    def do_print(self, args):
+        """
+        Prints the given text. If the text is a valid JSON string,
+        it will be pretty-printed with indentation.
+        """
+        output_str = ' '.join(args.text)
+        try:
+            # Attempt to parse the input string as JSON
+            data = json.loads(output_str)
+            # If successful, pretty-print it
+            self.poutput(json.dumps(data, indent=2))
+        except json.JSONDecodeError:
+            # If it's not a valid JSON string, print it as-is
+            self.poutput(output_str)
     
-    def default(self, statement):
-        """Called when command is not recognized - show help immediately."""
-        if hasattr(statement, 'command') and statement.command:
-            command = statement.command
+    # Add the shell command
+    shell_parser = cmd2.Cmd2ArgumentParser()
+    shell_parser.add_argument('command', nargs='*', help='The command to execute in the system shell')
+
+    @cmd2.with_argparser(shell_parser)
+    def do_shell(self, args):
+        """
+        Execute a command in the system shell.
+        Can be invoked as `shell ...` or `! ...`
+        """
+        command = ' '.join(args.command)
+        if not command:
+            self.poutput("Usage: ! <command>")
+            return
+
+        try:
+            result = subprocess.run(command, shell=True, capture_output=True, text=True)
+            if result.stdout:
+                self.poutput(result.stdout)
+            if result.stderr:
+                self.poutput(f"{Fore.RED}Error: {result.stderr}{Style.RESET_ALL}")
+        except subprocess.SubprocessError as e:
+            self.poutput(f"{Fore.RED}Subprocess error executing shell command: {e}{Style.RESET_ALL}")
+        except OSError as e:
+            self.poutput(f"{Fore.RED}OS error executing shell command: {e}{Style.RESET_ALL}")
+        except ValueError as e:
+            self.poutput(f"{Fore.RED}Invalid arguments for shell command: {e}{Style.RESET_ALL}")
+
+    # Alias '!' to 'shell'
+    do_bang = do_shell
+
+    def default(self, statement: cmd2.Statement):
+        """Called for any command not recognized."""
+        # Check if it's a variable assignment first
+        if self.variable_manager.process_command_for_assignment(statement.raw):
+            # It was an assignment, so we do nothing.
+            return
+
+        # If not an assignment, it's a true unknown command
+        command = statement.command
+        if self.is_interactive:
             self.poutput(f"{Fore.RED}✗ Unknown command: '{command}'{Style.RESET_ALL}")
             self.poutput(f"{Fore.YELLOW}ℹ Available commands:{Style.RESET_ALL}")
             self.do_help('')
         else:
-            # Handle cases where we get a string instead of a Statement object
-            if isinstance(statement, str) and statement.strip():
-                command = statement.split()[0]
-                self.poutput(f"{Fore.RED}✗ Unknown command: '{command}'{Style.RESET_ALL}")
-                self.poutput(f"{Fore.YELLOW}ℹ Available commands:{Style.RESET_ALL}")
-                self.do_help('')
-            else:
-                self.poutput(f"{Fore.YELLOW}ℹ Available commands:{Style.RESET_ALL}")
-                self.do_help('')
+            # In non-interactive mode, just print error and let quit_on_error handle exit
+            sys.stderr.write(f"Error: Unknown command: '{command}'\n")
+
+    def precmd(self, statement: cmd2.Statement) -> cmd2.Statement:
+        """
+        This hook is called before the command is executed.
+        It handles variable substitutions.
+        """
+        # statement.raw is the raw input line
+        line = statement.raw
+        substituted_line = self.variable_manager.substitute_variables(line)
+        
+        # Create a new statement with the substituted line
+        new_statement = self.statement_parser.parse(substituted_line)
+        
+        return super().precmd(new_statement)
     
     
     def do_EOF(self, line):
         """Handle Ctrl+D - exit shell."""
-        self.poutput(f"{Fore.CYAN}Goodbye!{Style.RESET_ALL}")
+        if self.is_interactive:
+            self.poutput(f"\n{Fore.CYAN}Goodbye!{Style.RESET_ALL}")
         return True
     
     def emptyline(self):
@@ -120,6 +220,9 @@ Press Tab for command completion.
     
     def _setup_completion(self):
         """Setup tab completion for commands."""
+        if not self.is_interactive:
+            return # No completion in batch mode
+            
         try:
             from .completers.dynamic import DynamicCompleters
             self.completers = DynamicCompleters(self)
@@ -146,8 +249,12 @@ Press Tab for command completion.
                 except ImportError:
                     # Continue without YAML config
                     pass
-                except Exception as e:
-                    self.poutput(f"{Fore.YELLOW}Warning: Could not load config from {config_path}: {e}{Style.RESET_ALL}")
+                except (FileNotFoundError, PermissionError) as e:
+                    self.poutput(f"{Fore.YELLOW}Warning: Could not access config file {config_path}: {e}{Style.RESET_ALL}")
+                except yaml.YAMLError as e:
+                    self.poutput(f"{Fore.YELLOW}Warning: Invalid YAML in config file {config_path}: {e}{Style.RESET_ALL}")
+                except (ValueError, TypeError) as e:
+                    self.poutput(f"{Fore.YELLOW}Warning: Invalid config data in {config_path}: {e}{Style.RESET_ALL}")
     
     def _apply_config(self, config):
         """Apply configuration settings."""
@@ -155,12 +262,13 @@ Press Tab for command completion.
             shell_config = config['shell']
             if 'prompt' in shell_config:
                 self.prompt = shell_config['prompt']
-            if 'intro' in shell_config:
+            if 'intro' in shell_config and self.is_interactive:
                 self.intro = shell_config['intro']
     
     def do_exit(self, _):
         """Exit the shell."""
-        self.poutput(f"{Fore.CYAN}Goodbye!{Style.RESET_ALL}")
+        if self.is_interactive:
+            self.poutput(f"{Fore.CYAN}Goodbye!{Style.RESET_ALL}")
         return True
     
     def do_quit(self, _):
@@ -378,6 +486,7 @@ Press Tab for command completion.
         self.poutput("│ restart tsimsh      │ After code changes  │ Exit and restart ./tsimsh           │")
         self.poutput("│ Change environment  │ New facts directory │ export TRACEROUTE_SIMULATOR_FACTS=… │")
         self.poutput("└─────────────────────┴─────────────────────┴─────────────────────────────────────┘")
+
 
 
 def main():

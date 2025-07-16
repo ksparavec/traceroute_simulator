@@ -1,0 +1,82 @@
+#
+# This script demonstrates control flow structures in tsimsh.
+# To run this script, use the following command from the project root:
+# ./tsimsh < control_flow_example.tsim
+#
+
+# Variables for demonstration
+THRESHOLD=5
+COUNTER=3
+
+# If/then/else example
+print === If/Then/Else Example ===
+if $COUNTER > $THRESHOLD then
+    print Counter ($COUNTER) is greater than threshold ($THRESHOLD)
+else
+    print Counter ($COUNTER) is not greater than threshold ($THRESHOLD)
+fi
+
+# String comparison
+USER="admin"
+if $USER == "admin" then
+    print Welcome, administrator!
+fi
+
+# While loop example
+print
+print === While Loop Example ===
+print Countdown from $COUNTER:
+while $COUNTER > 0 do
+    print $COUNTER...
+    COUNTER=$(($COUNTER - 1))
+done
+print Liftoff!
+
+# For loop with list
+print
+print === For Loop Example ===
+ITEMS="router1 router2 router3"
+print Processing routers:
+for ROUTER in $ITEMS do
+    print - Checking $ROUTER
+done
+
+# Nested control structures
+print
+print === Nested Structures Example ===
+for i in 1 2 3 4 5 do
+    if $i == 3 then
+        print Found special number: $i
+    else
+        print Regular number: $i
+    fi
+done
+
+# Break example
+print
+print === Break Example ===
+print Finding first even number:
+for num in 1 3 5 2 7 9 4 do
+    print Checking $num...
+    # Simple even check using modulo
+    REMAINDER=$(($num % 2))
+    if $REMAINDER == 0 then
+        print Found even number: $num
+        break
+    fi
+done
+
+# Continue example
+print
+print === Continue Example ===
+print Processing only odd numbers:
+for n in 1 2 3 4 5 6 do
+    REMAINDER=$(($n % 2))
+    if $REMAINDER == 0 then
+        continue
+    fi
+    print Odd number: $n
+done
+
+print
+print Script completed successfully!

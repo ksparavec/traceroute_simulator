@@ -1,0 +1,41 @@
+#
+# Example demonstrating dictionary .keys() and .values() methods
+#
+
+# Create a sample dictionary
+ROUTERS={"router1": "10.1.1.1", "router2": "10.2.2.2", "router3": "10.3.3.3"}
+
+print === Dictionary Contents ===
+print $ROUTERS
+
+print
+print === Using .keys() method ===
+for NAME in $ROUTERS.keys() do
+    print Router name: $NAME
+done
+
+print
+print === Using .values() method ===
+for IP in $ROUTERS.values() do
+    print Router IP: $IP
+done
+
+print
+print === Accessing specific values ===
+for NAME in $ROUTERS.keys() do
+    IP=$ROUTERS[$NAME]
+    print $NAME has IP address $IP
+done
+
+# You can also store keys/values in variables
+print
+print === Storing keys in a variable ===
+ALL_KEYS=$ROUTERS.keys()
+print All router names: $ALL_KEYS
+
+# Count routers
+ROUTER_COUNT=0
+for R in $ROUTERS.keys() do
+    ROUTER_COUNT=$(($ROUTER_COUNT + 1))
+done
+print Total routers: $ROUTER_COUNT

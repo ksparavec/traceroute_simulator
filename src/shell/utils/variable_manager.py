@@ -47,12 +47,25 @@ class VariableManager:
         
         # Extract the chain of accessors
         accessors_str = name[base_var_match.end():]
-        # This regex finds all .key or [key] style accessors
-        accessor_keys = re.findall(r'\.([a-zA-Z_][a-zA-Z0-9_]*)|\[([^\]]+)\]', accessors_str)
+        # This regex finds all .key, .method(), or [key] style accessors
+        accessor_pattern = re.compile(r'\.([a-zA-Z_][a-zA-Z0-9_]*)(\(\))?|\[([^\]]+)\]')
+        accessor_matches = accessor_pattern.findall(accessors_str)
 
-        for dot_key, bracket_key in accessor_keys:
+        for dot_key, method_parens, bracket_key in accessor_matches:
             if value is None:
                 return None
+            
+            # Check if it's a known method (with or without parentheses)
+            if dot_key in ['keys', 'values']:
+                # Handle method calls on dictionaries
+                if isinstance(value, dict) and dot_key == 'keys':
+                    value = list(value.keys())
+                    continue
+                elif isinstance(value, dict) and dot_key == 'values':
+                    value = list(value.values())
+                    continue
+                else:
+                    return None  # Method not applicable to this type
             
             key = dot_key or bracket_key
             
@@ -72,8 +85,8 @@ class VariableManager:
             # Second, try dictionary access
             elif isinstance(value, dict):
                 # If the key from brackets is quoted, unquote it
-                if (key.startswith("'") and key.endswith("'")) or \
-                   (key.startswith('"') and key.endswith('"')):
+                if bracket_key and ((key.startswith("'") and key.endswith("'")) or \
+                   (key.startswith('"') and key.endswith('"'))):
                     key = key[1:-1]
                 
                 value = value.get(key)
@@ -135,7 +148,7 @@ class VariableManager:
         command = complex_pattern.sub(replace_complex, command)
         
         # Second pass: handle remaining simple variables
-        simple_pattern = re.compile(r'\$({)?([a-zA-Z_][a-zA-Z0-9_]*(\.[a-zA-Z_][a-zA-Z0-9_]*|\[[^\]]+\])*)(?(1)})')
+        simple_pattern = re.compile(r'\$({)?([a-zA-Z_][a-zA-Z0-9_]*(?:\.[a-zA-Z_][a-zA-Z0-9_]*(?:\(\))?|\[[^\]]+\])*)(?(1)})')
         
         def replace_simple(match):
             var_name = match.group(2)
@@ -166,25 +179,43 @@ class VariableManager:
 
         # Case 1: Command substitution, e.g., VAR=$(command)
         if value_str.startswith('$(') and value_str.endswith(')'):
-            sub_command = value_str[2:-1]
-            # Execute the command in the system shell to support external commands
-            try:
-                from colorama import Fore, Style
-                result = subprocess.run(sub_command, shell=True, capture_output=True, text=True)
-                if result.returncode == 0:
-                    self.set_variable(var_name, result.stdout.strip())
-                else:
-                    self.shell.poutput(f"{Fore.RED}Error during command substitution:\n{result.stderr.strip()}{Style.RESET_ALL}")
-                    self.set_variable(var_name, "") # Set to empty on failure
-            except subprocess.SubprocessError as e:
-                self.shell.poutput(f"{Fore.RED}Subprocess error during command substitution: {e}{Style.RESET_ALL}")
-                self.set_variable(var_name, "")
-            except OSError as e:
-                self.shell.poutput(f"{Fore.RED}OS error during command substitution: {e}{Style.RESET_ALL}")
-                self.set_variable(var_name, "")
-            except ValueError as e:
-                self.shell.poutput(f"{Fore.RED}Invalid arguments during command substitution: {e}{Style.RESET_ALL}")
-                self.set_variable(var_name, "")
+            sub_expr = value_str[2:-1]
+            
+            # Check if it's arithmetic expression $((...))
+            if sub_expr.startswith('(') and sub_expr.endswith(')'):
+                # Arithmetic expression
+                arith_expr = sub_expr[1:-1]
+                try:
+                    # Substitute variables in the expression
+                    arith_expr = self.substitute_variables(arith_expr)
+                    # Evaluate the expression
+                    result = eval(arith_expr, {"__builtins__": {}}, {})
+                    self.set_variable(var_name, str(result))
+                except Exception as e:
+                    from colorama import Fore, Style
+                    self.shell.poutput(f"{Fore.RED}Error evaluating arithmetic expression: {e}{Style.RESET_ALL}")
+                    self.set_variable(var_name, "0")
+            else:
+                # Command substitution
+                sub_command = sub_expr
+                # Execute the command in the system shell to support external commands
+                try:
+                    from colorama import Fore, Style
+                    result = subprocess.run(sub_command, shell=True, capture_output=True, text=True)
+                    if result.returncode == 0:
+                        self.set_variable(var_name, result.stdout.strip())
+                    else:
+                        self.shell.poutput(f"{Fore.RED}Error during command substitution:\n{result.stderr.strip()}{Style.RESET_ALL}")
+                        self.set_variable(var_name, "") # Set to empty on failure
+                except subprocess.SubprocessError as e:
+                    self.shell.poutput(f"{Fore.RED}Subprocess error during command substitution: {e}{Style.RESET_ALL}")
+                    self.set_variable(var_name, "")
+                except OSError as e:
+                    self.shell.poutput(f"{Fore.RED}OS error during command substitution: {e}{Style.RESET_ALL}")
+                    self.set_variable(var_name, "")
+                except ValueError as e:
+                    self.shell.poutput(f"{Fore.RED}Invalid arguments during command substitution: {e}{Style.RESET_ALL}")
+                    self.set_variable(var_name, "")
         
         # Case 2: Regular assignment with potential substitution on the right side
         else:

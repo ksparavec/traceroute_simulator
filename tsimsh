@@ -16,10 +16,23 @@ def main():
     """Main entry point for the shell."""
     try:
         from shell.tsim_shell import TracerouteSimulatorShell
+        from shell.utils.script_processor import ScriptProcessor
         
-        # Create and run the shell
+        # Create shell instance
         shell = TracerouteSimulatorShell()
-        shell.cmdloop()
+        
+        # Check if we're in batch mode (input is not a terminal)
+        if not sys.stdin.isatty():
+            # Read all input
+            script_lines = sys.stdin.readlines()
+            
+            # Process script with control flow support
+            processor = ScriptProcessor(shell.variable_manager, shell)
+            exit_code = processor.process_script(script_lines)
+            sys.exit(exit_code)
+        else:
+            # Interactive mode
+            shell.cmdloop()
         
     except KeyboardInterrupt:
         print("\nGoodbye!")

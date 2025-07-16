@@ -7,15 +7,32 @@
 SOURCE_IP="10.1.1.1"
 print $SOURCE_IP
 
-#ROUTER_INFO=$(sudo -E python3 -B src/simulators/network_namespace_status.py summary --limit pmfw-00190-047.lvnbb.de -j)
-ROUTER_INFO={ "pmfw-00190-047.lvnbb.de": { "namespace": "pmfw-00190-047.lvnbb.de", "type": "router", "status": "running", "interface_count": 31, "policy_rules": 6, "routing_tables": { "table_154 (id 154)": 3, "table_153 (id 153)": "failed to retrieve", "table_152 (id 152)": "failed to retrieve", "main": 67 }, "iptables": { "total_rules": 519, "table_counts": { "mangle": 6, "filter": 511, "nat": 2 } }, "ipsets": 169 } }
-print $ROUTER_INFO
+ROUTER_INFO=$(sudo -E python3 -B src/simulators/network_namespace_status.py summary -j)
+#ROUTER_INFO={ "pmfw-00190-047.lvnbb.de": { "namespace": "pmfw-00190-047.lvnbb.de", "type": "router", "status": "running", "interface_count": 31, "policy_rules": 6, "routing_tables": { "table_154 (id 154)": 3, "table_153 (id 153)": "failed to retrieve", "table_152 (id 152)": "failed to retrieve", "main": 67 }, "iptables": { "total_rules": 519, "table_counts": { "mangle": 6, "filter": 511, "nat": 2 } }, "ipsets": 169 } }
+#print $ROUTER_INFO
 
-ROUTER='pmfw-00190-047.lvnbb.de'
-FIELD='routing_tables'
+#ROUTER='pmfw-00190-047.lvnbb.de'
+#FIELD='routing_tables'
 
-TABLES=$ROUTER_INFO[$ROUTER][$FIELD]
-print $TABLES
+#TABLES=$ROUTER_INFO[$ROUTER][$FIELD]
+#print $TABLES
+
+ROUTERS=$ROUTER_INFO.keys()
+#print $ROUTERS
+
+ROUTERS_TOTAL=0
+ROUTERS_BIG=0
+
+for ROUTER in $ROUTERS do
+   ROUTERS_TOTAL=$(($ROUTERS_TOTAL + 1))
+   TOTAL_RULES=$ROUTER_INFO[$ROUTER][iptables][total_rules]
+   if $TOTAL_RULES >= 100 then
+      print "$ROUTER: $TOTAL_RULES"
+      ROUTERS_BIG=$(($ROUTERS_BIG + 1))
+   fi
+done
+
+print "Total routers: $ROUTERS_TOTAL"
+print "Big routers: $ROUTERS_BIG"
 
 set
-

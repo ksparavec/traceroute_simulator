@@ -88,11 +88,56 @@ class VariableManager:
         """
         Performs variable substitution on a command string.
         Supports $VAR, ${VAR}, and nested access like $mydict.key[0].
+        Also supports one level of variable substitution within brackets.
         """
-        # Regex to find all variable patterns: $VAR, ${VAR}, $var.key[0]['name'], etc.
-        pattern = re.compile(r'\$({)?([a-zA-Z_][a-zA-Z0-9_]*(\.[a-zA-Z_][a-zA-Z0-9_]*|\[[^\]]+\])*)(?(1)})')
-
-        def replace_match(match):
+        # First, find complex variable references with brackets that may contain other variables
+        # Match $VAR[...] where ... may contain other $VARS
+        complex_pattern = re.compile(r'\$([a-zA-Z_][a-zA-Z0-9_]*)((?:\[[^\]]*\])+)')
+        
+        def replace_complex(match):
+            base_var = match.group(1)
+            bracket_part = match.group(2)
+            
+            # Check if bracket part contains any variables
+            if '$' not in bracket_part:
+                # No variables to substitute, process normally
+                return match.group(0)
+            
+            # Replace any $VAR references within the bracket part
+            simple_var_pattern = re.compile(r'\$([a-zA-Z_][a-zA-Z0-9_]*)')
+            
+            def replace_simple_var(var_match):
+                var_name = var_match.group(1)
+                var_value = self.variables.get(var_name)
+                if var_value is None:
+                    return var_match.group(0)
+                # For use in bracket notation, wrap strings in quotes
+                if isinstance(var_value, str):
+                    return f'"{var_value}"'
+                return str(var_value)
+            
+            # Substitute variables within brackets
+            substituted_brackets = simple_var_pattern.sub(replace_simple_var, bracket_part)
+            
+            # Now evaluate the complete expression
+            full_expression = base_var + substituted_brackets
+            value = self.get_variable(full_expression)
+            
+            if value is None:
+                return match.group(0)
+            
+            if isinstance(value, (dict, list)):
+                return json.dumps(value, separators=(',', ':'))
+            
+            return str(value)
+        
+        # First pass: handle complex expressions with variables in brackets
+        command = complex_pattern.sub(replace_complex, command)
+        
+        # Second pass: handle remaining simple variables
+        simple_pattern = re.compile(r'\$({)?([a-zA-Z_][a-zA-Z0-9_]*(\.[a-zA-Z_][a-zA-Z0-9_]*|\[[^\]]+\])*)(?(1)})')
+        
+        def replace_simple(match):
             var_name = match.group(2)
             value = self.get_variable(var_name)
 
@@ -105,7 +150,7 @@ class VariableManager:
             
             return str(value)
 
-        return pattern.sub(replace_match, command)
+        return simple_pattern.sub(replace_simple, command)
 
     def process_command_for_assignment(self, command: str) -> bool:
         """

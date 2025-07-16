@@ -12,8 +12,9 @@ ROUTER_INFO={ "pmfw-00190-047.lvnbb.de": { "namespace": "pmfw-00190-047.lvnbb.de
 print $ROUTER_INFO
 
 ROUTER='pmfw-00190-047.lvnbb.de'
+FIELD='routing_tables'
 
-TABLES=$ROUTER_INFO[$ROUTER]['routing_tables']
+TABLES=$ROUTER_INFO[$ROUTER][$FIELD]
 print $TABLES
 
 set

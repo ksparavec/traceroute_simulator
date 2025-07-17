@@ -180,7 +180,7 @@ Type 'set' to see all variables.
         if not self.variable_manager.process_command_for_assignment(line):
             # Parse the command to check if it's a known tsimsh command
             statement = self.statement_parser.parse(line)
-            tsimsh_commands = ['network', 'mtr', 'trace', 'service', 'host', 'facts', 'print', 'variables', 'unset']
+            tsimsh_commands = ['network', 'trace', 'service', 'host', 'facts', 'print', 'variables', 'unset']
             
             if statement.command in tsimsh_commands:
                 # Capture output for tsimsh commands
@@ -242,15 +242,15 @@ Type 'set' to see all variables.
             from .commands.network import NetworkCommands
             from .commands.host import HostCommands
             from .commands.service import ServiceCommands
-            from .commands.mtr import MTRCommands
             from .commands.completion import CompletionCommands
+            from .commands.trace import TraceCommands
             
             self.facts_handler = FactsCommands(self)
             self.network_handler = NetworkCommands(self)
             self.host_handler = HostCommands(self)
             self.service_handler = ServiceCommands(self)
-            self.mtr_handler = MTRCommands(self)
             self.completion_handler = CompletionCommands(self)
+            self.trace_handler = TraceCommands(self)
             
         except ImportError as e:
             self.poutput(f"{Fore.RED}Error loading command handlers: {e}{Style.RESET_ALL}")
@@ -313,6 +313,15 @@ Type 'set' to see all variables.
         """Quit the shell."""
         return self.do_exit(_)
     
+    def do_edit(self, args):
+        """Edit command is disabled. Use ! <editor> <filename> instead."""
+        self.poutput(f"{Fore.YELLOW}The 'edit' command has been disabled as it can hang in some environments.{Style.RESET_ALL}")
+        self.poutput(f"{Fore.CYAN}Use the bang command instead:{Style.RESET_ALL}")
+        self.poutput(f"  ! nano {args if args else '<filename>'}")
+        self.poutput(f"  ! vim {args if args else '<filename>'}")
+        self.poutput(f"  ! vi {args if args else '<filename>'}")
+        return None
+    
     # Create argument parsers with cmd2's Cmd2ArgumentParser
     def do_facts(self, args):
         """Manage routing facts collection and processing."""
@@ -366,18 +375,6 @@ Type 'set' to see all variables.
             return self.service_handler.complete_command(text, line, begidx, endidx)
         return []
     
-    def do_mtr(self, args):
-        """Perform traceroute simulation and analysis."""
-        if hasattr(self, 'mtr_handler'):
-            return self.mtr_handler.handle_command(args)
-        else:
-            self.poutput(f"{Fore.RED}MTR commands not available{Style.RESET_ALL}")
-    
-    def complete_mtr(self, text, line, begidx, endidx):
-        """Provide completion for mtr command."""
-        if hasattr(self, 'mtr_handler'):
-            return self.mtr_handler.complete_command(text, line, begidx, endidx)
-        return []
     
     def do_completion(self, args):
         """Generate shell completion scripts."""
@@ -392,6 +389,19 @@ Type 'set' to see all variables.
             return self.completion_handler.complete_command(text, line, begidx, endidx)
         return []
     
+    def do_trace(self, args):
+        """Perform reverse path tracing between source and destination."""
+        if hasattr(self, 'trace_handler'):
+            return self.trace_handler.handle_command(args)
+        else:
+            self.poutput(f"{Fore.RED}Trace command not available{Style.RESET_ALL}")
+    
+    def complete_trace(self, text, line, begidx, endidx):
+        """Provide completion for trace command."""
+        if hasattr(self, 'trace_handler'):
+            return self.trace_handler.complete_command(text, line, begidx, endidx)
+        return []
+    
     def do_status(self, args):
         """Show current shell status and configuration."""
         self.poutput(f"{Fore.CYAN}Traceroute Simulator Shell Status{Style.RESET_ALL}")
@@ -404,7 +414,7 @@ Type 'set' to see all variables.
             ('Network', hasattr(self, 'network_handler')),
             ('Host', hasattr(self, 'host_handler')),
             ('Service', hasattr(self, 'service_handler')),
-            ('MTR', hasattr(self, 'mtr_handler')),
+            ('Trace', hasattr(self, 'trace_handler')),
             ('Completion', hasattr(self, 'completion_handler'))
         ]
         
@@ -491,17 +501,6 @@ Type 'set' to see all variables.
         self.poutput("  service clean [--force]")
         self.poutput("    Stop all services")
     
-    def help_mtr(self):
-        """Help for mtr command."""
-        self.poutput(f"{Fore.CYAN}MTR and Tracing Commands:{Style.RESET_ALL}")
-        self.poutput("  mtr route --source IP --dest IP [--format FORMAT] [--verbose]")
-        self.poutput("    Perform traceroute simulation")
-        self.poutput("  mtr analyze --router NAME --source IP --dest IP --protocol PROTO")
-        self.poutput("    Analyze packet forwarding rules")
-        self.poutput("  mtr real --source IP --dest IP [--count COUNT] [--verbose]")
-        self.poutput("    Execute real MTR on network")
-        self.poutput("  mtr reverse --source IP --dest IP [--verbose]")
-        self.poutput("    Perform reverse path tracing")
     
     def help_completion(self):
         """Help for completion command."""
@@ -524,6 +523,24 @@ Type 'set' to see all variables.
         self.poutput("│ restart tsimsh      │ After code changes  │ Exit and restart ./tsimsh           │")
         self.poutput("│ Change environment  │ New facts directory │ export TRACEROUTE_SIMULATOR_FACTS=… │")
         self.poutput("└─────────────────────┴─────────────────────┴─────────────────────────────────────┘")
+    
+    def help_trace(self):
+        """Help for trace command."""
+        self.poutput(f"{Fore.CYAN}Trace Command:{Style.RESET_ALL}")
+        self.poutput("  trace -s SOURCE_IP -d DESTINATION_IP [--json] [--verbose]")
+        self.poutput("    Perform reverse path tracing between source and destination")
+        self.poutput("")
+        self.poutput("Options:")
+        self.poutput("  -s, --source       Source IP address (required)")
+        self.poutput("  -d, --destination  Destination IP address (required)")
+        self.poutput("  -j, --json         Output in JSON format")
+        self.poutput("  -v, --verbose      Verbose output (can be used multiple times)")
+        self.poutput("  --controller-ip    Ansible controller IP (auto-detected if not provided)")
+        self.poutput("")
+        self.poutput("Examples:")
+        self.poutput("  trace -s 10.1.1.1 -d 10.3.1.1")
+        self.poutput("  trace -s 10.1.2.3 -d 192.168.1.1 --json")
+        self.poutput("  trace -s 10.2.1.1 -d 10.1.3.1 -vv")
 
 
 

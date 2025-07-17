@@ -187,7 +187,7 @@ class VariableManager:
                 if not self.shell.is_interactive and '-j' not in tsim_command and '--json' not in tsim_command and '-f json' not in tsim_command:
                     # Check if command supports JSON output
                     cmd_parts = tsim_command.strip().split()
-                    if cmd_parts and cmd_parts[0] in ['network', 'mtr', 'trace']:
+                    if cmd_parts and cmd_parts[0] in ['network', 'trace']:
                         tsim_command += ' -j'
                     elif cmd_parts and cmd_parts[0] in ['service', 'host'] and len(cmd_parts) > 1 and cmd_parts[1] == 'list':
                         tsim_command += ' -f json'

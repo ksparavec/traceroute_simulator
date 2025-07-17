@@ -261,14 +261,13 @@ _tsim_completion() {
     _init_completion || return
     
     # Main commands
-    local commands="facts network host service mtr completion status help exit quit"
+    local commands="facts network host service trace completion status help exit quit"
     
     # Subcommands
     local facts_commands="collect process validate"
     local network_commands="setup status clean test"
     local host_commands="add list remove clean"
     local service_commands="start test list stop clean"
-    local mtr_commands="route analyze real reverse"
     local completion_commands="generate install uninstall"
     
     case $cword in
@@ -288,9 +287,6 @@ _tsim_completion() {
                     ;;
                 service)
                     COMPREPLY=($(compgen -W "$service_commands" -- "$cur"))
-                    ;;
-                mtr)
-                    COMPREPLY=($(compgen -W "$mtr_commands" -- "$cur"))
                     ;;
                 completion)
                     COMPREPLY=($(compgen -W "$completion_commands" -- "$cur"))
@@ -339,7 +335,7 @@ _tsim() {
                 "network:Manage network namespace simulation"
                 "host:Manage dynamic host creation and removal"
                 "service:Manage TCP/UDP services"
-                "mtr:Perform traceroute simulation and analysis"
+                "trace:Perform reverse path tracing"
                 "completion:Generate shell completion scripts"
                 "status:Show shell status"
                 "help:Show help information"
@@ -386,15 +382,6 @@ _tsim() {
                     )
                     _describe 'service command' service_commands
                     ;;
-                mtr)
-                    local mtr_commands=(
-                        "route:Traceroute simulation"
-                        "analyze:Analyze forwarding rules"
-                        "real:Execute real MTR"
-                        "reverse:Reverse path tracing"
-                    )
-                    _describe 'mtr command' mtr_commands
-                    ;;
                 completion)
                     local completion_commands=(
                         "generate:Generate completion script"
@@ -420,7 +407,7 @@ complete -c tsim -f -n "__fish_use_subcommand" -a "facts" -d "Manage routing fac
 complete -c tsim -f -n "__fish_use_subcommand" -a "network" -d "Manage network simulation"
 complete -c tsim -f -n "__fish_use_subcommand" -a "host" -d "Manage hosts"
 complete -c tsim -f -n "__fish_use_subcommand" -a "service" -d "Manage services"
-complete -c tsim -f -n "__fish_use_subcommand" -a "mtr" -d "Traceroute and analysis"
+complete -c tsim -f -n "__fish_use_subcommand" -a "trace" -d "Reverse path tracing"
 complete -c tsim -f -n "__fish_use_subcommand" -a "completion" -d "Completion scripts"
 complete -c tsim -f -n "__fish_use_subcommand" -a "status" -d "Show shell status"
 complete -c tsim -f -n "__fish_use_subcommand" -a "help" -d "Show help"
@@ -451,11 +438,6 @@ complete -c tsim -f -n "__fish_seen_subcommand_from service" -a "list" -d "List 
 complete -c tsim -f -n "__fish_seen_subcommand_from service" -a "stop" -d "Stop a service"
 complete -c tsim -f -n "__fish_seen_subcommand_from service" -a "clean" -d "Stop all services"
 
-# MTR subcommands
-complete -c tsim -f -n "__fish_seen_subcommand_from mtr" -a "route" -d "Traceroute simulation"
-complete -c tsim -f -n "__fish_seen_subcommand_from mtr" -a "analyze" -d "Analyze forwarding rules"
-complete -c tsim -f -n "__fish_seen_subcommand_from mtr" -a "real" -d "Execute real MTR"
-complete -c tsim -f -n "__fish_seen_subcommand_from mtr" -a "reverse" -d "Reverse path tracing"
 
 # Completion subcommands
 complete -c tsim -f -n "__fish_seen_subcommand_from completion" -a "generate" -d "Generate completion script"

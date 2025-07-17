@@ -120,7 +120,9 @@ class MTRCommands(BaseCommandHandler):
         if not self.check_facts_directory():
             return 1
         
-        self.info(f"Simulating traceroute from {parsed_args.source} to {parsed_args.dest}")
+        # Only show info message if not JSON output
+        if not parsed_args.json:
+            self.info(f"Simulating traceroute from {parsed_args.source} to {parsed_args.dest}")
         
         # Run the traceroute simulator
         script_path = self.get_script_path('src/core/traceroute_simulator.py')
@@ -182,6 +184,7 @@ class MTRCommands(BaseCommandHandler):
                 self.error(f"Destination port required for {parsed_args.protocol.upper()}")
                 return 1
         
+        # Always show info for analyze operations (no JSON output option)
         self.info(f"Analyzing {parsed_args.protocol.upper()} forwarding on {parsed_args.router}")
         
         # Run the iptables analyzer
@@ -227,6 +230,7 @@ class MTRCommands(BaseCommandHandler):
         except SystemExit:
             return 1
         
+        # Always show info for real MTR operations (no JSON output option)
         self.info(f"Executing MTR from {parsed_args.router} to {parsed_args.dest}")
         
         # Check if we have an inventory file
@@ -284,7 +288,9 @@ class MTRCommands(BaseCommandHandler):
         if not self.check_facts_directory():
             return 1
         
-        self.info(f"Tracing reverse path from {parsed_args.dest} to {parsed_args.source}")
+        # Only show info message if not JSON output
+        if not parsed_args.json:
+            self.info(f"Tracing reverse path from {parsed_args.dest} to {parsed_args.source}")
         
         # Run the reverse path tracer
         script_path = self.get_script_path('src/core/reverse_path_tracer.py')

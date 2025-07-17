@@ -120,42 +120,32 @@ class HostCommands(BaseCommandHandler):
         
         # Build command arguments
         cmd_args = [
-            '--host', parsed_args.name,
-            '--primary-ip', parsed_args.primary_ip,
-            '--connect-to', parsed_args.connect_to
+            '--host', args.name,
+            '--primary-ip', args.primary_ip,
+            '--connect-to', args.connect_to
         ]
         
-        if parsed_args.secondary_ips:
-            cmd_args.extend(['--secondary-ips'] + parsed_args.secondary_ips)
+        if args.secondary_ips:
+            cmd_args.extend(['--secondary-ips'] + args.secondary_ips)
         
-        if parsed_args.verbose:
+        if args.verbose:
             cmd_args.append('--verbose')
         
         # Run with sudo
         returncode = self.run_script_with_output(script_path, cmd_args, use_sudo=True)
         
         if returncode == 0:
-            self.success(f"Host {parsed_args.name} added successfully")
+            self.success(f"Host {args.name} added successfully")
         else:
-            self.error(f"Failed to add host {parsed_args.name}")
+            self.error(f"Failed to add host {args.name}")
         
         return returncode
     
-    def _list_hosts(self, args: list) -> int:
+    def _list_hosts(self, args: argparse.Namespace) -> int:
         """List all hosts."""
-        parser = argparse.ArgumentParser(prog='host list',
-                                       description='List all hosts')
-        parser.add_argument('--format', '-f', choices=['text', 'json'], default='text',
-                          help='Output format')
-        parser.add_argument('--verbose', '-v', action='store_true',
-                          help='Verbose output')
-        
-        try:
-            parsed_args = parser.parse_args(args)
-        except SystemExit:
-            return 1
-        
-        self.info("Listing all hosts...")
+        # Only show info message if not JSON output
+        if args.format != 'json':
+            self.info("Listing all hosts...")
         
         # Run the host listing script
         script_path = self.get_script_path('src/simulators/host_namespace_setup.py')
@@ -165,10 +155,10 @@ class HostCommands(BaseCommandHandler):
         # Build command arguments
         cmd_args = ['--list']
         
-        if parsed_args.format == 'json':
+        if args.format == 'json':
             cmd_args.append('--json')
         
-        if parsed_args.verbose:
+        if args.verbose:
             cmd_args.append('--verbose')
         
         # Run with sudo
@@ -176,26 +166,12 @@ class HostCommands(BaseCommandHandler):
         
         return returncode
     
-    def _remove_host(self, args: list) -> int:
+    def _remove_host(self, args: argparse.Namespace) -> int:
         """Remove a host from the network."""
-        parser = argparse.ArgumentParser(prog='host remove',
-                                       description='Remove a host from the network')
-        parser.add_argument('--name', required=True,
-                          help='Host name to remove')
-        parser.add_argument('--force', '-f', action='store_true',
-                          help='Force removal without confirmation')
-        parser.add_argument('--verbose', '-v', action='store_true',
-                          help='Verbose output')
-        
-        try:
-            parsed_args = parser.parse_args(args)
-        except SystemExit:
-            return 1
-        
         # Confirmation if not forced
-        if not parsed_args.force:
+        if not args.force:
             try:
-                response = input(f"Are you sure you want to remove host {parsed_args.name}? (y/N): ")
+                response = input(f"Are you sure you want to remove host {args.name}? (y/N): ")
                 if response.lower() not in ['y', 'yes']:
                     self.info("Host removal cancelled")
                     return 0
@@ -203,7 +179,7 @@ class HostCommands(BaseCommandHandler):
                 self.info("\nHost removal cancelled")
                 return 0
         
-        self.info(f"Removing host {parsed_args.name}")
+        self.info(f"Removing host {args.name}")
         
         # Run the host removal script
         script_path = self.get_script_path('src/simulators/host_namespace_setup.py')
@@ -212,39 +188,27 @@ class HostCommands(BaseCommandHandler):
         
         # Build command arguments
         cmd_args = [
-            '--host', parsed_args.name,
+            '--host', args.name,
             '--remove'
         ]
         
-        if parsed_args.verbose:
+        if args.verbose:
             cmd_args.append('--verbose')
         
         # Run with sudo
         returncode = self.run_script_with_output(script_path, cmd_args, use_sudo=True)
         
         if returncode == 0:
-            self.success(f"Host {parsed_args.name} removed successfully")
+            self.success(f"Host {args.name} removed successfully")
         else:
-            self.error(f"Failed to remove host {parsed_args.name}")
+            self.error(f"Failed to remove host {args.name}")
         
         return returncode
     
-    def _clean_hosts(self, args: list) -> int:
+    def _clean_hosts(self, args: argparse.Namespace) -> int:
         """Remove all hosts."""
-        parser = argparse.ArgumentParser(prog='host clean',
-                                       description='Remove all hosts')
-        parser.add_argument('--force', '-f', action='store_true',
-                          help='Force cleanup without confirmation')
-        parser.add_argument('--verbose', '-v', action='store_true',
-                          help='Verbose output')
-        
-        try:
-            parsed_args = parser.parse_args(args)
-        except SystemExit:
-            return 1
-        
         # Confirmation if not forced
-        if not parsed_args.force:
+        if not args.force:
             try:
                 response = input("Are you sure you want to remove all hosts? (y/N): ")
                 if response.lower() not in ['y', 'yes']:
@@ -264,7 +228,7 @@ class HostCommands(BaseCommandHandler):
         # Build command arguments
         cmd_args = ['--clean-all']
         
-        if parsed_args.verbose:
+        if args.verbose:
             cmd_args.append('--verbose')
         
         # Run with sudo

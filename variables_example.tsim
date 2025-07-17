@@ -7,7 +7,10 @@
 SOURCE_IP="10.1.1.1"
 print $SOURCE_IP
 
-ROUTER_INFO=$(sudo -E python3 -B src/simulators/network_namespace_status.py summary -j)
+ROUTER_INFO=`network status summary -j`
+print $ROUTER_INFO
+
+#ROUTER_INFO=$(sudo -E python3 -B src/simulators/network_namespace_status.py summary -j)
 #ROUTER_INFO={ "pmfw-00190-047.lvnbb.de": { "namespace": "pmfw-00190-047.lvnbb.de", "type": "router", "status": "running", "interface_count": 31, "policy_rules": 6, "routing_tables": { "table_154 (id 154)": 3, "table_153 (id 153)": "failed to retrieve", "table_152 (id 152)": "failed to retrieve", "main": 67 }, "iptables": { "total_rules": 519, "table_counts": { "mangle": 6, "filter": 511, "nat": 2 } }, "ipsets": 169 } }
 #print $ROUTER_INFO
 

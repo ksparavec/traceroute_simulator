@@ -171,6 +171,44 @@ Type 'set' to see all variables.
             # In non-interactive mode, just print error and let quit_on_error handle exit
             sys.stderr.write(f"Error: Unknown command: '{command}'\n")
 
+    def onecmd_plus_hooks(self, line: str, *, add_to_history: bool = True) -> bool:
+        """Override to capture command output for $TSIM_RESULT."""
+        import io
+        from contextlib import redirect_stdout
+        
+        # Check if this is a tsimsh command (not a variable assignment or shell command)
+        if not self.variable_manager.process_command_for_assignment(line):
+            # Parse the command to check if it's a known tsimsh command
+            statement = self.statement_parser.parse(line)
+            tsimsh_commands = ['network', 'mtr', 'trace', 'service', 'host', 'facts', 'print', 'variables', 'unset']
+            
+            if statement.command in tsimsh_commands:
+                # Capture output for tsimsh commands
+                output_buffer = io.StringIO()
+                original_stdout = self.stdout
+                
+                try:
+                    # Temporarily redirect stdout
+                    self.stdout = output_buffer
+                    result = super().onecmd_plus_hooks(line, add_to_history=add_to_history)
+                    # Get the captured output
+                    output = output_buffer.getvalue()
+                    # Store in $TSIM_RESULT
+                    if output:
+                        self.variable_manager.set_variable('TSIM_RESULT', output.strip())
+                    # Write output to original stdout
+                    original_stdout.write(output)
+                    return result
+                finally:
+                    # Restore stdout
+                    self.stdout = original_stdout
+            else:
+                # For non-tsimsh commands, execute normally
+                return super().onecmd_plus_hooks(line, add_to_history=add_to_history)
+        
+        # Variable assignment was already handled
+        return False
+    
     def precmd(self, statement: cmd2.Statement) -> cmd2.Statement:
         """
         This hook is called before the command is executed.

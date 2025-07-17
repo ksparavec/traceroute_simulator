@@ -229,7 +229,9 @@ class NetworkCommands(BaseCommandHandler):
         except SystemExit:
             return 1
         
-        self.info("Checking network namespace status...")
+        # Only show info message if not using JSON output
+        if not parsed_args.json:
+            self.info("Checking network namespace status...")
         
         # Run the network status script
         script_path = self.get_script_path('src/simulators/network_namespace_status.py')

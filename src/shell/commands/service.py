@@ -134,6 +134,7 @@ class ServiceCommands(BaseCommandHandler):
     
     def _start_service(self, args: argparse.Namespace) -> int:
         """Start a TCP/UDP service."""
+        # Always show info for start operations
         self.info(f"Starting {args.protocol} service on {args.ip}:{args.port}")
         
         # Run the service manager script
@@ -201,7 +202,9 @@ class ServiceCommands(BaseCommandHandler):
     def _list_services(self, args: argparse.Namespace) -> int:
         """List all active services."""
         
-        self.info("Listing all active services...")
+        # Only show info message if not JSON output
+        if args.format != 'json':
+            self.info("Listing all active services...")
         
         # Run the service manager script
         script_path = self.get_script_path('src/simulators/service_manager.py')
@@ -209,7 +212,7 @@ class ServiceCommands(BaseCommandHandler):
             return 1
         
         # Build command arguments
-        cmd_args = ['--list']
+        cmd_args = ['status']
         
         if args.format == 'json':
             cmd_args.append('--json')

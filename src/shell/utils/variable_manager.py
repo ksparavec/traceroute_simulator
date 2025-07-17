@@ -177,8 +177,47 @@ class VariableManager:
         var_name = assignment_pattern.group(1)
         value_str = assignment_pattern.group(2).strip()
 
-        # Case 1: Command substitution, e.g., VAR=$(command)
-        if value_str.startswith('$(') and value_str.endswith(')'):
+        # Case 1: Tsimsh command substitution, e.g., VAR=`command`
+        if value_str.startswith('`') and value_str.endswith('`'):
+            tsim_command = value_str[1:-1]
+            # Execute tsimsh command and capture output
+            try:
+                from colorama import Fore, Style
+                # In batch mode, add JSON flag if not present
+                if not self.shell.is_interactive and '-j' not in tsim_command and '--json' not in tsim_command and '-f json' not in tsim_command:
+                    # Check if command supports JSON output
+                    cmd_parts = tsim_command.strip().split()
+                    if cmd_parts and cmd_parts[0] in ['network', 'mtr', 'trace']:
+                        tsim_command += ' -j'
+                    elif cmd_parts and cmd_parts[0] in ['service', 'host'] and len(cmd_parts) > 1 and cmd_parts[1] == 'list':
+                        tsim_command += ' -f json'
+                
+                # Capture the output by temporarily redirecting poutput
+                import io
+                
+                output_buffer = io.StringIO()
+                original_stdout = self.shell.stdout
+                
+                try:
+                    # Redirect cmd2's stdout to capture output
+                    self.shell.stdout = output_buffer
+                    # Execute the tsimsh command
+                    self.shell.onecmd(tsim_command)
+                    # Get the captured output
+                    output = output_buffer.getvalue().strip()
+                finally:
+                    # Restore stdout
+                    self.shell.stdout = original_stdout
+                self.set_variable(var_name, output)
+                # Also store in $TSIM_RESULT
+                self.set_variable('TSIM_RESULT', output)
+            except Exception as e:
+                self.shell.poutput(f"{Fore.RED}Error during tsimsh command substitution: {e}{Style.RESET_ALL}")
+                self.set_variable(var_name, "")
+                self.set_variable('TSIM_RESULT', "")
+        
+        # Case 2: External command substitution, e.g., VAR=$(command)
+        elif value_str.startswith('$(') and value_str.endswith(')'):
             sub_expr = value_str[2:-1]
             
             # Check if it's arithmetic expression $((...))
@@ -217,7 +256,7 @@ class VariableManager:
                     self.shell.poutput(f"{Fore.RED}Invalid arguments during command substitution: {e}{Style.RESET_ALL}")
                     self.set_variable(var_name, "")
         
-        # Case 2: Regular assignment with potential substitution on the right side
+        # Case 3: Regular assignment with potential substitution on the right side
         else:
             # Remove surrounding quotes if present (single or double)
             if ((value_str.startswith("'") and value_str.endswith("'")) or 

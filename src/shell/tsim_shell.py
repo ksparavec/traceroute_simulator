@@ -75,6 +75,8 @@ Variables are supported: VAR=value, VAR="value", VAR=$(command). Use $VAR to sub
 Type 'set' to see all variables.
 """
             self.prompt = f"{self.base_prompt}> "
+            # Don't exit on error in interactive mode
+            self.quit_on_error = False
         else:
             # Shell configuration for non-interactive (batch) mode
             self.intro = ""

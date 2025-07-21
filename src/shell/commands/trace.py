@@ -188,10 +188,10 @@ class TraceCommands(BaseCommandHandler):
             self.shell.poutput(hop_str)
     
     def handle_command(self, args: str) -> Optional[int]:
-        """Handle trace command (legacy support)."""
+        """Handle trace command."""
         parser = self.create_parser()
-        try:
-            parsed_args = parser.parse_args(self._split_args(args))
-            return self.handle_parsed_command(parsed_args)
-        except SystemExit:
-            return 1
+        parsed_args = self.parse_arguments(args, parser)
+        if parsed_args is None:
+            # parse_arguments already printed the error/usage
+            return None  # Return None instead of error code to prevent shell exit
+        return self.handle_parsed_command(parsed_args)

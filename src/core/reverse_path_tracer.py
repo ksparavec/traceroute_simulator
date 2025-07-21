@@ -286,31 +286,13 @@ class ReversePathTracer:
         if self.verbose >= 2:
             print(f"Last Linux router identified: {last_linux_router}")
         
-        # Get the IP address of the last Linux router
-        last_router_ip = self._get_router_ip(last_linux_router)
-        
-        if not last_router_ip:
-            if self.verbose:
-                print(f"Cannot determine IP address for router: {last_linux_router}")
-            return False, [], 2  # Router not found
-        
         if self.verbose >= 2:
-            print(f"Using router IP {last_router_ip} as new source for reverse trace")
+            print(f"Using router {last_linux_router} for reverse trace")
         
-        # Perform reverse trace from destination to original source
-        # We simulate as if we're tracing from the last router IP to original source
-        reverse_path = self.simulator.simulate_traceroute(last_router_ip, original_src)
-        
-        # Check if reverse simulation was successful
-        if self._is_path_complete(reverse_path):
-            if self.verbose >= 2:
-                print(f"Reverse simulation successful: {len(reverse_path)} hops")
-            return True, reverse_path, 0
-        
-        # If reverse simulation failed, try mtr tool fallback
+        # Use MTR tool for real network tracing
         if MTR_AVAILABLE and self.mtr_executor:
             if self.verbose >= 2:
-                print("Reverse simulation incomplete, attempting mtr tool fallback...")
+                print("Executing MTR from last Linux router...")
             
             try:
                 all_mtr_hops, filtered_mtr_hops = self.mtr_executor.execute_and_filter(last_linux_router, original_src)
@@ -432,18 +414,36 @@ class ReversePathTracer:
         if self.verbose >= 2:
             print(f"Temporary path has {len(temp_path)} total hops")
         
-        # Step 3: Filter for Linux routers and construct final path
+        # Step 3: Construct final path from temporary path
         final_path = []
         hop_counter = 1
         
-        # Always add source as first hop
-        src_label = self.simulator._resolve_ip_to_name(original_src)
-        src_router_name = self.simulator._find_router_by_ip(original_src)
-        src_is_router = src_router_name is not None
-        final_path.append((hop_counter, src_label, original_src, "", src_is_router, "", "", 0.0))
-        hop_counter += 1
+        # Check if source is already at the beginning of temp_path
+        source_already_present = False
+        if temp_path and len(temp_path[0]) >= 3 and temp_path[0][2] == original_src:
+            source_already_present = True
         
-        # Process temporary path for Linux routers
+        # Add source as first hop only if not already present
+        if not source_already_present:
+            # Try to resolve source - first check if it's a router, then try reverse DNS
+            src_router_name = self.simulator._find_router_by_ip(original_src)
+            if src_router_name:
+                src_label = src_router_name
+                src_is_router = True
+            else:
+                # Try reverse DNS
+                try:
+                    import socket
+                    src_label = socket.gethostbyaddr(original_src)[0]
+                    src_is_router = False
+                except:
+                    src_label = original_src  # Keep as IP if DNS fails
+                    src_is_router = False
+            
+            final_path.append((hop_counter, src_label, original_src, "", src_is_router, "", "", 0.0))
+            hop_counter += 1
+        
+        # Process temporary path and filter for Linux routers
         for hop_data in temp_path:
             # Extract hop information
             if len(hop_data) >= 8:
@@ -452,29 +452,39 @@ class ReversePathTracer:
                 _, router_name, ip, interface, is_router, connected_to, outgoing = hop_data
                 rtt = 0.0
             
-            # Skip source and destination IPs (already handled separately)
-            if ip == original_src or ip == original_dst:
+            # Skip destination IP (will be handled separately)
+            if ip == original_dst:
                 continue
             
-            # Only add Linux routers (but not endpoints)
+            # Check if this is a Linux router
             if is_router and not router_name.startswith("*"):
-                # Check if this is actually a Linux router
                 router_obj_name = self.simulator._find_router_by_ip(ip)
                 if router_obj_name and router_obj_name in self.simulator.routers:
                     router_obj = self.simulator.routers[router_obj_name]
                     if router_obj.is_linux():
-                        # Re-resolve name for consistency
-                        resolved_name = self.simulator._resolve_ip_to_name(ip)
+                        # Use the resolved router name for consistency
                         if len(hop_data) >= 8:
-                            final_path.append((hop_counter, resolved_name, ip, interface, is_router, connected_to, outgoing, rtt))
+                            final_path.append((hop_counter, router_obj_name, ip, interface, is_router, connected_to, outgoing, rtt))
                         else:
-                            final_path.append((hop_counter, resolved_name, ip, interface, is_router, connected_to, outgoing))
+                            final_path.append((hop_counter, router_obj_name, ip, interface, is_router, connected_to, outgoing))
                         hop_counter += 1
         
         # Always add destination as last hop
-        dst_label = self.simulator._resolve_ip_to_name(original_dst)
+        # Try to resolve destination - first check if it's a router, then try reverse DNS
         dst_router_name = self.simulator._find_router_by_ip(original_dst)
-        dst_is_router = dst_router_name is not None
+        if dst_router_name:
+            dst_label = dst_router_name
+            dst_is_router = True
+        else:
+            # Try reverse DNS
+            try:
+                import socket
+                dst_label = socket.gethostbyaddr(original_dst)[0]
+                dst_is_router = False
+            except:
+                dst_label = original_dst  # Keep as IP if DNS fails
+                dst_is_router = False
+        
         # Get destination RTT from forward path if available
         destination_rtt = 0.0
         for hop_data in forward_path:

@@ -190,7 +190,13 @@ Type 'set' to see all variables.
                 try:
                     # Temporarily redirect stdout
                     self.stdout = output_buffer
-                    result = super().onecmd_plus_hooks(line, add_to_history=add_to_history)
+                    # Call parent method with version compatibility
+                    try:
+                        # Try with add_to_history parameter (newer cmd2 versions)
+                        result = super().onecmd_plus_hooks(line, add_to_history=add_to_history)
+                    except TypeError:
+                        # Fall back to without parameter (older cmd2 versions)
+                        result = super().onecmd_plus_hooks(line)
                     # Get the captured output
                     output = output_buffer.getvalue()
                     # Store in $TSIM_RESULT
@@ -204,7 +210,12 @@ Type 'set' to see all variables.
                     self.stdout = original_stdout
             else:
                 # For non-tsimsh commands, execute normally
-                return super().onecmd_plus_hooks(line, add_to_history=add_to_history)
+                try:
+                    # Try with add_to_history parameter (newer cmd2 versions)
+                    return super().onecmd_plus_hooks(line, add_to_history=add_to_history)
+                except TypeError:
+                    # Fall back to without parameter (older cmd2 versions)
+                    return super().onecmd_plus_hooks(line)
         
         # Variable assignment was already handled
         return False

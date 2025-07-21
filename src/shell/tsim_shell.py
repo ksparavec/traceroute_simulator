@@ -180,7 +180,7 @@ Type 'set' to see all variables.
             # In non-interactive mode, just print error and let quit_on_error handle exit
             sys.stderr.write(f"Error: Unknown command: '{command}'\n")
 
-    def onecmd_plus_hooks(self, line: str, *, add_to_history: bool = True) -> bool:
+    def onecmd_plus_hooks(self, line: str, *, add_to_history: bool = True, **kwargs) -> bool:
         """Override to capture command output for $TSIM_RESULT."""
         import io
         from contextlib import redirect_stdout
@@ -202,7 +202,7 @@ Type 'set' to see all variables.
                     # Call parent method with version compatibility
                     try:
                         # Try with add_to_history parameter (newer cmd2 versions)
-                        result = super().onecmd_plus_hooks(line, add_to_history=add_to_history)
+                        result = super().onecmd_plus_hooks(line, add_to_history=add_to_history, **kwargs)
                     except TypeError:
                         # Fall back to without parameter (older cmd2 versions)
                         result = super().onecmd_plus_hooks(line)
@@ -221,7 +221,7 @@ Type 'set' to see all variables.
                 # For non-tsimsh commands, execute normally
                 try:
                     # Try with add_to_history parameter (newer cmd2 versions)
-                    return super().onecmd_plus_hooks(line, add_to_history=add_to_history)
+                    return super().onecmd_plus_hooks(line, add_to_history=add_to_history, **kwargs)
                 except TypeError:
                     # Fall back to without parameter (older cmd2 versions)
                     return super().onecmd_plus_hooks(line)

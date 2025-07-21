@@ -345,9 +345,15 @@ def load_configuration(verbose: bool = False, verbose_level: int = 0) -> Dict[st
     """
     config = {}
     
+    if verbose and verbose_level >= 2:
+        print(f"YAML_AVAILABLE: {YAML_AVAILABLE}")
+        if YAML_AVAILABLE:
+            print(f"YAML module: {yaml.__name__}, version: {getattr(yaml, '__version__', 'unknown')}")
+    
     if not YAML_AVAILABLE:
-        if verbose and verbose_level >= 2:
-            print("YAML module not available, configuration loading disabled")
+        if verbose:
+            print("WARNING: YAML module not available, configuration loading disabled")
+            print("Install PyYAML: pip install pyyaml")
         return config
     
     # Define potential configuration file locations in order of precedence
@@ -379,23 +385,52 @@ def load_configuration(verbose: bool = False, verbose_level: int = 0) -> Dict[st
                 if verbose and verbose_level >= 2:
                     print(f"Found configuration file: {config_file}")
                 with open(config_file, 'r') as f:
-                    config = yaml.safe_load(f) or {}
+                    file_content = f.read()
+                    if verbose and verbose_level >= 3:
+                        print(f"File content ({len(file_content)} bytes):")
+                        print("---START---")
+                        print(file_content[:500])  # First 500 chars
+                        if len(file_content) > 500:
+                            print(f"... ({len(file_content) - 500} more bytes)")
+                        print("---END---")
+                    
+                    config = yaml.safe_load(file_content) or {}
                     config_loaded = True
                     if verbose and verbose_level >= 2:
                         print(f"Loaded configuration from: {config_file}")
+                        print(f"Configuration type: {type(config)}")
                         print("Configuration parameters:")
-                        for key, value in config.items():
-                            # Mask sensitive values
-                            if 'password' in key.lower() or 'secret' in key.lower():
-                                print(f"  {key}: ***")
-                            else:
-                                print(f"  {key}: {value}")
+                        if isinstance(config, dict):
+                            for key, value in config.items():
+                                # Mask sensitive values
+                                if 'password' in key.lower() or 'secret' in key.lower():
+                                    print(f"  {key}: ***")
+                                else:
+                                    print(f"  {key}: {value}")
+                        else:
+                            print(f"  Unexpected config type: {config}")
                 break
             elif verbose and verbose_level >= 2:
                 print(f"Configuration file not found: {config_file}")
-        except (yaml.YAMLError, IOError, OSError) as e:
+        except yaml.YAMLError as e:
+            if verbose:
+                print(f"YAML parsing error in {config_file}: {e}")
+                if verbose_level >= 2:
+                    import traceback
+                    traceback.print_exc()
+            # Continue to next file if current one fails
+            continue
+        except (IOError, OSError) as e:
             if verbose and verbose_level >= 2:
-                print(f"Error loading {config_file}: {e}")
+                print(f"File I/O error loading {config_file}: {e}")
+            # Continue to next file if current one fails
+            continue
+        except Exception as e:
+            if verbose:
+                print(f"Unexpected error loading {config_file}: {type(e).__name__}: {e}")
+                if verbose_level >= 2:
+                    import traceback
+                    traceback.print_exc()
             # Continue to next file if current one fails
             continue
     

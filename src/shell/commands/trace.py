@@ -67,9 +67,10 @@ class TraceCommands(BaseCommandHandler):
             config = load_configuration(verbose=args.verbose > 0, verbose_level=args.verbose)
             controller_ip = args.controller_ip
             if not controller_ip and config:
-                controller_ip = config.get('ansible_controller_ip')
+                # Try both possible config keys
+                controller_ip = config.get('ansible_controller_ip') or config.get('controller_ip')
                 if args.verbose >= 2 and controller_ip:
-                    print(f"Using ansible_controller_ip from config: {controller_ip}")
+                    print(f"Using controller IP from config: {controller_ip}")
             # Create simulator instance
             simulator = TracerouteSimulator(
                 tsim_facts=facts_dir,

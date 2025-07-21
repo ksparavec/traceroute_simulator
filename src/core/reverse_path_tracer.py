@@ -183,168 +183,75 @@ class ReversePathTracer:
         if self.verbose and self.verbose_level >= 3:
             print(f"STEP1 DEBUG: Starting controller to destination trace", file=sys.stderr)
         
-        # Check if controller IP is in router inventory
-        controller_router = self.simulator._find_router_by_ip(self.ansible_controller_ip)
+        # For trace command, always use real MTR execution from the controller
+        # No simulation - this is for real network tracing only
         
-        if self.verbose and self.verbose_level >= 3:
-            print(f"STEP1 DEBUG: Controller router lookup: {self.ansible_controller_ip} -> {controller_router}", file=sys.stderr)
+        if self.verbose >= 2:
+            print(f"Using controller {self.ansible_controller_ip} for MTR execution (real network)")
+            print(f"MTR_AVAILABLE: {MTR_AVAILABLE}")
+            print(f"mtr_executor: {self.mtr_executor}")
+            if self.simulator.routers:
+                print(f"Total routers: {len(self.simulator.routers)}")
+                linux_routers = [name for name, router in self.simulator.routers.items() if router.is_linux()]
+                print(f"Linux routers: {len(linux_routers)}")
         
-        if controller_router:
-            # Controller is internal - try simulation first
-            if self.verbose >= 2:
-                print(f"Controller {self.ansible_controller_ip} is internal router {controller_router}")
-            
-            path = self.simulator.simulate_traceroute(self.ansible_controller_ip, destination)
-            
-            # Check if simulation was successful (no "No route" or "* * *" entries)
-            if self._is_path_complete(path):
-                if self.verbose >= 2:
-                    print(f"Simulation successful: {len(path)} hops from controller to destination")
-                return True, path, 0
-            
-            # If simulation failed, try MTR fallback
-            if MTR_AVAILABLE and self.mtr_executor:
-                if self.verbose >= 2:
-                    print("Simulation incomplete, attempting mtr tool fallback...")
-                
-                # Execute MTR from the controller router
-                try:
-                    all_mtr_hops, filtered_mtr_hops = self.mtr_executor.execute_and_filter(controller_router, destination)
-                    mtr_success = bool(filtered_mtr_hops)
-                    if self.verbose >= 2:
-                        print(f"MTR execution result: all_hops={len(all_mtr_hops)}, filtered_hops={len(filtered_mtr_hops)}, success={mtr_success}")
-                    # Convert MTR dictionaries to simulator tuple format
-                    mtr_path = self._convert_mtr_to_simulator_format(filtered_mtr_hops)
-                    mtr_exit_code = 0 if mtr_success else 1
-                except Exception as e:
-                    if self.verbose >= 2:
-                        print(f"MTR execution failed with exception: {e}")
-                    mtr_success = False
-                    mtr_path = []
-                    mtr_exit_code = 2
-                
-                if self.verbose >= 2:
-                    print(f"MTR success: {mtr_success}, path length: {len(mtr_path) if mtr_path else 0}")
-                    if mtr_path:
-                        print(f"MTR path: {mtr_path}")
-                
-                if mtr_success and mtr_path:
-                    # Add destination hop with timing from all_mtr_hops if not already included
-                    destination_in_path = any(hop[2] == destination for hop in mtr_path)
-                    if not destination_in_path and all_mtr_hops:
-                        # Check if destination was actually reached in MTR results
-                        destination_reached = False
-                        destination_rtt = 0.0
-                        for hop in all_mtr_hops:
-                            if hop.get('ip') == destination:
-                                destination_reached = True
-                                destination_rtt = hop.get('rtt', 0.0)
-                                break
-                        
-                        # If destination was reached, add it as final hop
-                        if destination_reached:
-                            dest_hop_num = len(mtr_path) + 1
-                            # Try to resolve destination IP to name
-                            dst_label = self.simulator._resolve_ip_to_name(destination)
-                            mtr_path.append((dest_hop_num, dst_label, destination, "", False, "", "", destination_rtt))
-                        else:
-                            # Destination not reached by MTR - this should fail
-                            raise ValueError(f"Destination {destination} not reachable via mtr tool")
-                    
-                    if self.verbose >= 2:
-                        print(f"mtr tool successful: {len(mtr_path)} hops from {controller_router} to destination")
-                    return True, mtr_path, 0
-                else:
-                    if self.verbose:
-                        print(f"mtr tool failed with exit code: {mtr_exit_code}")
-                    return False, [], mtr_exit_code
-        else:
-            # Controller is external - try MTR from any available router
+        if MTR_AVAILABLE and self.mtr_executor:
+            # Use the controller IP directly for SSH
+            source_router = self.ansible_controller_ip
             if self.verbose and self.verbose_level >= 3:
-                print(f"STEP1 DEBUG: Controller {self.ansible_controller_ip} is external, finding best router for MTR", file=sys.stderr)
+                print(f"Using controller {source_router} for MTR execution")
             
-            # Debug: Let's see what MTR and available routers we have
-            if self.verbose >= 2:
-                print(f"MTR_AVAILABLE: {MTR_AVAILABLE}")
-                print(f"mtr_executor: {self.mtr_executor}")
-                print(f"routers available: {bool(self.simulator.routers)}")
-                if self.simulator.routers:
-                    print(f"Total routers: {len(self.simulator.routers)}")
-                    linux_routers = [name for name, router in self.simulator.routers.items() if router.is_linux()]
-                    print(f"Linux routers: {len(linux_routers)}")
-                    if linux_routers:
-                        print(f"First Linux router: {linux_routers[0]}")
+            # Execute MTR from controller
+            try:
+                all_mtr_hops, filtered_mtr_hops = self.mtr_executor.execute_and_filter(source_router, destination)
+                mtr_success = bool(filtered_mtr_hops)
+                
+                if mtr_success:
+                    # Create path starting from controller
+                    mtr_path = []
+                    # Add controller as first hop
+                    controller_label = self.simulator._resolve_ip_to_name(self.ansible_controller_ip)
+                    mtr_path.append((1, controller_label, self.ansible_controller_ip, "", False, "", "", 0.0))
+                    
+                    # Add MTR hops starting from hop 2
+                    for i, hop_dict in enumerate(filtered_mtr_hops):
+                        hop_num = i + 2
+                        ip = hop_dict.get('ip', '')
+                        hostname = hop_dict.get('hostname', '')
+                        rtt = hop_dict.get('rtt', 0.0)
+                        
+                        # Use hostname as router_name if available, otherwise use IP
+                        router_name = hostname if hostname else ip
+                        is_router = True  # MTR filtered hops are Linux routers
+                        
+                        mtr_path.append((hop_num, router_name, ip, "", is_router, "", "", rtt))
+                else:
+                    mtr_path = []
+                mtr_exit_code = 0 if mtr_success else 1
+            except Exception as e:
+                if self.verbose and self.verbose_level >= 3:
+                    print(f"STEP1 DEBUG: MTR exception: {e}", file=sys.stderr)
+                mtr_success = False
+                mtr_path = []
+                mtr_exit_code = 2
             
             if self.verbose and self.verbose_level >= 3:
-                print(f"External controller path: MTR_AVAILABLE={MTR_AVAILABLE}, mtr_executor={self.mtr_executor}")
+                print(f"STEP1 DEBUG: mtr_success={mtr_success}, path_length={len(mtr_path) if mtr_path else 0}", file=sys.stderr)
             
-            if MTR_AVAILABLE and self.mtr_executor:
-                # For external controller, use the controller IP directly for SSH
-                source_router = self.ansible_controller_ip
+            # Check what happens next
+            if mtr_success and mtr_path:
                 if self.verbose and self.verbose_level >= 3:
-                    print(f"Using external controller {source_router} for MTR execution")
-            
-                # Execute MTR and create path that simulates from controller
-                try:
-                    all_mtr_hops, filtered_mtr_hops = self.mtr_executor.execute_and_filter(source_router, destination)
-                    mtr_success = bool(filtered_mtr_hops)
-                    
-                    if mtr_success:
-                        # Create path starting from external controller
-                        mtr_path = []
-                        # Add controller as first hop
-                        controller_label = self.simulator._resolve_ip_to_name(self.ansible_controller_ip)
-                        mtr_path.append((1, controller_label, self.ansible_controller_ip, "", False, "", "", 0.0))
-                        
-                        # Add MTR hops starting from hop 2
-                        for i, hop_dict in enumerate(filtered_mtr_hops):
-                            hop_num = i + 2
-                            ip = hop_dict.get('ip', '')
-                            hostname = hop_dict.get('hostname', '')
-                            rtt = hop_dict.get('rtt', 0.0)
-                            
-                            # Use hostname as router_name if available, otherwise use IP
-                            router_name = hostname if hostname else ip
-                            is_router = True  # MTR filtered hops are Linux routers
-                            
-                            mtr_path.append((hop_num, router_name, ip, "", is_router, "", "", rtt))
-                    else:
-                        mtr_path = []
-                    mtr_exit_code = 0 if mtr_success else 1
-                except Exception as e:
-                    if self.verbose and self.verbose_level >= 3:
-                        print(f"STEP1 DEBUG: MTR exception: {e}", file=sys.stderr)
-                    mtr_success = False
-                    mtr_path = []
-                    mtr_exit_code = 2
-                
-                if self.verbose and self.verbose_level >= 3:
-                    print(f"STEP1 DEBUG: mtr_success={mtr_success}, path_length={len(mtr_path) if mtr_path else 0}", file=sys.stderr)
-                
-                # Check what happens next
-                if mtr_success and mtr_path:
-                    if self.verbose and self.verbose_level >= 3:
-                        print(f"STEP1 DEBUG: MTR successful, should return success", file=sys.stderr)
-                    return True, mtr_path, 0
-                else:
-                    if self.verbose and self.verbose_level >= 3:
-                        print(f"STEP1 DEBUG: MTR failed, should return failure", file=sys.stderr)
-                    return False, [], mtr_exit_code
+                    print(f"STEP1 DEBUG: MTR successful, should return success", file=sys.stderr)
+                return True, mtr_path, 0
             else:
-                # MTR not available
-                if self.verbose:
-                    print("MTR not available for external controller")
-                return False, [], 2
-        
-        # This point should not be reached, but handle it gracefully
-        if self.verbose:
-            print("No valid path found")
-        return False, [], 2
-        
-        # Both simulation and mtr tool failed
-        if self.verbose:
-            print("Both simulation and mtr tool failed to reach destination from controller")
-        return False, [], 1  # No path found
+                if self.verbose and self.verbose_level >= 3:
+                    print(f"STEP1 DEBUG: MTR failed, should return failure", file=sys.stderr)
+                return False, [], mtr_exit_code
+        else:
+            # MTR not available
+            if self.verbose:
+                print("MTR not available")
+            return False, [], 2
     
     def _step2_destination_to_source(self, forward_path: List[Tuple], original_src: str, original_dst: str) -> Tuple[bool, List[Tuple], int]:
         """

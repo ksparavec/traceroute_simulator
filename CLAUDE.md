@@ -339,3 +339,6 @@ The traceroute simulator provides:
 - **Data collection**: `ansible/get_tsim_facts.yml`, `ansible/get_facts.sh`
 - **IP wrapper**: `ansible/ip_json_wrapper.py`
 
+## Development Memory
+
+- Do not commit anything yourself without asking

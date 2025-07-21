@@ -64,10 +64,12 @@ class TraceCommands(BaseCommandHandler):
                 return None  # Return None to keep shell running
             
             # Load configuration to get ansible_controller_ip if not provided
-            config = load_configuration()
+            config = load_configuration(verbose=args.verbose > 0, verbose_level=args.verbose)
             controller_ip = args.controller_ip
             if not controller_ip and config:
                 controller_ip = config.get('ansible_controller_ip')
+                if args.verbose >= 2 and controller_ip:
+                    print(f"Using ansible_controller_ip from config: {controller_ip}")
             # Create simulator instance
             simulator = TracerouteSimulator(
                 tsim_facts=facts_dir,

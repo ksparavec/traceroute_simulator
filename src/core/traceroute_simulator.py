@@ -327,7 +327,7 @@ class Router:
         return self.metadata.get('ansible_controller', False)
 
 
-def load_configuration() -> Dict[str, Any]:
+def load_configuration(verbose: bool = False, verbose_level: int = 0) -> Dict[str, Any]:
     """
     Load configuration from YAML file with proper precedence.
     
@@ -336,12 +336,18 @@ def load_configuration() -> Dict[str, Any]:
     2. ~/traceroute_simulator.yaml (user's home directory)
     3. ./traceroute_simulator.yaml (current directory)
     
+    Args:
+        verbose: Enable verbose output
+        verbose_level: Verbosity level (2+ for detailed config info)
+    
     Returns:
         Dictionary containing configuration values
     """
     config = {}
     
     if not YAML_AVAILABLE:
+        if verbose and verbose_level >= 2:
+            print("YAML module not available, configuration loading disabled")
         return config
     
     # Define potential configuration file locations in order of precedence
@@ -360,16 +366,41 @@ def load_configuration() -> Dict[str, Any]:
     local_config = './traceroute_simulator.yaml'
     config_files.append(local_config)
     
+    if verbose and verbose_level >= 2:
+        print(f"Configuration file search order:")
+        for idx, cf in enumerate(config_files, 1):
+            print(f"  {idx}. {cf}")
+    
     # Try to load configuration from the first available file
+    config_loaded = False
     for config_file in config_files:
         try:
             if os.path.isfile(config_file):
+                if verbose and verbose_level >= 2:
+                    print(f"Found configuration file: {config_file}")
                 with open(config_file, 'r') as f:
                     config = yaml.safe_load(f) or {}
+                    config_loaded = True
+                    if verbose and verbose_level >= 2:
+                        print(f"Loaded configuration from: {config_file}")
+                        print("Configuration parameters:")
+                        for key, value in config.items():
+                            # Mask sensitive values
+                            if 'password' in key.lower() or 'secret' in key.lower():
+                                print(f"  {key}: ***")
+                            else:
+                                print(f"  {key}: {value}")
                 break
+            elif verbose and verbose_level >= 2:
+                print(f"Configuration file not found: {config_file}")
         except (yaml.YAMLError, IOError, OSError) as e:
+            if verbose and verbose_level >= 2:
+                print(f"Error loading {config_file}: {e}")
             # Continue to next file if current one fails
             continue
+    
+    if not config_loaded and verbose and verbose_level >= 2:
+        print("No configuration file found, using defaults")
     
     return config
 
@@ -1455,7 +1486,7 @@ Examples:
     
     # Load configuration with proper precedence
     defaults = get_default_config()
-    config_file = load_configuration()
+    config_file = load_configuration(verbose=args.verbose, verbose_level=args.verbose)
     config = merge_config(defaults, config_file, args)
     
     try:

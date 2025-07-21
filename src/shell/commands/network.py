@@ -15,7 +15,7 @@ class NetworkCommands(BaseCommandHandler):
         """Get list of network subcommands."""
         return ['setup', 'status', 'clean', 'test', 'help']
     
-    def handle_command(self, args: str) -> Optional[int]:
+    def _handle_command_impl(self, args: str) -> Optional[int]:
         """Handle network command with subcommands."""
         if not args.strip():
             self.shell.help_network()

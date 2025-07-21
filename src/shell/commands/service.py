@@ -121,7 +121,7 @@ class ServiceCommands(BaseCommandHandler):
             self.shell.help_service()
             return 1
     
-    def handle_command(self, args: str) -> Optional[int]:
+    def _handle_command_impl(self, args: str) -> Optional[int]:
         """Handle service command with subcommands (legacy support)."""
         # This method is kept for backward compatibility
         parser = self.create_parser()

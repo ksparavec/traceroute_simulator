@@ -39,9 +39,24 @@ class BaseCommandHandler(ABC):
         # Set up facts directory
         self.facts_dir = os.environ.get('TRACEROUTE_SIMULATOR_FACTS')
     
-    @abstractmethod
     def handle_command(self, args: str) -> Optional[int]:
         """Handle the command with given arguments."""
+        try:
+            return self._handle_command_impl(args)
+        except SystemExit:
+            # Catch sys.exit() calls from scripts
+            return None  # Return None to keep shell running
+        except Exception as e:
+            # Catch all other exceptions to prevent shell exit
+            self.error(f"Command failed: {e}")
+            if hasattr(self.shell, 'verbose') and self.shell.verbose:
+                import traceback
+                traceback.print_exc()
+            return None  # Return None to keep shell running
+    
+    @abstractmethod
+    def _handle_command_impl(self, args: str) -> Optional[int]:
+        """Implementation of command handling - override in subclasses."""
         pass
     
     def handle_context_command(self, args: str) -> Optional[int]:

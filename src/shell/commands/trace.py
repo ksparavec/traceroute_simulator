@@ -23,7 +23,7 @@ project_root = os.path.dirname(grandparent_dir)
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
-from src.core.traceroute_simulator import TracerouteSimulator
+from src.core.traceroute_simulator import TracerouteSimulator, load_configuration
 from src.core.reverse_path_tracer import ReversePathTracer
 
 
@@ -52,17 +52,22 @@ class TraceCommands(BaseCommandHandler):
     
     def handle_parsed_command(self, args: argparse.Namespace) -> Optional[int]:
         """Handle parsed trace command."""
-        # Initialize the simulator
-        facts_dir = self.shell.facts_dir
-        if not facts_dir:
-            facts_dir = os.path.join(self.shell.project_root, 'facts')
-        
-        if not os.path.exists(facts_dir):
-            self.error(f"Facts directory not found: {facts_dir}")
-            self.info("Run 'network setup' first to create the network simulation")
-            return 1
-        
         try:
+            # Initialize the simulator
+            facts_dir = self.shell.facts_dir
+            if not facts_dir:
+                facts_dir = os.path.join(self.shell.project_root, 'facts')
+            
+            if not os.path.exists(facts_dir):
+                self.error(f"Facts directory not found: {facts_dir}")
+                self.info("Run 'network setup' first to create the network simulation")
+                return None  # Return None to keep shell running
+            
+            # Load configuration to get ansible_controller_ip if not provided
+            config = load_configuration()
+            controller_ip = args.controller_ip
+            if not controller_ip and config:
+                controller_ip = config.get('ansible_controller_ip')
             # Create simulator instance
             simulator = TracerouteSimulator(
                 tsim_facts=facts_dir,
@@ -73,7 +78,7 @@ class TraceCommands(BaseCommandHandler):
             # Initialize reverse path tracer
             tracer = ReversePathTracer(
                 simulator=simulator,
-                ansible_controller_ip=args.controller_ip,
+                ansible_controller_ip=controller_ip,
                 verbose=args.verbose > 0,
                 verbose_level=args.verbose
             )
@@ -96,7 +101,7 @@ class TraceCommands(BaseCommandHandler):
                         "destination": args.destination,
                         "path": []
                     }))
-                return exit_code
+                return None  # Return None to keep shell running
             
             # Format and display the path
             if args.json:
@@ -106,6 +111,10 @@ class TraceCommands(BaseCommandHandler):
             
             return 0
             
+        except SystemExit:
+            # Catch sys.exit() calls from the traceroute simulator
+            self.error("Trace command failed")
+            return None  # Return None to keep shell running
         except Exception as e:
             if args.verbose:
                 import traceback
@@ -113,7 +122,7 @@ class TraceCommands(BaseCommandHandler):
                 traceback.print_exc()
             else:
                 self.error(f"Error: {e}")
-            return 1
+            return None  # Return None to keep shell running
     
     def _output_json(self, source: str, destination: str, path: List[Tuple]):
         """Output path in JSON format."""
@@ -187,8 +196,8 @@ class TraceCommands(BaseCommandHandler):
             
             self.shell.poutput(hop_str)
     
-    def handle_command(self, args: str) -> Optional[int]:
-        """Handle trace command."""
+    def _handle_command_impl(self, args: str) -> Optional[int]:
+        """Handle trace command implementation."""
         parser = self.create_parser()
         parsed_args = self.parse_arguments(args, parser)
         if parsed_args is None:

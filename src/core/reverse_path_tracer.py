@@ -551,6 +551,32 @@ class ReversePathTracer:
         # Find where the paths converge and add the forward path to destination
         last_linux_router = self._find_last_linux_router(forward_path)
         
+        # Check if the last Linux router is already in the final path
+        # This can happen if the reverse path already includes it
+        last_linux_router_in_path = False
+        if last_linux_router:
+            for hop_data in final_path:
+                # Check if router name matches (element 1 in tuple)
+                if len(hop_data) >= 2 and hop_data[1] == last_linux_router:
+                    last_linux_router_in_path = True
+                    break
+        
+        # If the last Linux router is not in the path yet, we need to add it
+        # This happens when the reverse trace started from this router but didn't include it
+        if last_linux_router and not last_linux_router_in_path:
+            # Find the router info from forward path
+            for hop_data in forward_path:
+                if len(hop_data) >= 2 and hop_data[1] == last_linux_router:
+                    # Found the router in forward path, add it to final path
+                    if len(hop_data) == 8:
+                        _, router_name, ip, interface, is_router, connected_to, outgoing, rtt = hop_data
+                        final_path.append((hop_counter, router_name, ip, interface, is_router, connected_to, outgoing, rtt))
+                    else:
+                        _, router_name, ip, interface, is_router, connected_to, outgoing = hop_data
+                        final_path.append((hop_counter, router_name, ip, interface, is_router, connected_to, outgoing))
+                    hop_counter += 1
+                    break
+        
         # Add remaining hops from forward path after the last Linux router
         adding_forward_hops = False
         for hop_data in forward_path:
@@ -563,12 +589,7 @@ class ReversePathTracer:
             
             if router_name == last_linux_router:
                 adding_forward_hops = True
-                # Include the last Linux router itself with timing information
-                if rtt is not None:
-                    final_path.append((hop_counter, router_name, ip, interface, is_router, connected_to, outgoing, rtt))
-                else:
-                    final_path.append((hop_counter, router_name, ip, interface, is_router, connected_to, outgoing))
-                hop_counter += 1
+                # Skip adding the router here since we already handled it above
                 continue
             
             if adding_forward_hops:

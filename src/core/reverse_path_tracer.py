@@ -386,9 +386,10 @@ class ReversePathTracer:
         """
         Step 3: Reverse the path and combine results.
         
-        Takes the reverse path from step 2 and reverses it to create the
-        final path from original source to destination. Combines this with
-        the forward path information to provide a complete bidirectional view.
+        Simplified approach:
+        1. Add all hops from reverse path in reverse order to temporary path
+        2. Add all hops from forward path starting with last Linux router (inclusive)
+        3. Filter for Linux routers between source and destination to create final path
         
         Args:
             forward_path: Path from controller to destination
@@ -402,150 +403,92 @@ class ReversePathTracer:
             - final_path (List[Tuple]): Complete reversed path from source to destination
         """
         if self.verbose >= 2:
-            print(f"\n--- Step 3: Reversing Path from Original Source to Destination ---")
+            print(f"\n--- Step 3: Combining Paths ---")
+            print(f"Reverse path has {len(reverse_path)} hops")
+            print(f"Forward path has {len(forward_path)} hops")
         
-        if not reverse_path:
-            if self.verbose:
-                print("No reverse path to process")
-            return False, []
+        # Step 1: Create temporary path with all hops
+        temp_path = []
         
-        # Reverse the reverse_path to get original_src -> original_dst path
+        # Add all hops from reverse path in reverse order (no filtering)
+        for hop_data in reversed(reverse_path):
+            temp_path.append(hop_data)
+        
+        # Find last Linux router in forward path
+        last_linux_router = self._find_last_linux_router(forward_path)
+        if self.verbose >= 2:
+            print(f"Last Linux router: {last_linux_router}")
+        
+        # Step 2: Add forward path hops starting from last Linux router (inclusive)
+        found_last_linux = False
+        for hop_data in forward_path:
+            # Check if this is the last Linux router
+            if len(hop_data) >= 2 and hop_data[1] == last_linux_router:
+                found_last_linux = True
+            
+            if found_last_linux:
+                temp_path.append(hop_data)
+        
+        if self.verbose >= 2:
+            print(f"Temporary path has {len(temp_path)} total hops")
+        
+        # Step 3: Filter for Linux routers and construct final path
         final_path = []
-        
-        # The reverse_path goes from last_router -> original_src
-        # We need to reverse it to go from original_src -> last_router
-        # Then we need to connect to the forward path portion that reaches destination
-        
-        # Start with original source
         hop_counter = 1
         
-        # Add the original source as the first hop
-        # Check if original source belongs to a router
-        src_router_name = self.simulator._find_router_by_ip(original_src)
-        # Try to resolve source IP to name using comprehensive resolution
+        # Always add source as first hop
         src_label = self.simulator._resolve_ip_to_name(original_src)
-        src_is_router_owned = src_router_name is not None
-        
-        final_path.append((hop_counter, src_label, original_src, "", src_is_router_owned, "", "", 0.0))
+        src_router_name = self.simulator._find_router_by_ip(original_src)
+        src_is_router = src_router_name is not None
+        final_path.append((hop_counter, src_label, original_src, "", src_is_router, "", "", 0.0))
         hop_counter += 1
         
-        # Reverse the reverse path (excluding the first hop which is the router)
-        # and excluding any destination hops
-        filtered_reverse = []
-        for hop_data in reverse_path:
-            # Handle both 7-tuple and 8-tuple formats (with optional RTT)
-            if len(hop_data) == 8:
-                hop_num, router_name, ip, interface, is_router, connected_to, outgoing, rtt = hop_data
+        # Process temporary path for Linux routers
+        for hop_data in temp_path:
+            # Extract hop information
+            if len(hop_data) >= 8:
+                _, router_name, ip, interface, is_router, connected_to, outgoing, rtt = hop_data
             else:
-                hop_num, router_name, ip, interface, is_router, connected_to, outgoing = hop_data
-            # Skip source/destination entries (router_name could be FQDN now) and the starting router
-            # Check if this is an endpoint by seeing if is_router is False (endpoints are not routers)
-            # Also skip if this IP is the same as original source (to avoid duplication)
-            if is_router and not router_name.startswith("*") and ip != original_src:
-                filtered_reverse.append(hop_data)
-        
-        # Reverse the filtered path
-        for hop_data in reversed(filtered_reverse):
-            # Handle both 7-tuple and 8-tuple formats (with optional RTT)
-            if len(hop_data) == 8:
-                hop_num, router_name, ip, interface, is_router, connected_to, outgoing, rtt = hop_data
-                final_path.append((hop_counter, router_name, ip, interface, is_router, connected_to, outgoing, rtt))
-            else:
-                hop_num, router_name, ip, interface, is_router, connected_to, outgoing = hop_data
-                final_path.append((hop_counter, router_name, ip, interface, is_router, connected_to, outgoing))
-            hop_counter += 1
-        
-        # Find where the paths converge and add the forward path to destination
-        last_linux_router = self._find_last_linux_router(forward_path)
-        
-        # Check if the last Linux router is already in the final path
-        # This can happen if the reverse path already includes it
-        last_linux_router_in_path = False
-        if last_linux_router:
-            for hop_data in final_path:
-                # Check if router name matches (element 1 in tuple)
-                if len(hop_data) >= 2 and hop_data[1] == last_linux_router:
-                    last_linux_router_in_path = True
-                    break
-        
-        # If the last Linux router is not in the path yet, we need to add it
-        # This happens when the reverse trace started from this router but didn't include it
-        if last_linux_router and not last_linux_router_in_path:
-            # Find the router info from forward path
-            for hop_data in forward_path:
-                if len(hop_data) >= 2 and hop_data[1] == last_linux_router:
-                    # Found the router in forward path, add it to final path
-                    if len(hop_data) == 8:
-                        _, router_name, ip, interface, is_router, connected_to, outgoing, rtt = hop_data
-                        final_path.append((hop_counter, router_name, ip, interface, is_router, connected_to, outgoing, rtt))
-                    else:
-                        _, router_name, ip, interface, is_router, connected_to, outgoing = hop_data
-                        final_path.append((hop_counter, router_name, ip, interface, is_router, connected_to, outgoing))
-                    hop_counter += 1
-                    break
-        
-        # Add remaining hops from forward path after the last Linux router
-        adding_forward_hops = False
-        for hop_data in forward_path:
-            # Handle both 7-tuple and 8-tuple formats (with optional RTT)
-            if len(hop_data) == 8:
-                hop_num, router_name, ip, interface, is_router, connected_to, outgoing, rtt = hop_data
-            else:
-                hop_num, router_name, ip, interface, is_router, connected_to, outgoing = hop_data
-                rtt = None
+                _, router_name, ip, interface, is_router, connected_to, outgoing = hop_data
+                rtt = 0.0
             
-            if router_name == last_linux_router:
-                adding_forward_hops = True
-                # Skip adding the router here since we already handled it above
+            # Skip source and destination IPs (already handled separately)
+            if ip == original_src or ip == original_dst:
                 continue
             
-            if adding_forward_hops:
-                # Re-resolve IP to name using comprehensive lookup for better names
-                resolved_name = self.simulator._resolve_ip_to_name(ip)
-                if resolved_name != ip:  # If resolution found a better name
-                    router_name = resolved_name
-                
-                if rtt is not None:
-                    final_path.append((hop_counter, router_name, ip, interface, is_router, connected_to, outgoing, rtt))
-                else:
-                    final_path.append((hop_counter, router_name, ip, interface, is_router, connected_to, outgoing))
-                hop_counter += 1
+            # Only add Linux routers (but not endpoints)
+            if is_router and not router_name.startswith("*"):
+                # Check if this is actually a Linux router
+                router_obj_name = self.simulator._find_router_by_ip(ip)
+                if router_obj_name and router_obj_name in self.simulator.routers:
+                    router_obj = self.simulator.routers[router_obj_name]
+                    if router_obj.is_linux():
+                        # Re-resolve name for consistency
+                        resolved_name = self.simulator._resolve_ip_to_name(ip)
+                        if len(hop_data) >= 8:
+                            final_path.append((hop_counter, resolved_name, ip, interface, is_router, connected_to, outgoing, rtt))
+                        else:
+                            final_path.append((hop_counter, resolved_name, ip, interface, is_router, connected_to, outgoing))
+                        hop_counter += 1
         
-        # Ensure we end with the destination
-        def get_ip_from_hop(hop_data):
-            return hop_data[2]  # IP is always the 3rd element regardless of tuple length
+        # Always add destination as last hop
+        dst_label = self.simulator._resolve_ip_to_name(original_dst)
+        dst_router_name = self.simulator._find_router_by_ip(original_dst)
+        dst_is_router = dst_router_name is not None
+        # Get destination RTT from forward path if available
+        destination_rtt = 0.0
+        for hop_data in forward_path:
+            if len(hop_data) >= 3 and hop_data[2] == original_dst:
+                if len(hop_data) >= 8:
+                    destination_rtt = hop_data[7]
+                break
         
-        # Debug: check if destination is already in the path
-        destination_already_present = any(get_ip_from_hop(hop_data) == original_dst for hop_data in final_path)
-        if self.verbose >= 2:
-            print(f"Destination {original_dst} already in path: {destination_already_present}")
-            if destination_already_present:
-                for i, hop_data in enumerate(final_path):
-                    if get_ip_from_hop(hop_data) == original_dst:
-                        print(f"Destination found at hop {i+1}: {hop_data}")
-            
-        if final_path and not destination_already_present:
-            # Extract timing information for destination from forward_path if available
-            destination_rtt = 0.0
-            for hop_data in forward_path:
-                if len(hop_data) >= 8 and hop_data[2] == original_dst:  # Check if this hop reaches the destination
-                    destination_rtt = hop_data[7] if len(hop_data) == 8 else 0.0
-                    break
-                elif len(hop_data) >= 3 and hop_data[2] == original_dst:  # Destination found but no timing
-                    destination_rtt = 0.0
-                    break
-            
-            # Try to resolve destination IP to name
-            dst_label = self.simulator._resolve_ip_to_name(original_dst)
-            # Check if destination is a router
-            dst_router_name = self.simulator._find_router_by_ip(original_dst)
-            dst_is_router = dst_router_name is not None
-            if self.verbose >= 2:
-                print(f"Adding destination: {original_dst} -> {dst_label}, is_router: {dst_is_router}")
-            final_path.append((hop_counter, dst_label, original_dst, "", dst_is_router, "", "", destination_rtt))
+        final_path.append((hop_counter, dst_label, original_dst, "", dst_is_router, "", "", destination_rtt))
         
         if self.verbose >= 2:
-            print(f"Final combined path has {len(final_path)} hops")
+            print(f"Final path has {len(final_path)} hops")
+            for hop in final_path:
+                print(f"  Hop {hop[0]}: {hop[1]} ({hop[2]})")
         
         return True, final_path
     

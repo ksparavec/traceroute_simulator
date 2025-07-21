@@ -36,6 +36,9 @@ from .utils.variable_manager import VariableManager
 class TracerouteSimulatorShell(cmd2.Cmd):
     """Interactive shell for traceroute simulator operations."""
     
+    # Class attribute for cmd2 compatibility
+    orig_rl_history_length = 0
+    
     def __init__(self, *args, **kwargs):
         # Detect if we are in an interactive session
         self.is_interactive = sys.stdin.isatty()
@@ -46,6 +49,12 @@ class TracerouteSimulatorShell(cmd2.Cmd):
         
         # Simple prompt
         self.base_prompt = f"{Fore.GREEN}tsimsh{Style.RESET_ALL}"
+        
+        # Work around for cmd2 version compatibility issue with orig_rl_history_length
+        # This attribute is referenced in some versions of cmd2 but not initialized in others
+        # Setting it to 0 prevents AttributeError when cmd2 tries to access it
+        # Set this BEFORE calling super().__init__()
+        self.orig_rl_history_length = 0
         
         super().__init__(*args, **kwargs)
         

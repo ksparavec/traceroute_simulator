@@ -430,6 +430,8 @@ class ReversePathTracer:
             for hop_data in temp_path:
                 # Extract IP (always at position 2)
                 ip = hop_data[2]
+                # Extract router name (at position 1)
+                hop_router_name = hop_data[1] if len(hop_data) >= 2 else ""
                 
                 if ip == original_src or ip == original_dst:
                     # Always include source and destination
@@ -441,19 +443,30 @@ class ReversePathTracer:
                     final_path.append((hop_counter, resolved_name, ip, "", is_router, "", "", rtt))
                     hop_counter += 1
                 else:
-                    # Check if Linux router
-                    router_name = self.simulator._find_router_by_ip(ip)
-                    if router_name and router_name in self.simulator.routers:
-                        router_obj = self.simulator.routers[router_name]
-                        if router_obj.is_linux():
-                            # Extract all hop data
-                            if len(hop_data) >= 8:
-                                _, _, ip, interface, is_router, connected_to, outgoing, rtt = hop_data
-                                final_path.append((hop_counter, router_name, ip, interface, is_router, connected_to, outgoing, rtt))
-                            else:
-                                _, _, ip, interface, is_router, connected_to, outgoing = hop_data
-                                final_path.append((hop_counter, router_name, ip, interface, is_router, connected_to, outgoing))
-                            hop_counter += 1
+                    # Check if this is the last Linux router (NEVER filter it out)
+                    if hop_router_name == last_linux_router:
+                        # Always include the last Linux router
+                        if len(hop_data) >= 8:
+                            _, router_name, ip, interface, is_router, connected_to, outgoing, rtt = hop_data
+                            final_path.append((hop_counter, router_name, ip, interface, is_router, connected_to, outgoing, rtt))
+                        else:
+                            _, router_name, ip, interface, is_router, connected_to, outgoing = hop_data
+                            final_path.append((hop_counter, router_name, ip, interface, is_router, connected_to, outgoing))
+                        hop_counter += 1
+                    else:
+                        # For other hops, check if Linux router
+                        router_name = self.simulator._find_router_by_ip(ip)
+                        if router_name and router_name in self.simulator.routers:
+                            router_obj = self.simulator.routers[router_name]
+                            if router_obj.is_linux():
+                                # Extract all hop data
+                                if len(hop_data) >= 8:
+                                    _, _, ip, interface, is_router, connected_to, outgoing, rtt = hop_data
+                                    final_path.append((hop_counter, router_name, ip, interface, is_router, connected_to, outgoing, rtt))
+                                else:
+                                    _, _, ip, interface, is_router, connected_to, outgoing = hop_data
+                                    final_path.append((hop_counter, router_name, ip, interface, is_router, connected_to, outgoing))
+                                hop_counter += 1
         
         else:
             # Case 2: No Linux router found - just source and destination

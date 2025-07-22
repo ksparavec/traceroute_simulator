@@ -389,111 +389,93 @@ class ReversePathTracer:
             print(f"Reverse path has {len(reverse_path)} hops")
             print(f"Forward path has {len(forward_path)} hops")
         
-        # Step 1: Create temporary path with all hops
-        temp_path = []
-        
-        # Add all hops from reverse path in reverse order (no filtering)
-        for hop_data in reversed(reverse_path):
-            temp_path.append(hop_data)
-        
         # Find last Linux router in forward path
         last_linux_router = self._find_last_linux_router(forward_path)
         if self.verbose >= 2:
             print(f"Last Linux router: {last_linux_router}")
         
-        # Step 2: Add forward path hops starting from last Linux router (inclusive)
-        found_last_linux = False
-        for hop_data in forward_path:
-            # Check if this is the last Linux router
-            if len(hop_data) >= 2 and hop_data[1] == last_linux_router:
-                found_last_linux = True
-            
-            if found_last_linux:
-                temp_path.append(hop_data)
-        
-        if self.verbose >= 2:
-            print(f"Temporary path has {len(temp_path)} total hops")
-        
-        # Step 3: Construct final path from temporary path
+        # Initialize
+        temp_path = []
         final_path = []
         hop_counter = 1
         
-        # Check if source is already at the beginning of temp_path
-        source_already_present = False
-        if temp_path and len(temp_path[0]) >= 3 and temp_path[0][2] == original_src:
-            source_already_present = True
-        
-        # Add source as first hop only if not already present
-        if not source_already_present:
-            # Try to resolve source - first check if it's a router, then try reverse DNS
-            src_router_name = self.simulator._find_router_by_ip(original_src)
-            if src_router_name:
-                src_label = src_router_name
-                src_is_router = True
-            else:
-                # Try reverse DNS
-                try:
-                    import socket
-                    src_label = socket.gethostbyaddr(original_src)[0]
-                    src_is_router = False
-                except:
-                    src_label = original_src  # Keep as IP if DNS fails
-                    src_is_router = False
+        if last_linux_router:
+            # Case 1: Linux router found
             
-            final_path.append((hop_counter, src_label, original_src, "", src_is_router, "", "", 0.0))
-            hop_counter += 1
-        
-        # Process temporary path and filter for Linux routers
-        for hop_data in temp_path:
-            # Extract hop information
-            if len(hop_data) >= 8:
-                _, router_name, ip, interface, is_router, connected_to, outgoing, rtt = hop_data
-            else:
-                _, router_name, ip, interface, is_router, connected_to, outgoing = hop_data
-                rtt = 0.0
+            # 1. Insert original source IP (create a minimal hop tuple)
+            temp_path.append((1, original_src, original_src, "", False, "", "", 0.0))
             
-            # Skip destination IP (will be handled separately)
-            if ip == original_dst:
-                continue
+            # 2. Insert reverse path from last Linux router in reverse order without original source IP
+            for hop_data in reversed(reverse_path):
+                if len(hop_data) >= 3 and hop_data[2] != original_src:  # Skip source IP
+                    temp_path.append(hop_data)
             
-            # Check if this is a Linux router
-            if is_router and not router_name.startswith("*"):
-                router_obj_name = self.simulator._find_router_by_ip(ip)
-                if router_obj_name and router_obj_name in self.simulator.routers:
-                    router_obj = self.simulator.routers[router_obj_name]
-                    if router_obj.is_linux():
-                        # Use the resolved router name for consistency
-                        if len(hop_data) >= 8:
-                            final_path.append((hop_counter, router_obj_name, ip, interface, is_router, connected_to, outgoing, rtt))
-                        else:
-                            final_path.append((hop_counter, router_obj_name, ip, interface, is_router, connected_to, outgoing))
-                        hop_counter += 1
+            # 3. Insert last Linux router (find it in forward path)
+            for hop_data in forward_path:
+                if len(hop_data) >= 2 and hop_data[1] == last_linux_router:
+                    temp_path.append(hop_data)
+                    break
+            
+            # 4. Insert destination IP (create a minimal hop tuple)
+            # Get destination RTT from forward path if available
+            destination_rtt = 0.0
+            for hop_data in forward_path:
+                if len(hop_data) >= 3 and hop_data[2] == original_dst:
+                    if len(hop_data) >= 8:
+                        destination_rtt = hop_data[7]
+                    break
+            temp_path.append((1, original_dst, original_dst, "", False, "", "", destination_rtt))
+            
+            # 5. Resolve IPs and remove remaining non-Linux routers from path
+            for hop_data in temp_path:
+                # Extract IP (always at position 2)
+                ip = hop_data[2]
+                
+                if ip == original_src or ip == original_dst:
+                    # Always include source and destination
+                    resolved_name = self._resolve_ip(ip)
+                    is_router = self.simulator._find_router_by_ip(ip) is not None
+                    
+                    # Preserve RTT if available
+                    rtt = hop_data[7] if len(hop_data) >= 8 else 0.0
+                    final_path.append((hop_counter, resolved_name, ip, "", is_router, "", "", rtt))
+                    hop_counter += 1
+                else:
+                    # Check if Linux router
+                    router_name = self.simulator._find_router_by_ip(ip)
+                    if router_name and router_name in self.simulator.routers:
+                        router_obj = self.simulator.routers[router_name]
+                        if router_obj.is_linux():
+                            # Extract all hop data
+                            if len(hop_data) >= 8:
+                                _, _, ip, interface, is_router, connected_to, outgoing, rtt = hop_data
+                                final_path.append((hop_counter, router_name, ip, interface, is_router, connected_to, outgoing, rtt))
+                            else:
+                                _, _, ip, interface, is_router, connected_to, outgoing = hop_data
+                                final_path.append((hop_counter, router_name, ip, interface, is_router, connected_to, outgoing))
+                            hop_counter += 1
         
-        # Always add destination as last hop
-        # Try to resolve destination - first check if it's a router, then try reverse DNS
-        dst_router_name = self.simulator._find_router_by_ip(original_dst)
-        if dst_router_name:
-            dst_label = dst_router_name
-            dst_is_router = True
         else:
-            # Try reverse DNS
-            try:
-                import socket
-                dst_label = socket.gethostbyaddr(original_dst)[0]
-                dst_is_router = False
-            except:
-                dst_label = original_dst  # Keep as IP if DNS fails
-                dst_is_router = False
+            # Case 2: No Linux router found - just source and destination
+            
+            # Insert source IP
+            resolved_src = self._resolve_ip(original_src)
+            src_is_router = self.simulator._find_router_by_ip(original_src) is not None
+            final_path.append((hop_counter, resolved_src, original_src, "", src_is_router, "", "", 0.0))
+            hop_counter += 1
+            
+            # Insert destination IP
+            resolved_dst = self._resolve_ip(original_dst)
+            dst_is_router = self.simulator._find_router_by_ip(original_dst) is not None
+            # Get destination RTT from forward path if available
+            destination_rtt = 0.0
+            for hop_data in forward_path:
+                if len(hop_data) >= 3 and hop_data[2] == original_dst:
+                    if len(hop_data) >= 8:
+                        destination_rtt = hop_data[7]
+                    break
+            final_path.append((hop_counter, resolved_dst, original_dst, "", dst_is_router, "", "", destination_rtt))
         
-        # Get destination RTT from forward path if available
-        destination_rtt = 0.0
-        for hop_data in forward_path:
-            if len(hop_data) >= 3 and hop_data[2] == original_dst:
-                if len(hop_data) >= 8:
-                    destination_rtt = hop_data[7]
-                break
-        
-        final_path.append((hop_counter, dst_label, original_dst, "", dst_is_router, "", "", destination_rtt))
         
         if self.verbose >= 2:
             print(f"Final path has {len(final_path)} hops")
@@ -501,6 +483,30 @@ class ReversePathTracer:
                 print(f"  Hop {hop[0]}: {hop[1]} ({hop[2]})")
         
         return True, final_path
+    
+    def _resolve_ip(self, ip: str) -> str:
+        """
+        Resolve IP address to a name.
+        
+        First tries router lookup, then reverse DNS, falls back to IP.
+        
+        Args:
+            ip: IP address to resolve
+            
+        Returns:
+            Resolved name or IP address
+        """
+        # First try router lookup
+        router_name = self.simulator._find_router_by_ip(ip)
+        if router_name:
+            return router_name
+        
+        # Then try reverse DNS
+        try:
+            import socket
+            return socket.gethostbyaddr(ip)[0]
+        except:
+            return ip  # Return IP if DNS fails
     
     def _is_path_complete(self, path: List[Tuple]) -> bool:
         """

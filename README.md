@@ -103,9 +103,9 @@ A comprehensive network path discovery tool that simulates traceroute behavior u
    # hq-gw.json  hq-core.json  br-gw.json  dc-gw.json  ... (10 unified JSON files)
    ```
 
-2. **Run a basic traceroute simulation**:
+2. **Run a basic trace command**:
    ```bash
-   make tsim ARGS="-s 10.1.1.1 -d 10.2.1.1"
+   make trace ARGS="-s 10.1.1.1 -d 10.2.1.1"
    ```
    
    💡 **Tip**: For multiple commands, export once: `export TRACEROUTE_SIMULATOR_FACTS=tests/tsim_facts`
@@ -116,7 +116,7 @@ A comprehensive network path discovery tool that simulates traceroute behavior u
    ./tsimsh
    
    # Run commands in shell
-   tsimsh> mtr route -s 10.1.1.1 -d 10.2.1.1
+   tsimsh> trace -s 10.1.1.1 -d 10.2.1.1
    tsimsh> network setup --verbose
    tsimsh> service start --ip 10.1.1.1 --port 8080
    ```
@@ -150,12 +150,12 @@ The project includes a comprehensive interactive shell (`tsimsh`) built on the `
 ./tsimsh
 
 # Basic usage examples
-tsimsh> mtr route -s 10.1.1.1 -d 10.2.1.1
+tsimsh> trace -s 10.1.1.1 -d 10.2.1.1
 tsimsh> network setup --verbose
 tsimsh> service start --ip 10.1.1.1 --port 8080
 tsimsh> host add --name web1 --primary-ip 10.1.1.100/24 --connect-to hq-gw
 tsimsh> help                    # Show all available commands
-tsimsh> help mtr               # Show help for specific command group
+tsimsh> help trace               # Show help for specific command group
 ```
 
 ### Shell Dependencies
@@ -172,7 +172,7 @@ pip install pyyaml
 
 ### Command Categories
 
-1. **MTR Commands** (`mtr`): Traceroute simulation, analysis, and real MTR execution
+1. **Trace Commands** (`trace`): Reverse path tracing with real MTR execution (always enabled)
 2. **Network Commands** (`network`): Namespace simulation setup, status, testing, and cleanup
 3. **Service Commands** (`service`): TCP/UDP service management and testing
 4. **Host Commands** (`host`): Dynamic host creation, removal, and management
@@ -184,7 +184,7 @@ The shell supports automation through various methods:
 
 ```bash
 # Execute single command
-echo "mtr route -s 10.1.1.1 -d 10.2.1.1" | ./tsimsh
+echo "trace -s 10.1.1.1 -d 10.2.1.1" | ./tsimsh
 
 # Execute script file
 ./tsimsh < network_setup.script
@@ -261,7 +261,7 @@ Configuration values are resolved in this order (highest to lowest):
 
 ```bash
 # Example: Override config file settings via command line
-TRACEROUTE_SIMULATOR_CONF=production.yaml make tsim ARGS="--tsim-facts custom_facts -s 10.1.1.1 -d 10.2.1.1 -v"
+TRACEROUTE_SIMULATOR_CONF=production.yaml make trace ARGS="--tsim-facts custom_facts -s 10.1.1.1 -d 10.2.1.1 -v"
 # Uses production.yaml settings but overrides facts directory and enables verbose mode
 ```
 
@@ -327,11 +327,11 @@ Gateway routers with `type: "gateway"` can reach public internet IP addresses, p
 
 ```bash
 # Gateway router direct internet access
-make tsim ARGS="-s 10.1.1.1 -d 1.1.1.1"
+make trace ARGS="-s 10.1.1.1 -d 1.1.1.1"
 # Output: hq-gw (10.1.1.1) → one.one.one.one (1.1.1.1)
 
 # Multi-hop internet access from internal network
-make tsim ARGS="-s 10.1.10.1 -d 8.8.8.8"
+make trace ARGS="-s 10.1.10.1 -d 8.8.8.8"
 # Output: hq-lab → hq-core → hq-gw → dns.google (8.8.8.8)
 ```
 
@@ -396,39 +396,39 @@ The iptables analyzer uses data from unified facts files collected by the enhanc
 ### Basic Syntax
 
 ```bash
-TRACEROUTE_SIMULATOR_FACTS=<facts_directory> make tsim ARGS="[OPTIONS] -s SOURCE_IP -d DESTINATION_IP"
+TRACEROUTE_SIMULATOR_FACTS=<facts_directory> make trace ARGS="[OPTIONS] -s SOURCE_IP -d DESTINATION_IP"
 ```
 
 💡 **Tip**: Export the environment variable once to avoid repetition:
 ```bash
 export TRACEROUTE_SIMULATOR_FACTS=tests/tsim_facts
-make tsim ARGS="-s 10.1.1.1 -d 10.2.1.1"
+make trace ARGS="-s 10.1.1.1 -d 10.2.1.1"
 make ifa ARGS="--router hq-gw -s 10.1.1.1 -d 8.8.8.8 -p tcp"
 ```
 
 ### Simple Examples
 
 ```bash
-# Basic traceroute between router interfaces (HQ to Branch)
-make tsim ARGS="-s 10.1.1.1 -d 10.2.1.1"
+# Basic trace between router interfaces (HQ to Branch)
+make trace ARGS="-s 10.1.1.1 -d 10.2.1.1"
 
 # Gateway internet access (gateway to Cloudflare DNS)
-make tsim ARGS="-s 10.1.1.1 -d 1.1.1.1"
+make trace ARGS="-s 10.1.1.1 -d 1.1.1.1"
 
 # Multi-hop internet access (internal network to Google DNS)
-make tsim ARGS="-s 10.1.10.1 -d 8.8.8.8"
+make trace ARGS="-s 10.1.10.1 -d 8.8.8.8"
 
 # JSON output for programmatic processing (WireGuard tunnel)
-make tsim ARGS="-j -s 10.100.1.1 -d 10.100.1.3"
+make trace ARGS="-j -s 10.100.1.1 -d 10.100.1.3"
 
-# Verbose output with metadata loading (shows router types)
-make tsim ARGS="-vvv -s 10.1.1.1 -d 10.2.1.1"
+# Verbose output with configuration debugging
+make trace ARGS="-vvv -s 10.1.1.1 -d 10.2.1.1"
 
-# Reverse path tracing with auto-detected controller IP
-make tsim ARGS="--reverse-trace -s 10.1.1.1 -d 192.168.1.1"
+# Specify custom controller IP for SSH access
+make trace ARGS="--controller-ip 10.1.2.3 -s 10.1.1.1 -d 192.168.1.1"
 
 # Quiet mode for scripts (check exit code)
-make tsim ARGS="-q -s 10.1.1.1 -d 10.2.1.1"
+make trace ARGS="-q -s 10.1.1.1 -d 10.2.1.1"
 echo "Exit code: $?"
 ```
 
@@ -439,7 +439,7 @@ echo "Exit code: $?"
 | `-h` | `--help` | Show help message and exit |
 | `-s IP` | `--source IP` | **Required:** Source IP address for traceroute |
 | `-d IP` | `--destination IP` | **Required:** Destination IP address for traceroute |
-| `-v` | `--verbose` | Enable verbose output (-v basic, -vv detailed debugging) |
+| `-v` | `--verbose` | Enable verbose output (-v basic, -vv detailed, -vvv config debugging) |
 | `-q` | `--quiet` | Quiet mode - no output, use exit codes only |
 | `-j` | `--json` | Output results in JSON format |
 | | `--tsim-facts DIR` | Directory containing unified facts files (default: `tsim_facts`) |
@@ -451,33 +451,92 @@ echo "Exit code: $?"
 
 - **Verbose Mode (`-v`)**: Shows router loading process and additional debugging information
   - `-v`: Basic verbose output with router loading information
-  - `-vv`: Detailed debugging including simulation output and MTR command details
+  - `-vv`: Detailed debugging including MTR execution and SSH command details
+  - `-vvv`: Configuration file loading debug output
 - **Quiet Mode (`-q`)**: Suppresses all output, useful for automation scripts that check exit codes
-- **JSON Mode (`-j`)**: Outputs structured data suitable for parsing by other tools
+- **JSON Mode (`-j`)**: Outputs structured data with all 9 fields for comprehensive path information
 - **Custom Directory**: Allows using different sets of unified facts for testing or multiple environments (default: `tsim_facts`)
 - **MTR Fallback (`--no-mtr`)**: Disable automatic MTR fallback for simulation-only mode
 - **Reverse Path Tracing (`--reverse-trace`)**: Enable three-step reverse path discovery when forward simulation fails
-- **Controller IP (`--controller-ip`)**: Specify Ansible controller IP for reverse tracing (auto-detected using default route if not provided)
+- **Controller IP (`--controller-ip`)**: Specify Ansible controller IP for SSH-based interface detection
 
-## 🔄 MTR Integration
+## 🔄 Trace Command
 
-The simulator includes automatic MTR (My TraceRoute) fallback functionality:
+The trace command implements comprehensive reverse path tracing using real MTR execution. Unlike the previous simulator, tracing is **always enabled** and not optional.
 
-### How It Works
-1. **Simulation First**: Attempts normal route simulation using collected routing data
-2. **Automatic Fallback**: If simulation cannot complete the path, automatically falls back to real MTR execution
-3. **SSH Execution**: Executes `mtr --report -c 1 -m 30 <destination>` via SSH on the appropriate Linux router
-4. **Linux Router Filtering**: Filters MTR results to show only Linux routers from inventory
-5. **Timing Information**: Extracts round-trip time (RTT) data from MTR results for accurate performance metrics
-6. **Unreachable Destination Detection**: Validates that destinations are actually reached (not just intermediate hops)
-7. **Consistent Output**: Formats MTR results to match simulation output format with timing data
+### How the Trace Algorithm Works
+
+The trace command uses a sophisticated 5-step algorithm:
+
+1. **Step 1: MTR Execution** - Executes MTR from source to destination, capturing all hops including timing data
+2. **Step 2: Router Identification** - Identifies which hops are routers vs external hosts based on inventory
+3. **Step 3: Interface Detection** - Determines incoming/outgoing interfaces for each router using local routing tables
+4. **Step 4: Hop Connectivity** - Establishes prev_hop and next_hop relationships between consecutive hops
+5. **Step 5: Remote Interface Detection** - SSH to each router to detect interfaces via `ip route get` commands
+
+### Remote Interface Detection
+
+Step 5 implements intelligent SSH-based interface detection:
+- **Direct SSH**: When running from a router, directly SSH to other routers
+- **Nested SSH**: When running from controller, SSH via controller to reach routers
+- **Relaxed Security**: Uses relaxed host key checking for router connections only
+- **Command Execution**: Runs `ip route get <source>` and `ip route get <dest>` on each router
+- **Interface Parsing**: Extracts incoming/outgoing interface names from route output
+
+### Command Line Options
+
+| Option | Long Form | Description |
+|--------|-----------|-------------|
+| `-s IP` | `--source IP` | **Required:** Source IP address for tracing |
+| `-d IP` | `--destination IP` | **Required:** Destination IP address for tracing |
+| `-j` | `--json` | Output results in JSON format with all 9 fields |
+| `-v` | `--verbose` | Enable verbose output (can be used multiple times for more verbosity) |
+| | `--controller-ip IP` | Ansible controller IP address (auto-detected if not specified) |
+
+### Output Formats
+
+#### Text Format (Default)
+```
+# Shows hop name, IP, RTT, and interfaces
+hq-dmz (10.1.2.3) 0.34ms [eth0 -> eth1]
+hq-core (10.1.2.1) 0.52ms [eth1 -> eth0]
+hq-gw (10.1.1.1) 0.71ms [eth0 -> wg0]
+```
+
+#### JSON Format (`-j`)
+The JSON output includes 9 fields for comprehensive path information:
+- `hop`: Hop number in the path
+- `name`: Router/host name (empty for non-routers)
+- `ip`: IP address of the hop
+- `incoming`: Incoming interface name (renamed from "interface")
+- `is_router`: Boolean indicating if hop is a known router
+- `prev_hop`: Name of the previous hop (new field)
+- `next_hop`: Name of the next hop (renamed from "connected_to")
+- `outgoing`: Outgoing interface name
+- `rtt`: Round-trip time in milliseconds
+
+### Key Features
+
+- **Always Enabled**: Reverse path tracing is always active, not optional
+- **Real Network Execution**: Uses actual MTR on network, not simulation
+- **Complete Path Information**: All hops included with full interface details
+- **Two-Phase Construction**: Handles edge cases with proper path assembly
+- **Enhanced Field Names**: More intuitive field naming (incoming/outgoing, prev_hop/next_hop)
+- **Comprehensive JSON**: All fields populated for every hop, not just routers
+
+### Configuration Loading
+
+The trace command supports enhanced configuration file loading:
+- **Verbose Debugging**: Use `-vvv` to see detailed config file loading
+- **Key Flexibility**: Supports both 'ansible_controller_ip' and 'controller_ip' keys
+- **YAML Handling**: Graceful degradation when PyYAML is not available
+- **Error Reporting**: Clear messages for configuration issues
 
 ### Use Cases
-- **Mixed Networks**: Networks containing both Linux and non-Linux routers
-- **External Destinations**: Tracing to internet destinations beyond your network
-- **Performance Analysis**: Real timing information for latency analysis and troubleshooting
-- **Unreachable Destinations**: Proper detection and reporting of truly unreachable targets
-- **Verification**: Cross-checking simulation results with real network behavior
+- **Path Analysis**: Complete forward path discovery with interface details
+- **Performance Monitoring**: RTT data for every hop in the path
+- **Network Troubleshooting**: Interface-level visibility for packet flow
+- **Automation**: JSON output for programmatic processing
 
 ### Requirements
 - SSH access to Linux routers (passwordless recommended)
@@ -561,13 +620,13 @@ Reverse path tracing implements a sophisticated three-step approach:
 
 ```bash
 # Enable reverse path tracing with auto-detected controller IP
-make tsim ARGS="-s 10.1.1.1 -d 192.168.1.1 --reverse-trace"
+make trace ARGS="-s 10.1.1.1 -d 192.168.1.1 --reverse-trace"
 
 # Specify custom controller IP for reverse tracing
-make tsim ARGS="-s 10.1.1.1 -d 192.168.1.1 --reverse-trace --controller-ip 192.168.100.1"
+make trace ARGS="-s 10.1.1.1 -d 192.168.1.1 --reverse-trace --controller-ip 192.168.100.1"
 
 # Verbose mode shows all three steps in detail
-make tsim ARGS="-s 10.1.1.1 -d 192.168.1.1 --reverse-trace -vv"
+make trace ARGS="-s 10.1.1.1 -d 192.168.1.1 --reverse-trace -vv"
 ```
 
 ### Requirements
@@ -1008,22 +1067,35 @@ Structured output for programmatic processing:
   "traceroute_path": [
     {
       "hop": 1,
-      "router_name": "hq-gw",
-      "ip_address": "10.1.1.1",
-      "interface": "",
-      "is_router_owned": true,
-      "connected_router": "",
-      "outgoing_interface": "",
-      "rtt": 0.0
+      "name": "hq-gw",
+      "ip": "10.1.1.1",
+      "incoming": "eth0",
+      "is_router": true,
+      "prev_hop": "",
+      "next_hop": "hq-core",
+      "outgoing": "eth1",
+      "rtt": 0.34
     },
     {
       "hop": 2,
-      "router_name": "destination",
-      "ip_address": "8.8.8.8",
-      "interface": "",
-      "is_router_owned": false,
-      "connected_router": "",
-      "outgoing_interface": "",
+      "name": "hq-core",
+      "ip": "10.1.2.1",
+      "incoming": "eth1",
+      "is_router": true,
+      "prev_hop": "hq-gw",
+      "next_hop": "destination",
+      "outgoing": "eth0",
+      "rtt": 0.52
+    },
+    {
+      "hop": 3,
+      "name": "",
+      "ip": "8.8.8.8",
+      "incoming": "",
+      "is_router": false,
+      "prev_hop": "hq-core",
+      "next_hop": "",
+      "outgoing": "",
       "rtt": 45.6
     }
   ]
@@ -1031,9 +1103,14 @@ Structured output for programmatic processing:
 ```
 
 **Key JSON Fields:**
-- `rtt`: Round-trip time in milliseconds (included when MTR is used)
-- `router_name`: Actual router hostname when source IP belongs to a router
-- `is_router_owned`: `true` when IP address belongs to a router interface
+- `name`: Router/host name (empty for non-routers)
+- `ip`: IP address of the hop
+- `incoming`: Incoming interface name (renamed from "interface")
+- `is_router`: Boolean indicating if hop is a known router (renamed from "is_router_owned")
+- `prev_hop`: Name of the previous hop in the path (new field)
+- `next_hop`: Name of the next hop in the path (renamed from "connected_to")
+- `outgoing`: Outgoing interface name (renamed from "outgoing_interface")
+- `rtt`: Round-trip time in milliseconds (always included with trace command)
 
 ### Verbose Format (`-v`)
 
@@ -1072,7 +1149,7 @@ The simulator uses standard exit codes for automation and error handling:
 
 ```bash
 #!/bin/bash
-make tsim ARGS="--tsim-facts tsim_facts -q -s "$1" -d "$2"
+make trace ARGS="--tsim-facts tsim_facts -q -s "$1" -d "$2"
 case $? in
     0) echo "Route found" ;;
     1) echo "No path available" ;;
@@ -1266,11 +1343,11 @@ make fetch-routing-data OUTPUT_DIR=temp INVENTORY=router-01
 
 ```bash
 # Intra-location routing (HQ internal)
-make tsim ARGS="-s 10.1.1.1 -d 10.1.2.1"
+make trace ARGS="-s 10.1.1.1 -d 10.1.2.1"
 # Output: HQ gateway to core router
 
 # Inter-location routing (HQ to Branch)
-make tsim ARGS="-s 10.1.1.1 -d 10.2.1.1"
+make trace ARGS="-s 10.1.1.1 -d 10.2.1.1"
 # Output: Cross-site via WireGuard tunnel
 ```
 
@@ -1278,11 +1355,11 @@ make tsim ARGS="-s 10.1.1.1 -d 10.2.1.1"
 
 ```bash
 # From HQ lab network to DC server network
-make tsim ARGS="-s 10.1.10.100 -d 10.3.20.200"
+make trace ARGS="-s 10.1.10.100 -d 10.3.20.200"
 # Output: Complex multi-hop path through multiple locations
 
 # Branch WiFi to Data Center servers  
-make tsim ARGS="-s 10.2.5.50 -d 10.3.21.100"
+make trace ARGS="-s 10.2.5.50 -d 10.3.21.100"
 # Output: Cross-location routing via distribution layers
 ```
 
@@ -1290,47 +1367,51 @@ make tsim ARGS="-s 10.2.5.50 -d 10.3.21.100"
 
 ```bash
 # Check connectivity in script
-if make tsim ARGS="-q -s 10.1.1.1 -d 10.3.1.1"; then
+if make trace ARGS="-q -s 10.1.1.1 -d 10.3.1.1"; then
     echo "HQ to DC route available"
 else
     echo "No route found"
 fi
 
 # JSON processing with jq
-make tsim ARGS="-j -s 10.1.10.1 -d 10.3.20.1" | \
-    jq '.traceroute_path[].router_name'
+make trace ARGS="-j -s 10.1.10.1 -d 10.3.20.1" | \
+    jq '.traceroute_path[].name'
 ```
 
 ### Complex Scenarios
 
 ```bash
 # WireGuard tunnel mesh routing
-make tsim ARGS="-s 10.100.1.1 -d 10.100.1.3"
+make trace ARGS="-s 10.100.1.1 -d 10.100.1.3"
 # Output: Direct VPN tunnel communication
 
 # Multi-hop cross-location routing
-make tsim ARGS="-v -s 10.1.11.1 -d 10.2.6.1"
+make trace ARGS="-v -s 10.1.11.1 -d 10.2.6.1"
 # Output: HQ lab to Branch WiFi with detailed hop information
 
 # Maximum complexity: End-to-end across all 3 locations
-make tsim ARGS="-s 10.1.11.100 -d 10.3.21.200"
+make trace ARGS="-s 10.1.11.100 -d 10.3.21.200"
 # Output: Lab host → HQ → Branch → DC → Server host
 ```
 
-### Reverse Path Tracing Examples
+### Trace Command Examples
 
 ```bash
-# Basic reverse path tracing to external destination with timing
-make tsim ARGS="-s 10.1.1.1 -d 8.8.8.8 --reverse-trace"
-# Output: Three-step bidirectional path discovery with RTT data
+# Basic trace with interface detection
+make trace ARGS="-s 10.1.1.1 -d 8.8.8.8"
+# Output: Shows each hop with [incoming -> outgoing] interfaces
 
-# MTR fallback with timing information  
-make tsim ARGS="-s 10.1.1.1 -d 8.8.8.8"
-# Output: Forward tracing with mtr tool and timing data
+# JSON output with all 9 fields
+make trace ARGS="-j -s 10.1.1.1 -d 8.8.8.8"
+# Output: Complete path information including prev_hop/next_hop relationships
 
-# Detailed reverse tracing with full debugging
-make tsim ARGS="-s 10.1.1.1 -d 203.0.113.1 --reverse-trace -vv"
-# Output: Step-by-step reverse path tracing process with detailed MTR command output
+# Detailed debugging with SSH commands
+make trace ARGS="-s 10.1.1.1 -d 203.0.113.1 -vv"
+# Output: Shows MTR execution and SSH interface detection commands
+
+# Configuration debugging
+make trace ARGS="-s 10.1.1.1 -d 10.2.1.1 -vvv"
+# Output: Shows YAML config file loading and parsing details
 ```
 
 ## 🔍 Troubleshooting
@@ -1389,7 +1470,7 @@ for f in glob.glob('tests/tsim_facts/*.json'):
 "
 
 # Quick test with known good IPs
-make tsim ARGS="-s 10.1.1.1 -d 10.2.1.1"
+make trace ARGS="-s 10.1.1.1 -d 10.2.1.1"
 ```
 
 ## 🤝 Contributing
@@ -1433,7 +1514,7 @@ traceroute_simulator/
 │   │   ├── tsim_shell.py            # Main shell class
 │   │   ├── commands/                # Command handlers
 │   │   │   ├── base.py              # Base command handler
-│   │   │   ├── mtr.py               # MTR command group
+│   │   │   ├── trace.py             # Trace command group (replaces mtr.py)
 │   │   │   ├── network.py           # Network command group
 │   │   │   ├── service.py           # Service command group
 │   │   │   ├── host.py              # Host command group
@@ -1496,9 +1577,49 @@ traceroute_simulator/
 
 ## 🆕 Recent Improvements (2025)
 
+### Trace Command Implementation (Latest)
+- **Replaced MTR Command**: New `trace` command replaces the old `mtr` command entirely
+- **Always Enabled Tracing**: Reverse path tracing is now always active, not optional
+- **Required Flags**: `-s/--source` and `-d/--destination` are required for all trace operations
+- **5-Step Algorithm**: Comprehensive path discovery including remote interface detection
+- **Remote SSH Interface Detection**: Step 5 executes `ip route get` commands on each router
+- **Nested SSH Support**: Intelligent routing of SSH commands through controller when needed
+- **Enhanced Verbosity**: Multiple levels (-v, -vv, -vvv) for different debugging needs
+
+### Interface Field Renaming
+- **incoming**: Renamed from "interface" for clarity in JSON output
+- **next_hop**: Renamed from "connected_to" for better semantic meaning
+- **prev_hop**: New field added to show previous hop relationships
+- **All Fields Populated**: Every hop now has all fields populated, not just routers
+
+### Remote Interface Detection Features
+- **Direct SSH Mode**: When running from a router, directly SSH to other routers
+- **Controller SSH Mode**: When running from controller, SSH via controller relay
+- **Relaxed Host Key Checking**: Automatic relaxed security for router connections only
+- **Interface Parsing**: Extracts incoming/outgoing interfaces from route commands
+- **Error Handling**: Graceful fallback when SSH or commands fail
+
+### Output Format Improvements
+- **Text Format**: Now shows "hop_name (ip) RTT [incoming -> outgoing]"
+- **Example Output**: "hq-dmz (10.1.2.3) 0.34ms [eth0 -> eth1]"
+- **JSON Enhancement**: All 9 fields included for comprehensive path information
+- **Consistent Formatting**: Both text and JSON outputs aligned for clarity
+
+### Configuration Loading Enhancements
+- **Verbose Config Debugging**: Use -vvv to see detailed YAML loading
+- **Key Flexibility**: Supports both 'ansible_controller_ip' and 'controller_ip'
+- **Better Error Messages**: Clear reporting of configuration issues
+- **Graceful Degradation**: Works even without PyYAML installed
+
+### Algorithm Improvements
+- **All Hops Included**: Step 1 includes all MTR hops without filtering
+- **Timing Preservation**: RTT data preserved for all hops in the path
+- **Last Router Protection**: Last Linux router never filtered out
+- **Two-Phase Construction**: Sophisticated path assembly for edge cases
+
 ### Interactive Shell (tsimsh) - Latest Addition
 - **Comprehensive Interactive Interface**: Full-featured shell built on cmd2 framework with command completion and persistent history
-- **Organized Command Structure**: Commands grouped by functionality (mtr, network, service, host, facts) for intuitive usage
+- **Organized Command Structure**: Commands grouped by functionality (trace, network, service, host, facts) for intuitive usage
 - **Tab Completion System**: Intelligent completion for IP addresses, router names, command options, and file paths
 - **Context Mode Support**: Streamlined operation within command contexts for repetitive tasks
 - **Scripting Integration**: Support for automation through command files and piped input

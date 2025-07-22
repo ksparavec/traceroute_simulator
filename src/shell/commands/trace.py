@@ -190,19 +190,14 @@ class TraceCommands(BaseCommandHandler):
             else:
                 hop_str += ip
             
-            # Add incoming interface info if available
-            if incoming:
-                hop_str += f" [{incoming}]"
-            
             # Add RTT if available
             if rtt > 0:
                 hop_str += f" {rtt:.2f}ms"
             
-            # Add connection info if available
-            if next_hop:
-                hop_str += f" -> {next_hop}"
-                if outgoing:
-                    hop_str += f" [{outgoing}]"
+            # Add interface info if available
+            if incoming or outgoing:
+                interface_str = f"[{incoming or '?'} -> {outgoing or '?'}]"
+                hop_str += f" {interface_str}"
             
             self.shell.poutput(hop_str)
     

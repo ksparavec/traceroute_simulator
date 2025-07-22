@@ -1,0 +1,14 @@
+TRACE_DATA=$(cat trace_example.json)
+
+# Check if we have path data
+if $TRACE_DATA[path] == "" then
+    print "Error: No path found in trace output"
+else
+    # Iterate through each hop in the path array
+    for HOP in $TRACE_DATA[path] do
+        # Extract and print the IP address from this hop
+        if $HOP[ip] != "" then
+            print $HOP[ip]
+        fi
+    done
+fi

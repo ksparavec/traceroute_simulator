@@ -128,7 +128,7 @@ class BaseCommandHandler(ABC):
         if use_sudo:
             cmd.extend(['sudo', '-E'])
         
-        cmd.extend([self.python_cmd, '-B', script_path] + args)
+        cmd.extend([self.python_cmd, '-u', '-B', script_path] + args)
         
         # Set working directory
         if cwd is None:

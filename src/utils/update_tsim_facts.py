@@ -5,6 +5,7 @@ Update tsim_facts JSON files to extract interfaces from routing tables
 
 import json
 import os
+import sys
 from pathlib import Path
 
 def extract_interfaces_from_routing(router_data):
@@ -41,7 +42,11 @@ def extract_interfaces_from_routing(router_data):
 
 def update_tsim_facts():
     """Update all tsim_facts files"""
-    facts_dir = Path('tests/tsim_facts')
+    facts_path = os.environ.get('TRACEROUTE_SIMULATOR_FACTS')
+    if not facts_path:
+        print("Error: TRACEROUTE_SIMULATOR_FACTS environment variable must be set")
+        sys.exit(1)
+    facts_dir = Path(facts_path)
     
     for facts_file in facts_dir.glob('*.json'):
         if '_metadata' in facts_file.name:

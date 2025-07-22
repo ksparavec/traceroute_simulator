@@ -1,0 +1,112 @@
+#!/usr/bin/env tsimsh
+#
+# Add source and destination hosts to router interfaces based on trace path
+#
+# Usage:
+#   trace -s SOURCE -d DEST -j | ./tsimsh < add_hosts_to_routers.tsim
+#   ./tsimsh < add_hosts_to_routers.tsim  (then paste JSON data)
+#
+
+# Read trace JSON data from stdin
+TRACE_DATA=$(cat trace_example.json)
+
+# Check if we have path data
+if $TRACE_DATA[path] == "" then
+    print "Error: No path found in trace output"
+else
+    # Get source and destination IPs from trace data
+    SOURCE_IP=$TRACE_DATA[source]
+    DEST_IP=$TRACE_DATA[destination]
+    
+    print "Processing trace from $SOURCE_IP to $DEST_IP"
+    print ""
+    
+    # Counter for router index
+    ROUTER_INDEX=0
+    
+    # Read the bridge registry to find network prefixes
+    BRIDGE_REGISTRY=$(cat /tmp/traceroute_bridges_registry.json)
+    
+    # Iterate through each hop in the path array
+    for HOP in $TRACE_DATA[path] do
+        # Check if this hop is a router (has incoming/outgoing interfaces)
+        if $HOP[is_router] == True then
+            # Increment router index for each router
+            ROUTER_INDEX=$(($ROUTER_INDEX + 1))
+            
+            ROUTER_NAME=$HOP[name]
+            ROUTER_IP=$HOP[ip]
+            INCOMING=$HOP[incoming]
+            OUTGOING=$HOP[outgoing]
+            
+            print "Router $ROUTER_INDEX: $ROUTER_NAME ($ROUTER_IP)"
+            
+            # Add source host connected to incoming interface if present
+            if $INCOMING != "" then
+                # Find the network prefix from bridge registry
+                # Look through all bridges to find where this router is connected
+                NETMASK=""
+                for BRIDGE_NAME in $BRIDGE_REGISTRY.keys() do
+                    BRIDGE=$BRIDGE_REGISTRY[$BRIDGE_NAME]
+                    if $BRIDGE[routers][$ROUTER_NAME] != "" then
+                        ROUTER_INFO=$BRIDGE[routers][$ROUTER_NAME]
+                        if $ROUTER_INFO[interface] == $INCOMING then
+                            # Extract prefix from IPv4 address (e.g., "10.1.1.1/24" -> "24")
+                            IPV4=$ROUTER_INFO[ipv4]
+                            # Use awk to extract the prefix after the /
+                            NETMASK=$(echo $IPV4 | awk -F/ '{print $2}')
+                            if $NETMASK == "" then
+                                NETMASK="24"
+                            fi
+                            break
+                        fi
+                    fi
+                done
+                
+                if $NETMASK == "" then
+                    NETMASK="24"
+                fi
+                
+                HOST_NAME="source-$ROUTER_INDEX"
+                print "  Adding $HOST_NAME with IP $SOURCE_IP/$NETMASK to interface $INCOMING"
+                host add --name $HOST_NAME --primary-ip $SOURCE_IP/$NETMASK --connect-to $ROUTER_NAME -vvv
+            fi
+            
+            # Add destination host connected to outgoing interface if present
+            if $OUTGOING != "" then
+                # Find the network prefix from bridge registry
+                NETMASK=""
+                for BRIDGE_NAME in $BRIDGE_REGISTRY.keys() do
+                    BRIDGE=$BRIDGE_REGISTRY[$BRIDGE_NAME]
+                    if $BRIDGE[routers][$ROUTER_NAME] != "" then
+                        ROUTER_INFO=$BRIDGE[routers][$ROUTER_NAME]
+                        if $ROUTER_INFO[interface] == $OUTGOING then
+                            # Extract prefix from IPv4 address
+                            IPV4=$ROUTER_INFO[ipv4]
+                            # Use awk to extract the prefix after the /
+                            NETMASK=$(echo $IPV4 | awk -F/ '{print $2}')
+                            if $NETMASK == "" then
+                                NETMASK="24"
+                            fi
+                            break
+                        fi
+                    fi
+                done
+                
+                if $NETMASK == "" then
+                    NETMASK="24"
+                fi
+                
+                HOST_NAME="destination-$ROUTER_INDEX"
+                print "  Adding $HOST_NAME with IP $DEST_IP/$NETMASK to interface $OUTGOING"
+                host add --name $HOST_NAME --primary-ip $DEST_IP/$NETMASK --connect-to $ROUTER_NAME -vvv
+            fi
+            
+            print ""
+        fi
+    done
+    
+    # List all hosts to verify
+    print "Listing all hosts:"
+    host list
+fi

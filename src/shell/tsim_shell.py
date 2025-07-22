@@ -266,6 +266,7 @@ Type 'set' to see all variables.
             from .commands.service import ServiceCommands
             from .commands.completion import CompletionCommands
             from .commands.trace import TraceCommands
+            from .commands.nettest import NetTestCommands
             
             self.facts_handler = FactsCommands(self)
             self.network_handler = NetworkCommands(self)
@@ -273,6 +274,7 @@ Type 'set' to see all variables.
             self.service_handler = ServiceCommands(self)
             self.completion_handler = CompletionCommands(self)
             self.trace_handler = TraceCommands(self)
+            self.nettest_handler = NetTestCommands(self)
             
         except ImportError as e:
             self.poutput(f"{Fore.RED}Error loading command handlers: {e}{Style.RESET_ALL}")
@@ -424,6 +426,34 @@ Type 'set' to see all variables.
             return self.trace_handler.complete_command(text, line, begidx, endidx)
         return []
     
+    def do_ping(self, args):
+        """Test connectivity between IPs using ping."""
+        if hasattr(self, 'nettest_handler'):
+            # Don't return the exit code - always return None to prevent shell exit
+            self.nettest_handler.handle_ping_command(args)
+        else:
+            self.poutput(f"{Fore.RED}Ping command not available{Style.RESET_ALL}")
+    
+    def complete_ping(self, text, line, begidx, endidx):
+        """Provide completion for ping command."""
+        if hasattr(self, 'nettest_handler'):
+            return self.nettest_handler.complete_ping_command(text, line, begidx, endidx)
+        return []
+    
+    def do_mtr(self, args):
+        """Test connectivity between IPs using MTR (My TraceRoute)."""
+        if hasattr(self, 'nettest_handler'):
+            # Don't return the exit code - always return None to prevent shell exit
+            self.nettest_handler.handle_mtr_command(args)
+        else:
+            self.poutput(f"{Fore.RED}MTR command not available{Style.RESET_ALL}")
+    
+    def complete_mtr(self, text, line, begidx, endidx):
+        """Provide completion for mtr command."""
+        if hasattr(self, 'nettest_handler'):
+            return self.nettest_handler.complete_mtr_command(text, line, begidx, endidx)
+        return []
+    
     def do_status(self, args):
         """Show current shell status and configuration."""
         self.poutput(f"{Fore.CYAN}Traceroute Simulator Shell Status{Style.RESET_ALL}")
@@ -437,6 +467,7 @@ Type 'set' to see all variables.
             ('Host', hasattr(self, 'host_handler')),
             ('Service', hasattr(self, 'service_handler')),
             ('Trace', hasattr(self, 'trace_handler')),
+            ('NetTest', hasattr(self, 'nettest_handler')),
             ('Completion', hasattr(self, 'completion_handler'))
         ]
         
@@ -557,12 +588,34 @@ Type 'set' to see all variables.
         self.poutput("  -d, --destination  Destination IP address (required)")
         self.poutput("  -j, --json         Output in JSON format")
         self.poutput("  -v, --verbose      Verbose output (can be used multiple times)")
-        self.poutput("  --controller-ip    Ansible controller IP (auto-detected if not provided)")
+    
+    def help_ping(self):
+        """Help for ping command."""
+        self.poutput(f"{Fore.CYAN}Ping Command:{Style.RESET_ALL}")
+        self.poutput("  ping -s SOURCE_IP -d DESTINATION_IP [--verbose]")
+        self.poutput("    Test connectivity between IPs using ping")
         self.poutput("")
-        self.poutput("Examples:")
-        self.poutput("  trace -s 10.1.1.1 -d 10.3.1.1")
-        self.poutput("  trace -s 10.1.2.3 -d 192.168.1.1 --json")
-        self.poutput("  trace -s 10.2.1.1 -d 10.1.3.1 -vv")
+        self.poutput("Options:")
+        self.poutput("  -s, --source       Source IP address (required)")
+        self.poutput("  -d, --destination  Destination IP address (required)")
+        self.poutput("  -v, --verbose      Verbose output (can be used multiple times)")
+        self.poutput("")
+        self.poutput("Note: Tests from all namespaces with the source IP to all namespaces")
+        self.poutput("      with the destination IP, showing the routing path.")
+    
+    def help_mtr(self):
+        """Help for mtr command."""
+        self.poutput(f"{Fore.CYAN}MTR Command:{Style.RESET_ALL}")
+        self.poutput("  mtr -s SOURCE_IP -d DESTINATION_IP [--verbose]")
+        self.poutput("    Test connectivity between IPs using MTR (My TraceRoute)")
+        self.poutput("")
+        self.poutput("Options:")
+        self.poutput("  -s, --source       Source IP address (required)")
+        self.poutput("  -d, --destination  Destination IP address (required)")
+        self.poutput("  -v, --verbose      Verbose output (can be used multiple times)")
+        self.poutput("")
+        self.poutput("Note: Tests from all namespaces with the source IP to all namespaces")
+        self.poutput("      with the destination IP, showing hop-by-hop path.")
 
 
 

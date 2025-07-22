@@ -66,8 +66,15 @@ class HiddenMeshNetworkSetup:
         self.setup_logging()
         
         # Determine facts directories
-        self.raw_facts_dir = Path(os.environ.get('TRACEROUTE_SIMULATOR_RAW_FACTS', 'tests/raw_facts'))
-        self.json_facts_dir = Path(os.environ.get('TRACEROUTE_SIMULATOR_FACTS', 'tests/tsim_facts'))
+        raw_facts_path = os.environ.get('TRACEROUTE_SIMULATOR_RAW_FACTS')
+        if not raw_facts_path:
+            raise EnvironmentError("TRACEROUTE_SIMULATOR_RAW_FACTS environment variable must be set")
+        self.raw_facts_dir = Path(raw_facts_path)
+        
+        json_facts_path = os.environ.get('TRACEROUTE_SIMULATOR_FACTS')
+        if not json_facts_path:
+            raise EnvironmentError("TRACEROUTE_SIMULATOR_FACTS environment variable must be set")
+        self.json_facts_dir = Path(json_facts_path)
         
         # Raw facts loader - ONLY source of data
         self.raw_loader = RawFactsBlockLoader(verbose=verbose)

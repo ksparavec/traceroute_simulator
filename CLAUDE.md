@@ -342,3 +342,4 @@ The traceroute simulator provides:
 ## Development Memory
 
 - Do not commit anything yourself without asking
+- Always run sudo with '-E' argument to pick up environment

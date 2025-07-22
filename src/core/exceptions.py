@@ -139,9 +139,8 @@ class FactsDirectoryError(ConfigurationError):
         self.suggestion = (
             "Ensure the facts directory exists and contains router JSON files. "
             "You can:\n"
-            "  1. Use the test data: export TRACEROUTE_SIMULATOR_FACTS=tests/tsim_facts\n"
-            "  2. Collect new data: make fetch-routing-data\n"
-            "  3. Specify a different directory: export TRACEROUTE_SIMULATOR_FACTS=/path/to/facts"
+            "  1. Set environment variable: export TRACEROUTE_SIMULATOR_FACTS=/path/to/facts\n"
+            "  2. Collect new data: make fetch-routing-data"
         )
 
 

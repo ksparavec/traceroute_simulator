@@ -52,11 +52,15 @@ class NetLogCLI:
     
     def _load_routers(self):
         """Load known router names from facts directory."""
-        facts_paths = [
-            os.environ.get('TRACEROUTE_SIMULATOR_FACTS', '/tmp/traceroute_test_output'),
-            os.environ.get('TRACEROUTE_SIMULATOR_RAW_FACTS', 'tests/raw_facts'),
-            'tests/tsim_facts'
-        ]
+        # Both environment variables must be set
+        tsim_facts = os.environ.get('TRACEROUTE_SIMULATOR_FACTS')
+        raw_facts = os.environ.get('TRACEROUTE_SIMULATOR_RAW_FACTS')
+        
+        if not tsim_facts or not raw_facts:
+            print("Error: TRACEROUTE_SIMULATOR_FACTS and TRACEROUTE_SIMULATOR_RAW_FACTS environment variables must be set")
+            sys.exit(1)
+            
+        facts_paths = [tsim_facts, raw_facts]
         
         for facts_path in facts_paths:
             facts_dir = Path(facts_path)

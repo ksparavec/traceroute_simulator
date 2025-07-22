@@ -6,7 +6,7 @@ PYTHON := python3
 PIP := pip3
 ANSIBLE := ansible-playbook
 TESTS_DIR := tests
-ROUTING_FACTS_DIR := tests/tsim_facts
+ROUTING_FACTS_DIR := $(TRACEROUTE_SIMULATOR_FACTS)
 ANSIBLE_DIR := ansible
 
 # Build configuration
@@ -493,7 +493,7 @@ tsim:
 		echo "Examples:"; \
 		echo "  make tsim ARGS='-s 10.1.1.1 -d 10.2.1.1'"; \
 		echo "  make tsim ARGS='-s 10.1.1.1 -d 10.2.1.1 -j'"; \
-		echo "  make tsim ARGS='-s 10.1.1.1 -d 10.2.1.1 --tsim-facts tests/tsim_facts'"; \
+		echo "  make tsim ARGS='-s 10.1.1.1 -d 10.2.1.1 --tsim-facts /path/to/facts'"; \
 		echo "  make tsim ARGS='-s 10.1.1.1 -d 10.2.1.1 -v --reverse-trace'"; \
 		exit 1; \
 	fi

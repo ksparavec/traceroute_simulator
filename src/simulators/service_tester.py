@@ -317,7 +317,10 @@ def main():
     args = parser.parse_args()
     
     # Determine facts directory
-    facts_dir = os.environ.get('TRACEROUTE_SIMULATOR_FACTS', 'tests/tsim_facts')
+    facts_dir = os.environ.get('TRACEROUTE_SIMULATOR_FACTS')
+    if not facts_dir:
+        print("Error: TRACEROUTE_SIMULATOR_FACTS environment variable must be set")
+        sys.exit(1)
     
     if not os.path.exists(facts_dir):
         print(f"Error: Facts directory not found: {facts_dir}")

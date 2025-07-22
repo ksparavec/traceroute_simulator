@@ -786,7 +786,7 @@ Environment Variables:
     facts_dir = os.environ.get('TRACEROUTE_SIMULATOR_FACTS')
     if not facts_dir:
         print("Error: TRACEROUTE_SIMULATOR_FACTS environment variable must be set")
-        print("Example: TRACEROUTE_SIMULATOR_FACTS=tests/tsim_facts")
+        print("Example: TRACEROUTE_SIMULATOR_FACTS=/path/to/facts")
         sys.exit(1)
         
     try:

@@ -49,15 +49,15 @@ class HostCommands(BaseCommandHandler):
                               help='Router to connect to')
         add_parser.add_argument('--secondary-ips', nargs='*',
                               help='Secondary IP addresses')
-        add_parser.add_argument('--verbose', '-v', action='store_true',
-                              help='Verbose output')
+        add_parser.add_argument('--verbose', '-v', action='count', default=0,
+                              help='Increase verbosity (-v for info, -vv for debug, -vvv for trace)')
         
         # List subcommand
         list_parser = subparsers.add_parser('list', help='List all hosts')
         list_parser.add_argument('--format', '-f', choices=['text', 'json'], default='text',
                                help='Output format')
-        list_parser.add_argument('--verbose', '-v', action='store_true',
-                               help='Verbose output')
+        list_parser.add_argument('--verbose', '-v', action='count', default=0,
+                               help='Increase verbosity (-v for info, -vv for debug, -vvv for trace)')
         
         # Remove subcommand
         remove_parser = subparsers.add_parser('remove', help='Remove a host from the network')
@@ -66,11 +66,15 @@ class HostCommands(BaseCommandHandler):
                                  help='Host name to remove')
         remove_parser.add_argument('--force', '-f', action='store_true',
                                  help='Force removal without confirmation')
+        remove_parser.add_argument('--verbose', '-v', action='count', default=0,
+                                 help='Increase verbosity (-v for info, -vv for debug, -vvv for trace)')
         
         # Clean subcommand
         clean_parser = subparsers.add_parser('clean', help='Remove all hosts')
         clean_parser.add_argument('--force', '-f', action='store_true',
                                 help='Force cleanup without confirmation')
+        clean_parser.add_argument('--verbose', '-v', action='count', default=0,
+                                help='Increase verbosity (-v for info, -vv for debug, -vvv for trace)')
         
         return parser
     
@@ -128,8 +132,9 @@ class HostCommands(BaseCommandHandler):
         if args.secondary_ips:
             cmd_args.extend(['--secondary-ips'] + args.secondary_ips)
         
-        if args.verbose:
-            cmd_args.append('--verbose')
+        # Add verbose flags based on count
+        for _ in range(args.verbose):
+            cmd_args.append('-v')
         
         # Run with sudo
         returncode = self.run_script_with_output(script_path, cmd_args, use_sudo=True)
@@ -158,8 +163,9 @@ class HostCommands(BaseCommandHandler):
         if args.format == 'json':
             cmd_args.append('--json')
         
-        if args.verbose:
-            cmd_args.append('--verbose')
+        # Add verbose flags based on count
+        for _ in range(args.verbose):
+            cmd_args.append('-v')
         
         # Run with sudo
         returncode = self.run_script_with_output(script_path, cmd_args, use_sudo=True)
@@ -192,8 +198,9 @@ class HostCommands(BaseCommandHandler):
             '--remove'
         ]
         
-        if args.verbose:
-            cmd_args.append('--verbose')
+        # Add verbose flags based on count
+        for _ in range(args.verbose):
+            cmd_args.append('-v')
         
         # Run with sudo
         returncode = self.run_script_with_output(script_path, cmd_args, use_sudo=True)
@@ -221,15 +228,17 @@ class HostCommands(BaseCommandHandler):
         self.info("Removing all hosts...")
         
         # Run the host cleanup script
-        script_path = self.get_script_path('src/simulators/host_namespace_setup.py')
+        script_path = self.get_script_path('src/utils/host_cleanup.py')
         if not self.check_script_exists(script_path):
             return 1
         
-        # Build command arguments
-        cmd_args = ['--clean-all']
+        # Build command arguments - host_cleanup.py doesn't need any arguments
+        cmd_args = []
         
-        if args.verbose:
-            cmd_args.append('--verbose')
+        # Add verbose flags based on count
+        if hasattr(args, 'verbose'):
+            for _ in range(args.verbose):
+                cmd_args.append('-v')
         
         # Run with sudo
         returncode = self.run_script_with_output(script_path, cmd_args, use_sudo=True)

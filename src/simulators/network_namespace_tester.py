@@ -47,41 +47,48 @@ from pathlib import Path
 from typing import Dict, List, Tuple, Set, Optional
 
 
+
 class SequentialConnectivityTester:
     """Sequential network connectivity testing for namespace simulation."""
     
     def __init__(self, verbose: int = 0, wait_time: float = 0.1, test_type: str = 'ping'):
-        self.facts_dir = Path(os.environ.get('TRACEROUTE_SIMULATOR_FACTS', 'tests/tsim_facts'))
+        facts_path = os.environ.get('TRACEROUTE_SIMULATOR_FACTS')
+        if not facts_path:
+            raise EnvironmentError("TRACEROUTE_SIMULATOR_FACTS environment variable must be set")
+        self.facts_dir = Path(facts_path)
         self.verbose = verbose
         self.wait_time = wait_time
         self.test_type = test_type
         
         self.routers = {}
         self.router_ips = {}  # router_name -> [list of IPs]
-        self.ip_to_router = {}  # IP -> router_name (includes hosts)
+        self.ip_to_router = {}  # IP -> router_name (includes hosts) - DEPRECATED
+        self.ip_to_namespaces = {}  # IP -> [list of namespace names] (supports multiple hosts with same IP)
         self.gateway_routers = set()  # Gateway routers that can handle public IPs
         self.hosts = {}  # host_name -> host_config
+        self.host_namespaces = set()  # Track which namespaces are hosts
         self.host_registry_file = Path("/tmp/traceroute_hosts_registry.json")
         self.added_public_ip_hosts = set()  # Track temporarily added public IP hosts
         
         self.total_tests = 0
         self.passed_tests = 0
         self.failed_tests = 0
-        self.failed_pairs = []
         
     def load_facts(self):
-        """Load router and host information from registries."""
-        # Load routers from bridge registry
+        """Load router facts and build IP mappings, including hosts from bridge registry."""
+        # Load bridge registry to get hosts
         try:
-            registry_file = Path("/tmp/traceroute_bridges_registry.json")
-            if registry_file.exists():
-                with open(registry_file, 'r') as f:
+            bridge_registry_file = Path("/tmp/traceroute_bridges_registry.json")
+            if bridge_registry_file.exists():
+                with open(bridge_registry_file, 'r') as f:
                     bridge_registry = json.load(f)
-                
+                    
+                # Process all bridges
                 for bridge_name, bridge_info in bridge_registry.items():
-                    # Load router IPs
+                    # Load router IPs from bridge registry
                     routers = bridge_info.get('routers', {})
                     for router_name, router_info in routers.items():
+                        # Mark router as loaded even if we don't have full facts
                         if router_name not in self.routers:
                             self.routers[router_name] = {}  # Placeholder for router data
                             
@@ -89,7 +96,14 @@ class SequentialConnectivityTester:
                         if ip_address and '/' in ip_address:
                             ip = ip_address.split('/')[0]
                             if not ip.startswith('127.'):
+                                # Maintain backward compatibility
                                 self.ip_to_router[ip] = router_name
+                                # Add to new multi-namespace mapping
+                                if ip not in self.ip_to_namespaces:
+                                    self.ip_to_namespaces[ip] = []
+                                if router_name not in self.ip_to_namespaces[ip]:
+                                    self.ip_to_namespaces[ip].append(router_name)
+                                    
                                 if router_name in self.router_ips:
                                     self.router_ips[router_name].append(ip)
                                 else:
@@ -98,11 +112,21 @@ class SequentialConnectivityTester:
                     # Load host IPs from bridge registry
                     hosts = bridge_info.get('hosts', {})
                     for host_name, host_info in hosts.items():
+                        # Mark this as a host namespace
+                        self.host_namespaces.add(host_name)
+                        
                         ip_address = host_info.get('ipv4', '')
                         if ip_address and '/' in ip_address:
                             ip = ip_address.split('/')[0]
                             if not ip.startswith('127.'):
+                                # Maintain backward compatibility
                                 self.ip_to_router[ip] = host_name
+                                # Add to new multi-namespace mapping
+                                if ip not in self.ip_to_namespaces:
+                                    self.ip_to_namespaces[ip] = []
+                                if host_name not in self.ip_to_namespaces[ip]:
+                                    self.ip_to_namespaces[ip].append(host_name)
+                                    
                                 if host_name in self.router_ips:
                                     self.router_ips[host_name].append(ip)
                                 else:
@@ -111,21 +135,32 @@ class SequentialConnectivityTester:
         except (json.JSONDecodeError, IOError) as e:
             if self.verbose >= 1:
                 print(f"Warning: Could not load bridge registry: {e}")
-        
-        # Load additional host information from host registry
+                
+        # Load hosts from host registry
         try:
-            host_registry_file = Path("/tmp/traceroute_hosts_registry.json")
-            if host_registry_file.exists():
-                with open(host_registry_file, 'r') as f:
+            if self.host_registry_file.exists():
+                with open(self.host_registry_file, 'r') as f:
                     hosts = json.load(f)
                     
                 for host_name, host_config in hosts.items():
+                    # Mark this as a host namespace
+                    self.host_namespaces.add(host_name)
+                    # Store host configuration
+                    self.hosts[host_name] = host_config
+                    
                     # Add primary IP
                     primary_ip = host_config.get('primary_ip', '')
                     if primary_ip and '/' in primary_ip:
                         ip = primary_ip.split('/')[0]
                         if not ip.startswith('127.'):
+                            # Maintain backward compatibility
                             self.ip_to_router[ip] = host_name
+                            # Add to new multi-namespace mapping
+                            if ip not in self.ip_to_namespaces:
+                                self.ip_to_namespaces[ip] = []
+                            if host_name not in self.ip_to_namespaces[ip]:
+                                self.ip_to_namespaces[ip].append(host_name)
+                                
                             if host_name in self.router_ips:
                                 if ip not in self.router_ips[host_name]:
                                     self.router_ips[host_name].append(ip)
@@ -138,7 +173,14 @@ class SequentialConnectivityTester:
                         if secondary_ip and '/' in secondary_ip:
                             ip = secondary_ip.split('/')[0]
                             if not ip.startswith('127.'):
+                                # Maintain backward compatibility
                                 self.ip_to_router[ip] = host_name
+                                # Add to new multi-namespace mapping
+                                if ip not in self.ip_to_namespaces:
+                                    self.ip_to_namespaces[ip] = []
+                                if host_name not in self.ip_to_namespaces[ip]:
+                                    self.ip_to_namespaces[ip].append(host_name)
+                                    
                                 if host_name in self.router_ips:
                                     if ip not in self.router_ips[host_name]:
                                         self.router_ips[host_name].append(ip)
@@ -149,60 +191,166 @@ class SequentialConnectivityTester:
             if self.verbose >= 1:
                 print(f"Warning: Could not load host registry: {e}")
         
-        # Load gateway router information from metadata (if available)
-        try:
-            if self.facts_dir and self.facts_dir.exists():
-                for metadata_file in self.facts_dir.glob("*_metadata.json"):
-                    with open(metadata_file, 'r') as f:
-                        metadata = json.load(f)
-                        if metadata.get('type') == 'gateway':
-                            router_name = metadata_file.stem.replace('_metadata', '')
-                            self.gateway_routers.add(router_name)
-        except (json.JSONDecodeError, IOError):
-            pass
+        # Now load router facts from JSON files
+        json_files = list(self.facts_dir.glob("*.json"))
+        loaded_count = 0
+        
+        for json_file in json_files:
+            # Skip metadata files
+            if "_metadata.json" in json_file.name:
+                continue
                 
-        total_routers = len(self.routers)
-        total_hosts = len([k for k in self.router_ips.keys() if k not in self.routers])
-        if self.verbose >= 3:
-            print(f"Loaded {total_routers} routers and {total_hosts} hosts from registries")
+            router_name = json_file.stem
+            
+            try:
+                with open(json_file, 'r') as f:
+                    facts = json.load(f)
+                    self.routers[router_name] = facts
                     
-        if self.verbose >= 3:
-            print(f"Loaded {len(self.routers)} routers:")
-            for router, ips in self.router_ips.items():
-                gateway_marker = " [GATEWAY]" if router in self.gateway_routers else ""
-                print(f"  {router}: {', '.join(ips)}{gateway_marker}")
+                    # Extract IPs from network interfaces
+                    interfaces_data = facts.get('network', {}).get('interfaces', {})
+                    if isinstance(interfaces_data, dict) and 'parsed' in interfaces_data:
+                        # New format: interfaces are in parsed object
+                        parsed_interfaces = interfaces_data.get('parsed', {})
+                        for iface_name, iface_data in parsed_interfaces.items():
+                            if isinstance(iface_data, dict):
+                                addr_info = iface_data.get('addr_info', [])
+                                for addr in addr_info:
+                                    if addr.get('family') == 'inet':
+                                        ip = addr.get('local', '')
+                                        if ip and not ip.startswith('127.'):
+                                            # Maintain backward compatibility
+                                            self.ip_to_router[ip] = router_name
+                                            # Add to new multi-namespace mapping
+                                            if ip not in self.ip_to_namespaces:
+                                                self.ip_to_namespaces[ip] = []
+                                            if router_name not in self.ip_to_namespaces[ip]:
+                                                self.ip_to_namespaces[ip].append(router_name)
+                                                
+                                            if router_name in self.router_ips:
+                                                self.router_ips[router_name].append(ip)
+                                            else:
+                                                self.router_ips[router_name] = [ip]
+                    
+                    # Check if this is a gateway router (has metadata indicating it's a gateway)
+                    metadata_file = self.facts_dir / f"{router_name}_metadata.json"
+                    if metadata_file.exists():
+                        try:
+                            with open(metadata_file, 'r') as mf:
+                                metadata = json.load(mf)
+                                if metadata.get('type') == 'gateway':
+                                    self.gateway_routers.add(router_name)
+                        except:
+                            pass
+                    
+                    loaded_count += 1
+                    
+            except (json.JSONDecodeError, IOError) as e:
+                if self.verbose >= 1:
+                    print(f"Warning: Could not load {json_file}: {e}")
+                    
+        if self.verbose >= 1:
+            print(f"Loaded {loaded_count} router facts, {len(self.router_ips)} entities with IPs")
+            if self.gateway_routers and self.verbose >= 2:
+                print(f"Gateway routers: {', '.join(sorted(self.gateway_routers))}")
                 
+        # Discover runtime IPs that may have been dynamically added
+        self._discover_runtime_router_ips()
+            
+    def _discover_runtime_router_ips(self):
+        """Discover actual router IPs from runtime namespaces to catch dynamically added IPs."""
+        try:
+            # Get all namespaces
+            result = subprocess.run(['ip', 'netns', 'list'], capture_output=True, text=True)
+            if result.returncode != 0:
+                return
+                
+            namespaces = [line.split()[0] for line in result.stdout.strip().split('\n') if line]
+            
+            # Process router namespaces
+            for namespace in namespaces:
+                # Skip host namespaces
+                if namespace in self.host_namespaces:
+                    continue
+                    
+                # Check if this looks like a router namespace (contains router patterns)
+                if any(pattern in namespace for pattern in ['befw', 'beis', 'belb', 'bens']) or namespace in self.routers:
+                    # Get all IPv4 addresses from this namespace
+                    cmd = f'ip netns exec {namespace} ip -4 addr show'
+                    result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+                    
+                    if result.returncode == 0:
+                        # Parse IP addresses
+                        for line in result.stdout.split('\n'):
+                            if 'inet ' in line and 'inet6' not in line:
+                                parts = line.strip().split()
+                                if len(parts) >= 2:
+                                    ip_cidr = parts[1]
+                                    ip = ip_cidr.split('/')[0]
+                                    
+                                    # Skip loopback
+                                    if ip.startswith('127.'):
+                                        continue
+                                        
+                                    # Add to IP mappings if not already present
+                                    if ip not in self.ip_to_namespaces:
+                                        self.ip_to_namespaces[ip] = []
+                                    if namespace not in self.ip_to_namespaces[ip]:
+                                        self.ip_to_namespaces[ip].append(namespace)
+                                        
+                                    # Add to router IPs if not already present
+                                    if namespace not in self.router_ips:
+                                        self.router_ips[namespace] = []
+                                    if ip not in self.router_ips[namespace]:
+                                        self.router_ips[namespace].append(ip)
+                                        
+                                    # Mark this namespace as a router if not already
+                                    if namespace not in self.routers:
+                                        self.routers[namespace] = {}
+                                        
+        except Exception as e:
+            if self.verbose >= 1:
+                print(f"Warning: Could not discover runtime IPs: {e}")
+    
     def load_hosts(self):
-        """Load host information from host registry."""
-        pass
-                
+        """Load host configurations from host registry."""
+        self.hosts = {}
+        
     def is_public_routable_ip(self, ip_str: str) -> bool:
-        """Check if an IP address is publicly routable (not RFC 1918 or other private ranges)."""
+        """
+        Check if an IP is public routable (not private, not special use).
+        
+        Public IPs are:
+        - Not in private ranges (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16)
+        - Not loopback (127.0.0.0/8)
+        - Not link-local (169.254.0.0/16)
+        - Not multicast (224.0.0.0/4)
+        - Not reserved (240.0.0.0/4)
+        """
         try:
             ip = ipaddress.IPv4Address(ip_str)
             
-            # Check for documentation/test ranges (RFC 5737) FIRST
-            # These are our test "public" IPs and should be treated as public
-            doc_ranges = [
-                ipaddress.IPv4Network('192.0.2.0/24'),    # TEST-NET-1
-                ipaddress.IPv4Network('198.51.100.0/24'), # TEST-NET-2  
-                ipaddress.IPv4Network('203.0.113.0/24'),  # TEST-NET-3
-            ]
-            
-            for doc_range in doc_ranges:
-                if ip in doc_range:
-                    return True  # These are our test "public" IPs
-            
-            # Check for other non-routable ranges
-            if (ip.is_loopback or ip.is_multicast or ip.is_reserved or 
-                ip.is_unspecified or ip.is_link_local):
-                return False
-                
-            # Check for private networks (RFC 1918)
+            # Check if it's a private address
             if ip.is_private:
                 return False
-                    
-            # For real public IPs, return True
+                
+            # Check if it's loopback
+            if ip.is_loopback:
+                return False
+                
+            # Check if it's link-local
+            if ip.is_link_local:
+                return False
+                
+            # Check if it's multicast
+            if ip.is_multicast:
+                return False
+                
+            # Check if it's reserved
+            if ip.is_reserved:
+                return False
+                
+            # If none of the above, it's public routable
             return True
             
         except ipaddress.AddressValueError:
@@ -214,16 +362,16 @@ class SequentialConnectivityTester:
             return None
             
         facts = self.routers[gateway_router]
-        interfaces = facts.get('network', {}).get('interfaces', [])
+        routing_tables = facts.get('routing', {}).get('tables', [])
         
-        # Look for external/public interfaces (single-router subnets)
-        for iface in interfaces:
-            if (iface.get('protocol') == 'kernel' and 
-                iface.get('scope') == 'link' and
-                iface.get('prefsrc') and iface.get('dev') and iface.get('dst')):
+        # Look for external/public interfaces (single-router subnets) in routing tables
+        for route in routing_tables:
+            if (route.get('protocol') == 'kernel' and 
+                route.get('scope') == 'link' and
+                route.get('prefsrc') and route.get('dev') and route.get('dst')):
                 
-                subnet = iface['dst']
-                dev = iface['dev']
+                subnet = route['dst']
+                dev = route['dev']
                 
                 # Check if this is a single-router subnet (external interface)
                 subnet_members = []
@@ -232,234 +380,274 @@ class SequentialConnectivityTester:
                         subnet_members = members
                         break
                 
+                # If this subnet only has one member, it's likely an external interface
                 if len(subnet_members) == 1:
-                    # This is an external interface, good for public IP hosts
-                    try:
-                        network = ipaddress.IPv4Network(subnet, strict=False)
-                        router_ip = iface['prefsrc']
-                        return {
-                            'interface': dev,
-                            'subnet': subnet,
-                            'prefix': network.prefixlen,
-                            'router_ip': router_ip
-                        }
-                    except ipaddress.AddressValueError:
-                        continue
-        
-        # Fallback: use any suitable interface
+                    return {
+                        'subnet': subnet,
+                        'interface': dev,
+                        'gateway_ip': iface['prefsrc']
+                    }
+                    
+        # Fallback: look for any suitable interface
         for iface in interfaces:
             if (iface.get('protocol') == 'kernel' and 
                 iface.get('scope') == 'link' and
                 iface.get('prefsrc') and iface.get('dev') and iface.get('dst')):
                 
-                subnet = iface['dst']
-                dev = iface['dev']
-                
-                try:
-                    network = ipaddress.IPv4Network(subnet, strict=False)
-                    router_ip = iface['prefsrc']
-                    return {
-                        'interface': dev,
-                        'subnet': subnet,
-                        'prefix': network.prefixlen,
-                        'router_ip': router_ip
-                    }
-                except ipaddress.AddressValueError:
+                # Skip obviously internal interfaces
+                if any(internal in iface['dev'] for internal in ['lo', 'dummy']):
                     continue
                     
+                return {
+                    'subnet': subnet,
+                    'interface': iface['dev'],
+                    'gateway_ip': iface['prefsrc']
+                }
+                
         return None
         
+    def find_gateway_for_public_ip(self, public_ip: str) -> Optional[str]:
+        """
+        Find which gateway router would handle a public IP.
+        Returns the gateway router name or None if no gateway is available.
+        """
+        # For now, just return the first available gateway
+        # In a real implementation, this might consider routing policies
+        if self.gateway_routers:
+            return sorted(self.gateway_routers)[0]
+        return None
+        
+    def generate_public_ip_host_name(self, public_ip: str) -> str:
+        """Generate a deterministic host name for a public IP."""
+        # Replace dots with dashes for valid namespace name
+        return f"pub-{public_ip.replace('.', '-')}"
+        
     def load_facts_subnets(self) -> Dict[str, List[tuple]]:
-        """Load subnet mappings from facts (similar to network setup logic)."""
+        """Load subnet information from router facts."""
         subnets = {}
+        
         for router_name, facts in self.routers.items():
-            interfaces = facts.get('network', {}).get('interfaces', [])
-            for iface in interfaces:
-                if (iface.get('protocol') == 'kernel' and 
-                    iface.get('scope') == 'link' and
-                    iface.get('prefsrc') and iface.get('dev') and iface.get('dst')):
+            routing_tables = facts.get('routing', {}).get('tables', [])
+            for route in routing_tables:
+                if (route.get('protocol') == 'kernel' and 
+                    route.get('scope') == 'link' and
+                    route.get('prefsrc') and route.get('dev') and route.get('dst')):
                     
-                    subnet = iface['dst']
-                    router_iface = iface['dev'] 
-                    ip = iface['prefsrc']
-                    
+                    subnet = route['dst']
                     if subnet not in subnets:
                         subnets[subnet] = []
-                    subnets[subnet].append((router_name, router_iface, ip))
+                    subnets[subnet].append((router_name, route['dev'], route['prefsrc']))
                     
         return subnets
+        
     def add_public_ip_host_to_gateways(self, public_ip: str):
-        """Add a temporary host with public IP to each gateway router using host_namespace_setup.py."""
+        """
+        Add a temporary host with the public IP to all gateway routers.
+        This allows testing connectivity to public IPs.
+        """
         if not self.is_public_routable_ip(public_ip):
             return
             
-        # Generate a unique host name for this public IP (use shorter format)
-        # Convert IP to a short hash to avoid interface name length limits
-        import hashlib
-        ip_hash = hashlib.md5(public_ip.encode()).hexdigest()[:4]
-        host_name = f"p{ip_hash}"
-        
-        if host_name in self.added_public_ip_hosts:
+        if public_ip in self.added_public_ip_hosts:
             return  # Already added
             
-        if self.verbose >= 2:
-            print(f"Setting up temporary host '{host_name}' with IP {public_ip} on gateway routers...")
-            
-        # Add the host to each gateway router using the host management script
-        for gateway_router in self.gateway_routers:
-            try:
-                # Find a suitable subnet on this gateway router
-                gateway_subnet = self.find_gateway_subnet(gateway_router)
-                if not gateway_subnet:
-                    if self.verbose >= 1:
-                        print(f"Warning: No suitable subnet found on {gateway_router}")
-                    continue
-                
-                # Use host_namespace_setup.py to add the host in the gateway's subnet
-                # Use a free IP in the gateway's subnet, then add the public IP as secondary
-                gateway_ip = gateway_subnet['router_ip']
-                gateway_network = ipaddress.IPv4Network(gateway_subnet['subnet'])
-                
-                # Find a free IP in the gateway subnet
-                free_ip = None
-                for ip in gateway_network.hosts():
-                    if str(ip) != gateway_ip and str(ip) not in [router_ip for _, _, router_ip in self.load_facts_subnets().get(gateway_subnet['subnet'], [])]:
-                        free_ip = str(ip)
-                        break
-                        
-                if not free_ip:
-                    if self.verbose >= 1:
-                        print(f"Warning: No free IP found in subnet {gateway_subnet['subnet']} on {gateway_router}")
-                    continue
-                
-                host_name_for_router = f"{host_name}-{gateway_router}"
-                cmd = [
-                    "python3", "src/simulators/host_namespace_setup.py",
-                    "--host", host_name_for_router,
-                    "--primary-ip", f"{free_ip}/{gateway_subnet['prefix']}",
-                    "--secondary-ips", f"{public_ip}/32",
-                    "--connect-to", gateway_router,
-                    "--router-interface", gateway_subnet['interface']
-                ]
-                
-                # Add verbosity flag if needed
-                if self.verbose >= 2:
-                    cmd.append("-vv")
-                elif self.verbose >= 1:
-                    cmd.append("-v")
-                
-                # Set environment variable for facts directory
-                env = os.environ.copy()
-                env['TRACEROUTE_SIMULATOR_FACTS'] = str(self.facts_dir)
-                
-                result = subprocess.run(cmd, capture_output=True, text=True, check=True, env=env)
-                
-                # Add direct route to the public IP on this gateway router's external interface
-                route_cmd = f"ip netns exec {gateway_router} ip route add {public_ip}/32 dev {gateway_subnet['interface']}"
-                route_result = subprocess.run(route_cmd, shell=True, capture_output=True, text=True, check=False)
-                
-                if route_result.returncode == 0:
-                    if self.verbose >= 2:
-                        print(f"  Added temporary host '{host_name_for_router}' to {gateway_router}")
-                        print(f"  Added route: {public_ip}/32 dev {gateway_subnet['interface']} on {gateway_router}")
-                else:
-                    if self.verbose >= 1:
-                        print(f"Warning: Failed to add route for {public_ip} on {gateway_router}: {route_result.stderr}")
-                    
-            except subprocess.CalledProcessError as e:
-                if self.verbose >= 1:
-                    print(f"Warning: Failed to add temporary host to {gateway_router}: {e}")
-                    if self.verbose >= 2:
-                        print(f"  Error output: {e.stderr}")
-                    
-        self.added_public_ip_hosts.add(host_name)
-        
-    def remove_public_ip_host_from_gateways(self, public_ip: str):
-        """Remove temporary host with public IP from all gateway routers using host_namespace_setup.py."""
-        # Generate the same host name format as in add_public_ip_host_to_gateways
-        import hashlib
-        ip_hash = hashlib.md5(public_ip.encode()).hexdigest()[:4]
-        host_name = f"p{ip_hash}"
-        
-        if host_name not in self.added_public_ip_hosts:
+        # Find suitable gateway routers
+        if not self.gateway_routers:
+            if self.verbose >= 1:
+                print(f"Warning: No gateway routers found for public IP {public_ip}")
             return
             
-        if self.verbose >= 2:
-            print(f"Cleaning up temporary host '{host_name}' from gateway routers...")
-            
-        # Remove from each gateway router using the host management script
-        for gateway_router in self.gateway_routers:
-            try:
-                # Use host_namespace_setup.py to remove the host
-                host_name_for_router = f"{host_name}-{gateway_router}"
-                cmd = [
-                    "python3", "src/simulators/host_namespace_setup.py",
-                    "--host", host_name_for_router,
-                    "--remove"
-                ]
-                
-                # Add verbosity flag if needed
-                if self.verbose >= 2:
-                    cmd.append("-vv")
-                elif self.verbose >= 1:
-                    cmd.append("-v")
-                
-                # Set environment variable for facts directory
-                env = os.environ.copy()
-                env['TRACEROUTE_SIMULATOR_FACTS'] = str(self.facts_dir)
-                
-                result = subprocess.run(cmd, capture_output=True, text=True, check=False, env=env)
-                
-                # Also remove the route to the public IP from this gateway router
-                route_cmd = f"ip netns exec {gateway_router} ip route del {public_ip}/32"
-                route_result = subprocess.run(route_cmd, shell=True, capture_output=True, text=True, check=False)
-                
-                if self.verbose >= 2:
-                    print(f"  Removed temporary host '{host_name_for_router}' from {gateway_router}")
-                    if route_result.returncode == 0:
-                        print(f"  Removed route: {public_ip}/32 from {gateway_router}")
-                    
-            except Exception:
-                pass  # Ignore errors during cleanup
-                
-        self.added_public_ip_hosts.discard(host_name)
+        host_name = self.generate_public_ip_host_name(public_ip)
         
-    def cleanup_all_public_ip_hosts(self):
-        """Remove all temporarily added public IP hosts."""
-        for host_name in list(self.added_public_ip_hosts):
-            # Extract public IP from host name
-            clean_ip = host_name.replace('pub', '')
-            # Reconstruct the IP by adding dots every 3 digits
-            if len(clean_ip) >= 4:
-                # Handle common patterns like "1111" -> "1.1.1.1"
-                parts = []
-                i = 0
-                while i < len(clean_ip):
-                    if i + 3 <= len(clean_ip) and clean_ip[i:i+3].isdigit():
-                        # Three digit part
-                        part = str(int(clean_ip[i:i+3]))
-                        parts.append(part)
-                        i += 3
-                    elif i + 2 <= len(clean_ip) and clean_ip[i:i+2].isdigit():
-                        # Two digit part
-                        part = str(int(clean_ip[i:i+2]))
-                        parts.append(part)
-                        i += 2
-                    elif i + 1 <= len(clean_ip) and clean_ip[i].isdigit():
-                        # Single digit part
-                        parts.append(clean_ip[i])
-                        i += 1
-                    else:
-                        i += 1
-                        
-                if len(parts) == 4:
-                    public_ip = '.'.join(parts)
-                    self.remove_public_ip_host_from_gateways(public_ip)
+        # Try to add to each gateway router
+        added_to_any = False
+        for gateway_router in sorted(self.gateway_routers):
+            # Find a suitable subnet on this gateway
+            subnet_info = self.find_gateway_subnet(gateway_router)
+            if not subnet_info:
+                if self.verbose >= 2:
+                    print(f"No suitable subnet found on gateway {gateway_router}")
+                continue
                 
-    def ping_test(self, source_ip: str, dest_ip: str, timeout: int = 3) -> Tuple[bool, str, str]:
-        """Perform ping test from source IP to destination IP.
+            # Create the host
+            cmd = f"python3 {Path(__file__).parent}/host_namespace_setup.py"
+            cmd += f" --host {host_name}"
+            cmd += f" --primary-ip {public_ip}/32"  # Use /32 for public IPs
+            cmd += f" --connect-to {gateway_router}"
+            
+            if self.verbose >= 2:
+                print(f"Adding public IP host: {cmd}")
+                
+            result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+            
+            if result.returncode == 0:
+                added_to_any = True
+                self.added_public_ip_hosts.add(public_ip)
+                
+                # Update our IP mappings
+                self.ip_to_router[public_ip] = host_name
+                if public_ip not in self.ip_to_namespaces:
+                    self.ip_to_namespaces[public_ip] = []
+                if host_name not in self.ip_to_namespaces[public_ip]:
+                    self.ip_to_namespaces[public_ip].append(host_name)
+                    
+                if host_name in self.router_ips:
+                    self.router_ips[host_name].append(public_ip)
+                else:
+                    self.router_ips[host_name] = [public_ip]
+                    
+                if self.verbose >= 1:
+                    print(f"Added public IP host {host_name} ({public_ip}) to gateway {gateway_router}")
+                    
+                # Only add to one gateway for now
+                break
+            else:
+                if self.verbose >= 2:
+                    print(f"Failed to add public IP host to {gateway_router}: {result.stderr}")
+                    
+        if not added_to_any and self.verbose >= 1:
+            print(f"Warning: Could not add public IP host for {public_ip} to any gateway")
+            
+    def remove_public_ip_host_from_gateways(self, public_ip: str):
+        """Remove a temporary public IP host."""
+        if public_ip not in self.added_public_ip_hosts:
+            return
+            
+        host_name = self.generate_public_ip_host_name(public_ip)
+        
+        # Remove the host
+        cmd = f"python3 {Path(__file__).parent}/host_namespace_setup.py"
+        cmd += f" --host {host_name} --remove"
+        
+        if self.verbose >= 2:
+            print(f"Removing public IP host: {cmd}")
+            
+        result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+        
+        if result.returncode == 0:
+            self.added_public_ip_hosts.discard(public_ip)
+            
+            # Update our IP mappings
+            if public_ip in self.ip_to_router:
+                del self.ip_to_router[public_ip]
+            if public_ip in self.ip_to_namespaces:
+                self.ip_to_namespaces[public_ip] = [ns for ns in self.ip_to_namespaces[public_ip] if ns != host_name]
+                if not self.ip_to_namespaces[public_ip]:
+                    del self.ip_to_namespaces[public_ip]
+                    
+            if host_name in self.router_ips:
+                del self.router_ips[host_name]
+                
+            if self.verbose >= 1:
+                print(f"Removed public IP host {host_name} ({public_ip})")
+        else:
+            if self.verbose >= 2:
+                print(f"Failed to remove public IP host: {result.stderr}")
+                
+    def cleanup_all_public_ip_hosts(self):
+        """Remove all temporary public IP hosts that were added."""
+        if not self.added_public_ip_hosts:
+            return
+            
+        if self.verbose >= 1:
+            print(f"\nCleaning up {len(self.added_public_ip_hosts)} temporary public IP hosts...")
+            
+        # Copy the set since we'll be modifying it
+        public_ips = list(self.added_public_ip_hosts)
+        for public_ip in public_ips:
+            # Extract just the IP if it includes a port
+            parts = public_ip.split(':')
+            if len(parts) == 4:
+                public_ip = '.'.join(parts)
+                self.remove_public_ip_host_from_gateways(public_ip)
+                
+    def ping_test_from_namespace(self, namespace: str, source_ip: str, dest_ip: str, timeout: int = 3) -> Tuple[bool, str, str]:
+        """Perform ping test from a specific namespace using source IP to destination IP.
         
         Allows any destination IP - follows routing tables and gateway behavior.
+        
+        Returns:
+            Tuple[bool, str, str]: (success, summary, full_output)
+        """
+        # First, determine which router this namespace routes through
+        router_info = ""
+        if namespace in self.host_namespaces:
+            # Get the connected router for this host
+            connected_router = self.hosts.get(namespace, {}).get('connected_to', 'unknown')
+            router_info = f" via {connected_router}"
+        
+        # Determine which namespace(s) have the destination IP
+        dest_namespaces = self.ip_to_namespaces.get(dest_ip, [])
+        dest_info = ""
+        if dest_namespaces and namespace in self.host_namespaces:
+            # For hosts, determine which destination is reachable based on the router
+            connected_router = self.hosts.get(namespace, {}).get('connected_to')
+            if connected_router:
+                # Find destinations on the same router
+                reachable_dests = []
+                for dest_ns in dest_namespaces:
+                    if dest_ns in self.host_namespaces:
+                        # Check if this destination host is on the same router
+                        dest_router = self.hosts.get(dest_ns, {}).get('connected_to')
+                        if dest_router == connected_router:
+                            reachable_dests.append(dest_ns)
+                    elif dest_ns == connected_router:
+                        # Destination is the router itself
+                        reachable_dests.append(dest_ns)
+                
+                if reachable_dests:
+                    if len(reachable_dests) == 1:
+                        dest_info = f" (reaching {reachable_dests[0]})"
+                    else:
+                        dest_info = f" (reaching one of: {', '.join(reachable_dests)})"
+                else:
+                    # No local destinations, must route to another router
+                    dest_info = f" (routed to remote: {', '.join(dest_namespaces)})"
+        elif dest_namespaces:
+            # For routers or unknown sources, show all possible destinations
+            if len(dest_namespaces) == 1:
+                dest_info = f" (reaching {dest_namespaces[0]})"
+            else:
+                dest_info = f" (reaching one of: {', '.join(dest_namespaces)})"
+        
+        # Run ping from specified namespace
+        cmd = f"ip netns exec {namespace} ping -c 1 -W {timeout} -I {source_ip} {dest_ip}"
+        
+        try:
+            result = subprocess.run(
+                cmd, shell=True, capture_output=True, text=True, timeout=timeout+2
+            )
+            
+            if result.returncode == 0:
+                # Extract RTT from output
+                lines = result.stdout.strip().split('\n')
+                for line in lines:
+                    if 'bytes from' in line and 'time=' in line:
+                        # Extract time value
+                        time_part = line.split('time=')[1].split()[0]
+                        return True, f"Reply from {dest_ip}: time={time_part}", result.stdout
+                        
+                return True, f"Ping successful", result.stdout
+            else:
+                # Parse error message
+                if "Destination Host Unreachable" in result.stderr or "Destination Host Unreachable" in result.stdout:
+                    return False, "Destination Host Unreachable", result.stdout + result.stderr
+                elif "Network is unreachable" in result.stderr or "Network is unreachable" in result.stdout:
+                    return False, "Network is unreachable", result.stdout + result.stderr
+                elif "100% packet loss" in result.stdout:
+                    return False, "Request timed out (100% packet loss)", result.stdout
+                else:
+                    return False, f"Ping failed (code {result.returncode})", result.stdout + result.stderr
+                    
+        except subprocess.TimeoutExpired:
+            return False, f"Command timeout after {timeout+2}s", ""
+        except Exception as e:
+            return False, f"Error: {str(e)}", ""
+    
+    def ping_test(self, source_ip: str, dest_ip: str, timeout: int = 3) -> Tuple[bool, str, str]:
+        """Legacy ping test - uses first namespace with source IP.
+        
+        DEPRECATED: Use ping_test_from_namespace for multiple namespace support.
         
         Returns:
             Tuple[bool, str, str]: (success, summary, full_output)
@@ -469,9 +657,8 @@ class SequentialConnectivityTester:
         if not source_router:
             return False, f"Source IP {source_ip} not found", ""
             
-        # Allow any destination IP - let routing decide where packets go
-        # Run ping from source router namespace
-        cmd = f"ip netns exec {source_router} ping -c 1 -W {timeout} {dest_ip}"
+        # Use the new function with the single namespace
+        return self.ping_test_from_namespace(source_router, source_ip, dest_ip, timeout)
         
         try:
             result = subprocess.run(
@@ -500,11 +687,10 @@ class SequentialConnectivityTester:
                     summary = "Host unreachable"
                 elif "Network is unreachable" in result.stdout:
                     summary = "Network unreachable"
-                elif "timeout" in result.stdout.lower() or result.returncode == 1:
-                    summary = "Timeout"
+                elif "100% packet loss" in result.stdout:
+                    summary = "100% packet loss"
                 else:
-                    summary = f"Error {result.returncode}"
-                    
+                    summary = f"Failed (code {result.returncode})"
                 return False, summary, full_output
                     
         except subprocess.TimeoutExpired:
@@ -514,10 +700,59 @@ class SequentialConnectivityTester:
             exception_output = f"Command: {cmd}\nExit code: exception\nException occurred: {str(e)}"
             return False, f"Exception: {str(e)[:50]}", exception_output
             
-    def mtr_test(self, source_ip: str, dest_ip: str, timeout: int = 10) -> Tuple[bool, str, str]:
-        """Perform MTR traceroute test from source IP to destination IP.
+    def mtr_test_from_namespace(self, namespace: str, source_ip: str, dest_ip: str, timeout: int = 10) -> Tuple[bool, str, str]:
+        """Perform MTR traceroute test from a specific namespace using source IP to destination IP.
         
         Allows any destination IP - follows routing tables and gateway behavior.
+        
+        Returns:
+            Tuple[bool, str, str]: (success, summary, full_output)
+        """
+        # Run mtr from specified namespace
+        # Use -r for report mode, -c 1 for single probe, -n for no DNS
+        cmd = f"ip netns exec {namespace} mtr -r -c 1 -n -a {source_ip} {dest_ip}"
+        
+        try:
+            result = subprocess.run(
+                cmd, shell=True, capture_output=True, text=True, timeout=timeout+2
+            )
+            
+            if result.returncode == 0:
+                # Parse MTR output to count hops and check completion
+                lines = result.stdout.strip().split('\n')
+                hop_count = 0
+                reached_dest = False
+                
+                for line in lines:
+                    # Skip header lines
+                    if line.strip() and not line.startswith('Start:') and not line.startswith('HOST:'):
+                        parts = line.split()
+                        if len(parts) >= 2:
+                            hop_count += 1
+                            # Check if we reached the destination
+                            if parts[1] == dest_ip:
+                                reached_dest = True
+                                
+                if reached_dest:
+                    return True, f"Reached in {hop_count} hops", result.stdout
+                else:
+                    return True, f"Traced {hop_count} hops", result.stdout
+            else:
+                # Parse error
+                if "mtr: can't find interface" in result.stderr:
+                    return False, "Invalid source interface", result.stdout + result.stderr
+                else:
+                    return False, f"MTR failed (code {result.returncode})", result.stdout + result.stderr
+                    
+        except subprocess.TimeoutExpired:
+            return False, f"Command timeout after {timeout+2}s", ""
+        except Exception as e:
+            return False, f"Error: {str(e)}", ""
+    
+    def mtr_test(self, source_ip: str, dest_ip: str, timeout: int = 10) -> Tuple[bool, str, str]:
+        """Legacy MTR test - uses first namespace with source IP.
+        
+        DEPRECATED: Use mtr_test_from_namespace for multiple namespace support.
         
         Returns:
             Tuple[bool, str, str]: (success, summary, full_output)
@@ -527,103 +762,8 @@ class SequentialConnectivityTester:
         if not source_router:
             return False, f"Source IP {source_ip} not found", ""
             
-        # Allow any destination IP - let routing decide where packets go
-        # Run MTR from source router namespace
-        cmd = f"ip netns exec {source_router} mtr --report --no-dns -c 1 {dest_ip}"
-        
-        try:
-            result = subprocess.run(
-                cmd, shell=True, capture_output=True, text=True, timeout=timeout+2
-            )
-            
-            # Prepare full output with command and result
-            full_output = f"Command: {cmd}\n"
-            full_output += f"Exit code: {result.returncode}\n"
-            if result.stdout.strip():
-                full_output += f"STDOUT:\n{result.stdout.strip()}"
-            if result.stderr.strip():
-                full_output += f"\nSTDERR:\n{result.stderr.strip()}"
-            
-            if result.returncode == 0:
-                # Extract summary from MTR output
-                lines = result.stdout.strip().split('\n')
-                
-                # Look for the final hop that shows the destination IP or last reachable hop
-                final_hop_reached = False
-                dest_reachable = False
-                last_good_latency = None
-                
-                for line in lines:
-                    # Skip header lines
-                    if 'HOST:' in line or 'Start:' in line or not '|--' in line:
-                        continue
-                        
-                    parts = line.split()
-                    if len(parts) >= 4:
-                        # Extract loss percentage (should be in format like "0.0%" or "100.0")
-                        loss_found = False
-                        for part in parts:
-                            if '%' in part:
-                                loss_percentage = part
-                                loss_found = True
-                                break
-                        
-                        if loss_found:
-                            # Check if this line contains the destination IP
-                            if dest_ip in line:
-                                dest_reachable = (loss_percentage == '0.0%')
-                                if dest_reachable:
-                                    # Try to extract latency
-                                    for i, part in enumerate(parts):
-                                        if '%' in part and i + 3 < len(parts):
-                                            try:
-                                                latency = float(parts[i + 3])
-                                                return True, f"{latency}ms", full_output
-                                            except ValueError:
-                                                pass
-                                    return True, "Success", full_output
-                                else:
-                                    return False, f"Destination unreachable (Loss: {loss_percentage})", full_output
-                            
-                            # If not destination line, check if it's a reachable intermediate hop
-                            elif loss_percentage == '0.0%':
-                                final_hop_reached = True
-                                # Try to extract latency for summary
-                                for i, part in enumerate(parts):
-                                    if '%' in part and i + 3 < len(parts):
-                                        try:
-                                            last_good_latency = float(parts[i + 3])
-                                        except ValueError:
-                                            pass
-                
-                # If we didn't find the destination IP in any line, but had reachable hops,
-                # it means the destination is unreachable (blackholed)
-                if final_hop_reached and not dest_reachable:
-                    return False, "Destination unreachable (blackholed)", full_output
-                
-                # Fallback - if we can't parse properly but exit code is 0
-                return False, "Path incomplete", full_output
-            else:
-                # Parse common error messages for summary
-                if "mtr: command not found" in result.stderr:
-                    summary = "MTR not installed"
-                elif "Name or service not known" in result.stderr:
-                    summary = "DNS resolution failed"
-                elif "Network is unreachable" in result.stderr:
-                    summary = "Network unreachable"
-                elif result.returncode == 1:
-                    summary = "MTR failed"
-                else:
-                    summary = f"Error {result.returncode}"
-                    
-                return False, summary, full_output
-                    
-        except subprocess.TimeoutExpired:
-            timeout_output = f"Command: {cmd}\nExit code: timeout\nCommand timed out after {timeout+2} seconds"
-            return False, "Command timeout", timeout_output
-        except Exception as e:
-            exception_output = f"Command: {cmd}\nExit code: exception\nException occurred: {str(e)}"
-            return False, f"Exception: {str(e)[:50]}", exception_output
+        # Use the new function with the single namespace
+        return self.mtr_test_from_namespace(source_router, source_ip, dest_ip, timeout)
             
     def _handle_test_result(self, source_router: str, dest_router: str, source_ip: str, dest_ip: str,
                            success: bool, summary: str, full_output: str, test_type: str,
@@ -636,328 +776,449 @@ class SequentialConnectivityTester:
             dest_display = dest_router if dest_router else "external"
             print(f"    {source_router} ({source_ip}) -> {dest_display} ({dest_ip}) [{test_type}] {status}")
         elif self.verbose >= 2:
-            # -vv: show full output
-            print(f"\n    Testing {source_ip} → {dest_ip} [{test_type}]:")
-            if full_output:
-                # Indent each line of the full output
-                indented_output = "\n".join([f"      {line}" for line in full_output.split("\n")])
-                print(indented_output)
+            # -vv/-vvv: detailed format
+            if self.verbose >= 3:
+                # -vvv: include full output
+                print(f"\nFull {test_type} output:")
+                print(full_output)
+                print()
+                
+            # Pass/fail message
+            if success:
+                print(f"✓ {test_type} PASS: {summary}")
             else:
-                print(f"      No output captured")
-            
-            status_symbol = "✓" if success else "✗"
-            print(f"      {status_symbol} Result: {summary}")
-        
+                print(f"✗ {test_type} FAIL: {summary}")
+                
+        # Update statistics
         if success:
-            self.passed_tests += 1
             router_passed += 1
         else:
-            self.failed_tests += 1
             router_failed += 1
-            self.failed_pairs.append((source_router, dest_router, source_ip, dest_ip, f"{test_type}: {summary}"))
             
         return router_passed, router_failed
-            
+        
     def test_router_to_all_others(self, source_router: str):
-        """Test one router to all other routers with configurable verbosity."""
-        source_ips = self.router_ips[source_router]
-        other_routers = [r for r in self.routers.keys() if r != source_router]
+        """Test connectivity from one router to all others."""
+        source_ips = self.router_ips.get(source_router, [])
+        
+        if not source_ips:
+            if self.verbose >= 1:
+                print(f"✗ {source_router} has no IP addresses")
+            return
+            
+        # Use first available IP as source
+        source_ip = source_ips[0]
         
         if self.verbose >= 1:
-            print(f"\n=== Testing {source_router.upper()} ===")
-            print(f"Source IPs: {', '.join(source_ips)}")
-        
+            print(f"\nTesting from {source_router} ({source_ip}):")
+            
         router_passed = 0
         router_failed = 0
         
-        for dest_router in sorted(other_routers):
-            dest_ips = self.router_ips[dest_router]
-            
-            if self.verbose >= 2:
-                print(f"\n  → {dest_router}")
-                print(f"    Target IPs: {', '.join(dest_ips)}")
-            elif self.verbose == 1:
-                print(f"\n  → {dest_router}")
-            
-            # Test from first source IP to all destination IPs
-            source_ip = source_ips[0]  # Use first IP to keep it simple
-            
-            dest_results = []
-            for dest_ip in dest_ips:
-                # Run tests based on test_type
-                if self.test_type in ['ping', 'both']:
-                    self.total_tests += 1
-                    success, summary, full_output = self.ping_test(source_ip, dest_ip)
-                    dest_router_name = self.ip_to_router.get(dest_ip, "external")
-                    router_passed, router_failed = self._handle_test_result(source_router, dest_router_name, source_ip, dest_ip, 
-                                                                           success, summary, full_output, "PING", router_passed, router_failed)
-                    
-                    # Add wait time between tests
-                    if self.wait_time > 0:
-                        time.sleep(self.wait_time)
+        # Test to all other routers
+        for dest_router in sorted(self.routers.keys()):
+            if dest_router == source_router:
+                continue
                 
-                if self.test_type in ['mtr', 'both']:
-                    self.total_tests += 1
-                    success, summary, full_output = self.mtr_test(source_ip, dest_ip)
-                    dest_router_name = self.ip_to_router.get(dest_ip, "external")
-                    router_passed, router_failed = self._handle_test_result(source_router, dest_router_name, source_ip, dest_ip, 
-                                                                           success, summary, full_output, "MTR", router_passed, router_failed)
-                    
-                    # Add wait time between tests
-                    if self.wait_time > 0:
-                        time.sleep(self.wait_time)
+            dest_ips = self.router_ips.get(dest_router, [])
+            if not dest_ips:
+                continue
                 
-        # Print summary for this source router (only with verbosity)
-        if self.verbose >= 1:
-            total_router_tests = router_passed + router_failed
-            success_rate = (router_passed / total_router_tests * 100) if total_router_tests > 0 else 0
-            print(f"\n  {source_router} Summary: {router_passed}/{total_router_tests} passed ({success_rate:.1f}%)")
+            # Use first available IP as destination
+            dest_ip = dest_ips[0]
+            
+            # Wait between tests
+            if self.wait_time > 0:
+                time.sleep(self.wait_time)
+                
+            # Run test based on test_type
+            if self.test_type in ['ping', 'both']:
+                success, summary, full_output = self.ping_test(source_ip, dest_ip)
+                router_passed, router_failed = self._handle_test_result(
+                    source_router, dest_router, source_ip, dest_ip,
+                    success, summary, full_output, 'PING',
+                    router_passed, router_failed
+                )
+                
+            if self.test_type in ['mtr', 'both']:
+                success, summary, full_output = self.mtr_test(source_ip, dest_ip)
+                router_passed, router_failed = self._handle_test_result(
+                    source_router, dest_router, source_ip, dest_ip,
+                    success, summary, full_output, 'MTR',
+                    router_passed, router_failed
+                )
+                
+        # Router summary
+        total = router_passed + router_failed
+        if total > 0:
+            if self.verbose >= 1:
+                if router_failed == 0:
+                    print(f"  ✓ {source_router} passed all {router_passed} tests")
+                else:
+                    print(f"  ⚠ {source_router} passed {router_passed}/{total} tests")
             
             if router_failed > 0:
                 print(f"  ⚠ {source_router} has {router_failed} failures - CRITICAL ISSUE!")
             
     def test_specific_pair(self, source_ip: str, dest_ip: str):
-        """Test specific source to destination."""
+        """Test specific source to destination from all namespaces that have the source IP."""
         if self.verbose >= 1:
             print(f"\n=== Testing {source_ip} → {dest_ip} ===")
         
-        source_router = self.ip_to_router.get(source_ip)
-        dest_router = self.ip_to_router.get(dest_ip)  # May be None for external IPs
+        # Get all namespaces that have this source IP
+        source_namespaces = self.ip_to_namespaces.get(source_ip, [])
         
-        if not source_router:
+        if not source_namespaces:
             if self.verbose >= 1:
-                print(f"✗ Source IP {source_ip} not found in any router")
+                print(f"✗ Source IP {source_ip} not found in any namespace")
             return False
+            
+        # Get all namespaces that have this destination IP
+        dest_namespaces = self.ip_to_namespaces.get(dest_ip, [])
+        
+        # Sort namespaces numerically by extracting numbers from names
+        def extract_number(name):
+            # Extract number from names like "source-1", "destination-2", etc.
+            import re
+            match = re.search(r'-(\d+)$', name)
+            if match:
+                return int(match.group(1))
+            return 0
+        
+        source_namespaces = sorted(source_namespaces, key=extract_number)
+        dest_namespaces = sorted(dest_namespaces, key=extract_number)
             
         # Add temporary host with public IP to gateway routers if needed
         if self.is_public_routable_ip(dest_ip):
             self.add_public_ip_host_to_gateways(dest_ip)
             
-        try:
-            if self.verbose >= 1:
-                print(f"Source router: {source_router}")
-                if dest_router:
-                    print(f"Destination router: {dest_router}")
+        # Print source and destination info once (already sorted)
+        if self.verbose >= 1:
+            if len(source_namespaces) > 1:
+                print(f"Found {len(source_namespaces)} namespaces with source IP {source_ip}: {', '.join(source_namespaces)}")
+            if dest_namespaces:
+                if len(dest_namespaces) > 1:
+                    print(f"Found {len(dest_namespaces)} namespaces with destination IP {dest_ip}: {', '.join(dest_namespaces)}")
                 else:
-                    public_marker = " [PUBLIC IP]" if self.is_public_routable_ip(dest_ip) else ""
-                    print(f"Destination IP: {dest_ip} (external/unknown){public_marker}")
+                    print(f"Destination namespace: {dest_namespaces[0]}")
+            else:
+                public_marker = " [PUBLIC IP]" if self.is_public_routable_ip(dest_ip) else ""
+                print(f"Destination IP: {dest_ip} (external/unknown){public_marker}")
+        
+        overall_success = True
+        test_count = 0
+        
+        # Test from each source namespace to the destination IP
+        for src_idx, source_namespace in enumerate(source_namespaces):
+            test_count += 1
             
-            overall_success = True
+            # Determine router and destination for header
+            router_name = "direct"
+            dest_name = dest_ip
             
-            # Run tests based on test_type
-            if self.test_type in ['ping', 'both']:
-                success, summary, full_output = self.ping_test(source_ip, dest_ip)
+            if source_namespace in self.host_namespaces:
+                router_name = self.hosts.get(source_namespace, {}).get('connected_to', 'unknown')
                 
-                if self.verbose >= 2:
-                    print(f"\nFull PING output:")
-                    if full_output:
-                        # Indent each line of the full output
-                        indented_output = "\n".join([f"  {line}" for line in full_output.split("\n")])
-                        print(indented_output)
-                    else:
-                        print("  No output captured")
-                
-                if self.verbose == 1:
-                    # -v: compact single line format
-                    status = f"PASS: {summary}" if success else f"FAIL: {summary}"
-                    dest_display = dest_router if dest_router else "external"
-                    print(f"{source_router} ({source_ip}) -> {dest_display} ({dest_ip}) [PING] {status}")
-                elif self.verbose >= 2:
-                    # -vv: traditional format with pass/fail
-                    if success:
-                        print(f"\n✓ PING PASS: {summary}")
-                    else:
-                        print(f"\n✗ PING FAIL: {summary}")
-                
-                overall_success = overall_success and success
+                # Find which destination namespace will be reached
+                dest_namespaces = self.ip_to_namespaces.get(dest_ip, [])
+                if dest_namespaces:
+                    for dest_ns in dest_namespaces:
+                        if dest_ns in self.host_namespaces:
+                            dest_router = self.hosts.get(dest_ns, {}).get('connected_to')
+                            if dest_router == router_name:
+                                dest_name = dest_ns
+                                break
+                        elif dest_ns == router_name:
+                            dest_name = dest_ns
+                            break
             
-            if self.test_type in ['mtr', 'both']:
-                success, summary, full_output = self.mtr_test(source_ip, dest_ip)
-                
-                if self.verbose >= 2:
-                    print(f"\nFull MTR output:")
-                    if full_output:
-                        # Indent each line of the full output
-                        indented_output = "\n".join([f"  {line}" for line in full_output.split("\n")])
-                        print(indented_output)
-                    else:
-                        print("  No output captured")
-                
-                if self.verbose == 1:
-                    # -v: compact single line format
-                    status = f"PASS: {summary}" if success else f"FAIL: {summary}"
-                    dest_display = dest_router if dest_router else "external"
-                    print(f"{source_router} ({source_ip}) -> {dest_display} ({dest_ip}) [MTR] {status}")
-                elif self.verbose >= 2:
-                    # -vv: traditional format with pass/fail
-                    if success:
-                        print(f"\n✓ MTR PASS: {summary}")
-                    else:
-                        print(f"\n✗ MTR FAIL: {summary}")
-                
-                overall_success = overall_success and success
-            
-            return overall_success
-            
-        except Exception as e:
             if self.verbose >= 1:
-                print(f"✗ Test failed: {e}")
-            return False
-        finally:
-            # Clean up temporary public IP host if we added it
-            if self.is_public_routable_ip(dest_ip):
-                self.remove_public_ip_host_from_gateways(dest_ip)
+                print(f"\n=== Testing {source_namespace} ({source_ip}) -> {dest_name} ({dest_ip}) via {router_name} ===")
+            
+            namespace_success = True
+            
+            try:
+                # Determine which command to run
+                if self.test_type == 'ping':
+                    test_commands = [('ping', f'ping -c 3 -W 1 -i 1 -I {source_ip} {dest_ip}')]
+                elif self.test_type == 'mtr':
+                    test_commands = [('mtr', f'mtr --report -c 1 -n {dest_ip}')]
+                else:  # both
+                    test_commands = [
+                        ('ping', f'ping -c 3 -W 1 -i 1 -I {source_ip} {dest_ip}'),
+                        ('mtr', f'mtr --report -c 1 -n {dest_ip}')
+                    ]
+                
+                namespace_success = True
+                
+                # Run each test command
+                for test_name, test_cmd in test_commands:
+                    # Run the command in the namespace
+                    full_cmd = f"ip netns exec {source_namespace} {test_cmd}"
+                    
+                    try:
+                        # Check if we're in interactive mode
+                        is_interactive = sys.stdin.isatty()
+                        
+                        if is_interactive and self.verbose >= 1:
+                            # Interactive mode: stream output in real-time
+                            process = subprocess.Popen(
+                                full_cmd, shell=True, stdout=subprocess.PIPE, 
+                                stderr=subprocess.STDOUT, text=True
+                            )
+                            
+                            stdout_lines = []
+                            stderr_lines = []
+                            
+                            # For MTR, we need to wait for it to complete before reading
+                            # because it outputs everything at once when using --report
+                            if test_name == 'mtr':
+                                stdout, _ = process.communicate()
+                                if stdout:
+                                    for line in stdout.rstrip('\n').split('\n'):
+                                        print(line)
+                                
+                                success = process.returncode == 0
+                                result = type('Result', (), {
+                                    'returncode': process.returncode,
+                                    'stdout': stdout,
+                                    'stderr': ''
+                                })
+                            else:
+                                # For ping, just wait for completion
+                                stdout, _ = process.communicate()
+                                if stdout:
+                                    print(stdout.rstrip())
+                                
+                                success = process.returncode == 0
+                                result = type('Result', (), {
+                                    'returncode': process.returncode,
+                                    'stdout': stdout,
+                                    'stderr': ''
+                                })
+                        else:
+                            # Batch mode: capture output normally
+                            result = subprocess.run(
+                                full_cmd, shell=True, capture_output=True, text=True
+                            )
+                            
+                            success = result.returncode == 0
+                        
+                        # In interactive mode with verbose >= 1, output was already streamed
+                        if not (is_interactive and self.verbose >= 1):
+                            if self.verbose >= 2:
+                                print(f"\nFull {test_name.upper()} output from {source_namespace}:")
+                                if result.stdout:
+                                    # Indent each line of the full output
+                                    indented_output = "\n".join([f"  {line}" for line in result.stdout.split('\n')])
+                                    print(indented_output)
+                                else:
+                                    print("  No output captured")
+                            
+                            if self.verbose == 1:
+                                # -v: Show command output directly
+                                if test_name == 'ping':
+                                    # Show ping output (success or failure)
+                                    if result.stdout:
+                                        print(result.stdout.strip())
+                                    elif result.stderr:
+                                        print(f"Ping failed: {result.stderr.strip()}")
+                                    else:
+                                        print(f"Ping failed: exit code {result.returncode}")
+                                elif test_name == 'mtr':
+                                    # Show MTR output as-is
+                                    if result.stdout:
+                                        print(result.stdout.strip())
+                                    elif result.stderr:
+                                        print(f"MTR failed: {result.stderr.strip()}")
+                                    else:
+                                        print(f"MTR failed: exit code {result.returncode}")
+                        
+                        namespace_success = namespace_success and success
+                        
+                    except Exception as e:
+                        if self.verbose >= 1:
+                            print(f"{test_name.upper()} error: {str(e)}")
+                        namespace_success = False
+                
+                overall_success = overall_success and namespace_success
+                
+            except Exception as e:
+                if self.verbose >= 1:
+                    print(f"✗ Test failed from {source_namespace}: {e}")
+                overall_success = False
+        
+        # Clean up temporary public IP host if we added it
+        if self.is_public_routable_ip(dest_ip):
+            self.remove_public_ip_host_from_gateways(dest_ip)
+            
+        return overall_success
             
     def test_all_connectivity(self):
         """Test all routers sequentially."""
         if self.verbose >= 1:
-            print("\n" + "="*60)
-            print("SEQUENTIAL NETWORK CONNECTIVITY TEST")
-            print("="*60)
-            print("Testing each router to all others, one router at a time...")
-        
-        all_routers = sorted(self.routers.keys())
-        
-        for i, source_router in enumerate(all_routers, 1):
-            if self.verbose >= 1:
-                print(f"\n[{i}/{len(all_routers)}] ", end="")
+            print("\n=== Testing All Routers ===")
+            print(f"Test type: {self.test_type}")
+            print(f"Wait time between tests: {self.wait_time}s")
+            print(f"Total routers to test: {len(self.routers)}")
+            
+        # Test each router to all others
+        for source_router in sorted(self.routers.keys()):
             self.test_router_to_all_others(source_router)
             
+            # Wait between routers
+            if self.wait_time > 0:
+                time.sleep(self.wait_time)
+                
     def print_final_summary(self):
-        """Print final test summary."""
-        if self.verbose >= 1:
-            print("\n" + "="*60)
-            print("FINAL CONNECTIVITY TEST SUMMARY")
-            print("="*60)
+        """Print final summary of all tests."""
+        if self.total_tests == 0:
+            return
             
-            print(f"Total ping tests: {self.total_tests}")
-            print(f"Passed: {self.passed_tests}")
-            print(f"Failed: {self.failed_tests}")
-            
-            if self.total_tests > 0:
-                success_rate = (self.passed_tests / self.total_tests) * 100
-                print(f"Overall success rate: {success_rate:.1f}%")
-            
-        if self.failed_tests > 0:
-            if self.verbose >= 1:
-                print(f"\n⚠ CRITICAL: {self.failed_tests} connectivity failures detected!")
-                
-                # Show detailed failures in verbose mode
-                print(f"\nFailed connections:")
-                
-                # Group failures by router pair
-                router_failures = {}
-                for src_router, dst_router, src_ip, dst_ip, error in self.failed_pairs:
-                    pair = f"{src_router} → {dst_router}"
-                    if pair not in router_failures:
-                        router_failures[pair] = []
-                    router_failures[pair].append(f"{src_ip} → {dst_ip}: {error}")
-                    
-                for pair, failures in router_failures.items():
-                    print(f"\n  {pair}:")
-                    for failure in failures:
-                        print(f"    ✗ {failure}")
-                        
-                print(f"\n⚠ Network has routing or configuration issues that must be fixed!")
-                print(f"⚠ Every router must be able to ping every other router for proper functionality.")
-            return False
+        pass_rate = (self.passed_tests / self.total_tests) * 100 if self.total_tests > 0 else 0
+        
+        print("\n" + "="*50)
+        print("FINAL SUMMARY")
+        print("="*50)
+        print(f"Total tests: {self.total_tests}")
+        print(f"Passed: {self.passed_tests}")
+        print(f"Failed: {self.failed_tests}")
+        print(f"Pass rate: {pass_rate:.1f}%")
+        
+        if self.failed_tests == 0:
+            print("\n✓ ALL TESTS PASSED")
         else:
-            if self.verbose >= 1:
-                print(f"\n✓ SUCCESS: All routers can reach all other routers!")
-                print(f"✓ Network connectivity is fully functional.")
-            return True
+            print(f"\n⚠ {self.failed_tests} TESTS FAILED")
             
     def run_tests(self, source_ip: str = None, dest_ip: str = None, test_all: bool = False):
-        """Run the appropriate tests."""
-        try:
-            self.load_facts()
-            
-            if test_all:
-                self.test_all_connectivity()
-                return self.print_final_summary()
-            elif source_ip and dest_ip:
-                return self.test_specific_pair(source_ip, dest_ip)
+        """Run connectivity tests."""
+        # Reset statistics
+        self.total_tests = 0
+        self.passed_tests = 0
+        self.failed_tests = 0
+        
+        if test_all:
+            self.test_all_connectivity()
+        elif source_ip and dest_ip:
+            success = self.test_specific_pair(source_ip, dest_ip)
+            # Update statistics
+            self.total_tests = 1
+            if success:
+                self.passed_tests = 1
             else:
-                print("Error: Use --all for comprehensive test, or -s and -d for specific test")
-                return False
-                
-        except Exception as e:
-            print(f"Error: {e}")
-            import traceback
-            traceback.print_exc()
+                self.failed_tests = 1
+        else:
+            print("Error: Must specify either --all or both -s and -d")
             return False
-        finally:
-            # Always clean up any remaining temporary public IP hosts
-            self.cleanup_all_public_ip_hosts()
+            
+        # Clean up any temporary public IP hosts
+        self.cleanup_all_public_ip_hosts()
+        
+        # No summary needed
+            
+        return self.failed_tests == 0
 
 
 def main():
-    """Main entry point."""
     parser = argparse.ArgumentParser(
-        description="Sequential network connectivity tester",
+        description='Test network connectivity in namespace simulation',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  %(prog)s --all                                    # Test all routers with ping (default)
-  %(prog)s --all --test-type mtr                    # Test all routers with MTR traceroute
-  %(prog)s --all --test-type both                   # Test all routers with both ping and MTR
-  %(prog)s --all -v                                 # With basic verbosity (OK/NOT OK)
-  %(prog)s --all -vv                                # With full verbosity (detailed output)
-  %(prog)s --all -v --wait 0.2                     # With 0.2s wait between tests
-  %(prog)s -s 10.1.1.1 -d 10.2.1.1                # Test specific source to destination with ping
-  %(prog)s -s 10.1.1.1 -d 8.8.8.8 --test-type mtr  # Test external IP with MTR traceroute
-  %(prog)s -s 10.1.1.1 -d 1.1.1.1 --test-type both # Test any IP with both ping and MTR
-
-Test types:
-  ping       Default - ICMP ping connectivity test
-  mtr        MTR traceroute path analysis with hop-by-hop data
-  both       Run both ping and MTR tests for comprehensive analysis
-
-Verbosity levels:
-  (default)  Silent mode - only shows final summary
-  -v         Basic mode - shows OK/NOT OK for each test
-  -vv        Full mode - shows detailed command output
-
-The comprehensive test (--all) performs:
-- Tests each router to all other routers sequentially
-- Configurable wait time between tests (default: 0.1s)
-- Shows progress based on verbosity level
-- Identifies any connectivity failures immediately
-- Supports ping, MTR traceroute, or both test types
-        """
+  # Test all routers with ping (default)
+  %(prog)s --all
+  
+  # Test all routers with MTR traceroute
+  %(prog)s --all --test-type mtr
+  
+  # Test specific connection with ping
+  %(prog)s -s 10.1.1.1 -d 10.2.1.1
+  
+  # Test to public IP with both ping and MTR
+  %(prog)s -s 10.1.1.1 -d 8.8.8.8 --test-type both -v
+  
+  # Test with increased verbosity
+  %(prog)s -s 10.1.1.1 -d 10.2.1.1 -vv
+  
+  # Test with full output
+  %(prog)s -s 10.1.1.1 -d 10.2.1.1 -vvv
+"""
     )
     
-    parser.add_argument('-s', '--source', type=str, 
-                       help='Source IP address')
-    parser.add_argument('-d', '--destination', type=str,
-                       help='Destination IP address')
-    parser.add_argument('--all', action='store_true',
-                       help='Test all routers sequentially (comprehensive)')
-    parser.add_argument('-v', '--verbose', action='count', default=0,
-                       help='Increase verbosity: -v (show OK/NOT OK), -vv (show full details)')
-    parser.add_argument('--wait', type=float, default=0.1,
+    # Test selection
+    test_group = parser.add_mutually_exclusive_group(required=True)
+    test_group.add_argument('--all', action='store_true',
+                           help='Test all routers to all others')
+    test_group.add_argument('-s', '--source', 
+                           help='Source IP address')
+    
+    parser.add_argument('-d', '--dest', '--destination',
+                       help='Destination IP address (required with -s)')
+    
+    # Test type
+    parser.add_argument('--test-type', choices=['ping', 'mtr', 'both'],
+                       default='ping',
+                       help='Type of connectivity test (default: ping)')
+    
+    # Options
+    parser.add_argument('-w', '--wait', type=float, default=0.1,
                        help='Wait time between tests in seconds (default: 0.1)')
-    parser.add_argument('--test-type', type=str, choices=['ping', 'mtr', 'both'], default='ping',
-                       help='Test type: ping (default), mtr (traceroute), or both')
+    parser.add_argument('-v', '--verbose', action='count', default=0,
+                       help='Increase verbosity (-v: summary, -vv: details, -vvv: full output)')
     
     args = parser.parse_args()
     
-    # Check for root privileges (needed for namespace access)
-    if os.geteuid() != 0:
-        print("Error: This script requires root privileges to access network namespaces")
-        print("Please run with sudo")
-        sys.exit(1)
-        
     # Validate arguments
-    if not args.all and not (args.source and args.destination):
-        parser.print_help()
+    if args.source and not args.dest:
+        parser.error("-s/--source requires -d/--dest")
+    if args.dest and not args.source:
+        parser.error("-d/--dest requires -s/--source")
+        
+    # Check for root privileges
+    if os.geteuid() != 0:
+        print("Error: This script requires root privileges")
+        print("Please run: sudo -E python3 network_namespace_tester.py ...")
         sys.exit(1)
         
-    tester = SequentialConnectivityTester(args.verbose, args.wait, args.test_type)
-    success = tester.run_tests(args.source, args.destination, args.all)
-    
-    sys.exit(0 if success else 1)
+    try:
+        # Create tester
+        tester = SequentialConnectivityTester(
+            verbose=args.verbose,
+            wait_time=args.wait,
+            test_type=args.test_type
+        )
+        
+        # Load facts
+        tester.load_facts()
+        
+        if not tester.routers and not tester.router_ips:
+            print("Error: No routers found in facts directory")
+            print("Please run 'make netsetup' first to create namespace simulation")
+            sys.exit(1)
+            
+        # Run tests
+        success = tester.run_tests(
+            source_ip=args.source,
+            dest_ip=args.dest,
+            test_all=args.all
+        )
+        
+        # Exit with appropriate code
+        sys.exit(0 if success else 1)
+        
+    except KeyboardInterrupt:
+        print("\n\nInterrupted by user")
+        # Clean up any temporary hosts
+        if 'tester' in locals():
+            tester.cleanup_all_public_ip_hosts()
+        sys.exit(130)
+    except Exception as e:
+        print(f"\nError: {e}")
+        if args.verbose >= 2:
+            import traceback
+            traceback.print_exc()
+        sys.exit(1)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

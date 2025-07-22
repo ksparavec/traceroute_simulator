@@ -1,0 +1,144 @@
+"""
+Network test command handlers for ping and mtr operations.
+"""
+
+import argparse
+from typing import Optional, List
+
+try:
+    from cmd2 import Cmd2ArgumentParser, choices_provider
+except ImportError:
+    # Fallback for older cmd2 versions
+    from argparse import ArgumentParser as Cmd2ArgumentParser
+    def choices_provider(func):
+        return func
+
+from .base import BaseCommandHandler
+
+
+class NetTestCommands(BaseCommandHandler):
+    """Handler for network test commands (ping and mtr)."""
+    
+    @choices_provider
+    def ip_choices(self) -> List[str]:
+        """Provide IP address choices for completion."""
+        if hasattr(self.shell, 'completers'):
+            return self.shell.completers._get_all_ips()
+        return []
+    
+    def create_ping_parser(self) -> Cmd2ArgumentParser:
+        """Create the argument parser for ping command."""
+        parser = Cmd2ArgumentParser(
+            prog='ping',
+            description='Test connectivity between IPs using ping'
+        )
+        
+        parser.add_argument('-s', '--source', required=True,
+                          choices_provider=self.ip_choices,
+                          help='Source IP address')
+        parser.add_argument('-d', '--dest', '--destination', required=True,
+                          choices_provider=self.ip_choices,
+                          help='Destination IP address')
+        parser.add_argument('-v', '--verbose', action='count', default=1,
+                          help='Increase verbosity (default: show ping output)')
+        
+        return parser
+    
+    def create_mtr_parser(self) -> Cmd2ArgumentParser:
+        """Create the argument parser for mtr command."""
+        parser = Cmd2ArgumentParser(
+            prog='mtr',
+            description='Test connectivity between IPs using MTR (My TraceRoute)'
+        )
+        
+        parser.add_argument('-s', '--source', required=True,
+                          choices_provider=self.ip_choices,
+                          help='Source IP address')
+        parser.add_argument('-d', '--dest', '--destination', required=True,
+                          choices_provider=self.ip_choices,
+                          help='Destination IP address')
+        parser.add_argument('-v', '--verbose', action='count', default=1,
+                          help='Increase verbosity (default: show MTR output)')
+        
+        return parser
+    
+    def handle_ping_command(self, args: str) -> Optional[int]:
+        """Handle ping command."""
+        # Show help if no arguments provided
+        if not args or args.strip() == '':
+            self.shell.help_ping()
+            return None
+            
+        parser = self.create_ping_parser()
+        try:
+            parsed_args = parser.parse_args(self._split_args(args))
+            return self._run_nettest(parsed_args, 'ping')
+        except SystemExit:
+            # Parser error (e.g., missing required args) - already printed
+            return None
+        except Exception as e:
+            self.error(f"Error running ping: {e}")
+            return None
+    
+    def handle_mtr_command(self, args: str) -> Optional[int]:
+        """Handle mtr command."""
+        # Show help if no arguments provided
+        if not args or args.strip() == '':
+            self.shell.help_mtr()
+            return None
+            
+        parser = self.create_mtr_parser()
+        try:
+            parsed_args = parser.parse_args(self._split_args(args))
+            return self._run_nettest(parsed_args, 'mtr')
+        except SystemExit:
+            # Parser error (e.g., missing required args) - already printed
+            return None
+        except Exception as e:
+            self.error(f"Error running mtr: {e}")
+            return None
+    
+    def _run_nettest(self, args: argparse.Namespace, test_type: str) -> int:
+        """Run network test with specified type."""
+        try:
+            self.info(f"Testing connectivity from {args.source} to {args.dest} using {test_type.upper()}")
+            
+            # Run the network namespace tester script
+            script_path = self.get_script_path('src/simulators/network_namespace_tester.py')
+            if not self.check_script_exists(script_path):
+                return 1
+            
+            # Build command arguments
+            cmd_args = [
+                '-s', args.source,
+                '-d', args.dest,
+                '--test-type', test_type
+            ]
+            
+            # Add verbose flags (default is 1, so only add if > 1)
+            if args.verbose > 1:
+                for _ in range(args.verbose - 1):
+                    cmd_args.append('-v')
+            
+            # Run with sudo since we need namespace access
+            returncode = self.run_script_with_output(script_path, cmd_args, use_sudo=True)
+            
+            return returncode
+            
+        except Exception as e:
+            self.error(f"Failed to run {test_type}: {e}")
+            return 1
+    
+    def complete_ping_command(self, text: str, line: str, begidx: int, endidx: int) -> List[str]:
+        """Provide completion for ping command."""
+        return self._complete_with_parser(self.create_ping_parser(), text, line, begidx, endidx)
+    
+    def complete_mtr_command(self, text: str, line: str, begidx: int, endidx: int) -> List[str]:
+        """Provide completion for mtr command."""
+        return self._complete_with_parser(self.create_mtr_parser(), text, line, begidx, endidx)
+    
+    def _handle_command_impl(self, args: str) -> Optional[int]:
+        """Handle command - not used for ping/mtr as they have their own handlers."""
+        # This method is required by BaseCommandHandler but not used
+        # since ping and mtr have their own specific handlers
+        return None

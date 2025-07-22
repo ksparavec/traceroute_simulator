@@ -84,7 +84,9 @@ class HostNamespaceManager:
         
     def load_router_facts(self):
         """Load router facts to understand network topology."""
-        facts_path = os.environ.get('TRACEROUTE_SIMULATOR_FACTS', 'tests/tsim_facts')
+        facts_path = os.environ.get('TRACEROUTE_SIMULATOR_FACTS')
+        if not facts_path:
+            raise EnvironmentError("TRACEROUTE_SIMULATOR_FACTS environment variable must be set")
         facts_dir = Path(facts_path)
         
         if not facts_dir.exists():
@@ -157,9 +159,23 @@ class HostNamespaceManager:
             
         self.logger.debug(f"Running: {full_command}")
         
+        # With -vvv, print the command before execution
+        if self.verbose >= 3:
+            print(f"[CMD] {full_command}")
+        
         result = subprocess.run(
             full_command, shell=True, capture_output=True, text=True, check=check
         )
+        
+        # With -vvv, print the command output
+        if self.verbose >= 3:
+            # Skip stdout for network_namespace_status.py and host listing to avoid verbose output
+            if 'network_namespace_status.py' not in full_command and '--list-hosts' not in full_command:
+                if result.stdout:
+                    print(f"[STDOUT]\n{result.stdout}")
+            if result.stderr:
+                print(f"[STDERR]\n{result.stderr}")
+            print(f"[RETCODE] {result.returncode}")
         
         if result.returncode != 0 and check:
             self.logger.error(f"Command failed: {full_command}")
@@ -513,7 +529,7 @@ class HostNamespaceManager:
                 
                 subnet = route['dst']
                 router_ip = route['prefsrc']
-                return (subnet, router_ip)
+                return (interface_name, router_ip)
                 
         return None
         
@@ -547,6 +563,35 @@ class HostNamespaceManager:
                         except ipaddress.AddressValueError:
                             continue
                     
+            return None
+            
+        except Exception as e:
+            self.logger.error(f"Error finding shared mesh bridge: {e}")
+            return None
+            
+    def find_router_bridge(self, router_name: str, interface_name: str) -> Optional[str]:
+        """Find the bridge that a specific router interface is connected to."""
+        try:
+            # Load bridge registry
+            registry_file = Path("/tmp/traceroute_bridges_registry.json")
+            if not registry_file.exists():
+                self.logger.error("Bridge registry not found. Run netsetup first.")
+                return None
+                
+            with open(registry_file, 'r') as f:
+                bridge_registry = json.load(f)
+            
+            # Find bridge that contains this router and interface
+            for bridge_name, bridge_info in bridge_registry.items():
+                routers = bridge_info.get('routers', {})
+                if router_name in routers:
+                    router_info = routers[router_name]
+                    if router_info.get('interface') == interface_name:
+                        # Check if this bridge exists in hidden-mesh namespace
+                        result = self.run_command(f"ip netns exec hidden-mesh ip link show {bridge_name}", check=False)
+                        if result.returncode == 0:
+                            return bridge_name
+                            
             return None
         except Exception as e:
             self.logger.error(f"Error finding bridge: {e}")
@@ -717,31 +762,65 @@ class HostNamespaceManager:
         
         return all_ips
 
-    def check_ip_collision(self, ip_address: str) -> Tuple[bool, Dict]:
-        """Check if an IP address is already in use by any router or host using active status."""
+    def check_ip_collision(self, ip_address: str, target_router: str = None) -> Tuple[bool, Dict]:
+        """Check if an IP address is already in use.
+        
+        For router IPs: Always check for collision (routers must have unique IPs)
+        For host IPs: Only check if another host on the same router has this IP
+        """
         # Extract IP without prefix if provided
         ip_without_prefix = ip_address.split('/')[0] if '/' in ip_address else ip_address
         
-        # Check active router IPs
+        # Check active router IPs - routers must always have unique IPs
         router_ips = self.get_active_router_ips()
         if ip_without_prefix in router_ips:
             return True, router_ips[ip_without_prefix]
         
-        # Check active host IPs
-        host_ips = self.get_active_host_ips()
-        if ip_without_prefix in host_ips:
-            return True, host_ips[ip_without_prefix]
+        # For hosts, only check collision if target_router is specified
+        if target_router:
+            # Load host registry to check hosts on the same router
+            registry = self.load_host_registry()
+            for host_name, host_config in registry.items():
+                host_ip = host_config.get('primary_ip', '').split('/')[0]
+                host_router = host_config.get('connected_to', '')
+                
+                # Check if this host has the same IP and is connected to the same router
+                if host_ip == ip_without_prefix and host_router == target_router:
+                    return True, {
+                        'type': 'host',
+                        'name': host_name,
+                        'interface': 'eth0',
+                        'full_ip': host_config.get('primary_ip', ip_address),
+                        'router': host_router
+                    }
+                    
+                # Also check secondary IPs
+                for secondary_ip in host_config.get('secondary_ips', []):
+                    secondary_ip_clean = secondary_ip.split('/')[0] if '/' in secondary_ip else secondary_ip
+                    if secondary_ip_clean == ip_without_prefix and host_router == target_router:
+                        return True, {
+                            'type': 'host',
+                            'name': host_name,
+                            'interface': 'dummy',
+                            'full_ip': secondary_ip,
+                            'router': host_router
+                        }
         
         return False, {}
 
-    def create_mesh_connection(self, host_name: str, primary_ip: str) -> Tuple[bool, Dict]:
+    def create_mesh_connection(self, host_name: str, primary_ip: str, router_bridge: Optional[str] = None) -> Tuple[bool, Dict]:
         """Connect host directly to specific mesh bridge in simulation namespace."""
         
-        # Find the shared mesh bridge for this subnet in simulation namespace
-        mesh_bridge = self.find_shared_mesh_bridge(primary_ip)
-        if not mesh_bridge:
-            self.logger.error(f"No shared mesh bridge found for IP {primary_ip}. Run netsetup first.")
-            return False, {}
+        # Use the router's bridge if provided, otherwise find based on IP
+        if router_bridge:
+            mesh_bridge = router_bridge
+            self.logger.info(f"Using router's bridge {mesh_bridge} for connection")
+        else:
+            # Find the shared mesh bridge for this subnet in simulation namespace
+            mesh_bridge = self.find_shared_mesh_bridge(primary_ip)
+            if not mesh_bridge:
+                self.logger.error(f"No shared mesh bridge found for IP {primary_ip}. Run netsetup first.")
+                return False, {}
         
         self.logger.info(f"Connecting host {host_name} directly to mesh {mesh_bridge} in hidden-mesh namespace")
         
@@ -805,27 +884,44 @@ class HostNamespaceManager:
             self.logger.error(f"Invalid primary IP format: {e}")
             return False
             
-        # Check for IP collision on primary IP
-        collision_detected, collision_info = self.check_ip_collision(primary_ip)
+        # Determine target router first (needed for collision check)
+        if connect_to:
+            target_router = connect_to
+        else:
+            # Auto-detect based on primary IP
+            router_info = self.find_router_for_subnet(primary_ip)
+            if not router_info:
+                self.logger.error(f"Could not find suitable router for IP {primary_ip}")
+                return False
+            target_router, _, _ = router_info
+            
+        # Check for IP collision on primary IP (only on the same router)
+        collision_detected, collision_info = self.check_ip_collision(primary_ip, target_router)
         if collision_detected:
             entity_type = collision_info.get('type', 'unknown')
             entity_name = collision_info.get('name', 'unknown')
             entity_interface = collision_info.get('interface', 'unknown')
             full_ip = collision_info.get('full_ip', primary_ip)
             
-            error_msg = f"IP address collision detected: {primary_ip.split('/')[0]} is already in use by {entity_type} '{entity_name}' on interface '{entity_interface}' (configured as {full_ip})"
+            if entity_type == 'router':
+                error_msg = f"IP address collision detected: {primary_ip.split('/')[0]} is already in use by router '{entity_name}' on interface '{entity_interface}'"
+            else:
+                error_msg = f"IP address collision detected: {primary_ip.split('/')[0]} is already in use by host '{entity_name}' connected to router '{target_router}'"
             raise ValueError(error_msg)
             
         # Check for IP collision on secondary IPs
         for secondary_ip in secondary_ips:
-            collision_detected, collision_info = self.check_ip_collision(secondary_ip)
+            collision_detected, collision_info = self.check_ip_collision(secondary_ip, target_router)
             if collision_detected:
                 entity_type = collision_info.get('type', 'unknown')
                 entity_name = collision_info.get('name', 'unknown')
                 entity_interface = collision_info.get('interface', 'unknown')
                 full_ip = collision_info.get('full_ip', secondary_ip)
                 
-                error_msg = f"IP address collision detected: {secondary_ip.split('/')[0]} is already in use by {entity_type} '{entity_name}' on interface '{entity_interface}' (configured as {full_ip})"
+                if entity_type == 'router':
+                    error_msg = f"IP address collision detected: {secondary_ip.split('/')[0]} is already in use by router '{entity_name}' on interface '{entity_interface}'"
+                else:
+                    error_msg = f"IP address collision detected: {secondary_ip.split('/')[0]} is already in use by host '{entity_name}' connected to router '{target_router}'"
                 raise ValueError(error_msg)
             
         # Validate router interface option
@@ -833,12 +929,16 @@ class HostNamespaceManager:
             self.logger.error("--router-interface requires --connect-to to specify the router")
             return False
             
-        # Find target router
+        # Get router details (we already have target_router from above)
+        target_iface = None  # Initialize target_iface
+        gateway_ip = None    # Initialize gateway_ip
+        
+        # Validate router exists
         if connect_to:
-            if connect_to not in self.routers:
-                self.logger.error(f"Router {connect_to} not found")
+            # Check if router exists either in facts or as a namespace
+            if connect_to not in self.routers and connect_to not in self.available_namespaces:
+                self.logger.error(f"Router {connect_to} not found in facts or namespaces")
                 return False
-            target_router = connect_to
             
             # Get gateway IP
             if router_interface:
@@ -846,22 +946,96 @@ class HostNamespaceManager:
                 if not interface_info:
                     self.logger.error(f"Interface {router_interface} not found on router {target_router}")
                     return False
-                _, gateway_ip = interface_info
+                target_iface, gateway_ip = interface_info
             else:
                 # Get router's IP in the same subnet as host
                 gateway_ip = self.get_default_gateway(primary_ip, target_router)
-                if not gateway_ip:
-                    self.logger.error(f"Could not determine gateway IP for {target_router}")
-                    return False
+                if gateway_ip:
+                    # Find which interface has this IP
+                    for subnet, members in self.router_subnets.items():
+                        for r_name, r_iface, r_ip in members:
+                            if r_name == target_router and r_ip == gateway_ip:
+                                target_iface = r_iface
+                                break
+                        if target_iface:
+                            break
+                else:
+                    # If no gateway in same subnet, get any IP from the router
+                    # Look for the first IP address we can find for this router
+                    for subnet, members in self.router_subnets.items():
+                        for r_name, r_iface, r_ip in members:
+                            if r_name == target_router and r_ip:
+                                gateway_ip = r_ip
+                                target_iface = r_iface
+                                self.logger.warning(f"No matching subnet on {target_router}, using router IP {gateway_ip} as gateway")
+                                break
+                        if gateway_ip:
+                            break
+                    
+                    if not gateway_ip:
+                        self.logger.error(f"Could not find any IP address for router {target_router}")
+                        return False
         else:
-            # Auto-detect based on primary IP
+            # We already found the router info above for collision check
+            # Now get the interface and gateway details
             router_info = self.find_router_for_subnet(primary_ip)
-            if not router_info:
-                self.logger.error(f"Could not find suitable router for IP {primary_ip}")
-                return False
-            target_router, target_iface, gateway_ip = router_info
+            if router_info:
+                _, target_iface, gateway_ip = router_info
             
         self.logger.info(f"Connecting host {host_name} to router {target_router} via gateway {gateway_ip} using unified mesh infrastructure")
+        
+        # Calculate the first available IP in host's network to use as gateway
+        try:
+            host_network = ipaddress.IPv4Network(primary_ip, strict=False)
+            gateway_addr = ipaddress.IPv4Address(gateway_ip)
+            
+            # If gateway is not in host's subnet, add first available IP to router interface
+            if gateway_addr not in host_network:
+                # Use first usable IP in the network as new gateway
+                new_gateway_ip = str(host_network.network_address + 1)
+                
+                # Add this IP to the router's interface in the mesh
+                # Find the bridge for this subnet
+                subnet_str = str(host_network)
+                bridge_name = self._generate_bridge_name(subnet_str)
+                
+                # Add IP to the router's interface that connects to this subnet
+                self.logger.info(f"Adding {new_gateway_ip}/{host_network.prefixlen} to router {target_router}")
+                
+                # First, find which interface on the router connects to this bridge
+                # The router should have a veth interface connected to the bridge
+                # We need to add the IP to the router's namespace, not the bridge
+                
+                # Find the bridge for this subnet
+                bridge_name_for_subnet = self._generate_bridge_name(subnet_str)
+                
+                # Check if bridge exists in hidden-mesh
+                result = self.run_command(f"ip link show {bridge_name_for_subnet}", namespace="hidden-mesh", check=False)
+                if result.returncode != 0:
+                    # Create bridge if it doesn't exist
+                    self.run_command(f"ip link add {bridge_name_for_subnet} type bridge", namespace="hidden-mesh")
+                    self.run_command(f"ip link set {bridge_name_for_subnet} up", namespace="hidden-mesh")
+                
+                # Now we need to connect the router to this bridge if not already connected
+                # and add the IP to the router's interface
+                # For now, add to the router's target interface if it exists
+                if target_iface and target_router in self.available_namespaces:
+                    # Add the IP directly to the router's interface
+                    self.run_command(f"ip addr add {new_gateway_ip}/{host_network.prefixlen} dev {target_iface}", 
+                                   namespace=target_router, check=False)
+                    self.logger.info(f"Added {new_gateway_ip}/{host_network.prefixlen} to {target_router} interface {target_iface}")
+                else:
+                    # Fallback: add to bridge
+                    self.logger.warning(f"Router {target_router} not accessible, adding IP to bridge instead")
+                    self.run_command(f"ip addr add {new_gateway_ip}/{host_network.prefixlen} dev {bridge_name_for_subnet}", 
+                                   namespace="hidden-mesh", check=False)
+                
+                # Update gateway_ip to use the new one
+                gateway_ip = new_gateway_ip
+                self.logger.info(f"Updated gateway IP to {gateway_ip}")
+                
+        except Exception as e:
+            self.logger.warning(f"Could not set up gateway IP on router interface: {e}")
         
         try:
             # Create host namespace
@@ -871,7 +1045,16 @@ class HostNamespaceManager:
             self.run_command("ip link set lo up", namespace=host_name)
             
             # Connect to mesh infrastructure (unified mesh architecture)
-            success, connection_info = self.create_mesh_connection(host_name, primary_ip)
+            # If we have a specific router target, find its bridge
+            router_bridge = None
+            if connect_to and target_iface:
+                router_bridge = self.find_router_bridge(target_router, target_iface)
+                if router_bridge:
+                    self.logger.info(f"Found router {target_router}'s interface {target_iface} connected to bridge {router_bridge}")
+                else:
+                    self.logger.warning(f"Could not find bridge for {target_router} interface {target_iface}, falling back to IP-based selection")
+                    
+            success, connection_info = self.create_mesh_connection(host_name, primary_ip, router_bridge)
             if not success:
                 raise Exception(f"Failed to connect to mesh infrastructure")
                 
@@ -903,7 +1086,16 @@ class HostNamespaceManager:
                     continue
                     
             # Configure routing (direct network route is automatic, only add default route)
-            self.run_command(f"ip route add default via {gateway_ip} dev eth0", namespace=host_name)
+            # Check if gateway is in the same subnet as the host
+            try:
+                host_network = ipaddress.IPv4Network(primary_ip, strict=False)
+                gateway_addr = ipaddress.IPv4Address(gateway_ip)
+                if gateway_addr in host_network:
+                    self.run_command(f"ip route add default via {gateway_ip} dev eth0", namespace=host_name)
+                else:
+                    self.logger.warning(f"Gateway {gateway_ip} is not in host subnet {host_network}, skipping default route")
+            except Exception as e:
+                self.logger.warning(f"Could not add default route: {e}")
             
             # Register host interfaces in interface registry
             host_interfaces = ["lo", "eth0"]  # Standard interfaces for all hosts
@@ -920,6 +1112,7 @@ class HostNamespaceManager:
                 "primary_ip": primary_ip,
                 "secondary_ips": secondary_ips,
                 "connected_to": target_router,
+                "router_interface": target_iface if target_iface else "unknown",
                 "gateway_ip": gateway_ip,
                 "dummy_interfaces": dummy_configs,
                 "created_at": str(subprocess.run("date", capture_output=True, text=True).stdout.strip())
@@ -934,7 +1127,7 @@ class HostNamespaceManager:
             if self.verbose >= 1:
                 print(f"✓ Host {host_name} created successfully")
                 print(f"  Primary IP: {primary_ip} on eth0")
-                print(f"  Connected to: {target_router} (gateway: {gateway_ip})")
+                print(f"  Connected to: {target_router} interface {target_iface if target_iface else 'unknown'} (gateway: {gateway_ip})")
                 if secondary_ips:
                     print(f"  Secondary IPs: {', '.join(secondary_ips)}")
                 print(f"  Mesh bridge: {connection_info.get('mesh_bridge', 'auto-detected')}")
@@ -1091,7 +1284,8 @@ class HostNamespaceManager:
                 status = "running" if host_name in self.available_namespaces else "stopped"
                 print(f"Host: {host_name} [{status}]")
                 print(f"  Primary IP: {config.get('primary_ip', 'unknown')}")
-                print(f"  Connected to: {config.get('connected_to', 'unknown')} (gateway: {config.get('gateway_ip', 'unknown')})")
+                router_iface = config.get('router_interface', 'unknown')
+                print(f"  Connected to: {config.get('connected_to', 'unknown')} interface {router_iface} (gateway: {config.get('gateway_ip', 'unknown')})")
                 
                 secondary_ips = config.get('secondary_ips', [])
                 if secondary_ips:

@@ -359,7 +359,7 @@ class ScriptProcessor:
         elif loop_var in self.variable_manager.variables:
             del self.variable_manager.variables[loop_var]
     
-    def _parse_items(self, items_expr: str) -> List[str]:
+    def _parse_items(self, items_expr: str) -> List[Any]:
         """Parse space-separated items, respecting quotes and JSON arrays."""
         # First check if it's a JSON array
         items_expr = items_expr.strip()
@@ -368,8 +368,8 @@ class ScriptProcessor:
                 import json
                 # Parse as JSON array
                 items = json.loads(items_expr)
-                # Convert all items to strings
-                return [str(item) for item in items]
+                # Return items as-is to preserve their types (dict, list, etc.)
+                return items
             except json.JSONDecodeError:
                 # Fall back to regular parsing
                 pass

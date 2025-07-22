@@ -135,16 +135,16 @@ class TraceCommands(BaseCommandHandler):
         json_path = []
         for hop_data in path:
             if len(hop_data) == 8:
-                hop_num, router_name, ip, interface, is_router, connected_to, outgoing, rtt = hop_data
+                hop_num, router_name, ip, incoming, is_router, connected_to, outgoing, rtt = hop_data
             else:
-                hop_num, router_name, ip, interface, is_router, connected_to, outgoing = hop_data
+                hop_num, router_name, ip, incoming, is_router, connected_to, outgoing = hop_data
                 rtt = 0.0
             
             hop_dict = {
                 "hop": hop_num,
                 "name": router_name,
                 "ip": ip,
-                "interface": interface,
+                "incoming": incoming,
                 "is_router": is_router,
                 "connected_to": connected_to,
                 "outgoing": outgoing,
@@ -169,9 +169,9 @@ class TraceCommands(BaseCommandHandler):
         # Format path output
         for hop_data in path:
             if len(hop_data) == 8:
-                hop_num, router_name, ip, interface, is_router, connected_to, outgoing, rtt = hop_data
+                hop_num, router_name, ip, incoming, is_router, connected_to, outgoing, rtt = hop_data
             else:
-                hop_num, router_name, ip, interface, is_router, connected_to, outgoing = hop_data
+                hop_num, router_name, ip, incoming, is_router, connected_to, outgoing = hop_data
                 rtt = 0.0
             
             # Format hop output
@@ -183,9 +183,9 @@ class TraceCommands(BaseCommandHandler):
             else:
                 hop_str += ip
             
-            # Add interface info if available
-            if interface:
-                hop_str += f" [{interface}]"
+            # Add incoming interface info if available
+            if incoming:
+                hop_str += f" [{incoming}]"
             
             # Add RTT if available
             if rtt > 0:

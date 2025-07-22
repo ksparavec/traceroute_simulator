@@ -609,7 +609,15 @@ class ReversePathTracer:
             for hop in final_updated_path:
                 print(f"  Hop {hop[0]}: {hop[1]} prev_hop={hop[5]}, next_hop={hop[6]}")
         
-        return True, final_updated_path
+        # Step 5: Detect router interfaces via remote SSH
+        if self.verbose_level >= 2:
+            print(f"\n--- Step 5: Detecting router interfaces via SSH ---")
+        
+        final_path_with_interfaces = self._detect_router_interfaces(
+            final_updated_path, original_src, original_dst
+        )
+        
+        return True, final_path_with_interfaces
     
     def _resolve_ip(self, ip: str) -> str:
         """
@@ -770,3 +778,175 @@ class ReversePathTracer:
             simulator_hops.append(simulator_hop)
         
         return simulator_hops
+    
+    def _detect_router_interfaces(self, path: List[Tuple], source_ip: str, destination_ip: str) -> List[Tuple]:
+        """
+        Detect incoming and outgoing interfaces for routers via SSH.
+        
+        For each router in the path, executes:
+        - ip route get <source_ip> to find incoming interface
+        - ip route get <destination_ip> to find outgoing interface
+        
+        Args:
+            path: List of path tuples
+            source_ip: Original source IP address
+            destination_ip: Original destination IP address
+            
+        Returns:
+            Updated path with interface information
+        """
+        import subprocess
+        import socket
+        
+        # Check if we're running on the ansible controller
+        # Try to match by checking all local IPs
+        on_controller = False
+        try:
+            import netifaces
+            for interface in netifaces.interfaces():
+                addrs = netifaces.ifaddresses(interface)
+                if netifaces.AF_INET in addrs:
+                    for addr in addrs[netifaces.AF_INET]:
+                        if addr['addr'] == self.ansible_controller_ip:
+                            on_controller = True
+                            break
+                if on_controller:
+                    break
+        except ImportError:
+            # Fallback to simple hostname check
+            hostname = socket.gethostname()
+            try:
+                my_ip = socket.gethostbyname(hostname)
+                on_controller = (my_ip == self.ansible_controller_ip)
+            except:
+                # If we can't determine, assume we're not on controller
+                on_controller = False
+        
+        if self.verbose_level >= 2:
+            try:
+                hostname = socket.gethostname()
+                print(f"Current host: {hostname}")
+            except:
+                print(f"Current host: unknown")
+            print(f"Ansible controller: {self.ansible_controller_ip}")
+            print(f"Running on controller: {on_controller}")
+        
+        # SSH options for router connections (accept unknown hosts)
+        ssh_opts_routers = [
+            "-o", "StrictHostKeyChecking=no",
+            "-o", "UserKnownHostsFile=/dev/null", 
+            "-o", "BatchMode=yes",
+            "-o", "ConnectTimeout=5",
+            "-o", "LogLevel=ERROR"  # Suppress warnings about adding host to known hosts
+        ]
+        
+        # SSH options for ansible controller (keep default host key checking)
+        ssh_opts_controller = [
+            "-o", "BatchMode=yes",
+            "-o", "ConnectTimeout=10"
+        ]
+        
+        updated_path = []
+        
+        for hop_data in path:
+            # Unpack the hop data
+            if len(hop_data) >= 9:
+                hop_num, router_name, ip, incoming, is_router, prev_hop, next_hop, outgoing, rtt = hop_data
+            else:
+                # Skip malformed hops
+                updated_path.append(hop_data)
+                continue
+            
+            # Only process routers
+            if not is_router:
+                updated_path.append(hop_data)
+                continue
+            
+            if self.verbose_level >= 2:
+                print(f"\nProcessing router: {router_name} ({ip})")
+            
+            # Initialize interface names
+            incoming_interface = ""
+            outgoing_interface = ""
+            
+            try:
+                # Build commands to get interfaces
+                cmd_incoming = f"ip route get {source_ip} | head -1"
+                cmd_outgoing = f"ip route get {destination_ip} | head -1"
+                
+                if on_controller:
+                    # Direct SSH from controller to router
+                    ssh_cmd_incoming = ["ssh"] + ssh_opts_routers + [ip, cmd_incoming]
+                    ssh_cmd_outgoing = ["ssh"] + ssh_opts_routers + [ip, cmd_outgoing]
+                else:
+                    # Nested SSH: local -> controller -> router
+                    # Escape the command for nested execution
+                    escaped_cmd_incoming = cmd_incoming.replace('"', '\\"')
+                    escaped_cmd_outgoing = cmd_outgoing.replace('"', '\\"')
+                    
+                    # Build inner SSH command with router options
+                    inner_ssh_opts = ' '.join(ssh_opts_routers)
+                    inner_ssh_incoming = f"ssh {inner_ssh_opts} {ip} \"{escaped_cmd_incoming}\""
+                    inner_ssh_outgoing = f"ssh {inner_ssh_opts} {ip} \"{escaped_cmd_outgoing}\""
+                    
+                    # Outer SSH to controller uses controller options
+                    ssh_cmd_incoming = ["ssh"] + ssh_opts_controller + [self.ansible_controller_ip, inner_ssh_incoming]
+                    ssh_cmd_outgoing = ["ssh"] + ssh_opts_controller + [self.ansible_controller_ip, inner_ssh_outgoing]
+                
+                # Execute commands
+                if self.verbose_level >= 3:
+                    print(f"Getting incoming interface: {' '.join(ssh_cmd_incoming)}")
+                
+                result_incoming = subprocess.run(ssh_cmd_incoming, capture_output=True, text=True, timeout=10)
+                if result_incoming.returncode == 0:
+                    incoming_interface = self._extract_interface_from_route(result_incoming.stdout)
+                    if self.verbose_level >= 2:
+                        print(f"  Incoming interface: {incoming_interface}")
+                elif self.verbose:
+                    print(f"  Failed to get incoming interface: {result_incoming.stderr.strip()}")
+                
+                if self.verbose_level >= 3:
+                    print(f"Getting outgoing interface: {' '.join(ssh_cmd_outgoing)}")
+                
+                result_outgoing = subprocess.run(ssh_cmd_outgoing, capture_output=True, text=True, timeout=10)
+                if result_outgoing.returncode == 0:
+                    outgoing_interface = self._extract_interface_from_route(result_outgoing.stdout)
+                    if self.verbose_level >= 2:
+                        print(f"  Outgoing interface: {outgoing_interface}")
+                elif self.verbose:
+                    print(f"  Failed to get outgoing interface: {result_outgoing.stderr.strip()}")
+                    
+            except subprocess.TimeoutExpired:
+                if self.verbose:
+                    print(f"  SSH timeout for router {router_name}")
+            except Exception as e:
+                if self.verbose:
+                    print(f"  Error detecting interfaces for {router_name}: {e}")
+            
+            # Create updated hop with interface information
+            updated_hop = (hop_num, router_name, ip, incoming_interface, is_router, 
+                          prev_hop, next_hop, outgoing_interface, rtt)
+            updated_path.append(updated_hop)
+        
+        return updated_path
+    
+    def _extract_interface_from_route(self, route_output: str) -> str:
+        """
+        Extract interface name from 'ip route get' output.
+        
+        Example output:
+        10.1.1.1 via 10.2.1.1 dev eth0 src 10.2.1.2
+        
+        Args:
+            route_output: Output from 'ip route get' command
+            
+        Returns:
+            Interface name or empty string if not found
+        """
+        import re
+        
+        # Look for "dev <interface_name>" pattern
+        match = re.search(r'dev\s+(\S+)', route_output)
+        if match:
+            return match.group(1)
+        return ""

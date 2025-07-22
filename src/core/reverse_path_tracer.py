@@ -211,7 +211,7 @@ class ReversePathTracer:
                     mtr_path = []
                     # Add controller as first hop
                     controller_label = self.simulator._resolve_ip_to_name(self.ansible_controller_ip)
-                    mtr_path.append((1, controller_label, self.ansible_controller_ip, "", False, "", "", 0.0))
+                    mtr_path.append((1, controller_label, self.ansible_controller_ip, "", False, "", "", "", 0.0))
                     
                     # Add ALL MTR hops starting from hop 2 (DO NOT FILTER IN STEP 1!)
                     for i, hop_dict in enumerate(all_mtr_hops):
@@ -230,7 +230,7 @@ class ReversePathTracer:
                             router_obj = self.simulator.routers[router_found]
                             is_router = router_obj.is_linux()
                         
-                        mtr_path.append((hop_num, router_name, ip, "", is_router, "", "", rtt))
+                        mtr_path.append((hop_num, router_name, ip, "", is_router, "", "", "", rtt))
                 else:
                     mtr_path = []
                 mtr_exit_code = 0 if mtr_success else 1
@@ -409,7 +409,7 @@ class ReversePathTracer:
             # Case 1: Linux router found
             
             # 1. Insert original source IP (create a minimal hop tuple)
-            temp_path.append((1, original_src, original_src, "", False, "", "", 0.0))
+            temp_path.append((1, original_src, original_src, "", False, "", "", "", 0.0))
             if self.verbose_level >= 3:
                 print(f"After step 1 (added source), temp_path has {len(temp_path)} entries:")
                 for i, hop in enumerate(temp_path):
@@ -465,12 +465,12 @@ class ReversePathTracer:
             for hop_data in forward_path:
                 try:
                     if hop_data[2] == original_dst:
-                        if len(hop_data) >= 8:
-                            destination_rtt = hop_data[7]
+                        if len(hop_data) >= 9:
+                            destination_rtt = hop_data[8]
                         break
                 except IndexError as e:
                     raise RuntimeError(f"Malformed hop data in forward_path: {hop_data}. Expected at least 3 elements, got {len(hop_data)}") from e
-            temp_path.append((1, original_dst, original_dst, "", False, "", "", destination_rtt))
+            temp_path.append((1, original_dst, original_dst, "", False, "", "", "", destination_rtt))
             if self.verbose_level >= 3:
                 print(f"After step 4 (added destination), temp_path has {len(temp_path)} entries:")
                 for i, hop in enumerate(temp_path):
@@ -496,20 +496,20 @@ class ReversePathTracer:
                     resolved_name = self._resolve_ip(ip)
                     is_router = self.simulator._find_router_by_ip(ip) is not None
                     
-                    # Preserve RTT if available
-                    rtt = hop_data[7] if len(hop_data) >= 8 else 0.0
-                    final_path.append((hop_counter, resolved_name, ip, "", is_router, "", "", rtt))
+                    # Preserve RTT if available (element 8 in 9-element tuple)
+                    rtt = hop_data[8] if len(hop_data) >= 9 else 0.0
+                    final_path.append((hop_counter, resolved_name, ip, "", is_router, "", "", "", rtt))
                     hop_counter += 1
                 else:
                     # Check if this is the last Linux router (NEVER filter it out)
                     if hop_router_name == last_linux_router:
                         # Always include the last Linux router
-                        if len(hop_data) >= 8:
-                            _, router_name, ip, incoming, is_router, connected_to, outgoing, rtt = hop_data
-                            final_path.append((hop_counter, router_name, ip, incoming, is_router, connected_to, outgoing, rtt))
+                        if len(hop_data) >= 9:
+                            _, router_name, ip, incoming, is_router, prev_hop, next_hop, outgoing, rtt = hop_data
+                            final_path.append((hop_counter, router_name, ip, incoming, is_router, "", next_hop, outgoing, rtt))
                         else:
-                            _, router_name, ip, incoming, is_router, connected_to, outgoing = hop_data
-                            final_path.append((hop_counter, router_name, ip, incoming, is_router, connected_to, outgoing))
+                            _, router_name, ip, incoming, is_router, next_hop, outgoing = hop_data
+                            final_path.append((hop_counter, router_name, ip, incoming, is_router, "", next_hop, outgoing, 0.0))
                         hop_counter += 1
                     else:
                         # For other hops, check if Linux router
@@ -518,12 +518,12 @@ class ReversePathTracer:
                             router_obj = self.simulator.routers[router_name]
                             if router_obj.is_linux():
                                 # Extract all hop data
-                                if len(hop_data) >= 8:
-                                    _, _, ip, incoming, is_router, connected_to, outgoing, rtt = hop_data
-                                    final_path.append((hop_counter, router_name, ip, incoming, is_router, connected_to, outgoing, rtt))
+                                if len(hop_data) >= 9:
+                                    _, _, ip, incoming, is_router, prev_hop, next_hop, outgoing, rtt = hop_data
+                                    final_path.append((hop_counter, router_name, ip, incoming, is_router, "", next_hop, outgoing, rtt))
                                 else:
-                                    _, _, ip, incoming, is_router, connected_to, outgoing = hop_data
-                                    final_path.append((hop_counter, router_name, ip, incoming, is_router, connected_to, outgoing))
+                                    _, _, ip, incoming, is_router, next_hop, outgoing = hop_data
+                                    final_path.append((hop_counter, router_name, ip, incoming, is_router, "", next_hop, outgoing, 0.0))
                                 hop_counter += 1
         
         else:
@@ -532,7 +532,7 @@ class ReversePathTracer:
             # Insert source IP
             resolved_src = self._resolve_ip(original_src)
             src_is_router = self.simulator._find_router_by_ip(original_src) is not None
-            final_path.append((hop_counter, resolved_src, original_src, "", src_is_router, "", "", 0.0))
+            final_path.append((hop_counter, resolved_src, original_src, "", src_is_router, "", "", "", 0.0))
             hop_counter += 1
             
             # Insert destination IP
@@ -543,12 +543,12 @@ class ReversePathTracer:
             for hop_data in forward_path:
                 try:
                     if hop_data[2] == original_dst:
-                        if len(hop_data) >= 8:
-                            destination_rtt = hop_data[7]
+                        if len(hop_data) >= 9:
+                            destination_rtt = hop_data[8]
                         break
                 except IndexError as e:
                     raise RuntimeError(f"Malformed hop data in forward_path: {hop_data}. Expected at least 3 elements, got {len(hop_data)}") from e
-            final_path.append((hop_counter, resolved_dst, original_dst, "", dst_is_router, "", "", destination_rtt))
+            final_path.append((hop_counter, resolved_dst, original_dst, "", dst_is_router, "", "", "", destination_rtt))
         
         
         if self.verbose_level >= 2:
@@ -559,7 +559,57 @@ class ReversePathTracer:
                 else:
                     print(f"  Hop {hop[0]}: {hop[1]} ({hop[2]})")
         
-        return True, final_path
+        # Step 4: Populate prev_hop and next_hop fields
+        if self.verbose_level >= 2:
+            print(f"\n--- Step 4: Populating prev_hop and next_hop fields ---")
+        
+        # First pass: Set prev_hop for each router (forward direction)
+        updated_path = []
+        prev_hop_name = None
+        
+        for hop_data in final_path:
+            # Unpack the hop data (now includes empty prev_hop)
+            if len(hop_data) >= 9:
+                hop_num, router_name, ip, incoming, is_router, prev_hop, next_hop, outgoing, rtt = hop_data
+            else:
+                # Handle old format (8 elements) for backward compatibility
+                hop_num, router_name, ip, incoming, is_router, next_hop, outgoing, rtt = hop_data
+                prev_hop = ""
+            
+            # Set prev_hop for all hops
+            prev_hop_value = prev_hop_name if prev_hop_name else ""
+            
+            # Create updated hop with prev_hop set (next_hop will be set in second pass)
+            updated_hop = (hop_num, router_name, ip, incoming, is_router, prev_hop_value, next_hop, outgoing, rtt)
+            updated_path.append(updated_hop)
+            
+            # Update prev_hop_name for next iteration
+            prev_hop_name = router_name
+        
+        # Second pass: Set next_hop for each router (reverse direction)
+        final_updated_path = []
+        next_hop_name = None
+        
+        for hop_data in reversed(updated_path):
+            # Unpack the hop data (now includes prev_hop from first pass)
+            hop_num, router_name, ip, incoming, is_router, prev_hop, _, outgoing, rtt = hop_data
+            
+            # Set next_hop for all hops
+            next_hop_value = next_hop_name if next_hop_name else ""
+            
+            # Create final hop with both prev_hop and next_hop set
+            final_hop = (hop_num, router_name, ip, incoming, is_router, prev_hop, next_hop_value, outgoing, rtt)
+            final_updated_path.insert(0, final_hop)  # Insert at beginning since we're going in reverse
+            
+            # Update next_hop_name for next iteration
+            next_hop_name = router_name
+        
+        if self.verbose_level >= 2:
+            print(f"Updated path with prev_hop and next_hop:")
+            for hop in final_updated_path:
+                print(f"  Hop {hop[0]}: {hop[1]} prev_hop={hop[5]}, next_hop={hop[6]}")
+        
+        return True, final_updated_path
     
     def _resolve_ip(self, ip: str) -> str:
         """
@@ -599,11 +649,14 @@ class ReversePathTracer:
             return False
         
         for hop_data in path:
-            # Handle both 7-tuple and 8-tuple formats (with optional RTT)
-            if len(hop_data) == 8:
-                hop_num, router_name, ip, incoming, is_router, connected_to, outgoing, rtt = hop_data
+            # Handle both old and new tuple formats
+            if len(hop_data) >= 9:
+                hop_num, router_name, ip, incoming, is_router, prev_hop, next_hop, outgoing, rtt = hop_data
+            elif len(hop_data) == 8:
+                hop_num, router_name, ip, incoming, is_router, next_hop, outgoing, rtt = hop_data
             else:
-                hop_num, router_name, ip, incoming, is_router, connected_to, outgoing = hop_data
+                hop_num, router_name, ip, incoming, is_router, next_hop, outgoing = hop_data
+                rtt = 0.0
             if "No route" in ip or "* * *" in router_name or "(loop detected)" in ip:
                 return False
         
@@ -642,11 +695,14 @@ class ReversePathTracer:
         
         # Iterate through path in reverse order to find the router closest to destination
         for hop_data in reversed(path):
-            # Handle both 7-tuple and 8-tuple formats (with optional RTT)
-            if len(hop_data) == 8:
-                hop_num, router_name, ip, incoming, is_router, connected_to, outgoing, rtt = hop_data
+            # Handle both old and new tuple formats
+            if len(hop_data) >= 9:
+                hop_num, router_name, ip, incoming, is_router, prev_hop, next_hop, outgoing, rtt = hop_data
+            elif len(hop_data) == 8:
+                hop_num, router_name, ip, incoming, is_router, next_hop, outgoing, rtt = hop_data
             else:
-                hop_num, router_name, ip, incoming, is_router, connected_to, outgoing = hop_data
+                hop_num, router_name, ip, incoming, is_router, next_hop, outgoing = hop_data
+                rtt = 0.0
             
             # Check if this is a Linux router using IP lookup (not just router inventory)
             # This handles cases where router_name might be FQDN from MTR
@@ -685,7 +741,7 @@ class ReversePathTracer:
         Convert mtr tool hop dictionaries to simulator tuple format.
         
         mtr tool dictionaries have format: {'hop', 'ip', 'hostname', 'rtt', 'loss'}
-        Simulator tuples have format: (hop_num, router_name, ip, incoming, is_router, connected_to, outgoing, rtt)
+        Simulator tuples have format: (hop_num, router_name, ip, incoming, is_router, prev_hop, next_hop, outgoing, rtt)
         
         Args:
             mtr_hops: List of mtr tool hop dictionaries
@@ -707,10 +763,10 @@ class ReversePathTracer:
             # For mtr tool hops, we don't have incoming interface information
             incoming = ""
             is_router = True  # mtr tool filtered hops are Linux routers
-            connected_to = ""
+            next_hop = ""
             outgoing = ""
             
-            simulator_hop = (hop_num, router_name, ip, incoming, is_router, connected_to, outgoing, rtt)
+            simulator_hop = (hop_num, router_name, ip, incoming, is_router, "", next_hop, outgoing, rtt)
             simulator_hops.append(simulator_hop)
         
         return simulator_hops

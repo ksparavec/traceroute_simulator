@@ -133,12 +133,16 @@ class TraceCommands(BaseCommandHandler):
         
         # Convert path tuples to dictionaries
         json_path = []
-        for hop_data in path:
-            if len(hop_data) == 8:
-                hop_num, router_name, ip, incoming, is_router, connected_to, outgoing, rtt = hop_data
+        for i, hop_data in enumerate(path):
+            if len(hop_data) >= 9:
+                hop_num, router_name, ip, incoming, is_router, prev_hop, next_hop, outgoing, rtt = hop_data
+            elif len(hop_data) == 8:
+                hop_num, router_name, ip, incoming, is_router, next_hop, outgoing, rtt = hop_data
+                prev_hop = ""
             else:
-                hop_num, router_name, ip, incoming, is_router, connected_to, outgoing = hop_data
+                hop_num, router_name, ip, incoming, is_router, next_hop, outgoing = hop_data
                 rtt = 0.0
+                prev_hop = ""
             
             hop_dict = {
                 "hop": hop_num,
@@ -146,7 +150,8 @@ class TraceCommands(BaseCommandHandler):
                 "ip": ip,
                 "incoming": incoming,
                 "is_router": is_router,
-                "connected_to": connected_to,
+                "prev_hop": prev_hop,
+                "next_hop": next_hop,
                 "outgoing": outgoing,
                 "rtt": rtt
             }
@@ -168,10 +173,12 @@ class TraceCommands(BaseCommandHandler):
         
         # Format path output
         for hop_data in path:
-            if len(hop_data) == 8:
-                hop_num, router_name, ip, incoming, is_router, connected_to, outgoing, rtt = hop_data
+            if len(hop_data) >= 9:
+                hop_num, router_name, ip, incoming, is_router, prev_hop, next_hop, outgoing, rtt = hop_data
+            elif len(hop_data) == 8:
+                hop_num, router_name, ip, incoming, is_router, next_hop, outgoing, rtt = hop_data
             else:
-                hop_num, router_name, ip, incoming, is_router, connected_to, outgoing = hop_data
+                hop_num, router_name, ip, incoming, is_router, next_hop, outgoing = hop_data
                 rtt = 0.0
             
             # Format hop output
@@ -192,8 +199,8 @@ class TraceCommands(BaseCommandHandler):
                 hop_str += f" {rtt:.2f}ms"
             
             # Add connection info if available
-            if connected_to:
-                hop_str += f" -> {connected_to}"
+            if next_hop:
+                hop_str += f" -> {next_hop}"
                 if outgoing:
                     hop_str += f" [{outgoing}]"
             

@@ -3,7 +3,8 @@
 Host Cleanup Script
 
 Removes all registered hosts from the network simulation.
-This provides a clean way to remove all hosts without affecting router infrastructure.
+This script uses the individual host removal logic to ensure proper cleanup,
+including removal of router IPs that were added during host creation.
 
 Usage:
     sudo python3 host_cleanup.py [--verbose]
@@ -16,7 +17,11 @@ import os
 import subprocess
 import sys
 from pathlib import Path
-from typing import Dict, Any
+from typing import Dict, List
+
+# Import the host namespace setup module to use its removal logic
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from simulators.host_namespace_setup import HostNamespaceManager
 
 
 class HostCleanup:
@@ -25,7 +30,17 @@ class HostCleanup:
     def __init__(self, verbose: int = 0):
         self.verbose = verbose
         self.setup_logging()
-        self.host_registry_file = Path("/tmp/traceroute_hosts_registry.json")
+        # Set up logging for the simulators module as well
+        simulators_logger = logging.getLogger('simulators.host_namespace_setup')
+        if self.verbose == 0:
+            simulators_logger.setLevel(logging.WARNING)
+        elif self.verbose == 1:
+            simulators_logger.setLevel(logging.INFO)
+        else:
+            simulators_logger.setLevel(logging.DEBUG)
+        self.host_setup = HostNamespaceManager(verbose=verbose)
+        # Load routing facts and discover namespaces so router IP cleanup works
+        self.host_setup.discover_namespaces()
         
     def setup_logging(self):
         """Configure logging based on verbosity level."""
@@ -42,173 +57,38 @@ class HostCleanup:
         )
         self.logger = logging.getLogger(__name__)
         
-    def load_host_registry(self) -> Dict[str, Dict]:
-        """Load registry of existing hosts."""
-        if not self.host_registry_file.exists():
-            return {}
-            
-        try:
-            with open(self.host_registry_file, 'r') as f:
-                return json.load(f)
-        except (json.JSONDecodeError, IOError) as e:
-            self.logger.warning(f"Could not load host registry: {e}")
-            return {}
-
-    def unregister_host_from_bridge_registry(self, host_name: str):
-        """Unregister host from the bridge registry."""
-        try:
-            registry_file = Path("/tmp/traceroute_bridges_registry.json")
-            if not registry_file.exists():
-                return
-                
-            with open(registry_file, 'r') as f:
-                bridge_registry = json.load(f)
-            
-            # Find and remove host from all bridges
-            for bridge_name, bridge_info in bridge_registry.items():
-                hosts = bridge_info.get('hosts', {})
-                if host_name in hosts:
-                    del hosts[host_name]
-                    self.logger.debug(f"Unregistered host {host_name} from bridge {bridge_name}")
-            
-            # Save updated registry
-            with open(registry_file, 'w') as f:
-                json.dump(bridge_registry, f, indent=2)
-                
-        except Exception as e:
-            self.logger.error(f"Error unregistering host from bridge registry: {e}")
-
-    def unregister_host_from_router_and_interface_registries(self, host_name: str):
-        """Unregister host from router and interface registries."""
-        try:
-            # Load router registry
-            router_registry_file = Path("/tmp/traceroute_routers_registry.json")
-            if not router_registry_file.exists():
-                return
-                
-            with open(router_registry_file, 'r') as f:
-                router_registry = json.load(f)
-            
-            # Find host code
-            host_code = router_registry.get(host_name)
-            if not host_code:
-                self.logger.debug(f"Host {host_name} not found in router registry")
-                return
-            
-            # Remove host from router registry
-            del router_registry[host_name]
-            with open(router_registry_file, 'w') as f:
-                json.dump(router_registry, f, indent=2)
-            self.logger.debug(f"Unregistered host {host_name} from router registry")
-            
-            # Load and update interface registry
-            interface_registry_file = Path("/tmp/traceroute_interfaces_registry.json")
-            if interface_registry_file.exists():
-                with open(interface_registry_file, 'r') as f:
-                    interface_registry = json.load(f)
-                
-                # Remove host's interfaces from registry
-                if host_code in interface_registry:
-                    del interface_registry[host_code]
-                    with open(interface_registry_file, 'w') as f:
-                        json.dump(interface_registry, f, indent=2)
-                    self.logger.debug(f"Unregistered interfaces for host {host_name} ({host_code})")
-                
-        except Exception as e:
-            self.logger.error(f"Error unregistering host from router/interface registries: {e}")
-            
-    def run_command(self, command: str, check: bool = True) -> subprocess.CompletedProcess:
-        """Execute command."""
-        self.logger.debug(f"Running: {command}")
+    def get_all_hosts(self) -> List[str]:
+        """Get list of all registered hosts."""
+        registry = self.host_setup.load_host_registry()
+        return list(registry.keys())
         
-        result = subprocess.run(
-            command, shell=True, capture_output=True, text=True, check=check
-        )
-        
-        if result.returncode != 0 and check:
-            self.logger.error(f"Command failed: {command}")
-            self.logger.error(f"Error: {result.stderr}")
-            raise subprocess.CalledProcessError(result.returncode, command, result.stderr)
-            
-        return result
-        
-    def cleanup_host_resources(self, host_name: str, host_config: Dict):
-        """Clean up all resources associated with a host."""
-        try:
-            # Remove namespace (this automatically removes all interfaces in it)
-            self.run_command(f"ip netns del {host_name}", check=False)
-            
-            # Remove mesh-side veth interfaces based on connection type
-            connection_type = host_config.get("connection_type", "")
-            
-            if connection_type == "sim_mesh_direct":
-                # Remove mesh veth from simulation namespace (direct mesh connection)
-                mesh_veth = host_config.get("mesh_veth")
-                if mesh_veth:
-                    self.run_command(f"ip netns exec netsim ip link del {mesh_veth}", check=False)
-            elif connection_type == "sim_namespace":
-                # Remove sim veth from host namespace (simulation bridge connection) - legacy
-                sim_veth = host_config.get("sim_veth")
-                if sim_veth:
-                    self.run_command(f"ip link del {sim_veth}", check=False)
-            elif connection_type == "mesh_direct":
-                # Remove mesh veth from host namespace (shared mesh) - legacy
-                mesh_veth = host_config.get("mesh_veth")
-                if mesh_veth:
-                    self.run_command(f"ip link del {mesh_veth}", check=False)
-            elif connection_type == "bridge_direct":
-                # Remove bridge veth from router namespace (legacy)
-                connected_router = host_config.get("connected_to")
-                bridge_veth = host_config.get("bridge_veth")
-                if connected_router and bridge_veth:
-                    self.run_command(f"ip netns exec {connected_router} ip link del {bridge_veth}", check=False)
-            elif connection_type == "veth_pair":
-                # Remove legacy veth pair
-                connected_router = host_config.get("connected_to")
-                router_veth = host_config.get("router_veth")
-                if connected_router and router_veth:
-                    self.run_command(f"ip netns exec {connected_router} ip link del {router_veth}", check=False)
-                    
-        except Exception as e:
-            self.logger.debug(f"Error during cleanup of {host_name}: {e}")
-            
     def clean_all_hosts(self) -> bool:
-        """Remove all registered hosts."""
-        registry = self.load_host_registry()
+        """Remove all registered hosts using individual removal logic."""
+        hosts = self.get_all_hosts()
         
-        if not registry:
+        if not hosts:
             if self.verbose >= 1:
                 print("No hosts currently registered")
             return True
             
         success_count = 0
-        total_count = len(registry)
+        total_count = len(hosts)
         
         if self.verbose >= 1:
             print(f"Removing {total_count} registered hosts...")
             
-        for host_name, host_config in registry.items():
+        # Remove each host individually using the proper removal logic
+        for host_name in hosts:
             try:
-                self.cleanup_host_resources(host_name, host_config)
-                # Unregister from bridge registry
-                self.unregister_host_from_bridge_registry(host_name)
-                # Unregister from router and interface registries
-                self.unregister_host_from_router_and_interface_registries(host_name)
-                success_count += 1
-                if self.verbose >= 1:
-                    print(f"✓ Removed host {host_name}")
+                if self.host_setup.remove_host(host_name):
+                    success_count += 1
+                    if self.verbose >= 1:
+                        print(f"✓ Removed host {host_name}")
+                else:
+                    self.logger.error(f"Failed to remove host {host_name}")
             except Exception as e:
-                self.logger.error(f"Failed to remove host {host_name}: {e}")
+                self.logger.error(f"Error removing host {host_name}: {e}")
                 
-        # Remove the registry file
-        try:
-            if self.host_registry_file.exists():
-                self.host_registry_file.unlink()
-                if self.verbose >= 1:
-                    print("✓ Removed host registry file")
-        except Exception as e:
-            self.logger.error(f"Failed to remove host registry file: {e}")
-            
         if self.verbose >= 1:
             print(f"Host cleanup completed: {success_count}/{total_count} hosts removed successfully")
             

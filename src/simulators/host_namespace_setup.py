@@ -533,6 +533,84 @@ class HostNamespaceManager:
                 
         return None
         
+    def determine_router_interface_by_routing(self, router_name: str, host_ip: str) -> Optional[Tuple[str, str]]:
+        """Determine which router interface should be used to reach a host IP using 'ip route get'.
+        
+        Returns:
+            Optional[Tuple[str, str]]: Tuple of (interface_name, gateway_ip) or None if not found
+        """
+        # Extract IP without prefix
+        host_ip_clean = host_ip.split('/')[0] if '/' in host_ip else host_ip
+        
+        if self.verbose >= 3:
+            print(f"\nDEBUG: determine_router_interface_by_routing() called with:")
+            print(f"  router_name: {router_name}")
+            print(f"  host_ip: {host_ip_clean}")
+        
+        # Check if router namespace exists
+        if router_name not in self.available_namespaces:
+            self.logger.error(f"Router namespace {router_name} not found")
+            return None
+        
+        # Use ip route get to determine the outgoing interface
+        cmd = f"ip route get {host_ip_clean}"
+        
+        if self.verbose >= 3:
+            print(f"\nExecuting in router namespace: ip netns exec {router_name} {cmd}")
+        
+        result = self.run_command(cmd, namespace=router_name, check=False)
+        
+        if result.returncode != 0:
+            self.logger.error(f"Failed to get route for {host_ip_clean} on {router_name}: {result.stderr}")
+            return None
+        
+        if self.verbose >= 3:
+            print(f"Route output: {result.stdout.strip()}")
+        
+        # Parse the output to extract the interface
+        # Example outputs:
+        # "10.129.130.21 dev eno5 src 10.129.130.2 uid 0"
+        # "10.128.47.21 via 10.1.1.1 dev eth0 src 10.1.1.2 uid 0"
+        output = result.stdout.strip()
+        
+        # Extract interface using regex
+        interface_match = re.search(r'dev\s+(\S+)', output)
+        if not interface_match:
+            self.logger.error(f"Could not parse interface from route output: {output}")
+            return None
+        
+        interface_name = interface_match.group(1)
+        
+        if self.verbose >= 3:
+            print(f"Determined interface: {interface_name}")
+        
+        # Now find the router's IP on this interface
+        # First check if it's a direct route (no via)
+        if 'via' not in output:
+            # Direct route - extract src IP
+            src_match = re.search(r'src\s+(\S+)', output)
+            if src_match:
+                gateway_ip = src_match.group(1)
+                if self.verbose >= 3:
+                    print(f"Direct route - using source IP as gateway: {gateway_ip}")
+                return (interface_name, gateway_ip)
+        
+        # For routes with 'via' or if src not found, get the interface IP from router facts
+        if router_name in self.routers:
+            routing_tables = self.routers[router_name].get('routing', {}).get('tables', [])
+            for route in routing_tables:
+                if (route.get('protocol') == 'kernel' and 
+                    route.get('scope') == 'link' and
+                    route.get('prefsrc') and route.get('dev') == interface_name):
+                    gateway_ip = route['prefsrc']
+                    if self.verbose >= 3:
+                        print(f"Found router IP {gateway_ip} on interface {interface_name} from facts")
+                    return (interface_name, gateway_ip)
+        
+        # If we still don't have a gateway IP, we may need to add one
+        self.logger.warning(f"Could not find router IP on interface {interface_name}")
+        return (interface_name, None)
+        
     def find_shared_mesh_bridge(self, primary_ip: str) -> Optional[str]:
         """Find the shared mesh bridge for the host's subnet using bridge registry."""
         try:
@@ -590,6 +668,7 @@ class HostNamespaceManager:
                         # Check if this bridge exists in hidden-mesh namespace
                         result = self.run_command(f"ip netns exec hidden-mesh ip link show {bridge_name}", check=False)
                         if result.returncode == 0:
+                            self.logger.info(f"Found existing bridge {bridge_name} for {router_name}:{interface_name}")
                             return bridge_name
                             
             return None
@@ -598,30 +677,27 @@ class HostNamespaceManager:
             return None
 
     def _generate_bridge_name(self, subnet: str) -> str:
-        """Generate abbreviated bridge name that fits 15 character limit."""
-        # Convert subnet like "10.100.1.0/24" to abbreviated form
-        # Examples: 10.1.1.0/24 -> br111024, 10.100.1.0/24 -> br1001024
+        """Generate bridge name with zero-padded format: b + 4 zero-padded octets + 2-digit prefix.
+        
+        Examples:
+        - 10.11.12.128/25 -> b01001101212825
+        - 192.168.1.0/24 -> b19216800102400
+        - 172.16.0.0/12 -> b17201600001200
+        
+        Format: b + OOOOOOOOOOOO + PP (15 chars total)
+        Where O = zero-padded octets (3 digits each), P = zero-padded prefix (2 digits)
+        """
         ip_part, prefix = subnet.split('/')
         octets = ip_part.split('.')
         
-        # Remove trailing zeros and compress
-        compressed_octets = []
-        for octet in octets:
-            if octet == '0':
-                compressed_octets.append('')  # Skip trailing zeros
-            else:
-                compressed_octets.append(octet)
+        # Zero-pad each octet to 3 digits
+        padded_octets = [f"{int(octet):03d}" for octet in octets]
         
-        # Join and create compact name
-        ip_compressed = ''.join(compressed_octets)
-        bridge_name = f"br{ip_compressed}{prefix}"
+        # Zero-pad prefix to 2 digits
+        padded_prefix = f"{int(prefix):02d}"
         
-        # Ensure it fits in 15 characters
-        if len(bridge_name) > 15:
-            # Fallback: use hash for very long names
-            import hashlib
-            subnet_hash = hashlib.md5(subnet.encode()).hexdigest()[:8]
-            bridge_name = f"br{subnet_hash}"
+        # Create bridge name: b + 12 octet digits + 2 prefix digits = 15 chars
+        bridge_name = f"b{''.join(padded_octets)}{padded_prefix}"
         
         return bridge_name
 
@@ -808,7 +884,29 @@ class HostNamespaceManager:
         
         return False, {}
 
-    def create_mesh_connection(self, host_name: str, primary_ip: str, router_bridge: Optional[str] = None) -> Tuple[bool, Dict]:
+    def find_router_mesh_interface(self, router_name: str, interface_name: str) -> Optional[str]:
+        """Find the mesh-side interface name for a router interface."""
+        try:
+            # Get the interface index in the router namespace
+            cmd = f"ip netns exec {router_name} ip link show {interface_name} | grep -o '@if[0-9]*' | cut -d'f' -f2"
+            result = self.run_command(cmd, check=False)
+            if result.returncode != 0 or not result.stdout.strip():
+                return None
+                
+            peer_index = result.stdout.strip()
+            
+            # Find the interface with this index in hidden-mesh
+            cmd = f"ip netns exec hidden-mesh ip link show | grep '^{peer_index}:' | cut -d: -f2 | cut -d@ -f1"
+            result = self.run_command(cmd, check=False)
+            if result.returncode == 0 and result.stdout.strip():
+                return result.stdout.strip()
+                
+        except Exception as e:
+            self.logger.debug(f"Could not find router mesh interface: {e}")
+            
+        return None
+    
+    def create_mesh_connection(self, host_name: str, primary_ip: str, gateway_ip: Optional[str] = None, target_router: Optional[str] = None, router_bridge: Optional[str] = None, router_mesh_iface: Optional[str] = None) -> Tuple[bool, Dict]:
         """Connect host directly to specific mesh bridge in simulation namespace."""
         
         # Use the router's bridge if provided, otherwise find based on IP
@@ -839,15 +937,105 @@ class HostNamespaceManager:
         
         # Move mesh side to hidden-mesh namespace and connect to specific mesh bridge
         self.run_command(f"ip link set {mesh_veth} netns hidden-mesh")
+        
+        # 1 second delay after moving to namespace
+        import time
+        time.sleep(1.0)
+        
         self.run_command(f"ip link set {mesh_veth} master {mesh_bridge}", namespace="hidden-mesh")
         self.run_command(f"ip link set {mesh_veth} up", namespace="hidden-mesh")
+        
+        # 1 second delay after bringing interface up
+        time.sleep(1.0)
+        
+        # Clean bridge FDB entries to prevent stale MAC issues
+        # This is needed when hosts are recreated with same names but different MAC addresses
+        self.logger.info(f"Cleaning bridge FDB entries - comprehensive flush")
+        
+        # First, flush all dynamic entries on the bridge by setting ageing to 0
+        self.logger.info(f"Step 1: Flushing all learned entries on bridge {mesh_bridge}")
+        self.run_command(f"ip link set {mesh_bridge} type bridge ageing_time 0", namespace="hidden-mesh", check=False)
+        
+        # 1 second delay to ensure ageing takes effect
+        time.sleep(1.0)
+        
+        # Flush specific device entries
+        self.logger.info(f"Step 2: Flushing FDB entries for {mesh_veth}")
+        self.run_command(f"bridge fdb flush dev {mesh_veth} master", namespace="hidden-mesh", check=False)
+        
+        # Also clean router interface if provided
+        if router_mesh_iface:
+            self.logger.info(f"Step 3: Flushing FDB entries for router interface {router_mesh_iface}")
+            self.run_command(f"bridge fdb flush dev {router_mesh_iface} master", namespace="hidden-mesh", check=False)
+        
+        # Flush all bridge FDB entries (more aggressive)
+        self.logger.info(f"Step 4: Flushing all bridge FDB entries")
+        self.run_command(f"bridge fdb flush dev {mesh_bridge} self", namespace="hidden-mesh", check=False)
+        
+        # 1 second delay before restoring ageing
+        time.sleep(1.0)
+        
+        # Restore normal ageing time
+        self.logger.info(f"Step 5: Restoring bridge ageing time")
+        self.run_command(f"ip link set {mesh_bridge} type bridge ageing_time 30000", namespace="hidden-mesh", check=False)
+        
+        # Final 1 second delay to ensure settings are applied
+        time.sleep(1.0)
         
         # Configure host IP
         self.run_command(f"ip addr add {primary_ip} dev eth0", namespace=host_name)
         self.run_command(f"ip link set eth0 up", namespace=host_name)
         
+        # 1 second delay after bringing up interface
+        time.sleep(1.0)
+        
         # Add 1ms latency to physical interface for realistic network behavior
         self.configure_host_latency(host_name, "eth0", latency_ms=1.0)
+        
+        # Final 1 second delay to allow everything to stabilize
+        time.sleep(1.0)
+        
+        # Clear neighbor cache on host to ensure fresh ARP
+        self.logger.info(f"Clearing neighbor cache on host {host_name}")
+        self.run_command(f"ip neigh flush all", namespace=host_name, check=False)
+        
+        # Also clear neighbor cache on router if available
+        if target_router and target_router in self.available_namespaces:
+            self.logger.info(f"Clearing neighbor cache on router {target_router}")
+            self.run_command(f"ip neigh flush all", namespace=target_router, check=False)
+        
+        # Extra delay to ensure bridge forwarding is ready
+        self.logger.info("Waiting 2 seconds for bridge forwarding to stabilize...")
+        time.sleep(2.0)
+        
+        # Trigger bidirectional traffic to ensure bridge MAC learning
+        if gateway_ip and target_router:
+            self.logger.info(f"Triggering bidirectional traffic for bridge MAC learning")
+            
+            # Step 1: Send broadcast ping from host to trigger initial learning
+            self.logger.info(f"Sending broadcast ping from host")
+            host_network = ipaddress.IPv4Network(primary_ip, strict=False)
+            broadcast_ip = str(host_network.broadcast_address)
+            self.run_command(f"ping -b -c 1 -w 1 {broadcast_ip}", namespace=host_name, check=False)
+            
+            # Small delay
+            time.sleep(0.5)
+            
+            # Step 2: Ping from router to host to trigger learning in reverse direction
+            if target_router in self.available_namespaces:
+                self.logger.info(f"Pinging from router to host")
+                host_ip_only = primary_ip.split('/')[0]
+                self.run_command(f"ping -c 1 -w 1 {host_ip_only}", namespace=target_router, check=False)
+                
+                # Small delay
+                time.sleep(0.5)
+            
+            # Step 3: Now try regular ping from host to gateway
+            self.logger.info(f"Final ping from host to gateway")
+            self.run_command(f"ping -c 1 -w 1 {gateway_ip}", namespace=host_name, check=False)
+            
+            # Final delay
+            time.sleep(0.5)
         
         connection_info = {
             "connection_type": "sim_mesh_direct",
@@ -932,6 +1120,7 @@ class HostNamespaceManager:
         # Get router details (we already have target_router from above)
         target_iface = None  # Initialize target_iface
         gateway_ip = None    # Initialize gateway_ip
+        router_ip_added = False  # Track if we added IP to router
         
         # Validate router exists
         if connect_to:
@@ -948,33 +1137,43 @@ class HostNamespaceManager:
                     return False
                 target_iface, gateway_ip = interface_info
             else:
-                # Get router's IP in the same subnet as host
-                gateway_ip = self.get_default_gateway(primary_ip, target_router)
-                if gateway_ip:
-                    # Find which interface has this IP
-                    for subnet, members in self.router_subnets.items():
-                        for r_name, r_iface, r_ip in members:
-                            if r_name == target_router and r_ip == gateway_ip:
-                                target_iface = r_iface
-                                break
-                        if target_iface:
-                            break
-                else:
-                    # If no gateway in same subnet, get any IP from the router
-                    # Look for the first IP address we can find for this router
-                    for subnet, members in self.router_subnets.items():
-                        for r_name, r_iface, r_ip in members:
-                            if r_name == target_router and r_ip:
-                                gateway_ip = r_ip
-                                target_iface = r_iface
-                                self.logger.warning(f"No matching subnet on {target_router}, using router IP {gateway_ip} as gateway")
-                                break
-                        if gateway_ip:
-                            break
+                # Use ip route get to determine the correct interface
+                if self.verbose >= 3:
+                    print(f"\nDetermining router interface using routing table lookup...")
+                
+                route_info = self.determine_router_interface_by_routing(target_router, primary_ip)
+                if route_info:
+                    target_iface, existing_ip = route_info
+                    
+                    # Now check if the router has an IP in the host's subnet on this interface
+                    host_network = ipaddress.IPv4Network(primary_ip, strict=False)
+                    gateway_ip = self.get_default_gateway(primary_ip, target_router)
                     
                     if not gateway_ip:
-                        self.logger.error(f"Could not find any IP address for router {target_router}")
-                        return False
+                        # Router doesn't have an IP in the host's subnet - we need to add one
+                        gateway_ip = str(host_network.network_address + 1)
+                        
+                        self.logger.info(f"Router {target_router} has no IP in subnet {host_network}, adding {gateway_ip}/{host_network.prefixlen} to interface {target_iface}")
+                        
+                        # Add the IP to the router interface
+                        cmd = f"ip addr add {gateway_ip}/{host_network.prefixlen} dev {target_iface}"
+                        result = self.run_command(cmd, namespace=target_router, check=False)
+                        
+                        if result.returncode == 0:
+                            self.logger.info(f"Successfully added {gateway_ip}/{host_network.prefixlen} to {target_router} interface {target_iface}")
+                            router_ip_added = True  # Mark that we added this IP
+                        else:
+                            # IP might already exist, which is fine
+                            if "File exists" in result.stderr:
+                                self.logger.debug(f"IP {gateway_ip}/{host_network.prefixlen} already exists on {target_router}")
+                            else:
+                                self.logger.warning(f"Failed to add IP to router: {result.stderr}")
+                    else:
+                        if self.verbose >= 3:
+                            print(f"Router already has IP {gateway_ip} in host subnet {host_network}")
+                else:
+                    self.logger.error(f"Could not determine router interface for host IP {primary_ip}")
+                    return False
         else:
             # We already found the router info above for collision check
             # Now get the interface and gateway details
@@ -983,59 +1182,6 @@ class HostNamespaceManager:
                 _, target_iface, gateway_ip = router_info
             
         self.logger.info(f"Connecting host {host_name} to router {target_router} via gateway {gateway_ip} using unified mesh infrastructure")
-        
-        # Calculate the first available IP in host's network to use as gateway
-        try:
-            host_network = ipaddress.IPv4Network(primary_ip, strict=False)
-            gateway_addr = ipaddress.IPv4Address(gateway_ip)
-            
-            # If gateway is not in host's subnet, add first available IP to router interface
-            if gateway_addr not in host_network:
-                # Use first usable IP in the network as new gateway
-                new_gateway_ip = str(host_network.network_address + 1)
-                
-                # Add this IP to the router's interface in the mesh
-                # Find the bridge for this subnet
-                subnet_str = str(host_network)
-                bridge_name = self._generate_bridge_name(subnet_str)
-                
-                # Add IP to the router's interface that connects to this subnet
-                self.logger.info(f"Adding {new_gateway_ip}/{host_network.prefixlen} to router {target_router}")
-                
-                # First, find which interface on the router connects to this bridge
-                # The router should have a veth interface connected to the bridge
-                # We need to add the IP to the router's namespace, not the bridge
-                
-                # Find the bridge for this subnet
-                bridge_name_for_subnet = self._generate_bridge_name(subnet_str)
-                
-                # Check if bridge exists in hidden-mesh
-                result = self.run_command(f"ip link show {bridge_name_for_subnet}", namespace="hidden-mesh", check=False)
-                if result.returncode != 0:
-                    # Create bridge if it doesn't exist
-                    self.run_command(f"ip link add {bridge_name_for_subnet} type bridge", namespace="hidden-mesh")
-                    self.run_command(f"ip link set {bridge_name_for_subnet} up", namespace="hidden-mesh")
-                
-                # Now we need to connect the router to this bridge if not already connected
-                # and add the IP to the router's interface
-                # For now, add to the router's target interface if it exists
-                if target_iface and target_router in self.available_namespaces:
-                    # Add the IP directly to the router's interface
-                    self.run_command(f"ip addr add {new_gateway_ip}/{host_network.prefixlen} dev {target_iface}", 
-                                   namespace=target_router, check=False)
-                    self.logger.info(f"Added {new_gateway_ip}/{host_network.prefixlen} to {target_router} interface {target_iface}")
-                else:
-                    # Fallback: add to bridge
-                    self.logger.warning(f"Router {target_router} not accessible, adding IP to bridge instead")
-                    self.run_command(f"ip addr add {new_gateway_ip}/{host_network.prefixlen} dev {bridge_name_for_subnet}", 
-                                   namespace="hidden-mesh", check=False)
-                
-                # Update gateway_ip to use the new one
-                gateway_ip = new_gateway_ip
-                self.logger.info(f"Updated gateway IP to {gateway_ip}")
-                
-        except Exception as e:
-            self.logger.warning(f"Could not set up gateway IP on router interface: {e}")
         
         try:
             # Create host namespace
@@ -1047,14 +1193,19 @@ class HostNamespaceManager:
             # Connect to mesh infrastructure (unified mesh architecture)
             # If we have a specific router target, find its bridge
             router_bridge = None
+            router_mesh_iface = None
             if connect_to and target_iface:
                 router_bridge = self.find_router_bridge(target_router, target_iface)
                 if router_bridge:
                     self.logger.info(f"Found router {target_router}'s interface {target_iface} connected to bridge {router_bridge}")
+                    # Find the mesh-side interface name for the router
+                    router_mesh_iface = self.find_router_mesh_interface(target_router, target_iface)
+                    if router_mesh_iface:
+                        self.logger.info(f"Router mesh interface: {router_mesh_iface}")
                 else:
                     self.logger.warning(f"Could not find bridge for {target_router} interface {target_iface}, falling back to IP-based selection")
                     
-            success, connection_info = self.create_mesh_connection(host_name, primary_ip, router_bridge)
+            success, connection_info = self.create_mesh_connection(host_name, primary_ip, gateway_ip, target_router, router_bridge, router_mesh_iface)
             if not success:
                 raise Exception(f"Failed to connect to mesh infrastructure")
                 
@@ -1114,6 +1265,7 @@ class HostNamespaceManager:
                 "connected_to": target_router,
                 "router_interface": target_iface if target_iface else "unknown",
                 "gateway_ip": gateway_ip,
+                "router_ip_added": router_ip_added,  # Track if we added IP to router
                 "dummy_interfaces": dummy_configs,
                 "created_at": str(subprocess.run("date", capture_output=True, text=True).stdout.strip())
             }
@@ -1199,6 +1351,41 @@ class HostNamespaceManager:
     def cleanup_host_resources(self, host_name: str, host_config: Dict):
         """Clean up all resources associated with a host."""
         try:
+            # First, remove router IP if we added it during host creation
+            if host_config.get("router_ip_added", False):
+                connected_router = host_config.get("connected_to")
+                router_interface = host_config.get("router_interface")
+                gateway_ip = host_config.get("gateway_ip")
+                primary_ip = host_config.get("primary_ip")
+                
+                if connected_router and router_interface and gateway_ip and primary_ip:
+                    # Check if router still exists
+                    if connected_router in self.available_namespaces:
+                        try:
+                            # Extract network prefix from primary IP
+                            host_network = ipaddress.IPv4Network(primary_ip, strict=False)
+                            
+                            self.logger.info(f"Removing IP {gateway_ip}/{host_network.prefixlen} from {connected_router} interface {router_interface} (added during host creation)")
+                            
+                            # Remove the IP from router
+                            cmd = f"ip addr del {gateway_ip}/{host_network.prefixlen} dev {router_interface}"
+                            result = self.run_command(cmd, namespace=connected_router, check=False)
+                            
+                            if result.returncode == 0:
+                                self.logger.info(f"Successfully removed router IP {gateway_ip}/{host_network.prefixlen}")
+                            else:
+                                if "Cannot assign requested address" in result.stderr:
+                                    self.logger.debug(f"IP {gateway_ip}/{host_network.prefixlen} was already removed")
+                                else:
+                                    self.logger.warning(f"Failed to remove router IP: {result.stderr}")
+                            
+                            # Clear ARP cache on router
+                            self.logger.info(f"Clearing ARP cache on router {connected_router}")
+                            self.run_command(f"ip neigh flush all", namespace=connected_router, check=False)
+                            
+                        except Exception as e:
+                            self.logger.warning(f"Error removing router IP: {e}")
+            
             # Remove namespace (this automatically removes all interfaces in it)
             self.run_command(f"ip netns del {host_name}", check=False)
             
@@ -1239,6 +1426,16 @@ class HostNamespaceManager:
                     
                     # Remove veth from router namespace
                     self.run_command(f"ip link del {router_veth}", namespace=connected_router, check=False)
+            
+            # Clean bridge FDB entries if we have the mesh bridge info
+            mesh_bridge = host_config.get("mesh_bridge")
+            if mesh_bridge:
+                self.logger.info(f"Cleaning bridge FDB entries for removed host on bridge {mesh_bridge}")
+                # Flush dynamic entries on the bridge
+                self.run_command(f"ip link set {mesh_bridge} type bridge ageing_time 0", namespace="hidden-mesh", check=False)
+                import time
+                time.sleep(0.5)
+                self.run_command(f"ip link set {mesh_bridge} type bridge ageing_time 30000", namespace="hidden-mesh", check=False)
                     
         except Exception as e:
             self.logger.debug(f"Error during cleanup: {e}")

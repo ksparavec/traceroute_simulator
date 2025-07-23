@@ -480,6 +480,16 @@ class SequentialConnectivityTester:
                 
             result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
             
+            # Verbose level 2: show command output
+            if self.verbose >= 2 and (result.stdout or result.stderr):
+                print(f"Command exit code: {result.returncode}")
+                if result.stdout:
+                    print("Command stdout:")
+                    print(result.stdout.rstrip())
+                if result.stderr:
+                    print("Command stderr:")
+                    print(result.stderr.rstrip())
+            
             if result.returncode == 0:
                 added_to_any = True
                 self.added_public_ip_hosts.add(public_ip)
@@ -523,6 +533,16 @@ class SequentialConnectivityTester:
             print(f"Removing public IP host: {cmd}")
             
         result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+        
+        # Verbose level 2: show command output
+        if self.verbose >= 2 and (result.stdout or result.stderr):
+            print(f"Command exit code: {result.returncode}")
+            if result.stdout:
+                print("Command stdout:")
+                print(result.stdout.rstrip())
+            if result.stderr:
+                print("Command stderr:")
+                print(result.stderr.rstrip())
         
         if result.returncode == 0:
             self.added_public_ip_hosts.discard(public_ip)
@@ -569,6 +589,14 @@ class SequentialConnectivityTester:
         Returns:
             Tuple[bool, str, str]: (success, summary, full_output)
         """
+        # Verbose level 3: show input variables
+        if self.verbose >= 3:
+            print(f"\nDEBUG: ping_test_from_namespace() called with:")
+            print(f"  namespace: {namespace}")
+            print(f"  source_ip: {source_ip}")
+            print(f"  dest_ip: {dest_ip}")
+            print(f"  timeout: {timeout}")
+        
         # First, determine which router this namespace routes through
         router_info = ""
         if namespace in self.host_namespaces:
@@ -613,10 +641,24 @@ class SequentialConnectivityTester:
         # Run ping from specified namespace
         cmd = f"ip netns exec {namespace} ping -c 1 -W {timeout} -I {source_ip} {dest_ip}"
         
+        # Verbose level 2: show namespace command
+        if self.verbose >= 2:
+            print(f"\nExecuting namespace command: {cmd}")
+        
         try:
             result = subprocess.run(
                 cmd, shell=True, capture_output=True, text=True, timeout=timeout+2
             )
+            
+            # Verbose level 2: show command output
+            if self.verbose >= 2:
+                print(f"Command exit code: {result.returncode}")
+                if result.stdout:
+                    print("Command stdout:")
+                    print(result.stdout.rstrip())
+                if result.stderr:
+                    print("Command stderr:")
+                    print(result.stderr.rstrip())
             
             if result.returncode == 0:
                 # Extract RTT from output
@@ -708,14 +750,36 @@ class SequentialConnectivityTester:
         Returns:
             Tuple[bool, str, str]: (success, summary, full_output)
         """
+        # Verbose level 3: show input variables
+        if self.verbose >= 3:
+            print(f"\nDEBUG: mtr_test_from_namespace() called with:")
+            print(f"  namespace: {namespace}")
+            print(f"  source_ip: {source_ip}")
+            print(f"  dest_ip: {dest_ip}")
+            print(f"  timeout: {timeout}")
+        
         # Run mtr from specified namespace
         # Use -r for report mode, -c 1 for single probe, -n for no DNS
         cmd = f"ip netns exec {namespace} mtr -r -c 1 -n -a {source_ip} {dest_ip}"
+        
+        # Verbose level 2: show namespace command
+        if self.verbose >= 2:
+            print(f"\nExecuting namespace command: {cmd}")
         
         try:
             result = subprocess.run(
                 cmd, shell=True, capture_output=True, text=True, timeout=timeout+2
             )
+            
+            # Verbose level 2: show command output
+            if self.verbose >= 2:
+                print(f"Command exit code: {result.returncode}")
+                if result.stdout:
+                    print("Command stdout:")
+                    print(result.stdout.rstrip())
+                if result.stderr:
+                    print("Command stderr:")
+                    print(result.stderr.rstrip())
             
             if result.returncode == 0:
                 # Parse MTR output to count hops and check completion
@@ -953,8 +1017,17 @@ class SequentialConnectivityTester:
                 
                 # Run each test command
                 for test_name, test_cmd in test_commands:
+                    # Verbose level 3: show test command details
+                    if self.verbose >= 3:
+                        print(f"\nDEBUG: Running {test_name} test:")
+                        print(f"  test_cmd: {test_cmd}")
+                    
                     # Run the command in the namespace
                     full_cmd = f"ip netns exec {source_namespace} {test_cmd}"
+                    
+                    # Verbose level 2: show namespace command
+                    if self.verbose >= 2:
+                        print(f"\nExecuting namespace command: {full_cmd}")
                     
                     try:
                         # Check if we're in interactive mode

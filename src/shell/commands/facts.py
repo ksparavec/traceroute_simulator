@@ -20,6 +20,10 @@ from .base import BaseCommandHandler
 class FactsCommands(BaseCommandHandler):
     """Handler for facts-related commands."""
     
+    def get_subcommand_names(self) -> List[str]:
+        """Get list of facts subcommands."""
+        return ['collect', 'process', 'validate']
+    
     @choices_provider
     def directory_choices(self) -> List[str]:
         """Provide directory path choices for completion."""
@@ -107,6 +111,12 @@ class FactsCommands(BaseCommandHandler):
     
     def _handle_command_impl(self, args: str) -> Optional[int]:
         """Handle facts command with subcommands (legacy support)."""
+        # Check for help flags first
+        args_list = args.strip().split() if args.strip() else []
+        if '--help' in args_list or '-h' in args_list:
+            self.shell.help_facts()
+            return 0
+            
         # This method is kept for backward compatibility
         parser = self.create_parser()
         try:
@@ -333,3 +343,57 @@ class FactsCommands(BaseCommandHandler):
         else:
             self.error(f"Only {valid_files}/{len(json_files)} facts files are valid")
             return 1
+    
+    def complete_command(self, text: str, line: str, begidx: int, endidx: int) -> List[str]:
+        """Provide completion for facts command arguments."""
+        # Parse the line to understand what we're completing
+        args = line.split()
+        
+        # If we're typing the second word (the subcommand)
+        if len(args) == 1 or (len(args) == 2 and not line.endswith(' ')):
+            subcommands = self.get_subcommand_names()
+            if len(args) == 1:
+                # Just "facts" typed, return all subcommands
+                return subcommands
+            else:
+                # "facts <partial>", return matching subcommands
+                return [cmd for cmd in subcommands if cmd.startswith(args[1])]
+        
+        # We have a subcommand, now handle argument completion
+        subcommand = args[1]
+        
+        # For specific subcommands, provide appropriate completions
+        if subcommand == 'collect':
+            # Provide argument names that haven't been used yet
+            used_args = set(args)
+            available_args = ['--inventory', '--output-dir', '--test', '--verbose']
+            
+            # Check if we're completing a value for a specific argument
+            if len(args) >= 2 and args[-2] == '--inventory':
+                return self.inventory_choices()
+            elif len(args) >= 2 and args[-2] == '--output-dir':
+                return self.directory_choices()
+            
+            return [arg for arg in available_args if arg not in used_args and arg.startswith(text)]
+        
+        elif subcommand == 'process':
+            used_args = set(args)
+            available_args = ['--input-dir', '--output-dir', '--create-dirs', '--validate', '--verbose']
+            
+            # Check if we're completing a value for a specific argument
+            if len(args) >= 2 and args[-2] in ['--input-dir', '--output-dir']:
+                return self.directory_choices()
+            
+            return [arg for arg in available_args if arg not in used_args and arg.startswith(text)]
+        
+        elif subcommand == 'validate':
+            used_args = set(args)
+            available_args = ['--facts-dir', '--verbose']
+            
+            # Check if we're completing a value for --facts-dir
+            if len(args) >= 2 and args[-2] == '--facts-dir':
+                return self.directory_choices()
+            
+            return [arg for arg in available_args if arg not in used_args and arg.startswith(text)]
+        
+        return []

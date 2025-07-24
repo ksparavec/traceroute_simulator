@@ -203,9 +203,56 @@ class TraceCommands(BaseCommandHandler):
     
     def _handle_command_impl(self, args: str) -> Optional[int]:
         """Handle trace command implementation."""
+        # Check for help flags or no arguments
+        args_list = args.strip().split() if args.strip() else []
+        if not args.strip() or '--help' in args_list or '-h' in args_list:
+            self.shell.help_trace()
+            return 0
+            
         parser = self.create_parser()
         parsed_args = self.parse_arguments(args, parser)
         if parsed_args is None:
             # parse_arguments already printed the error/usage
             return None  # Return None instead of error code to prevent shell exit
         return self.handle_parsed_command(parsed_args)
+    
+    def complete_command(self, text: str, line: str, begidx: int, endidx: int) -> List[str]:
+        """Provide completion for trace command arguments."""
+        # Parse the line to understand what we're completing
+        args = line.split()
+        
+        # Get all available IPs for completion
+        ip_choices = []
+        if hasattr(self.shell, 'completers'):
+            ip_choices = self.shell.completers._get_all_ips()
+        
+        # Check if we're completing a value for -s or -d
+        if len(args) >= 2:
+            if args[-1] in ['-s', '--source']:
+                return ip_choices
+            elif args[-1] in ['-d', '--destination']:
+                return ip_choices
+            elif args[-2] in ['-s', '--source', '-d', '--destination'] and text:
+                # Partial IP typed
+                return [ip for ip in ip_choices if ip.startswith(text)]
+        
+        # Provide argument names that haven't been used yet
+        used_args = set(args)
+        available_args = []
+        
+        # Check which required arguments are missing
+        has_source = any(arg in used_args for arg in ['-s', '--source'])
+        has_dest = any(arg in used_args for arg in ['-d', '--destination'])
+        
+        if not has_source:
+            available_args.extend(['-s', '--source'])
+        if not has_dest:
+            available_args.extend(['-d', '--destination'])
+        
+        # Optional arguments
+        optional_args = ['-j', '--json', '-v', '--verbose', '--controller-ip']
+        for arg in optional_args:
+            if arg not in used_args:
+                available_args.append(arg)
+        
+        return [arg for arg in available_args if arg.startswith(text)]

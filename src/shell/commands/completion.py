@@ -82,6 +82,12 @@ class CompletionCommands(BaseCommandHandler):
     
     def _handle_command_impl(self, args: str) -> Optional[int]:
         """Handle completion command with subcommands (legacy support)."""
+        # Check for help flags first
+        args_list = args.strip().split() if args.strip() else []
+        if '--help' in args_list or '-h' in args_list:
+            self.shell.help_completion()
+            return 0
+            
         # This method is kept for backward compatibility
         parser = self.create_parser()
         try:

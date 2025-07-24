@@ -13,13 +13,15 @@ class NetworkCommands(BaseCommandHandler):
     
     def get_subcommand_names(self) -> list:
         """Get list of network subcommands."""
-        return ['setup', 'status', 'clean', 'test', 'help']
+        return ['setup', 'status', 'clean', 'test']
     
     def _handle_command_impl(self, args: str) -> Optional[int]:
         """Handle network command with subcommands."""
-        if not args.strip():
+        # Check for help flags first
+        args_list = args.strip().split() if args.strip() else []
+        if not args.strip() or '--help' in args_list or '-h' in args_list:
             self.shell.help_network()
-            return None
+            return 0
         
         # Parse the subcommand
         args_list = self._split_args(args)
@@ -100,12 +102,22 @@ class NetworkCommands(BaseCommandHandler):
         parts = line.split()
         
         if len(parts) >= 2:
-            prev_part = parts[-2] if len(parts) > 1 else ''
+            # If line ends with a space, we're completing a new argument
+            # Otherwise, we're completing the current partial argument
+            if line.endswith(' '):
+                # We're starting a new argument, check what the previous complete word was
+                prev_part = parts[-1] if parts else ''
+            else:
+                # We're in the middle of typing, check the word before the current partial
+                prev_part = parts[-2] if len(parts) > 1 else ''
             
             # Common argument completions
             if prev_part in ['--router', '-r']:
                 # Complete with router names
                 return self._get_router_completions(text)
+            elif prev_part in ['--limit', '-l']:
+                # Complete with router names from TSIM_NETWORK_ROUTERS
+                return self._get_limit_completions(text)
             elif prev_part in ['--source', '-s', '--dest', '-d']:
                 # Complete with IP addresses
                 return self._get_ip_completions(text)
@@ -156,6 +168,20 @@ class NetworkCommands(BaseCommandHandler):
         """Get protocol completions."""
         if hasattr(self.shell, 'completers'):
             return self.shell.completers.protocols(text, '', 0, 0)
+        return []
+    
+    def _get_limit_completions(self, text: str) -> list:
+        """Get router name completions from TSIM_NETWORK_ROUTERS variable."""
+        # Get the TSIM_NETWORK_ROUTERS variable
+        router_names = self.shell.variable_manager.get_variable('TSIM_NETWORK_ROUTERS')
+        if router_names and isinstance(router_names, list):
+            # Support glob patterns - show all routers and let user add wildcards
+            completions = [name for name in router_names if name.startswith(text)]
+            # Also suggest common patterns if text includes wildcard characters
+            if '*' in text or '?' in text:
+                # Just return what user typed if they're using wildcards
+                return [text]
+            return completions
         return []
     
     def _setup_network(self, args: list) -> int:

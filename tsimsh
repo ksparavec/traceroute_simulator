@@ -21,8 +21,8 @@ def main():
         # Create shell instance
         shell = TracerouteSimulatorShell()
         
-        # Check if we're in batch mode (input is not a terminal)
-        if not sys.stdin.isatty():
+        # Check if we're in batch mode (input or output is not a terminal)
+        if not (sys.stdin.isatty() and sys.stdout.isatty()):
             # Read all input
             script_lines = sys.stdin.readlines()
             

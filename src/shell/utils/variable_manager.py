@@ -1,6 +1,7 @@
 # src/shell/utils/variable_manager.py
 
 import json
+import os
 import re
 import subprocess
 from typing import Any, Dict, Optional
@@ -25,6 +26,20 @@ class VariableManager:
                 self.variables[key] = value.strip()
         else:
             self.variables[key] = value
+        
+        # Notify shell of special variable changes
+        if key == 'TSIM_HISTORY_LENGTH' and hasattr(self.shell, '_apply_history_length'):
+            self.shell._apply_history_length()
+    
+    def unset_variable(self, key: str) -> bool:
+        """
+        Removes a variable from the namespace.
+        Returns True if the variable was removed, False if it didn't exist.
+        """
+        if key in self.variables:
+            del self.variables[key]
+            return True
+        return False
 
     def get_variable(self, name: str) -> Optional[Any]:
         """
@@ -40,10 +55,15 @@ class VariableManager:
             return None
         
         base_var_name = base_var_match.group(1)
-        if base_var_name not in self.variables:
-            return None
         
-        value = self.variables[base_var_name]
+        # Check user variables first (they shadow environment variables)
+        if base_var_name in self.variables:
+            value = self.variables[base_var_name]
+        # Fall back to environment variables
+        elif base_var_name in os.environ:
+            value = os.environ[base_var_name]
+        else:
+            return None
         
         # Extract the chain of accessors
         accessors_str = name[base_var_match.end():]

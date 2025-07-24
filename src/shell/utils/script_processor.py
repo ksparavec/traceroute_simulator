@@ -271,7 +271,8 @@ class ScriptProcessor:
         command = self.variable_manager.substitute_variables(command)
         # Then execute (only if not already handled by flags)
         if not (self.break_flag or self.continue_flag or self.exit_flag):
-            self.shell.onecmd(command)
+            # In batch mode, execute commands without adding to history
+            self.shell.onecmd_plus_hooks(command, add_to_history=False)
     
     def _execute_if(self, block: Dict[str, Any]):
         """Execute an if block."""

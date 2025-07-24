@@ -13,6 +13,7 @@ from typing import List, Optional
 try:
     import cmd2
     from cmd2 import with_argparser, Cmd2ArgumentParser
+    from cmd2.history import HistoryItem
 except ImportError:
     print("Error: cmd2 is required. Install with: pip install cmd2")
     sys.exit(1)
@@ -31,6 +32,7 @@ except ImportError:
 
 # Import the new VariableManager
 from .utils.variable_manager import VariableManager
+from .utils.history_handler import HistoryHandler
 
 
 class TracerouteSimulatorShell(cmd2.Cmd):
@@ -41,11 +43,17 @@ class TracerouteSimulatorShell(cmd2.Cmd):
     
     def __init__(self, *args, **kwargs):
         # Detect if we are in an interactive session
-        self.is_interactive = sys.stdin.isatty()
+        # Check both stdin and stdout to ensure we're in a real terminal
+        self.is_interactive = sys.stdin.isatty() and sys.stdout.isatty()
 
         # Configure persistent history before calling super().__init__
-        history_file = os.path.expanduser('~/.tsimsh_history.json')
-        kwargs['persistent_history_file'] = history_file
+        # Only enable history in interactive mode
+        if self.is_interactive:
+            history_file = os.path.expanduser('~/.tsimsh_history.json')
+            kwargs['persistent_history_file'] = history_file
+        else:
+            # Disable history in batch mode
+            kwargs['persistent_history_file'] = None
         
         # Simple prompt
         self.base_prompt = f"{Fore.GREEN}tsimsh{Style.RESET_ALL}"
@@ -56,10 +64,30 @@ class TracerouteSimulatorShell(cmd2.Cmd):
         # Set this BEFORE calling super().__init__()
         self.orig_rl_history_length = 0
         
+        # Set history limit BEFORE calling super().__init__
+        # This ensures cmd2 loads the full history
+        history_length_env = os.environ.get('TSIM_HISTORY_LENGTH', '1000')
+        try:
+            history_length = int(history_length_env)
+        except ValueError:
+            history_length = 1000
+        
+        # Set the limit that will be used by cmd2 during initialization
+        self._persistent_history_length = history_length
+        self._configured_history_length = history_length
+        
+        # Pass persistent_history_length to cmd2's __init__
+        kwargs['persistent_history_length'] = history_length
         super().__init__(*args, **kwargs)
         
         # Initialize the VariableManager
         self.variable_manager = VariableManager(self)
+        
+        # Initialize TSIM_SHOW_LENGTH with default value
+        self.variable_manager.set_variable('TSIM_SHOW_LENGTH', '40')
+        
+        # Initialize TSIM_HISTORY_LENGTH variable from what was already set
+        self.variable_manager.set_variable('TSIM_HISTORY_LENGTH', str(self._configured_history_length))
         
         # --- Mode-specific configuration ---
         if self.is_interactive:
@@ -98,22 +126,469 @@ Type 'set' to see all variables.
         
         # Load configuration if available
         self._load_config()
+        
+        # Initialize network status variables (both interactive and batch modes)
+        self._initialize_network_status()
+        
+        # Note: .tsimrc is loaded after intro is displayed (see cmdloop override)
+    
+    def cmdloop(self, intro=None):
+        """Override cmdloop to display intro then load .tsimrc."""
+        # Store the intro for later use
+        if intro is None:
+            intro = self.intro
+        
+        # Display the intro ourselves
+        if self.is_interactive and intro:
+            self.poutput(intro)
+            
+        # Load .tsimrc after intro has been displayed
+        if self.is_interactive:
+            self._load_tsimrc()
+            # Apply history length setting after .tsimrc is loaded
+            self._apply_history_length()
+            
+        # Now start the command loop without intro (we already displayed it)
+        super().cmdloop(intro="")
+    
+    def _apply_history_length(self):
+        """Apply the TSIM_HISTORY_LENGTH setting to the cmd2 history."""
+        # Get the history length from the variable
+        try:
+            history_length_str = self.variable_manager.get_variable('TSIM_HISTORY_LENGTH')
+            if history_length_str:
+                history_length = int(history_length_str)
+                if history_length > 0:
+                    # Store the setting for future reference
+                    self._configured_history_length = history_length
+                    # Also update cmd2's internal persistent history length
+                    self._persistent_history_length = history_length
+                    
+                    # If current history exceeds the limit, truncate it
+                    if len(self.history) > history_length:
+                        # cmd2's history.truncate(n) keeps only the last n items
+                        self.history.truncate(history_length)
+                else:
+                    # Invalid value, keep default
+                    self._configured_history_length = 1000
+                    self._persistent_history_length = 1000
+            else:
+                # No value set, use default
+                self._configured_history_length = 1000
+                self._persistent_history_length = 1000
+        except (ValueError, TypeError):
+            # Invalid value, keep default
+            self._configured_history_length = 1000
+            self._persistent_history_length = 1000
+    
+    def _initialize_network_status(self):
+        """Initialize TSIM_NETWORK_STATUS and TSIM_NETWORK_ROUTERS variables."""
+        import io
+        import json
+        
+        # Capture the output of 'network status -j'
+        output_buffer = io.StringIO()
+        original_stdout = self.stdout
+        
+        try:
+            # Redirect stdout to capture output
+            self.stdout = output_buffer
+            # Execute network status command in JSON format
+            self.onecmd_plus_hooks('network status -j', add_to_history=False)
+            # Get the captured output
+            output = output_buffer.getvalue().strip()
+        except Exception as e:
+            # On error, set empty values
+            self.variable_manager.set_variable('TSIM_NETWORK_STATUS', {})
+            self.variable_manager.set_variable('TSIM_NETWORK_ROUTERS', [])
+            return
+        finally:
+            # Restore stdout
+            self.stdout = original_stdout
+        
+        # Parse the JSON output
+        try:
+            if output:
+                network_status = json.loads(output)
+                # Store the full network status
+                self.variable_manager.set_variable('TSIM_NETWORK_STATUS', network_status)
+                
+                # Extract router names (keys of the network status dict)
+                if isinstance(network_status, dict):
+                    router_names = list(network_status.keys())
+                    self.variable_manager.set_variable('TSIM_NETWORK_ROUTERS', router_names)
+                else:
+                    self.variable_manager.set_variable('TSIM_NETWORK_ROUTERS', [])
+            else:
+                # No output, set empty values
+                self.variable_manager.set_variable('TSIM_NETWORK_STATUS', {})
+                self.variable_manager.set_variable('TSIM_NETWORK_ROUTERS', [])
+        except json.JSONDecodeError:
+            # If output is not valid JSON, set empty values
+            self.variable_manager.set_variable('TSIM_NETWORK_STATUS', {})
+            self.variable_manager.set_variable('TSIM_NETWORK_ROUTERS', [])
 
-    def do_set(self, _):
+    def _truncate_value(self, value: str, is_env_var: bool, verbose: bool) -> str:
+        """
+        Truncate value if needed based on display rules.
+        - Environment variables: always full
+        - User variables > TSIM_SHOW_LENGTH bytes: show first TSIM_SHOW_LENGTH bytes + ...
+        - Verbose mode: always full
+        """
+        if verbose or is_env_var:
+            return value
+        
+        # Get truncation length from TSIM_SHOW_LENGTH variable (default 40)
+        show_length = 40
+        try:
+            tsim_show_length = self.variable_manager.get_variable('TSIM_SHOW_LENGTH')
+            if tsim_show_length:
+                show_length = int(tsim_show_length)
+                if show_length < 1:
+                    show_length = 40  # Revert to default if invalid
+        except (ValueError, TypeError):
+            pass  # Keep default
+        
+        if len(value) > show_length:
+            return value[:show_length] + "..."
+        return value
+    
+    def do_set(self, args):
         """Display all currently set shell variables."""
+        import argparse
+        import json
+        
+        # Parse arguments
+        parser = argparse.ArgumentParser(prog='set', add_help=False)
+        parser.add_argument('-v', '--verbose', action='store_true', 
+                          help='Show full contents of all variables')
+        parser.add_argument('-s', '--shell', action='store_true',
+                          help='Show only shell (user) variables')
+        parser.add_argument('-e', '--env', action='store_true',
+                          help='Show only environment variables')
+        parser.add_argument('-j', '--json', action='store_true',
+                          help='Pretty-print JSON objects')
+        parser.add_argument('-h', '--help', action='store_true',
+                          help='Show this help message')
+        
+        try:
+            parsed_args = parser.parse_args(args.split() if args else [])
+        except SystemExit:
+            return
+        
+        if parsed_args.help:
+            self.poutput("NAME:")
+            self.poutput("  set - Display shell and/or environment variables")
+            self.poutput("\nUSAGE:")
+            self.poutput("  set [-v|--verbose] [-s|--shell] [-e|--env] [-j|--json] [-h|--help]")
+            self.poutput("\nOPTIONS:")
+            self.poutput("  -v, --verbose    Show full contents of all variables")
+            self.poutput("  -s, --shell      Show only shell (user) variables")
+            self.poutput("  -e, --env        Show only environment variables")
+            self.poutput("  -j, --json       Pretty-print JSON objects")
+            self.poutput("  -h, --help       Show this help message")
+            self.poutput("\nVARIABLE TYPES:")
+            self.poutput("  E = Environment variable (always shown in full)")
+            self.poutput("  * = User variable shadowing an environment variable")
+            self.poutput("    = User-defined variable")
+            self.poutput("\nDISPLAY RULES:")
+            self.poutput("  - Variables > TSIM_SHOW_LENGTH bytes show first TSIM_SHOW_LENGTH bytes + ...")
+            self.poutput("  - Variables <= TSIM_SHOW_LENGTH bytes shown in full")
+            self.poutput("  - Environment variables always shown in full")
+            self.poutput("  - TSIM_SHOW_LENGTH defaults to 40 (configurable)")
+            self.poutput("\nEXAMPLES:")
+            self.poutput("  set              # Show all variables (shortened)")
+            self.poutput("  set -v           # Show all variables in full")
+            self.poutput("  set -s           # Show only shell variables")
+            self.poutput("  set -e           # Show only environment variables")
+            return
+        
+        # Get all variable names (user variables + environment variables)
+        user_vars = set(self.variable_manager.variables.keys())
+        env_vars = set(os.environ.keys())
+        
+        # Filter based on options
+        if parsed_args.shell and parsed_args.env:
+            # Both specified, show all
+            vars_to_show = user_vars | env_vars
+        elif parsed_args.shell:
+            # Only shell variables
+            vars_to_show = user_vars
+        elif parsed_args.env:
+            # Only environment variables (not shadowed)
+            vars_to_show = env_vars - user_vars
+        else:
+            # Default: show all
+            vars_to_show = user_vars | env_vars
+        
+        # Sort for consistent display
+        sorted_vars = sorted(vars_to_show)
+        
         self.poutput(f"{Fore.CYAN}--- Shell Variables ---{Style.RESET_ALL}")
-        if not self.variable_manager.variables:
+        if not sorted_vars:
             self.poutput("No variables set.")
             return
 
-        for key, value in self.variable_manager.variables.items():
-            if isinstance(value, dict):
-                val_str = f"dictionary with {len(value)} keys"
-            elif isinstance(value, list):
-                val_str = f"list with {len(value)} items"
+        for key in sorted_vars:
+            # Check if it's a user variable (which shadows env var)
+            if key in self.variable_manager.variables:
+                value = self.variable_manager.variables[key]
+                # Mark shadowed environment variables
+                if key in os.environ:
+                    prefix = f"{Fore.YELLOW}*{Style.RESET_ALL}"  # Asterisk indicates shadowing
+                else:
+                    prefix = " "
             else:
-                val_str = f'"{value}"'
-            self.poutput(f"  {Fore.GREEN}{key}{Style.RESET_ALL} = {val_str}")
+                # It's an environment variable
+                value = os.environ[key]
+                prefix = f"{Fore.BLUE}E{Style.RESET_ALL}"  # E indicates environment variable
+            # Determine if this is an environment-only variable
+            is_env_only = key not in self.variable_manager.variables
+            
+            if isinstance(value, dict):
+                if parsed_args.json:
+                    # Pretty-print JSON
+                    val_str = json.dumps(value, indent=2)
+                    self.poutput(f"{prefix} {Fore.GREEN}{key}{Style.RESET_ALL} = ")
+                    for line in val_str.split('\n'):
+                        self.poutput(f"    {line}")
+                else:
+                    # For JSON, show truncated JSON string if needed
+                    json_str = json.dumps(value, separators=(',', ':'))
+                    truncated = self._truncate_value(json_str, is_env_only, parsed_args.verbose)
+                    self.poutput(f"{prefix} {Fore.GREEN}{key}{Style.RESET_ALL} = {truncated}")
+            elif isinstance(value, list):
+                if parsed_args.json:
+                    # Pretty-print JSON
+                    val_str = json.dumps(value, indent=2)
+                    self.poutput(f"{prefix} {Fore.GREEN}{key}{Style.RESET_ALL} = ")
+                    for line in val_str.split('\n'):
+                        self.poutput(f"    {line}")
+                else:
+                    # For lists, show truncated JSON string if needed
+                    json_str = json.dumps(value, separators=(',', ':'))
+                    truncated = self._truncate_value(json_str, is_env_only, parsed_args.verbose)
+                    self.poutput(f"{prefix} {Fore.GREEN}{key}{Style.RESET_ALL} = {truncated}")
+            else:
+                # String value - apply truncation rules
+                truncated = self._truncate_value(str(value), is_env_only, parsed_args.verbose)
+                self.poutput(f"{prefix} {Fore.GREEN}{key}{Style.RESET_ALL} = \"{truncated}\"")
+
+    def do_show(self, args):
+        """Display the contents of a specific shell variable."""
+        import argparse
+        
+        # Parse arguments
+        parser = argparse.ArgumentParser(prog='show', add_help=False)
+        parser.add_argument('variable', nargs='?', help='Variable name to show')
+        parser.add_argument('-v', '--verbose', action='store_true', 
+                          help='Show full contents of all variables')
+        parser.add_argument('-s', '--shell', action='store_true',
+                          help='Show only shell (user) variables')
+        parser.add_argument('-e', '--env', action='store_true',
+                          help='Show only environment variables')
+        parser.add_argument('-j', '--json', action='store_true',
+                          help='Pretty-print JSON objects')
+        parser.add_argument('-h', '--help', action='store_true',
+                          help='Show this help message')
+        
+        try:
+            parsed_args = parser.parse_args(args.split() if args else [])
+        except SystemExit:
+            return
+        
+        if parsed_args.help:
+            self.poutput("NAME:")
+            self.poutput("  show - Display shell and/or environment variables")
+            self.poutput("\nUSAGE:")
+            self.poutput("  show [VARIABLE] [-v|--verbose] [-s|--shell] [-e|--env] [-j|--json] [-h|--help]")
+            self.poutput("\nOPTIONS:")
+            self.poutput("  -v, --verbose    Show full contents of all variables")
+            self.poutput("  -s, --shell      Show only shell (user) variables")
+            self.poutput("  -e, --env        Show only environment variables")
+            self.poutput("  -j, --json       Pretty-print JSON objects")
+            self.poutput("  -h, --help       Show this help message")
+            self.poutput("\nEXAMPLES:")
+            self.poutput("  show TSIM_RESULT         # Show specific variable")
+            self.poutput("  show TSIM_RESULT -v      # Show variable with full content")
+            self.poutput("  show TSIM_RESULT -j      # Pretty-print JSON variable")
+            self.poutput("  show -s                  # Show all shell variables")
+            self.poutput("  show -e                  # Show all environment variables")
+            return
+        
+        # If no variable specified, show all variables with filters
+        if not parsed_args.variable:
+            # Call do_set with appropriate filters
+            set_args = []
+            if parsed_args.verbose:
+                set_args.append('-v')
+            if parsed_args.shell:
+                set_args.append('-s')
+            if parsed_args.env:
+                set_args.append('-e')
+            if parsed_args.json:
+                set_args.append('-j')
+            self.do_set(' '.join(set_args))
+            return
+        
+        # Check if variable exists
+        var_name = parsed_args.variable
+        if var_name.startswith('$'):
+            var_name = var_name[1:]  # Remove $ prefix if present
+            
+        value = self.variable_manager.get_variable(var_name)
+        if value is None:
+            self.poutput(f"{Fore.YELLOW}Variable '{var_name}' is not set{Style.RESET_ALL}")
+            return
+        
+        # Determine variable type
+        is_user_var = var_name in self.variable_manager.variables
+        is_env_var = var_name in os.environ
+        is_env_only = not is_user_var and is_env_var
+        
+        if is_user_var and is_env_var:
+            var_type = "(user variable, shadows environment)"
+        elif is_user_var:
+            var_type = "(user variable)"
+        else:
+            var_type = "(environment variable)"
+        
+        # Display the variable
+        if isinstance(value, dict):
+            if parsed_args.json:
+                # Pretty-print JSON
+                val_str = json.dumps(value, indent=2)
+                self.poutput(f"{Fore.GREEN}{var_name}{Style.RESET_ALL} {var_type} = ")
+                for line in val_str.split('\n'):
+                    self.poutput(f"  {line}")
+            else:
+                # Use truncation for dict display
+                json_str = json.dumps(value, separators=(',', ':'))
+                truncated = self._truncate_value(json_str, is_env_only, parsed_args.verbose)
+                self.poutput(f"{Fore.GREEN}{var_name}{Style.RESET_ALL} {var_type} = {truncated}")
+        elif isinstance(value, list):
+            if parsed_args.json:
+                # Pretty-print JSON
+                val_str = json.dumps(value, indent=2)
+                self.poutput(f"{Fore.GREEN}{var_name}{Style.RESET_ALL} {var_type} = ")
+                for line in val_str.split('\n'):
+                    self.poutput(f"  {line}")
+            else:
+                # Use truncation for list display
+                json_str = json.dumps(value, separators=(',', ':'))
+                truncated = self._truncate_value(json_str, is_env_only, parsed_args.verbose)
+                self.poutput(f"{Fore.GREEN}{var_name}{Style.RESET_ALL} {var_type} = {truncated}")
+        else:
+            # String value - apply truncation rules
+            truncated = self._truncate_value(str(value), is_env_only, parsed_args.verbose)
+            self.poutput(f"{Fore.GREEN}{var_name}{Style.RESET_ALL} {var_type} = \"{truncated}\"")
+    
+    def do_unset(self, args):
+        """Remove a shell variable from the namespace."""
+        import argparse
+        
+        # Parse arguments
+        parser = argparse.ArgumentParser(prog='unset', add_help=False)
+        parser.add_argument('variable', nargs='?', help='Variable name to unset')
+        parser.add_argument('-h', '--help', action='store_true',
+                          help='Show this help message')
+        
+        try:
+            parsed_args = parser.parse_args(args.split() if args else [])
+        except SystemExit:
+            return
+        
+        if parsed_args.help or not parsed_args.variable:
+            self.poutput("NAME:")
+            self.poutput("  unset - Remove a shell variable from the namespace")
+            self.poutput("\nUSAGE:")
+            self.poutput("  unset VARIABLE [-h|--help]")
+            self.poutput("\nDESCRIPTION:")
+            self.poutput("  Removes the specified variable completely from the shell environment.")
+            self.poutput("  This is similar to unset in bash - the variable will no longer exist.")
+            self.poutput("\nEXAMPLES:")
+            self.poutput("  unset TSIM_RESULT       # Remove TSIM_RESULT variable")
+            self.poutput("  unset MY_VAR            # Remove custom variable")
+            return
+        
+        # Remove the variable
+        var_name = parsed_args.variable
+        if var_name.startswith('$'):
+            var_name = var_name[1:]  # Remove $ prefix if present
+        
+        if self.variable_manager.unset_variable(var_name):
+            self.poutput(f"{Fore.GREEN}Variable '{var_name}' has been unset{Style.RESET_ALL}")
+        else:
+            self.poutput(f"{Fore.YELLOW}Variable '{var_name}' was not set{Style.RESET_ALL}")
+    
+    def postcmd(self, stop: bool, statement: cmd2.Statement) -> bool:
+        """
+        This hook is called after the command is executed.
+        We use it to enforce history length limits.
+        """
+        # Apply history length limit after each command
+        if self.is_interactive and hasattr(self, '_configured_history_length'):
+            if len(self.history) > self._configured_history_length:
+                # Truncate to the configured length
+                self.history.truncate(self._configured_history_length)
+        
+        return stop
+    
+    def _initialize_history(self, persistent_history_file=None):
+        """
+        Override cmd2's history initialization to respect our custom history limit.
+        This is called during shell initialization.
+        """
+        # Set our custom persistent history length before cmd2 loads history
+        # This ensures cmd2 loads the full history up to our limit
+        if hasattr(self, '_configured_history_length'):
+            self._persistent_history_length = self._configured_history_length
+        
+        # Now let cmd2 initialize history with our custom limit
+        super()._initialize_history(persistent_history_file)
+    
+    def _persist_history(self) -> None:
+        """
+        Override cmd2's history persistence to respect our custom history limit.
+        This is called when the shell exits.
+        """
+        import lzma
+        if not self.persistent_history_file:
+            return
+        
+        # Use our configured history length instead of cmd2's default
+        history_length = getattr(self, '_configured_history_length', 1000)
+        self.history.truncate(history_length)
+        
+        try:
+            history_json = self.history.to_json()
+            compressed_bytes = lzma.compress(history_json.encode(encoding='utf-8'))
+            with open(self.persistent_history_file, 'wb') as fobj:
+                fobj.write(compressed_bytes)
+        except OSError as ex:
+            self.perror(f"Cannot write persistent history file '{self.persistent_history_file}': {ex}")
+    
+    def complete_show(self, text: str, line: str, begidx: int, endidx: int) -> list:
+        """Provide completion for show command - dynamically list all available variables."""
+        # Get all available variables (both user and environment)
+        all_vars = set()
+        
+        # Add user variables
+        all_vars.update(self.variable_manager.variables.keys())
+        
+        # Add environment variables
+        all_vars.update(os.environ.keys())
+        
+        # Return sorted list of variables that start with the typed text
+        return sorted([var for var in all_vars if var.startswith(text)])
+    
+    def complete_unset(self, text: str, line: str, begidx: int, endidx: int) -> list:
+        """Provide completion for unset command - only show user variables that can be unset."""
+        # Only user variables can be unset (not environment variables)
+        user_vars = self.variable_manager.variables.keys()
+        
+        # Return sorted list of variables that start with the typed text
+        return sorted([var for var in user_vars if var.startswith(text)])
 
     print_parser = cmd2.Cmd2ArgumentParser()
     print_parser.add_argument('text', nargs='*', help='The text or variable to print')
@@ -169,7 +644,12 @@ Type 'set' to see all variables.
         """Called for any command not recognized."""
         # Check if it's a variable assignment first
         if self.variable_manager.process_command_for_assignment(statement.raw):
-            # It was an assignment, so we do nothing.
+            # It was an assignment, manually add to history in interactive mode
+            if self.is_interactive and hasattr(self, 'history'):
+                # Create a HistoryItem and add it to history
+                # HistoryItem needs a Statement object, and we already have one
+                history_item = HistoryItem(statement)
+                self.history.append(history_item)
             return
 
         # If not an assignment, it's a true unknown command
@@ -183,17 +663,27 @@ Type 'set' to see all variables.
             sys.stderr.write(f"Error: Unknown command: '{command}'\n")
 
     def onecmd_plus_hooks(self, line: str, *, add_to_history: bool = True, **kwargs) -> bool:
-        """Override to capture command output for $TSIM_RESULT."""
+        """Override to capture command output and return values."""
         import io
         from contextlib import redirect_stdout
+        
+        # Initialize return value
+        self.variable_manager.set_variable('TSIM_RETURN_VALUE', '0')
         
         # Check if this is a tsimsh command (not a variable assignment or shell command)
         if not self.variable_manager.process_command_for_assignment(line):
             # Parse the command to check if it's a known tsimsh command
             statement = self.statement_parser.parse(line)
-            tsimsh_commands = ['network', 'trace', 'service', 'host', 'facts', 'print', 'variables', 'unset']
+            tsimsh_commands = ['network', 'trace', 'service', 'host', 'facts', 'print', 'variables', 'unset', 
+                             'ping', 'mtr', 'completion', 'status', 'refresh', 'set', 'show']
             
-            if statement.command in tsimsh_commands:
+            # Commands that should NOT have their output stored in TSIM_RESULT
+            no_capture_commands = ['set', 'help', 'history', 'status', 'refresh', 'exit', 'quit', 'variables', 'print', 'show', 'unset']
+            
+            if statement.command in tsimsh_commands and statement.command not in no_capture_commands:
+                # Check if JSON output is requested
+                produces_json = '--json' in line or '-j' in line
+                
                 # Capture output for tsimsh commands
                 output_buffer = io.StringIO()
                 original_stdout = self.stdout
@@ -208,14 +698,33 @@ Type 'set' to see all variables.
                     except TypeError:
                         # Fall back to without parameter (older cmd2 versions)
                         result = super().onecmd_plus_hooks(line)
+                    
                     # Get the captured output
                     output = output_buffer.getvalue()
-                    # Store in $TSIM_RESULT
-                    if output:
+                    
+                    # Handle JSON output specially
+                    if produces_json and output:
+                        try:
+                            # Try to parse as JSON
+                            import json
+                            json_data = json.loads(output.strip())
+                            self.variable_manager.set_variable('TSIM_RESULT', json_data)
+                        except json.JSONDecodeError:
+                            # Not valid JSON, store as string
+                            self.variable_manager.set_variable('TSIM_RESULT', output.strip())
+                    elif output:
+                        # Non-JSON output
                         self.variable_manager.set_variable('TSIM_RESULT', output.strip())
+                    
                     # Write output to original stdout
                     original_stdout.write(output)
-                    return result
+                    
+                    
+                    # Never return True to exit shell (except for exit/quit commands)
+                    if statement.command in ['exit', 'quit', 'EOF', 'eof']:
+                        return result
+                    return False
+                    
                 finally:
                     # Restore stdout
                     self.stdout = original_stdout
@@ -223,12 +732,24 @@ Type 'set' to see all variables.
                 # For non-tsimsh commands, execute normally
                 try:
                     # Try with add_to_history parameter (newer cmd2 versions)
-                    return super().onecmd_plus_hooks(line, add_to_history=add_to_history, **kwargs)
+                    result = super().onecmd_plus_hooks(line, add_to_history=add_to_history, **kwargs)
+                    # Never exit shell unless it's exit/quit
+                    return result if statement.command in ['exit', 'quit', 'EOF', 'eof'] else False
                 except TypeError:
                     # Fall back to without parameter (older cmd2 versions)
-                    return super().onecmd_plus_hooks(line)
+                    result = super().onecmd_plus_hooks(line)
+                    return result if statement.command in ['exit', 'quit', 'EOF', 'eof'] else False
         
         # Variable assignment was already handled
+        # Add to history if needed
+        if add_to_history and self.is_interactive:
+            # Create a Statement from the line and then a HistoryItem
+            statement = self.statement_parser.parse(line)
+            history_item = HistoryItem(statement)
+            self.history.append(history_item)
+            # Apply history length limit after adding
+            if hasattr(self, '_configured_history_length') and len(self.history) > self._configured_history_length:
+                self.history.truncate(self._configured_history_length)
         return False
     
     def precmd(self, statement: cmd2.Statement) -> cmd2.Statement:
@@ -251,6 +772,9 @@ Type 'set' to see all variables.
         if self.is_interactive:
             self.poutput(f"\n{Fore.CYAN}Goodbye!{Style.RESET_ALL}")
         return True
+    
+    # Also handle lowercase eof for compatibility
+    do_eof = do_EOF
     
     def emptyline(self):
         """Called when an empty line is entered - do nothing instead of repeating last command."""
@@ -327,6 +851,45 @@ Type 'set' to see all variables.
             if 'intro' in shell_config and self.is_interactive:
                 self.intro = shell_config['intro']
     
+    def _load_tsimrc(self):
+        """Load and execute .tsimrc initialization file if it exists."""
+        # Look for .tsimrc in current directory and home directory
+        tsimrc_paths = [
+            os.path.join(os.getcwd(), '.tsimrc'),
+            os.path.expanduser('~/.tsimrc')
+        ]
+        
+        for tsimrc_path in tsimrc_paths:
+            if os.path.exists(tsimrc_path):
+                try:
+                    # Read the file
+                    with open(tsimrc_path, 'r') as f:
+                        lines = f.readlines()
+                    
+                    # Execute each line in the context of the shell
+                    for line_num, line in enumerate(lines, 1):
+                        line = line.strip()
+                        # Skip empty lines and comments
+                        if not line or line.startswith('#'):
+                            continue
+                        
+                        try:
+                            # Execute the command but don't add to history
+                            self.onecmd_plus_hooks(line, add_to_history=False)
+                        except Exception as e:
+                            if self.is_interactive:
+                                self.poutput(f"{Fore.YELLOW}Warning: Error in {tsimrc_path} line {line_num}: {e}{Style.RESET_ALL}")
+                    
+                    # Only load the first .tsimrc found
+                    break
+                    
+                except (FileNotFoundError, PermissionError) as e:
+                    # Silently skip if can't read file
+                    pass
+                except Exception as e:
+                    if self.is_interactive:
+                        self.poutput(f"{Fore.YELLOW}Warning: Error loading {tsimrc_path}: {e}{Style.RESET_ALL}")
+    
     def do_exit(self, _):
         """Exit the shell."""
         if self.is_interactive:
@@ -350,9 +913,14 @@ Type 'set' to see all variables.
     def do_facts(self, args):
         """Manage routing facts collection and processing."""
         if hasattr(self, 'facts_handler'):
-            return self.facts_handler.handle_command(args)
+            ret = self.facts_handler.handle_command(args)
+            # Set return value
+            self.variable_manager.set_variable('TSIM_RETURN_VALUE', str(ret if ret is not None else 0))
+            return None  # Never exit shell
         else:
             self.poutput(f"{Fore.RED}Facts commands not available{Style.RESET_ALL}")
+            self.variable_manager.set_variable('TSIM_RETURN_VALUE', '1')
+            return None
     
     def complete_facts(self, text, line, begidx, endidx):
         """Provide completion for facts command."""
@@ -363,9 +931,13 @@ Type 'set' to see all variables.
     def do_network(self, args):
         """Manage network namespace simulation."""
         if hasattr(self, 'network_handler'):
-            return self.network_handler.handle_command(args)
+            ret = self.network_handler.handle_command(args)
+            self.variable_manager.set_variable('TSIM_RETURN_VALUE', str(ret if ret is not None else 0))
+            return None  # Never exit shell
         else:
             self.poutput(f"{Fore.RED}Network commands not available{Style.RESET_ALL}")
+            self.variable_manager.set_variable('TSIM_RETURN_VALUE', '1')
+            return None
     
     def complete_network(self, text, line, begidx, endidx):
         """Provide completion for network command."""
@@ -376,9 +948,13 @@ Type 'set' to see all variables.
     def do_host(self, args):
         """Manage dynamic host creation and removal."""
         if hasattr(self, 'host_handler'):
-            return self.host_handler.handle_command(args)
+            ret = self.host_handler.handle_command(args)
+            self.variable_manager.set_variable('TSIM_RETURN_VALUE', str(ret if ret is not None else 0))
+            return None  # Never exit shell
         else:
             self.poutput(f"{Fore.RED}Host commands not available{Style.RESET_ALL}")
+            self.variable_manager.set_variable('TSIM_RETURN_VALUE', '1')
+            return None
     
     def complete_host(self, text, line, begidx, endidx):
         """Provide completion for host command."""
@@ -389,9 +965,13 @@ Type 'set' to see all variables.
     def do_service(self, args):
         """Manage TCP/UDP services in network simulation."""
         if hasattr(self, 'service_handler'):
-            return self.service_handler.handle_command(args)
+            ret = self.service_handler.handle_command(args)
+            self.variable_manager.set_variable('TSIM_RETURN_VALUE', str(ret if ret is not None else 0))
+            return None  # Never exit shell
         else:
             self.poutput(f"{Fore.RED}Service commands not available{Style.RESET_ALL}")
+            self.variable_manager.set_variable('TSIM_RETURN_VALUE', '1')
+            return None
     
     def complete_service(self, text, line, begidx, endidx):
         """Provide completion for service command."""
@@ -403,9 +983,13 @@ Type 'set' to see all variables.
     def do_completion(self, args):
         """Generate shell completion scripts."""
         if hasattr(self, 'completion_handler'):
-            return self.completion_handler.handle_command(args)
+            ret = self.completion_handler.handle_command(args)
+            self.variable_manager.set_variable('TSIM_RETURN_VALUE', str(ret if ret is not None else 0))
+            return None  # Never exit shell
         else:
             self.poutput(f"{Fore.RED}Completion commands not available{Style.RESET_ALL}")
+            self.variable_manager.set_variable('TSIM_RETURN_VALUE', '1')
+            return None
     
     def complete_completion(self, text, line, begidx, endidx):
         """Provide completion for completion command."""
@@ -416,9 +1000,13 @@ Type 'set' to see all variables.
     def do_trace(self, args):
         """Perform reverse path tracing between source and destination."""
         if hasattr(self, 'trace_handler'):
-            return self.trace_handler.handle_command(args)
+            ret = self.trace_handler.handle_command(args)
+            self.variable_manager.set_variable('TSIM_RETURN_VALUE', str(ret if ret is not None else 0))
+            return None  # Never exit shell
         else:
             self.poutput(f"{Fore.RED}Trace command not available{Style.RESET_ALL}")
+            self.variable_manager.set_variable('TSIM_RETURN_VALUE', '1')
+            return None
     
     def complete_trace(self, text, line, begidx, endidx):
         """Provide completion for trace command."""
@@ -429,10 +1017,13 @@ Type 'set' to see all variables.
     def do_ping(self, args):
         """Test connectivity between IPs using ping."""
         if hasattr(self, 'nettest_handler'):
-            # Don't return the exit code - always return None to prevent shell exit
-            self.nettest_handler.handle_ping_command(args)
+            ret = self.nettest_handler.handle_ping_command(args)
+            self.variable_manager.set_variable('TSIM_RETURN_VALUE', str(ret if ret is not None else 0))
+            return None  # Never exit shell
         else:
             self.poutput(f"{Fore.RED}Ping command not available{Style.RESET_ALL}")
+            self.variable_manager.set_variable('TSIM_RETURN_VALUE', '1')
+            return None
     
     def complete_ping(self, text, line, begidx, endidx):
         """Provide completion for ping command."""
@@ -443,15 +1034,54 @@ Type 'set' to see all variables.
     def do_mtr(self, args):
         """Test connectivity between IPs using MTR (My TraceRoute)."""
         if hasattr(self, 'nettest_handler'):
-            # Don't return the exit code - always return None to prevent shell exit
-            self.nettest_handler.handle_mtr_command(args)
+            ret = self.nettest_handler.handle_mtr_command(args)
+            self.variable_manager.set_variable('TSIM_RETURN_VALUE', str(ret if ret is not None else 0))
+            return None  # Never exit shell
         else:
             self.poutput(f"{Fore.RED}MTR command not available{Style.RESET_ALL}")
+            self.variable_manager.set_variable('TSIM_RETURN_VALUE', '1')
+            return None
     
     def complete_mtr(self, text, line, begidx, endidx):
         """Provide completion for mtr command."""
         if hasattr(self, 'nettest_handler'):
             return self.nettest_handler.complete_mtr_command(text, line, begidx, endidx)
+        return []
+    
+    def complete_shell(self, text, line, begidx, endidx):
+        """Provide file completion for shell command."""
+        import glob
+        import os
+        
+        # Get the partial path being typed
+        args = line.split()
+        if len(args) > 1:
+            # Check if we're completing a file path
+            partial_path = text
+            
+            # Handle paths with directories
+            if '/' in partial_path:
+                dir_path = os.path.dirname(partial_path)
+                base_name = os.path.basename(partial_path)
+                if os.path.isdir(dir_path):
+                    files = glob.glob(os.path.join(dir_path, base_name + '*'))
+                    return [f for f in files]
+            else:
+                # Complete files in current directory
+                files = glob.glob(partial_path + '*')
+                return files
+        
+        # If it's the first argument after 'shell' or '!', suggest common commands
+        common_cmds = ['ls', 'cat', 'grep', 'find', 'cd', 'pwd', 'echo', 'python3', 'make']
+        return [cmd for cmd in common_cmds if cmd.startswith(text)]
+    
+    def complete_print(self, text, line, begidx, endidx):
+        """Provide variable completion for print command."""
+        # Get all shell variables for completion
+        if hasattr(self, 'variable_manager') and self.variable_manager.variables:
+            # Extract variable names and format them with $
+            var_names = [f'${var}' for var in self.variable_manager.variables.keys()]
+            return [var for var in var_names if var.startswith(text)]
         return []
     
     def do_status(self, args):
@@ -499,60 +1129,287 @@ Type 'set' to see all variables.
     
     def do_help(self, args):
         """Show help information."""
-        super().do_help(args)
+        # Handle the case where args might be a list or string
+        if isinstance(args, list):
+            # If it's a list, join it to get the command name
+            command_name = ' '.join(args) if args else ''
+        else:
+            # If it's a string, use it directly
+            command_name = str(args).strip() if args else ''
+        
+        if command_name:
+            # Check if it's one of our custom commands
+            custom_commands = {
+                'facts': self.help_facts,
+                'network': self.help_network,
+                'host': self.help_host,
+                'service': self.help_service,
+                'trace': self.help_trace,
+                'ping': self.help_ping,
+                'mtr': self.help_mtr,
+                'completion': self.help_completion
+            }
+            
+            if command_name in custom_commands:
+                custom_commands[command_name]()
+            else:
+                super().do_help(args)
+        else:
+            super().do_help(args)
     
     def do_history(self, args):
-        """Show command history."""
-        # Always show full history regardless of context
-        super().do_history(args)
+        """Show command history - uses cmd2's built-in history with TSIM_HISTORY_LENGTH limit."""
+        # Get configured history length
+        history_length_str = self.variable_manager.get_variable('TSIM_HISTORY_LENGTH')
+        try:
+            max_history = int(history_length_str) if history_length_str else 1000
+        except ValueError:
+            max_history = 1000
+        
+        # Use cmd2's built-in history command but respect our limit
+        # cmd2 stores history in self.history
+        if hasattr(self, 'history') and self.history:
+            # Get the history items
+            history_items = list(self.history)
+            
+            # Apply our configured limit
+            if len(history_items) > max_history:
+                history_items = history_items[-max_history:]
+                self.poutput(f"{Fore.CYAN}Command History (last {max_history} entries):{Style.RESET_ALL}")
+            else:
+                self.poutput(f"{Fore.CYAN}Command History:{Style.RESET_ALL}")
+            
+            # Display history with line numbers
+            for i, item in enumerate(history_items, 1):
+                # Format: line_number: command
+                self.poutput(f"{i:5d}: {item}")
+        else:
+            # Fall back to parent's history command
+            super().do_history(args)
     
     def help_facts(self):
-        """Help for facts command."""
-        self.poutput(f"{Fore.CYAN}Facts Management Commands:{Style.RESET_ALL}")
-        self.poutput("  facts collect [--inventory FILE] [--output-dir DIR]")
-        self.poutput("    Collect routing facts from network devices")
-        self.poutput("  facts process [--input-dir DIR] [--output-dir DIR] [--validate]")
-        self.poutput("    Process raw facts into structured JSON")
-        self.poutput("  facts validate [--facts-dir DIR] [--verbose]")
-        self.poutput("    Validate processed facts files")
+        """Comprehensive help for facts command."""
+        self.poutput(f"\n{Fore.CYAN}COMMAND:{Style.RESET_ALL}")
+        self.poutput("  facts - Manage routing facts collection and processing")
+        
+        self.poutput(f"\n{Fore.CYAN}USAGE:{Style.RESET_ALL}")
+        self.poutput("  facts collect [options]")
+        self.poutput("  facts process [options]") 
+        self.poutput("  facts validate [options]")
+        self.poutput("  facts --help | -h")
+        
+        self.poutput(f"\n{Fore.CYAN}SUBCOMMANDS:{Style.RESET_ALL}")
+        self.poutput("  collect   - Collect routing facts from network devices")
+        self.poutput("  process   - Process raw facts into structured JSON")
+        self.poutput("  validate  - Validate processed facts files")
+        
+        self.poutput(f"\n{Fore.CYAN}COLLECT OPTIONS:{Style.RESET_ALL}")
+        self.poutput(f"  {Fore.YELLOW}--inventory FILE{Style.RESET_ALL}     Ansible inventory file (MANDATORY)")
+        self.poutput("  --output-dir DIR      Output directory for facts (default: facts)")
+        self.poutput("  --test                Use test data instead of real collection")
+        self.poutput("  -v, --verbose         Increase verbosity")
+        
+        self.poutput(f"\n{Fore.CYAN}PROCESS OPTIONS:{Style.RESET_ALL}")
+        self.poutput("  --input-dir DIR       Input directory with raw facts")
+        self.poutput("  --output-dir DIR      Output directory for JSON files")
+        self.poutput("  --create-dirs         Create output directories if missing")
+        self.poutput("  --validate            Validate JSON after processing")
+        self.poutput("  -v, --verbose         Increase verbosity")
+        
+        self.poutput(f"\n{Fore.CYAN}VALIDATE OPTIONS:{Style.RESET_ALL}")
+        self.poutput("  --facts-dir DIR       Facts directory to validate")
+        self.poutput("  -v, --verbose         Show detailed validation results")
+        
+        self.poutput(f"\n{Fore.CYAN}EXAMPLES:{Style.RESET_ALL}")
+        self.poutput("\n  Collect facts from production:")
+        self.poutput("    facts collect --inventory hosts.ini --output-dir prod_facts")
+        self.poutput("\n  Process raw facts with validation:")
+        self.poutput("    facts process --input-dir raw_facts --output-dir json_facts --validate")
+        self.poutput("\n  Validate existing facts:")
+        self.poutput("    facts validate --facts-dir json_facts --verbose")
+        self.poutput("")
     
     def help_network(self):
-        """Help for network command."""
-        self.poutput(f"{Fore.CYAN}Network Management Commands:{Style.RESET_ALL}")
-        self.poutput("  network setup [--limit PATTERN] [--verify] [--verbose]")
-        self.poutput("    Setup network namespace simulation")
-        self.poutput("  network status [function] [--limit PATTERN] [--json] [--verbose]")
-        self.poutput("    Show network namespace status")
-        self.poutput("  network clean [--force] [--limit PATTERN] [--verbose]")
-        self.poutput("    Clean up network namespaces")
-        self.poutput("  network test [--source IP] [--destination IP] [--all] [--test-type TYPE] [--verbose]")
-        self.poutput("    Test network connectivity")
+        """Comprehensive help for network command."""
+        self.poutput(f"\n{Fore.CYAN}COMMAND:{Style.RESET_ALL}")
+        self.poutput("  network - Manage network namespace simulation")
+        
+        self.poutput(f"\n{Fore.CYAN}USAGE:{Style.RESET_ALL}")
+        self.poutput("  network setup [options]")
+        self.poutput("  network status [function] [options]")
+        self.poutput("  network clean [options]")
+        self.poutput("  network test [options]")
+        self.poutput("  network --help | -h")
+        
+        self.poutput(f"\n{Fore.CYAN}SUBCOMMANDS:{Style.RESET_ALL}")
+        self.poutput("  setup   - Setup network namespace simulation")
+        self.poutput("  status  - Show network namespace status")
+        self.poutput("  clean   - Clean up network namespaces")
+        self.poutput("  test    - Test network connectivity")
+        
+        self.poutput(f"\n{Fore.CYAN}SETUP OPTIONS:{Style.RESET_ALL}")
+        self.poutput("  --limit PATTERN       Limit to specific namespaces (glob pattern)")
+        self.poutput("  --verify              Verify setup after creation")
+        self.poutput("  -v, --verbose         Increase verbosity")
+        
+        self.poutput(f"\n{Fore.CYAN}STATUS OPTIONS:{Style.RESET_ALL}")
+        self.poutput("  function              What to display: interfaces, routes, rules, iptables, ipsets, all, summary")
+        self.poutput("  --limit PATTERN       Limit to specific namespaces (glob pattern)")
+        self.poutput("  -j, --json            Output in JSON format")
+        self.poutput("  -v, --verbose         Increase verbosity")
+        
+        self.poutput(f"\n{Fore.CYAN}CLEAN OPTIONS:{Style.RESET_ALL}")
+        self.poutput("  --force               Force cleanup without confirmation")
+        self.poutput("  --limit PATTERN       Limit to specific namespaces (glob pattern)")
+        self.poutput("  -v, --verbose         Increase verbosity")
+        
+        self.poutput(f"\n{Fore.CYAN}TEST OPTIONS:{Style.RESET_ALL}")
+        self.poutput(f"  {Fore.YELLOW}--source IP{Style.RESET_ALL}          Source IP address (MANDATORY)")
+        self.poutput(f"  {Fore.YELLOW}--destination IP{Style.RESET_ALL}     Destination IP address (MANDATORY)")
+        self.poutput("  --all                 Test all paths")
+        self.poutput("  --test-type TYPE      Test type: ping, mtr")
+        self.poutput("  -v, --verbose         Increase verbosity")
+        
+        self.poutput(f"\n{Fore.CYAN}EXAMPLES:{Style.RESET_ALL}")
+        self.poutput("\n  Setup network simulation:")
+        self.poutput("    network setup")
+        
+        self.poutput("\n  Show status of all namespaces:")
+        self.poutput("    network status")
+        
+        self.poutput("\n  Show interfaces for specific router:")
+        self.poutput("    network status interfaces --limit hq-*")
+        
+        self.poutput("\n  Test connectivity:")
+        self.poutput("    network test --source 10.1.1.1 --destination 10.2.1.1")
+        
+        self.poutput("\n  Clean up all namespaces:")
+        self.poutput("    network clean --force")
+        self.poutput("")
     
     def help_host(self):
-        """Help for host command."""
-        self.poutput(f"{Fore.CYAN}Host Management Commands:{Style.RESET_ALL}")
-        self.poutput("  host add --name NAME --primary-ip IP/MASK --connect-to ROUTER")
-        self.poutput("    Add a new host to the network")
-        self.poutput("  host list [--format FORMAT] [--verbose]")
-        self.poutput("    List all hosts")
-        self.poutput("  host remove --name NAME [--force]")
-        self.poutput("    Remove a host from the network")
-        self.poutput("  host clean [--force]")
-        self.poutput("    Remove all hosts")
+        """Comprehensive help for host command."""
+        self.poutput(f"\n{Fore.CYAN}COMMAND:{Style.RESET_ALL}")
+        self.poutput("  host - Manage dynamic host creation and removal")
+        
+        self.poutput(f"\n{Fore.CYAN}USAGE:{Style.RESET_ALL}")
+        self.poutput("  host add --name NAME --primary-ip IP/MASK --connect-to ROUTER [options]")
+        self.poutput("  host list [options]")
+        self.poutput("  host remove --name NAME [options]")
+        self.poutput("  host clean [options]")
+        self.poutput("  host --help | -h")
+        
+        self.poutput(f"\n{Fore.CYAN}SUBCOMMANDS:{Style.RESET_ALL}")
+        self.poutput("  add     - Add a new host to the network")
+        self.poutput("  list    - List all hosts")
+        self.poutput("  remove  - Remove a host from the network")
+        self.poutput("  clean   - Remove all hosts")
+        
+        self.poutput(f"\n{Fore.CYAN}ADD OPTIONS:{Style.RESET_ALL}")
+        self.poutput(f"  {Fore.YELLOW}--name NAME{Style.RESET_ALL}          Host name (MANDATORY)")
+        self.poutput(f"  {Fore.YELLOW}--primary-ip IP/MASK{Style.RESET_ALL} Primary IP with CIDR (MANDATORY)")
+        self.poutput(f"  {Fore.YELLOW}--connect-to ROUTER{Style.RESET_ALL}  Router to connect to (MANDATORY)")
+        self.poutput("  --secondary-ips IPS   Secondary IP addresses")
+        self.poutput("  -v, --verbose         Increase verbosity")
+        
+        self.poutput(f"\n{Fore.CYAN}LIST OPTIONS:{Style.RESET_ALL}")
+        self.poutput("  --format FORMAT       Output format: text, json (default: text)")
+        self.poutput("  -v, --verbose         Increase verbosity")
+        
+        self.poutput(f"\n{Fore.CYAN}REMOVE OPTIONS:{Style.RESET_ALL}")
+        self.poutput(f"  {Fore.YELLOW}--name NAME{Style.RESET_ALL}          Host name to remove (MANDATORY)")
+        self.poutput("  --force               Force removal without confirmation")
+        self.poutput("  -v, --verbose         Increase verbosity")
+        
+        self.poutput(f"\n{Fore.CYAN}CLEAN OPTIONS:{Style.RESET_ALL}")
+        self.poutput("  --force               Force cleanup without confirmation")
+        self.poutput("  -v, --verbose         Increase verbosity")
+        
+        self.poutput(f"\n{Fore.CYAN}EXAMPLES:{Style.RESET_ALL}")
+        self.poutput("\n  Add a host:")
+        self.poutput("    host add --name web1 --primary-ip 10.1.1.100/24 --connect-to hq-gw")
+        
+        self.poutput("\n  Add host with secondary IPs:")
+        self.poutput("    host add --name db1 --primary-ip 10.3.20.100/24 --connect-to dc-srv --secondary-ips 192.168.1.1/24")
+        
+        self.poutput("\n  List all hosts:")
+        self.poutput("    host list")
+        
+        self.poutput("\n  Remove a host:")
+        self.poutput("    host remove --name web1 --force")
+        
+        self.poutput("\n  Clean all hosts:")
+        self.poutput("    host clean --force")
+        self.poutput("")
     
     def help_service(self):
-        """Help for service command."""
-        self.poutput(f"{Fore.CYAN}Service Management Commands:{Style.RESET_ALL}")
-        self.poutput("  service start --ip IP --port PORT [--protocol PROTO] [--name NAME]")
-        self.poutput("    Start a TCP/UDP service")
-        self.poutput("  service test --source IP --dest IP:PORT [--protocol PROTO]")
-        self.poutput("    Test service connectivity")
-        self.poutput("  service list [--format FORMAT] [--verbose]")
-        self.poutput("    List all active services")
-        self.poutput("  service stop --ip IP --port PORT [--protocol PROTO]")
-        self.poutput("    Stop a service")
-        self.poutput("  service clean [--force]")
-        self.poutput("    Stop all services")
+        """Comprehensive help for service command."""
+        self.poutput(f"\n{Fore.CYAN}COMMAND:{Style.RESET_ALL}")
+        self.poutput("  service - Manage TCP/UDP services in network simulation")
+        
+        self.poutput(f"\n{Fore.CYAN}USAGE:{Style.RESET_ALL}")
+        self.poutput("  service start --ip IP --port PORT [options]")
+        self.poutput("  service test --src IP --dest IP:PORT [options]")
+        self.poutput("  service list [options]")
+        self.poutput("  service stop --ip IP --port PORT [options]")
+        self.poutput("  service clean [options]")
+        self.poutput("  service --help | -h")
+        
+        self.poutput(f"\n{Fore.CYAN}SUBCOMMANDS:{Style.RESET_ALL}")
+        self.poutput("  start   - Start a TCP/UDP service")
+        self.poutput("  test    - Test service connectivity")
+        self.poutput("  list    - List all active services")
+        self.poutput("  stop    - Stop a service")
+        self.poutput("  clean   - Stop all services")
+        
+        self.poutput(f"\n{Fore.CYAN}START OPTIONS:{Style.RESET_ALL}")
+        self.poutput(f"  {Fore.YELLOW}--ip IP{Style.RESET_ALL}              IP address to bind to (MANDATORY)")
+        self.poutput(f"  {Fore.YELLOW}--port PORT{Style.RESET_ALL}          Port number (MANDATORY)")
+        self.poutput("  --protocol PROTO      Protocol: tcp, udp (default: tcp)")
+        self.poutput("  --name NAME           Service name")
+        self.poutput("  -v, --verbose         Verbose output")
+        
+        self.poutput(f"\n{Fore.CYAN}TEST OPTIONS:{Style.RESET_ALL}")
+        self.poutput(f"  {Fore.YELLOW}--src IP{Style.RESET_ALL}             Source IP address (MANDATORY)")
+        self.poutput(f"  {Fore.YELLOW}--dest IP:PORT{Style.RESET_ALL}       Destination IP:PORT (MANDATORY)")
+        self.poutput("  --protocol PROTO      Protocol: tcp, udp (default: tcp)")
+        self.poutput("  --message MSG         Message to send (UDP only)")
+        self.poutput("  --timeout SECONDS     Timeout in seconds (default: 5)")
+        self.poutput("  -v, --verbose         Verbose output")
+        
+        self.poutput(f"\n{Fore.CYAN}LIST OPTIONS:{Style.RESET_ALL}")
+        self.poutput("  --format FORMAT       Output format: text, json (default: text)")
+        self.poutput("  -v, --verbose         Verbose output")
+        
+        self.poutput(f"\n{Fore.CYAN}STOP OPTIONS:{Style.RESET_ALL}")
+        self.poutput(f"  {Fore.YELLOW}--ip IP{Style.RESET_ALL}              Service IP address (MANDATORY)")
+        self.poutput(f"  {Fore.YELLOW}--port PORT{Style.RESET_ALL}          Service port (MANDATORY)")
+        self.poutput("  --protocol PROTO      Protocol: tcp, udp (default: tcp)")
+        self.poutput("  -v, --verbose         Verbose output")
+        
+        self.poutput(f"\n{Fore.CYAN}CLEAN OPTIONS:{Style.RESET_ALL}")
+        self.poutput("  --force               Force cleanup without confirmation")
+        self.poutput("  -v, --verbose         Verbose output")
+        
+        self.poutput(f"\n{Fore.CYAN}EXAMPLES:{Style.RESET_ALL}")
+        self.poutput("\n  Start a TCP service:")
+        self.poutput("    service start --ip 10.1.1.1 --port 8080 --name webserver")
+        
+        self.poutput("\n  Start a UDP service:")
+        self.poutput("    service start --ip 10.2.1.1 --port 53 --protocol udp --name dns")
+        
+        self.poutput("\n  Test TCP connectivity:")
+        self.poutput("    service test --src 10.1.1.100 --dest 10.1.1.1:8080")
+        
+        self.poutput("\n  Test UDP with message:")
+        self.poutput("    service test --src 10.1.1.100 --dest 10.2.1.1:53 --protocol udp --message 'DNS Query'")
+        
+        self.poutput("\n  List services as JSON:")
+        self.poutput("    service list --format json")
+        
+        self.poutput("\n  Stop a service:")
+        self.poutput("    service stop --ip 10.1.1.1 --port 8080")
+        self.poutput("")
     
     
     def help_completion(self):
@@ -578,44 +1435,112 @@ Type 'set' to see all variables.
         self.poutput("└─────────────────────┴─────────────────────┴─────────────────────────────────────┘")
     
     def help_trace(self):
-        """Help for trace command."""
-        self.poutput(f"{Fore.CYAN}Trace Command:{Style.RESET_ALL}")
-        self.poutput("  trace -s SOURCE_IP -d DESTINATION_IP [--json] [--verbose]")
-        self.poutput("    Perform reverse path tracing between source and destination")
+        """Comprehensive help for trace command."""
+        self.poutput(f"\n{Fore.CYAN}COMMAND:{Style.RESET_ALL}")
+        self.poutput("  trace - Perform reverse path tracing between source and destination")
+        
+        self.poutput(f"\n{Fore.CYAN}USAGE:{Style.RESET_ALL}")
+        self.poutput("  trace -s SOURCE_IP -d DESTINATION_IP [options]")
+        self.poutput("  trace --help | -h")
+        
+        self.poutput(f"\n{Fore.CYAN}MANDATORY OPTIONS:{Style.RESET_ALL}")
+        self.poutput(f"  {Fore.YELLOW}-s, --source IP{Style.RESET_ALL}      Source IP address")
+        self.poutput(f"  {Fore.YELLOW}-d, --destination IP{Style.RESET_ALL} Destination IP address")
+        
+        self.poutput(f"\n{Fore.CYAN}OPTIONAL OPTIONS:{Style.RESET_ALL}")
+        self.poutput("  -j, --json            Output in JSON format")
+        self.poutput("  -v, --verbose         Increase verbosity (can be used multiple times)")
+        self.poutput("  --controller-ip IP    Ansible controller IP (auto-detected if not provided)")
+        self.poutput("  -h, --help            Show this help message")
+        
+        self.poutput(f"\n{Fore.CYAN}OUTPUT FORMATS:{Style.RESET_ALL}")
+        self.poutput("  Default: Human-readable text format showing hop-by-hop path")
+        self.poutput("  JSON: Machine-readable format with detailed hop information")
+        
+        self.poutput(f"\n{Fore.CYAN}EXAMPLES:{Style.RESET_ALL}")
+        self.poutput("\n  Basic path trace:")
+        self.poutput("    trace -s 10.1.1.100 -d 10.2.1.200")
+        
+        self.poutput("\n  JSON output for scripting:")
+        self.poutput("    trace -s 10.1.1.100 -d 10.2.1.200 --json")
+        
+        self.poutput("\n  Verbose output with timing:")
+        self.poutput("    trace -s 10.1.1.100 -d 10.2.1.200 -vv")
+        
+        self.poutput("\n  Store JSON result in variable:")
+        self.poutput("    trace -s 10.1.1.100 -d 10.2.1.200 -j")
+        self.poutput("    # Result automatically stored in $TSIM_RESULT")
         self.poutput("")
-        self.poutput("Options:")
-        self.poutput("  -s, --source       Source IP address (required)")
-        self.poutput("  -d, --destination  Destination IP address (required)")
-        self.poutput("  -j, --json         Output in JSON format")
-        self.poutput("  -v, --verbose      Verbose output (can be used multiple times)")
     
     def help_ping(self):
-        """Help for ping command."""
-        self.poutput(f"{Fore.CYAN}Ping Command:{Style.RESET_ALL}")
-        self.poutput("  ping -s SOURCE_IP -d DESTINATION_IP [--verbose]")
-        self.poutput("    Test connectivity between IPs using ping")
+        """Comprehensive help for ping command."""
+        self.poutput(f"\n{Fore.CYAN}COMMAND:{Style.RESET_ALL}")
+        self.poutput("  ping - Test connectivity between IPs using ping")
+        
+        self.poutput(f"\n{Fore.CYAN}USAGE:{Style.RESET_ALL}")
+        self.poutput("  ping -s SOURCE_IP -d DESTINATION_IP [options]")
+        self.poutput("  ping --help | -h")
+        
+        self.poutput(f"\n{Fore.CYAN}MANDATORY OPTIONS:{Style.RESET_ALL}")
+        self.poutput(f"  {Fore.YELLOW}-s, --source IP{Style.RESET_ALL}      Source IP address")
+        self.poutput(f"  {Fore.YELLOW}-d, --dest IP{Style.RESET_ALL}        Destination IP address")
+        self.poutput(f"  {Fore.YELLOW}    --destination IP{Style.RESET_ALL} Alternative to --dest")
+        
+        self.poutput(f"\n{Fore.CYAN}OPTIONAL OPTIONS:{Style.RESET_ALL}")
+        self.poutput("  -v, --verbose         Increase verbosity (can be used multiple times)")
+        self.poutput("  -h, --help            Show this help message")
+        
+        self.poutput(f"\n{Fore.CYAN}DESCRIPTION:{Style.RESET_ALL}")
+        self.poutput("  Tests connectivity from all namespaces containing the source IP")
+        self.poutput("  to all namespaces containing the destination IP. Shows ping results")
+        self.poutput("  and routing paths for successful connections.")
+        
+        self.poutput(f"\n{Fore.CYAN}EXAMPLES:{Style.RESET_ALL}")
+        self.poutput("\n  Basic connectivity test:")
+        self.poutput("    ping -s 10.1.1.100 -d 10.2.1.200")
+        
+        self.poutput("\n  Verbose output with details:")
+        self.poutput("    ping -s 10.1.1.100 -d 10.2.1.200 -vv")
+        
+        self.poutput("\n  Check return value:")
+        self.poutput("    ping -s 10.1.1.100 -d 10.2.1.200")
+        self.poutput("    echo $TSIM_RETURN_VALUE")
         self.poutput("")
-        self.poutput("Options:")
-        self.poutput("  -s, --source       Source IP address (required)")
-        self.poutput("  -d, --destination  Destination IP address (required)")
-        self.poutput("  -v, --verbose      Verbose output (can be used multiple times)")
-        self.poutput("")
-        self.poutput("Note: Tests from all namespaces with the source IP to all namespaces")
-        self.poutput("      with the destination IP, showing the routing path.")
     
     def help_mtr(self):
-        """Help for mtr command."""
-        self.poutput(f"{Fore.CYAN}MTR Command:{Style.RESET_ALL}")
-        self.poutput("  mtr -s SOURCE_IP -d DESTINATION_IP [--verbose]")
-        self.poutput("    Test connectivity between IPs using MTR (My TraceRoute)")
+        """Comprehensive help for mtr command."""
+        self.poutput(f"\n{Fore.CYAN}COMMAND:{Style.RESET_ALL}")
+        self.poutput("  mtr - Test connectivity between IPs using MTR (My TraceRoute)")
+        
+        self.poutput(f"\n{Fore.CYAN}USAGE:{Style.RESET_ALL}")
+        self.poutput("  mtr -s SOURCE_IP -d DESTINATION_IP [options]")
+        self.poutput("  mtr --help | -h")
+        
+        self.poutput(f"\n{Fore.CYAN}MANDATORY OPTIONS:{Style.RESET_ALL}")
+        self.poutput(f"  {Fore.YELLOW}-s, --source IP{Style.RESET_ALL}      Source IP address")
+        self.poutput(f"  {Fore.YELLOW}-d, --dest IP{Style.RESET_ALL}        Destination IP address")
+        self.poutput(f"  {Fore.YELLOW}    --destination IP{Style.RESET_ALL} Alternative to --dest")
+        
+        self.poutput(f"\n{Fore.CYAN}OPTIONAL OPTIONS:{Style.RESET_ALL}")
+        self.poutput("  -v, --verbose         Increase verbosity (can be used multiple times)")
+        self.poutput("  -h, --help            Show this help message")
+        
+        self.poutput(f"\n{Fore.CYAN}DESCRIPTION:{Style.RESET_ALL}")
+        self.poutput("  Tests connectivity from all namespaces containing the source IP")
+        self.poutput("  to all namespaces containing the destination IP. Uses MTR to show")
+        self.poutput("  hop-by-hop path and latency information for successful connections.")
+        
+        self.poutput(f"\n{Fore.CYAN}EXAMPLES:{Style.RESET_ALL}")
+        self.poutput("\n  Basic MTR trace:")
+        self.poutput("    mtr -s 10.1.1.100 -d 10.2.1.200")
+        
+        self.poutput("\n  Verbose output with details:")
+        self.poutput("    mtr -s 10.1.1.100 -d 10.2.1.200 -vv")
+        
+        self.poutput("\n  Check return value:")
+        self.poutput("    mtr -s 10.1.1.100 -d 10.2.1.200")
+        self.poutput("    echo $TSIM_RETURN_VALUE")
         self.poutput("")
-        self.poutput("Options:")
-        self.poutput("  -s, --source       Source IP address (required)")
-        self.poutput("  -d, --destination  Destination IP address (required)")
-        self.poutput("  -v, --verbose      Verbose output (can be used multiple times)")
-        self.poutput("")
-        self.poutput("Note: Tests from all namespaces with the source IP to all namespaces")
-        self.poutput("      with the destination IP, showing hop-by-hop path.")
 
 
 

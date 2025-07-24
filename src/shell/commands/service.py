@@ -19,6 +19,10 @@ from .base import BaseCommandHandler
 class ServiceCommands(BaseCommandHandler):
     """Handler for service management commands."""
     
+    def get_subcommand_names(self) -> List[str]:
+        """Get list of service subcommands."""
+        return ['start', 'test', 'list', 'stop', 'clean']
+    
     @choices_provider
     def ip_choices(self) -> List[str]:
         """Provide IP address choices for completion."""
@@ -123,12 +127,20 @@ class ServiceCommands(BaseCommandHandler):
     
     def _handle_command_impl(self, args: str) -> Optional[int]:
         """Handle service command with subcommands (legacy support)."""
+        # Check for help flags first
+        args_list = args.strip().split() if args.strip() else []
+        if not args.strip() or '--help' in args_list or '-h' in args_list:
+            self.shell.help_service()
+            return 0
+            
         # This method is kept for backward compatibility
         parser = self.create_parser()
         try:
             parsed_args = parser.parse_args(self._split_args(args))
             return self.handle_parsed_command(parsed_args)
         except SystemExit:
+            # Show help on parser error
+            self.shell.help_service()
             return 1
     
     
@@ -290,3 +302,79 @@ class ServiceCommands(BaseCommandHandler):
             self.error("Failed to stop all services")
         
         return returncode
+    
+    def complete_command(self, text: str, line: str, begidx: int, endidx: int) -> List[str]:
+        """Provide completion for service command arguments."""
+        # Parse the line to understand what we're completing
+        args = line.split()
+        
+        # If we're typing the second word (the subcommand)
+        if len(args) == 1 or (len(args) == 2 and not line.endswith(' ')):
+            subcommands = self.get_subcommand_names()
+            if len(args) == 1:
+                # Just "service" typed, return all subcommands
+                return subcommands
+            else:
+                # "service <partial>", return matching subcommands
+                return [cmd for cmd in subcommands if cmd.startswith(args[1])]
+        
+        # We have a subcommand, now handle argument completion
+        subcommand = args[1]
+        
+        # For specific subcommands, provide appropriate completions
+        if subcommand == 'start':
+            # Provide argument names that haven't been used yet
+            used_args = set(args)
+            available_args = ['--ip', '--port', '--protocol', '--name', '--verbose']
+            
+            # Check if we're completing a value for a specific argument
+            if len(args) >= 2 and args[-2] == '--ip':
+                return self.ip_choices()
+            elif len(args) >= 2 and args[-2] == '--port':
+                return self.port_choices()
+            elif len(args) >= 2 and args[-2] == '--protocol':
+                return ['tcp', 'udp']
+            
+            return [arg for arg in available_args if arg not in used_args and arg.startswith(text)]
+        
+        elif subcommand == 'test':
+            used_args = set(args)
+            available_args = ['--src', '--dest', '--protocol', '--message', '--timeout', '--verbose']
+            
+            # Check if we're completing IP addresses
+            if len(args) >= 2 and args[-2] in ['--src', '--dest']:
+                return self.ip_choices()
+            elif len(args) >= 2 and args[-2] == '--protocol':
+                return ['tcp', 'udp']
+            
+            return [arg for arg in available_args if arg not in used_args and arg.startswith(text)]
+        
+        elif subcommand == 'stop':
+            used_args = set(args)
+            available_args = ['--ip', '--port', '--protocol', '--verbose']
+            
+            # Check if we're completing values
+            if len(args) >= 2 and args[-2] == '--ip':
+                return self.ip_choices()
+            elif len(args) >= 2 and args[-2] == '--port':
+                return self.port_choices()
+            elif len(args) >= 2 and args[-2] == '--protocol':
+                return ['tcp', 'udp']
+            
+            return [arg for arg in available_args if arg not in used_args and arg.startswith(text)]
+        
+        elif subcommand == 'list':
+            used_args = set(args)
+            available_args = ['--format', '--verbose']
+            
+            if len(args) >= 2 and args[-2] == '--format':
+                return ['text', 'json']
+            
+            return [arg for arg in available_args if arg not in used_args and arg.startswith(text)]
+        
+        elif subcommand == 'clean':
+            used_args = set(args)
+            available_args = ['--force', '--verbose']
+            return [arg for arg in available_args if arg not in used_args and arg.startswith(text)]
+        
+        return []

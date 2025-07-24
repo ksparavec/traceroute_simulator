@@ -64,39 +64,43 @@ class NetTestCommands(BaseCommandHandler):
     
     def handle_ping_command(self, args: str) -> Optional[int]:
         """Handle ping command."""
-        # Show help if no arguments provided
-        if not args or args.strip() == '':
+        # Check for help flags first
+        args_list = args.strip().split() if args.strip() else []
+        if not args or args.strip() == '' or '--help' in args_list or '-h' in args_list:
             self.shell.help_ping()
-            return None
+            return 0
             
         parser = self.create_ping_parser()
         try:
             parsed_args = parser.parse_args(self._split_args(args))
             return self._run_nettest(parsed_args, 'ping')
         except SystemExit:
-            # Parser error (e.g., missing required args) - already printed
-            return None
+            # Parser error (e.g., missing required args) - show help instead
+            self.shell.help_ping()
+            return 1
         except Exception as e:
             self.error(f"Error running ping: {e}")
-            return None
+            return 1
     
     def handle_mtr_command(self, args: str) -> Optional[int]:
         """Handle mtr command."""
-        # Show help if no arguments provided
-        if not args or args.strip() == '':
+        # Check for help flags first
+        args_list = args.strip().split() if args.strip() else []
+        if not args or args.strip() == '' or '--help' in args_list or '-h' in args_list:
             self.shell.help_mtr()
-            return None
+            return 0
             
         parser = self.create_mtr_parser()
         try:
             parsed_args = parser.parse_args(self._split_args(args))
             return self._run_nettest(parsed_args, 'mtr')
         except SystemExit:
-            # Parser error (e.g., missing required args) - already printed
-            return None
+            # Parser error (e.g., missing required args) - show help instead
+            self.shell.help_mtr()
+            return 1
         except Exception as e:
             self.error(f"Error running mtr: {e}")
-            return None
+            return 1
     
     def _run_nettest(self, args: argparse.Namespace, test_type: str) -> int:
         """Run network test with specified type."""

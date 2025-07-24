@@ -410,6 +410,453 @@ class NetworkNamespaceStatus:
             except json.JSONDecodeError:
                 return {"error": "Failed to parse interface data"}
     
+    def get_routes_data(self, namespace: str) -> Dict[str, Any]:
+        """Get routing data in structured format."""
+        if namespace not in self.available_namespaces:
+            return {"error": f"Namespace {namespace} not found"}
+        
+        # Dynamically discover active routing tables from policy rules
+        discovered_tables = self._discover_routing_tables(namespace)
+        
+        routes_data = {}
+        
+        for table_id, table_name in discovered_tables:
+            if table_name == 'main':
+                result = self.run_command("ip -j route show", namespace=namespace, check=False)
+            else:
+                result = self.run_command(f"ip -j route show table {table_id}", namespace=namespace, check=False)
+            
+            if result.returncode == 0 and result.stdout.strip():
+                try:
+                    routes = json.loads(result.stdout)
+                    # Translate interface names in routes
+                    for route in routes:
+                        if 'dev' in route and route['dev'].startswith('v') and re.match(r'^v\d{3}$', route['dev']):
+                            original_name = self.get_original_name(route['dev'])
+                            route['original_dev'] = original_name
+                    routes_data[table_name] = routes
+                except json.JSONDecodeError:
+                    # Fallback to text parsing
+                    routes_data[table_name] = self._parse_text_routes(result.stdout)
+            else:
+                routes_data[table_name] = {"error": f"Failed to get routes for table {table_id}"}
+        
+        return {"namespace": namespace, "routes": routes_data}
+    
+    def _parse_text_routes(self, route_output: str) -> List[Dict[str, Any]]:
+        """Parse text route output into structured format."""
+        routes = []
+        for line in route_output.split('\n'):
+            if not line.strip():
+                continue
+            
+            route = {}
+            parts = line.split()
+            
+            # Parse destination
+            if parts[0] == 'default':
+                route['dst'] = 'default'
+                i = 1
+            else:
+                route['dst'] = parts[0]
+                i = 1
+            
+            # Parse remaining parts
+            while i < len(parts):
+                if parts[i] == 'via' and i + 1 < len(parts):
+                    route['gateway'] = parts[i + 1]
+                    i += 2
+                elif parts[i] == 'dev' and i + 1 < len(parts):
+                    route['dev'] = parts[i + 1]
+                    # Add original name if it's a short name
+                    if parts[i + 1].startswith('v') and re.match(r'^v\d{3}$', parts[i + 1]):
+                        route['original_dev'] = self.get_original_name(parts[i + 1])
+                    i += 2
+                elif parts[i] == 'proto' and i + 1 < len(parts):
+                    route['protocol'] = parts[i + 1]
+                    i += 2
+                elif parts[i] == 'scope' and i + 1 < len(parts):
+                    route['scope'] = parts[i + 1]
+                    i += 2
+                elif parts[i] == 'src' and i + 1 < len(parts):
+                    route['prefsrc'] = parts[i + 1]
+                    i += 2
+                elif parts[i] == 'metric' and i + 1 < len(parts):
+                    route['metric'] = int(parts[i + 1])
+                    i += 2
+                else:
+                    i += 1
+            
+            routes.append(route)
+        
+        return routes
+    
+    def get_rules_data(self, namespace: str) -> Dict[str, Any]:
+        """Get policy rules data in structured format."""
+        if namespace not in self.available_namespaces:
+            return {"error": f"Namespace {namespace} not found"}
+        
+        result = self.run_command("ip -j rule show", namespace=namespace, check=False)
+        if result.returncode == 0:
+            try:
+                rules = json.loads(result.stdout)
+                return {"namespace": namespace, "rules": rules}
+            except json.JSONDecodeError:
+                # Fallback to text parsing
+                pass
+        
+        # Fallback to text output parsing
+        result = self.run_command("ip rule show", namespace=namespace, check=False)
+        if result.returncode != 0:
+            return {"error": f"Failed to get policy rules for {namespace}"}
+        
+        rules = []
+        for line in result.stdout.split('\n'):
+            if not line.strip():
+                continue
+            
+            rule = {}
+            # Parse priority
+            priority_match = re.match(r'^(\d+):\s+(.+)$', line)
+            if priority_match:
+                rule['priority'] = int(priority_match.group(1))
+                rule_text = priority_match.group(2)
+                
+                # Parse rule components
+                if 'from all' in rule_text:
+                    rule['src'] = 'all'
+                elif from_match := re.search(r'from (\S+)', rule_text):
+                    rule['src'] = from_match.group(1)
+                
+                if 'to all' in rule_text:
+                    rule['dst'] = 'all'
+                elif to_match := re.search(r'to (\S+)', rule_text):
+                    rule['dst'] = to_match.group(1)
+                
+                if lookup_match := re.search(r'lookup (\S+)', rule_text):
+                    rule['table'] = lookup_match.group(1)
+                elif table_match := re.search(r'table (\S+)', rule_text):
+                    rule['table'] = table_match.group(1)
+                
+                if iif_match := re.search(r'iif (\S+)', rule_text):
+                    rule['iifname'] = iif_match.group(1)
+                
+                if oif_match := re.search(r'oif (\S+)', rule_text):
+                    rule['oifname'] = oif_match.group(1)
+                
+                rules.append(rule)
+        
+        return {"namespace": namespace, "rules": rules}
+    
+    def get_iptables_data(self, namespace: str) -> Dict[str, Any]:
+        """Get iptables data in structured format with full details including counters."""
+        if namespace not in self.available_namespaces:
+            return {"error": f"Namespace {namespace} not found"}
+        
+        iptables_data = {}
+        
+        # Get all tables
+        tables = ['filter', 'nat', 'mangle', 'raw']
+        
+        for table in tables:
+            # Use iptables-save with counters (-c) to get packet/byte counts
+            result = self.run_command(f"iptables-save -t {table} -c", namespace=namespace, check=False)
+            if result.returncode == 0:
+                iptables_data[table] = self._parse_iptables_save_with_counters(result.stdout)
+            else:
+                iptables_data[table] = {"error": f"Failed to get {table} table"}
+        
+        return {"namespace": namespace, "iptables": iptables_data}
+    
+    def _parse_iptables_save_with_counters(self, output: str) -> Dict[str, Any]:
+        """Parse iptables-save output with counters into structured format."""
+        table_data = {
+            'chains': {},
+            'custom_chains': []
+        }
+        
+        for line in output.split('\n'):
+            line = line.strip()
+            if not line or line.startswith('#') or line.startswith('*') or line == 'COMMIT':
+                continue
+            
+            # Chain definition with packet/byte counters
+            # Format: :CHAIN_NAME POLICY [packets:bytes]
+            if line.startswith(':'):
+                chain_match = re.match(r':(\S+)\s+(\S+)(?:\s+\[(\d+):(\d+)\])?', line)
+                if chain_match:
+                    chain_name = chain_match.group(1)
+                    chain_policy = chain_match.group(2)
+                    packets = int(chain_match.group(3)) if chain_match.group(3) else 0
+                    bytes_count = int(chain_match.group(4)) if chain_match.group(4) else 0
+                    
+                    table_data['chains'][chain_name] = {
+                        'policy': chain_policy if chain_policy != '-' else None,
+                        'packets': packets,
+                        'bytes': bytes_count,
+                        'rules': []
+                    }
+                    
+                    # Track custom chains (those without a policy)
+                    if chain_policy == '-':
+                        table_data['custom_chains'].append(chain_name)
+            
+            # Rule with counters
+            # Format: [packets:bytes] -A CHAIN_NAME rule_spec
+            elif line.startswith('[') or line.startswith('-A '):
+                rule_data = self._parse_iptables_rule(line)
+                if rule_data and rule_data['chain'] in table_data['chains']:
+                    table_data['chains'][rule_data['chain']]['rules'].append(rule_data)
+        
+        return table_data
+    
+    def _parse_iptables_rule(self, rule_line: str) -> Dict[str, Any]:
+        """Parse a single iptables rule with all its parameters."""
+        rule_info = {
+            'packets': 0,
+            'bytes': 0,
+            'chain': None,
+            'matches': {},
+            'target': None,
+            'target_options': {},
+            'raw': rule_line
+        }
+        
+        # Extract counters if present
+        counter_match = re.match(r'^\[(\d+):(\d+)\]\s+(.+)', rule_line)
+        if counter_match:
+            rule_info['packets'] = int(counter_match.group(1))
+            rule_info['bytes'] = int(counter_match.group(2))
+            rule_line = counter_match.group(3)
+        
+        # Parse -A CHAIN_NAME
+        if not rule_line.startswith('-A '):
+            return None
+            
+        parts = rule_line.split()
+        if len(parts) < 2:
+            return None
+            
+        rule_info['chain'] = parts[1]
+        
+        i = 2
+        while i < len(parts):
+            # Source address
+            if parts[i] == '-s' and i + 1 < len(parts):
+                rule_info['matches']['source'] = parts[i + 1]
+                i += 2
+            # Destination address
+            elif parts[i] == '-d' and i + 1 < len(parts):
+                rule_info['matches']['destination'] = parts[i + 1]
+                i += 2
+            # Input interface
+            elif parts[i] in ['-i', '--in-interface'] and i + 1 < len(parts):
+                rule_info['matches']['in_interface'] = parts[i + 1]
+                i += 2
+            # Output interface
+            elif parts[i] in ['-o', '--out-interface'] and i + 1 < len(parts):
+                rule_info['matches']['out_interface'] = parts[i + 1]
+                i += 2
+            # Protocol
+            elif parts[i] in ['-p', '--protocol'] and i + 1 < len(parts):
+                rule_info['matches']['protocol'] = parts[i + 1]
+                i += 2
+            # Source port
+            elif parts[i] == '--sport' and i + 1 < len(parts):
+                rule_info['matches']['source_port'] = parts[i + 1]
+                i += 2
+            # Destination port
+            elif parts[i] == '--dport' and i + 1 < len(parts):
+                rule_info['matches']['destination_port'] = parts[i + 1]
+                i += 2
+            # Match extension
+            elif parts[i] == '-m' and i + 1 < len(parts):
+                match_name = parts[i + 1]
+                if 'match_extensions' not in rule_info['matches']:
+                    rule_info['matches']['match_extensions'] = []
+                rule_info['matches']['match_extensions'].append(match_name)
+                i += 2
+            # State match
+            elif parts[i] == '--state' and i + 1 < len(parts):
+                rule_info['matches']['state'] = parts[i + 1].split(',')
+                i += 2
+            # Connection tracking state
+            elif parts[i] == '--ctstate' and i + 1 < len(parts):
+                rule_info['matches']['ctstate'] = parts[i + 1].split(',')
+                i += 2
+            # Set match
+            elif parts[i] == '--match-set' and i + 2 < len(parts):
+                if 'match_sets' not in rule_info['matches']:
+                    rule_info['matches']['match_sets'] = []
+                rule_info['matches']['match_sets'].append({
+                    'name': parts[i + 1],
+                    'direction': parts[i + 2]
+                })
+                i += 3
+            # Comment
+            elif parts[i] == '--comment' and i + 1 < len(parts):
+                # Handle quoted comments
+                if parts[i + 1].startswith('"'):
+                    comment_parts = []
+                    j = i + 1
+                    while j < len(parts):
+                        comment_parts.append(parts[j])
+                        if parts[j].endswith('"'):
+                            break
+                        j += 1
+                    rule_info['matches']['comment'] = ' '.join(comment_parts).strip('"')
+                    i = j + 1
+                else:
+                    rule_info['matches']['comment'] = parts[i + 1]
+                    i += 2
+            # Jump target
+            elif parts[i] in ['-j', '--jump'] and i + 1 < len(parts):
+                rule_info['target'] = parts[i + 1]
+                i += 2
+                # Parse target options
+                if rule_info['target'] == 'REJECT' and i < len(parts) and parts[i] == '--reject-with':
+                    rule_info['target_options']['reject_with'] = parts[i + 1]
+                    i += 2
+                elif rule_info['target'] == 'LOG' and i < len(parts):
+                    if parts[i] == '--log-prefix' and i + 1 < len(parts):
+                        rule_info['target_options']['log_prefix'] = parts[i + 1]
+                        i += 2
+                    elif parts[i] == '--log-level' and i + 1 < len(parts):
+                        rule_info['target_options']['log_level'] = parts[i + 1]
+                        i += 2
+                elif rule_info['target'] in ['SNAT', 'DNAT', 'MASQUERADE']:
+                    if i < len(parts) and parts[i] == '--to-source' and i + 1 < len(parts):
+                        rule_info['target_options']['to_source'] = parts[i + 1]
+                        i += 2
+                    elif i < len(parts) and parts[i] == '--to-destination' and i + 1 < len(parts):
+                        rule_info['target_options']['to_destination'] = parts[i + 1]
+                        i += 2
+            # TCP flags
+            elif parts[i] == '--tcp-flags' and i + 2 < len(parts):
+                rule_info['matches']['tcp_flags'] = {
+                    'mask': parts[i + 1].split(','),
+                    'set': parts[i + 2].split(',')
+                }
+                i += 3
+            # ICMP type
+            elif parts[i] == '--icmp-type' and i + 1 < len(parts):
+                rule_info['matches']['icmp_type'] = parts[i + 1]
+                i += 2
+            # Limit
+            elif parts[i] == '--limit' and i + 1 < len(parts):
+                rule_info['matches']['limit'] = parts[i + 1]
+                i += 2
+            # Limit burst
+            elif parts[i] == '--limit-burst' and i + 1 < len(parts):
+                rule_info['matches']['limit_burst'] = parts[i + 1]
+                i += 2
+            # Mark
+            elif parts[i] == '--mark' and i + 1 < len(parts):
+                rule_info['matches']['mark'] = parts[i + 1]
+                i += 2
+            # Set mark
+            elif parts[i] == '--set-mark' and i + 1 < len(parts):
+                rule_info['target_options']['set_mark'] = parts[i + 1]
+                i += 2
+            # Negation
+            elif parts[i] == '!':
+                # Handle negation for next parameter
+                if i + 2 < len(parts):
+                    next_param = parts[i + 1]
+                    if next_param in ['-s', '-d', '-i', '-o', '-p']:
+                        # Add negation flag to the match
+                        negated_key = {
+                            '-s': 'source_negated',
+                            '-d': 'destination_negated',
+                            '-i': 'in_interface_negated',
+                            '-o': 'out_interface_negated',
+                            '-p': 'protocol_negated'
+                        }.get(next_param)
+                        if negated_key:
+                            rule_info['matches'][negated_key] = True
+                i += 1
+            else:
+                # Unknown parameter, skip
+                i += 1
+        
+        return rule_info
+    
+    def get_ipsets_data(self, namespace: str) -> Dict[str, Any]:
+        """Get ipsets data in structured format."""
+        # Check if this is a host namespace (hosts don't typically have ipsets)
+        if namespace in self.hosts:
+            return {"namespace": namespace, "ipsets": {}, "note": "Hosts don't typically have ipsets"}
+        
+        if namespace not in self.available_namespaces:
+            return {"error": f"Namespace {namespace} not found"}
+        
+        result = self.run_command("ipset list -n", namespace=namespace, check=False)
+        if result.returncode != 0:
+            return {"namespace": namespace, "ipsets": {}}
+        
+        ipset_names = [name.strip() for name in result.stdout.split('\n') if name.strip()]
+        ipsets = {}
+        
+        for ipset_name in ipset_names:
+            result = self.run_command(f"ipset list {ipset_name}", namespace=namespace, check=False)
+            if result.returncode == 0:
+                ipsets[ipset_name] = self._parse_ipset_list(result.stdout)
+        
+        return {"namespace": namespace, "ipsets": ipsets}
+    
+    def _parse_ipset_list(self, output: str) -> Dict[str, Any]:
+        """Parse ipset list output into structured format."""
+        ipset_info = {
+            'type': None,
+            'header': {},
+            'members': []
+        }
+        
+        in_members = False
+        
+        for line in output.split('\n'):
+            line = line.strip()
+            if not line:
+                continue
+            
+            if line == 'Members:':
+                in_members = True
+                continue
+            
+            if not in_members:
+                # Parse header information
+                if line.startswith('Name:'):
+                    continue  # Skip name, we already have it
+                elif line.startswith('Type:'):
+                    ipset_info['type'] = line.split(':', 1)[1].strip()
+                elif ':' in line:
+                    key, value = line.split(':', 1)
+                    ipset_info['header'][key.strip()] = value.strip()
+            else:
+                # Parse members
+                ipset_info['members'].append(line)
+        
+        return ipset_info
+    
+    def get_all_data(self, namespace: str) -> Dict[str, Any]:
+        """Get all configuration data in structured format."""
+        if namespace not in self.available_namespaces:
+            return {"error": f"Namespace {namespace} not found"}
+        
+        entity_type = "host" if self.is_host(namespace) else "router"
+        
+        all_data = {
+            "namespace": namespace,
+            "type": entity_type,
+            "interfaces": self.get_interfaces_data(namespace).get("interfaces", {}),
+            "routes": self.get_routes_data(namespace).get("routes", {}),
+            "rules": self.get_rules_data(namespace).get("rules", []),
+            "iptables": self.get_iptables_data(namespace).get("iptables", {}),
+            "ipsets": self.get_ipsets_data(namespace).get("ipsets", {})
+        }
+        
+        return all_data
+    
     def show_interfaces(self, namespace: str) -> str:
         """Show interface configuration with original names."""
         if namespace not in self.available_namespaces:
@@ -1155,10 +1602,16 @@ Environment Variables:
                     data[namespace] = status_tool.get_interfaces_data(namespace)
                 elif args.function == 'summary':
                     data[namespace] = status_tool.get_summary_data(namespace)
-                elif args.function in ['routes', 'rules', 'iptables', 'ipsets', 'all']:
-                    # For now, just return interfaces for JSON mode
-                    # TODO: Implement get_routes_data, get_rules_data, etc.
-                    data[namespace] = {"error": f"JSON output for '{args.function}' not yet implemented"}
+                elif args.function == 'routes':
+                    data[namespace] = status_tool.get_routes_data(namespace)
+                elif args.function == 'rules':
+                    data[namespace] = status_tool.get_rules_data(namespace)
+                elif args.function == 'iptables':
+                    data[namespace] = status_tool.get_iptables_data(namespace)
+                elif args.function == 'ipsets':
+                    data[namespace] = status_tool.get_ipsets_data(namespace)
+                elif args.function == 'all':
+                    data[namespace] = status_tool.get_all_data(namespace)
             output = json.dumps(data, indent=2)
         else:
             # Text output mode

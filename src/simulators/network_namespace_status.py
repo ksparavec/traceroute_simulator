@@ -1102,15 +1102,21 @@ Environment Variables:
     # Get facts directory from environment (required)
     facts_dir = os.environ.get('TRACEROUTE_SIMULATOR_FACTS')
     if not facts_dir:
-        print("Error: TRACEROUTE_SIMULATOR_FACTS environment variable must be set")
-        print("Example: TRACEROUTE_SIMULATOR_FACTS=/path/to/facts")
+        if args.json:
+            print(json.dumps({"error": "TRACEROUTE_SIMULATOR_FACTS environment variable must be set"}), file=sys.stdout)
+        else:
+            print("Error: TRACEROUTE_SIMULATOR_FACTS environment variable must be set", file=sys.stderr)
+            print("Example: TRACEROUTE_SIMULATOR_FACTS=/path/to/facts", file=sys.stderr)
         sys.exit(1)
     
     # Check for root privileges
     if os.geteuid() != 0:
-        print("Error: This script requires root privileges to access network namespaces")
-        print("Please run with sudo:")
-        print(f"  sudo {' '.join(sys.argv)}")
+        if args.json:
+            print(json.dumps({"error": "This script requires root privileges to access network namespaces"}), file=sys.stdout)
+        else:
+            print("Error: This script requires root privileges to access network namespaces", file=sys.stderr)
+            print("Please run with sudo:", file=sys.stderr)
+            print(f"  sudo {' '.join(sys.argv)}", file=sys.stderr)
         sys.exit(1)
         
     try:
@@ -1129,7 +1135,10 @@ Environment Variables:
                 if fnmatch.fnmatch(ns, args.limit):
                     target_namespaces.append(ns)
             if not target_namespaces:
-                print(f"No namespaces found matching pattern: {args.limit}")
+                if args.json:
+                    print(json.dumps({"error": f"No namespaces found matching pattern: {args.limit}"}), file=sys.stdout)
+                else:
+                    print(f"No namespaces found matching pattern: {args.limit}", file=sys.stderr)
                 sys.exit(0)
         else:
             # No limit specified - show all
@@ -1174,8 +1183,11 @@ Environment Variables:
                 elif args.function == 'all':
                     output = status_tool.show_all_configuration(namespace)
                 else:
-                    print(f"Unknown function: {args.function}")
-                    sys.exit(1)
+                    if args.json:
+                        output = json.dumps({"error": f"Unknown function: {args.function}"})
+                    else:
+                        print(f"Unknown function: {args.function}", file=sys.stderr)
+                        sys.exit(1)
             else:
                 # Multiple namespaces - show with headers
                 output_sections = []
@@ -1211,7 +1223,10 @@ Environment Variables:
         print(output)
         
     except Exception as e:
-        print(f"Status check failed: {e}")
+        if args.json:
+            print(json.dumps({"error": f"Status check failed: {str(e)}"}), file=sys.stdout)
+        else:
+            print(f"Status check failed: {e}", file=sys.stderr)
         sys.exit(1)
 
 

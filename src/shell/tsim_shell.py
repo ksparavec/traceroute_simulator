@@ -640,6 +640,15 @@ Type 'set' to see all variables.
     # Alias '!' to 'shell'
     do_bang = do_shell
 
+    def do_clear(self, args):
+        """Clear the terminal screen (interactive mode only)."""
+        if self.is_interactive:
+            # Use ANSI escape sequences for cross-platform compatibility
+            print('\033[2J\033[H', end='')
+        else:
+            # In non-interactive mode, ignore the command
+            pass
+
     def default(self, statement: cmd2.Statement):
         """Called for any command not recognized."""
         # Check if it's a variable assignment first
@@ -652,8 +661,20 @@ Type 'set' to see all variables.
                 self.history.append(history_item)
             return
 
-        # If not an assignment, it's a true unknown command
+        # If not an assignment, check if it might be a variable name (interactive mode only)
         command = statement.command
+        if self.is_interactive and command and command.isidentifier():
+            # Check if it's a valid variable name
+            if command in self.variable_manager.variables or command in os.environ:
+                # It's a variable, show it using the show command
+                self.do_show(f"-j {command}")
+                return
+            else:
+                # Variable not found
+                self.poutput(f"{Fore.RED}✗ Variable '{command}' not found{Style.RESET_ALL}")
+                return
+
+        # If not an assignment or variable, it's a true unknown command
         if self.is_interactive:
             self.poutput(f"{Fore.RED}✗ Unknown command: '{command}'{Style.RESET_ALL}")
             self.poutput(f"{Fore.YELLOW}ℹ Available commands:{Style.RESET_ALL}")

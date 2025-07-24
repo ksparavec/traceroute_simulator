@@ -343,3 +343,4 @@ The traceroute simulator provides:
 
 - Do not commit anything yourself without asking
 - Always run sudo with '-E' argument to pick up environment
+- Do not print any informational or summary messages from any command when -j option has been set, unless verbose option has been set too

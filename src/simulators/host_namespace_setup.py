@@ -161,7 +161,7 @@ class HostNamespaceManager:
         
         # With -vvv, print the command before execution
         if self.verbose >= 3:
-            print(f"[CMD] {full_command}")
+            print(f"[CMD] {full_command}", file=sys.stderr)
         
         result = subprocess.run(
             full_command, shell=True, capture_output=True, text=True, check=check
@@ -172,10 +172,10 @@ class HostNamespaceManager:
             # Skip stdout for network_namespace_status.py and host listing to avoid verbose output
             if 'network_namespace_status.py' not in full_command and '--list-hosts' not in full_command:
                 if result.stdout:
-                    print(f"[STDOUT]\n{result.stdout}")
+                    print(f"[STDOUT]\n{result.stdout}", file=sys.stderr)
             if result.stderr:
-                print(f"[STDERR]\n{result.stderr}")
-            print(f"[RETCODE] {result.returncode}")
+                print(f"[STDERR]\n{result.stderr}", file=sys.stderr)
+            print(f"[RETCODE] {result.returncode}", file=sys.stderr)
         
         if result.returncode != 0 and check:
             self.logger.error(f"Command failed: {full_command}")
@@ -406,7 +406,7 @@ class HostNamespaceManager:
         if not self.check_command_availability("tc"):
             self.logger.warning("tc (traffic control) not available - skipping host latency configuration")
             if self.verbose >= 2:
-                print("Warning: tc not available - host latency simulation skipped")
+                print("Warning: tc not available - host latency simulation skipped", file=sys.stderr)
             return
         
         try:
@@ -543,9 +543,9 @@ class HostNamespaceManager:
         host_ip_clean = host_ip.split('/')[0] if '/' in host_ip else host_ip
         
         if self.verbose >= 3:
-            print(f"\nDEBUG: determine_router_interface_by_routing() called with:")
-            print(f"  router_name: {router_name}")
-            print(f"  host_ip: {host_ip_clean}")
+            print(f"\nDEBUG: determine_router_interface_by_routing() called with:", file=sys.stderr)
+            print(f"  router_name: {router_name}", file=sys.stderr)
+            print(f"  host_ip: {host_ip_clean}", file=sys.stderr)
         
         # Check if router namespace exists
         if router_name not in self.available_namespaces:
@@ -556,7 +556,7 @@ class HostNamespaceManager:
         cmd = f"ip route get {host_ip_clean}"
         
         if self.verbose >= 3:
-            print(f"\nExecuting in router namespace: ip netns exec {router_name} {cmd}")
+            print(f"\nExecuting in router namespace: ip netns exec {router_name} {cmd}", file=sys.stderr)
         
         result = self.run_command(cmd, namespace=router_name, check=False)
         
@@ -565,7 +565,7 @@ class HostNamespaceManager:
             return None
         
         if self.verbose >= 3:
-            print(f"Route output: {result.stdout.strip()}")
+            print(f"Route output: {result.stdout.strip()}", file=sys.stderr)
         
         # Parse the output to extract the interface
         # Example outputs:
@@ -582,7 +582,7 @@ class HostNamespaceManager:
         interface_name = interface_match.group(1)
         
         if self.verbose >= 3:
-            print(f"Determined interface: {interface_name}")
+            print(f"Determined interface: {interface_name}", file=sys.stderr)
         
         # Now find the router's IP on this interface
         # First check if it's a direct route (no via)
@@ -592,7 +592,7 @@ class HostNamespaceManager:
             if src_match:
                 gateway_ip = src_match.group(1)
                 if self.verbose >= 3:
-                    print(f"Direct route - using source IP as gateway: {gateway_ip}")
+                    print(f"Direct route - using source IP as gateway: {gateway_ip}", file=sys.stderr)
                 return (interface_name, gateway_ip)
         
         # For routes with 'via' or if src not found, get the interface IP from router facts
@@ -604,7 +604,7 @@ class HostNamespaceManager:
                     route.get('prefsrc') and route.get('dev') == interface_name):
                     gateway_ip = route['prefsrc']
                     if self.verbose >= 3:
-                        print(f"Found router IP {gateway_ip} on interface {interface_name} from facts")
+                        print(f"Found router IP {gateway_ip} on interface {interface_name} from facts", file=sys.stderr)
                     return (interface_name, gateway_ip)
         
         # If we still don't have a gateway IP, we may need to add one
@@ -1139,7 +1139,7 @@ class HostNamespaceManager:
             else:
                 # Use ip route get to determine the correct interface
                 if self.verbose >= 3:
-                    print(f"\nDetermining router interface using routing table lookup...")
+                    print(f"\nDetermining router interface using routing table lookup...", file=sys.stderr)
                 
                 route_info = self.determine_router_interface_by_routing(target_router, primary_ip)
                 if route_info:
@@ -1170,7 +1170,7 @@ class HostNamespaceManager:
                                 self.logger.warning(f"Failed to add IP to router: {result.stderr}")
                     else:
                         if self.verbose >= 3:
-                            print(f"Router already has IP {gateway_ip} in host subnet {host_network}")
+                            print(f"Router already has IP {gateway_ip} in host subnet {host_network}", file=sys.stderr)
                 else:
                     self.logger.error(f"Could not determine router interface for host IP {primary_ip}")
                     return False

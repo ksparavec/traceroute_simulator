@@ -761,12 +761,12 @@ def main():
             bind_address=args.bind
         )
         manager.start_service(config)
-        if args.verbose >= 1:
+        if args.verbose >= 1 and not args.json:
             print(f"Service {args.name} started on {args.namespace}:{args.port}/{args.protocol}")
         
     elif args.command == 'stop':
         manager.stop_service(args.namespace, args.name, args.port)
-        if args.verbose >= 1:
+        if args.verbose >= 1 and not args.json:
             print(f"Service {args.name} stopped")
         
     elif args.command == 'status':
@@ -820,7 +820,7 @@ def main():
         
     elif args.command == 'cleanup':
         manager.cleanup_all_services()
-        if args.verbose >= 1:
+        if args.verbose >= 1 and not args.json:
             print("All services cleaned up")
     
     return 0

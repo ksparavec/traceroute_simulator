@@ -67,23 +67,85 @@ class VariableManager:
         
         # Extract the chain of accessors
         accessors_str = name[base_var_match.end():]
-        # This regex finds all .key, .method(), or [key] style accessors
-        accessor_pattern = re.compile(r'\.([a-zA-Z_][a-zA-Z0-9_]*)(\(\))?|\[([^\]]+)\]')
+        # This regex finds all .key, .method(), .method(args), or [key] style accessors
+        accessor_pattern = re.compile(r'\.([a-zA-Z_][a-zA-Z0-9_]*)(\([^)]*\))?|\[([^\]]+)\]')
         accessor_matches = accessor_pattern.findall(accessors_str)
 
-        for dot_key, method_parens, bracket_key in accessor_matches:
+        for dot_key, method_args, bracket_key in accessor_matches:
             if value is None:
                 return None
             
-            # Check if it's a known method (with or without parentheses)
-            if dot_key in ['keys', 'values']:
+            # Check if it's a method call
+            if dot_key and method_args:
+                # Handle method calls that work on any type
+                if dot_key == 'length':
+                    # Handle length() on any type
+                    if isinstance(value, (dict, list, str)):
+                        value = len(value)
+                        continue
+                    elif isinstance(value, (int, float)):
+                        # For numbers, convert to string and get length (like jq)
+                        value = len(str(value))
+                        continue
+                    elif value is None:
+                        value = 0
+                        continue
+                    else:
+                        # For other types, try to get length
+                        try:
+                            value = len(value)
+                            continue
+                        except TypeError:
+                            # If len() is not supported, convert to string
+                            value = len(str(value))
+                            continue
                 # Handle method calls on dictionaries
+                elif isinstance(value, dict):
+                    if dot_key == 'keys':
+                        value = list(value.keys())
+                        continue
+                    elif dot_key == 'values':
+                        value = list(value.values())
+                        continue
+                    elif dot_key == 'get':
+                        # Extract the argument from get(arg)
+                        arg_match = re.match(r'\((["\']?)([^"\']+)\1\)', method_args)
+                        if arg_match:
+                            get_key = arg_match.group(2)
+                            value = value.get(get_key)
+                            continue
+                        else:
+                            return None  # Invalid get() syntax
+                    else:
+                        return None  # Unknown method
+                else:
+                    return None  # Method not applicable to this type
+            elif dot_key in ['keys', 'values', 'length']:
+                # Handle methods without parentheses for backward compatibility
                 if isinstance(value, dict) and dot_key == 'keys':
                     value = list(value.keys())
                     continue
                 elif isinstance(value, dict) and dot_key == 'values':
                     value = list(value.values())
                     continue
+                elif dot_key == 'length':
+                    # Handle length without parentheses
+                    if isinstance(value, (dict, list, str)):
+                        value = len(value)
+                        continue
+                    elif isinstance(value, (int, float)):
+                        value = len(str(value))
+                        continue
+                    elif value is None:
+                        value = 0
+                        continue
+                    else:
+                        try:
+                            value = len(value)
+                            continue
+                        except TypeError:
+                            value = len(str(value))
+                            continue
                 else:
                     return None  # Method not applicable to this type
             
@@ -168,7 +230,7 @@ class VariableManager:
         command = complex_pattern.sub(replace_complex, command)
         
         # Second pass: handle remaining simple variables
-        simple_pattern = re.compile(r'\$({)?([a-zA-Z_][a-zA-Z0-9_]*(?:\.[a-zA-Z_][a-zA-Z0-9_]*(?:\(\))?|\[[^\]]+\])*)(?(1)})')
+        simple_pattern = re.compile(r'\$({)?([a-zA-Z_][a-zA-Z0-9_]*(?:\.[a-zA-Z_][a-zA-Z0-9_]*(?:\([^)]*\))?|\[[^\]]+\])*)(?(1)})')
         
         def replace_simple(match):
             var_name = match.group(2)

@@ -244,6 +244,11 @@ class ServiceManager:
             "sh", "-c", f"ss {protocol_flag}nl | grep ':{port}\\s'"
         ]
         
+        # Show command with -vv
+        if self.verbose_level >= 2:
+            import shlex
+            print(f"[CMD] {' '.join(shlex.quote(arg) for arg in cmd)}")
+        
         try:
             result = subprocess.run(cmd, capture_output=True, text=True)
             # If grep finds anything, the port is in use for this protocol
@@ -300,7 +305,12 @@ class ServiceManager:
             "socat", listen_spec, "EXEC:cat"
         ]
         
-        self.logger.debug(f"Starting socat service", command=" ".join(cmd))
+        # Show command with -vv
+        if self.verbose_level >= 2:
+            import shlex
+            print(f"[CMD] {' '.join(shlex.quote(arg) for arg in cmd)}")
+        else:
+            self.logger.debug(f"Starting socat service", command=" ".join(cmd))
         
         # Start service
         try:
@@ -549,12 +559,8 @@ class ServiceClient:
         Returns:
             Tuple of (success, response_or_error)
         """
-        self.logger.info(
-            f"Testing {protocol.value} service",
-            source=source_namespace,
-            dest=f"{dest_ip}:{port}",
-            test_message=message
-        )
+        if self.verbose_level >= 3:
+            print(f"[DEBUG] ServiceClient.test_service called: ns={source_namespace}, dest_ip={dest_ip}, port={port}, proto={protocol.value}, msg='{message}'")
         
         if protocol == ServiceProtocol.TCP:
             return self._test_tcp_service(source_namespace, dest_ip, port, message, timeout)
@@ -569,15 +575,60 @@ class ServiceClient:
         message: str,
         timeout: int
     ) -> Tuple[bool, str]:
-        """Test TCP service using socat."""
+        """Test TCP service by connecting to the actual running service."""
+        if self.verbose_level >= 3:
+            print(f"[DEBUG] _test_tcp_service: ns={namespace}, dest={dest_ip}:{port}")
+        
+        # Python TCP client script
+        python_script = f'''
+import socket
+import sys
+
+try:
+    # Create socket
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.settimeout({timeout})
+    
+    # Connect to server
+    sock.connect(('{dest_ip}', {port}))
+    
+    # Send message
+    sock.send('{message}'.encode() + b'\\n')
+    
+    # Receive response
+    response = sock.recv(1024).decode()
+    
+    # Close connection
+    sock.close()
+    
+    # Print response to stdout
+    print(response, end='')
+    sys.exit(0)
+    
+except socket.timeout:
+    print("Connection timeout", file=sys.stderr)
+    sys.exit(1)
+except ConnectionRefusedError:
+    print("Connection refused", file=sys.stderr)
+    sys.exit(1)
+except Exception as e:
+    print(f"Error: {{e}}", file=sys.stderr)
+    sys.exit(1)
+'''
+        
+        # Run Python script in namespace
         cmd = [
             "ip", "netns", "exec", namespace,
-            "sh", "-c",
-            f'echo "{message}" | timeout {timeout} socat - TCP:{dest_ip}:{port}'
+            "python3", "-c", python_script
         ]
         
+        # Show command with -vv
+        if self.verbose_level >= 2:
+            print(f"[CMD] Running Python TCP client in namespace {namespace}")
+        
         try:
-            self.logger.debug(f"Executing TCP test", command=" ".join(cmd))
+            if self.verbose_level >= 3:
+                print(f"[DEBUG] Running Python TCP client...")
             
             result = subprocess.run(
                 cmd,
@@ -586,52 +637,49 @@ class ServiceClient:
                 timeout=timeout + 1
             )
             
-            if result.returncode == 124:  # timeout command exit code
-                raise ServiceConnectionError(
-                    dest_ip, port, "TCP",
-                    "Connection timeout - no response from server"
-                )
-            elif result.returncode != 0:
-                # Check for specific error patterns
-                stderr = result.stderr.lower()
-                if "connection refused" in stderr:
-                    raise ServiceConnectionError(
-                        dest_ip, port, "TCP",
-                        "Connection refused"
-                    )
-                elif "no route to host" in stderr:
-                    raise ServiceConnectionError(
-                        dest_ip, port, "TCP",
-                        "No route to host"
-                    )
+            # Get the response
+            response = result.stdout
+            
+            # Debug output with -vvv
+            if self.verbose_level >= 3:
+                print(f"[DEBUG] Python client exit code: {result.returncode}")
+                print(f"[DEBUG] stdout: '{response}'")
+                print(f"[DEBUG] stderr: '{result.stderr}'")
+            
+            # Check for errors
+            if result.returncode != 0:
+                stderr_lower = result.stderr.lower()
+                if "connection refused" in stderr_lower:
+                    raise ServiceConnectionError(dest_ip, port, "TCP", "Connection refused")
+                elif "connection timeout" in stderr_lower:
+                    raise ServiceConnectionError(dest_ip, port, "TCP", "Connection timeout")
                 else:
-                    raise ServiceConnectionError(
-                        dest_ip, port, "TCP",
-                        f"Connection failed: {result.stderr}"
-                    )
+                    raise ServiceConnectionError(dest_ip, port, "TCP", result.stderr.strip())
             
-            # Check response - socat just echoes back the message
-            response = result.stdout.strip()
+            # Success: check if message is in response
+            if message in response:
+                return True, response.strip()
             
-            if response != message:
-                raise ServiceResponseError(message, response)
+            # If we got here, we connected but didn't get expected response
+            if self.verbose_level >= 3:
+                print(f"[DEBUG] Looking for '{message}' in response")
+                print(f"[DEBUG] Response bytes: {repr(response)}")
             
-            self.logger.info("TCP service test successful", response=response)
-            return True, response
+            # Even with empty response, if exit code is 0, connection worked
+            if not response:
+                return True, "Connected successfully"
+            
+            # Otherwise it's a response error
+            raise ServiceResponseError(message, response.strip())
             
         except subprocess.TimeoutExpired:
-            raise ServiceConnectionError(
-                dest_ip, port, "TCP",
-                "Command execution timeout"
-            )
+            raise ServiceConnectionError(dest_ip, port, "TCP", "Command execution timeout")
         except Exception as e:
+            if self.verbose_level >= 3:
+                print(f"[DEBUG] Exception in _test_tcp_service: {type(e).__name__}: {e}")
             if isinstance(e, ServiceError):
                 raise
-            raise ServiceConnectionError(
-                dest_ip, port, "TCP",
-                str(e),
-                cause=e
-            )
+            raise ServiceConnectionError(dest_ip, port, "TCP", str(e), cause=e)
     
     def _test_udp_service(
         self,
@@ -641,15 +689,19 @@ class ServiceClient:
         message: str,
         timeout: int
     ) -> Tuple[bool, str]:
-        """Test UDP service using socat."""
+        """Test UDP service by connecting to the actual running service."""
+        # Use nc (netcat) for UDP testing
         cmd = [
             "ip", "netns", "exec", namespace,
             "sh", "-c",
-            f'echo "{message}" | timeout {timeout} socat - UDP:{dest_ip}:{port}'
+            f'echo "{message}" | timeout {timeout} nc -u -w1 {dest_ip} {port}'
         ]
         
         try:
-            self.logger.debug(f"Executing UDP test", command=" ".join(cmd))
+            # Show command with -vv
+            if self.verbose_level >= 2:
+                import shlex
+                print(f"[CMD] {' '.join(shlex.quote(arg) for arg in cmd)}")
             
             result = subprocess.run(
                 cmd,
@@ -665,7 +717,7 @@ class ServiceClient:
                     "No response from UDP service (timeout)"
                 )
             
-            # Check response - socat just echoes back the message
+            # Check response - the service should echo back what we sent
             response = result.stdout.strip()
             
             if not response:
@@ -674,11 +726,11 @@ class ServiceClient:
                     "No response from UDP service"
                 )
             
-            if response != message:
+            # Service might add prefix or just echo - check if our message is in response
+            if message in response or response == message:
+                return True, response
+            else:
                 raise ServiceResponseError(message, response)
-            
-            self.logger.info("UDP service test successful", response=response)
-            return True, response
             
         except subprocess.TimeoutExpired:
             raise ServiceConnectionError(

@@ -52,8 +52,8 @@ class ServiceCommands(BaseCommandHandler):
         start_parser.add_argument('--protocol', '-p', choices=['tcp', 'udp'], default='tcp',
                                 help='Protocol (default: tcp)')
         start_parser.add_argument('--name', help='Service name')
-        start_parser.add_argument('--verbose', '-v', action='store_true',
-                                help='Verbose output')
+        start_parser.add_argument('--verbose', '-v', action='count', default=0,
+                                help='Increase verbosity (-v, -vv)')
         
         # Test subcommand
         test_parser = subparsers.add_parser('test', help='Test service connectivity')
@@ -68,15 +68,17 @@ class ServiceCommands(BaseCommandHandler):
                                help='Message to send (for UDP)')
         test_parser.add_argument('--timeout', type=int, default=5,
                                help='Connection timeout in seconds')
-        test_parser.add_argument('--verbose', '-v', action='store_true',
-                               help='Verbose output')
+        test_parser.add_argument('--verbose', '-v', action='count', default=0,
+                               help='Increase verbosity (-v, -vv)')
+        test_parser.add_argument('--json', '-j', action='store_true',
+                               help='Output in JSON format')
         
         # List subcommand
         list_parser = subparsers.add_parser('list', help='List all active services')
         list_parser.add_argument('--format', '-f', choices=['text', 'json'], default='text',
                                help='Output format')
-        list_parser.add_argument('--verbose', '-v', action='store_true',
-                               help='Verbose output')
+        list_parser.add_argument('--verbose', '-v', action='count', default=0,
+                               help='Increase verbosity (-v, -vv)')
         
         # Stop subcommand
         stop_parser = subparsers.add_parser('stop', help='Stop a service')
@@ -88,15 +90,15 @@ class ServiceCommands(BaseCommandHandler):
                                help='Port number')
         stop_parser.add_argument('--protocol', '-p', choices=['tcp', 'udp'], default='tcp',
                                help='Protocol (default: tcp)')
-        stop_parser.add_argument('--verbose', '-v', action='store_true',
-                               help='Verbose output')
+        stop_parser.add_argument('--verbose', '-v', action='count', default=0,
+                               help='Increase verbosity (-v, -vv)')
         
         # Clean subcommand
         clean_parser = subparsers.add_parser('clean', help='Stop all services')
         clean_parser.add_argument('--force', '-f', action='store_true',
                                 help='Force cleanup without confirmation')
-        clean_parser.add_argument('--verbose', '-v', action='store_true',
-                                help='Verbose output')
+        clean_parser.add_argument('--verbose', '-v', action='count', default=0,
+                                help='Increase verbosity (-v, -vv)')
         
         return parser
     
@@ -164,7 +166,8 @@ class ServiceCommands(BaseCommandHandler):
         if args.name:
             cmd_args.extend(['--name', args.name])
         
-        if args.verbose:
+        # Pass verbose count
+        for _ in range(args.verbose):
             cmd_args.append('-v')
         
         # Run with sudo
@@ -197,16 +200,18 @@ class ServiceCommands(BaseCommandHandler):
         if args.message:
             cmd_args.extend(['--message', args.message])
         
-        if args.verbose:
-            cmd_args.append('--verbose')
+        # Pass verbose count
+        for _ in range(args.verbose):
+            cmd_args.append('-v')
+            
+        # Pass JSON flag if requested
+        if hasattr(args, 'json') and args.json:
+            cmd_args.append('-j')
         
         # Run with sudo
         returncode = self.run_script_with_output(script_path, cmd_args, use_sudo=True)
         
-        if returncode == 0:
-            self.success("Service test completed successfully")
-        else:
-            self.error("Service test failed")
+        # Don't print success/error messages here - service_tester.py handles all output
         
         return returncode
     
@@ -228,7 +233,8 @@ class ServiceCommands(BaseCommandHandler):
         if args.format == 'json':
             cmd_args.append('-j')
         
-        if args.verbose:
+        # Pass verbose count
+        for _ in range(args.verbose):
             cmd_args.append('-v')
         
         # Run with sudo
@@ -250,7 +256,8 @@ class ServiceCommands(BaseCommandHandler):
             '--stop', f'{args.ip}:{args.port}'
         ]
         
-        if args.verbose:
+        # Pass verbose count
+        for _ in range(args.verbose):
             cmd_args.append('-v')
         
         # Run with sudo
@@ -286,7 +293,8 @@ class ServiceCommands(BaseCommandHandler):
         # Build command arguments
         cmd_args = ['cleanup']
         
-        if args.verbose:
+        # Pass verbose count
+        for _ in range(args.verbose):
             cmd_args.append('-v')
         
         # Run with sudo

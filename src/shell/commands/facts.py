@@ -1,3 +1,4 @@
+#!/usr/bin/env -S python3 -B -u
 """
 Facts command handler for collecting and processing routing facts.
 """

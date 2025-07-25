@@ -1,3 +1,4 @@
+#!/usr/bin/env -S python3 -B -u
 """
 Network command handler for managing network namespace simulation.
 """

@@ -1,3 +1,4 @@
+#!/usr/bin/env -S python3 -B -u
 """
 Traceroute Simulator - Network Path Discovery Tool
 

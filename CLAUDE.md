@@ -344,3 +344,6 @@ The traceroute simulator provides:
 - Do not commit anything yourself without asking
 - Always run sudo with '-E' argument to pick up environment
 - Do not print any informational or summary messages from any command when -j option has been set, unless verbose option has been set too
+- Always execute tsimsh from top level directory and pipe script via stdin to it
+- Always cat script to stdout and pipe to tsimsh:  'cat script.tsim | ./tsimsh'
+- Never use operating system commands to start/stop/kill processes or do anything else related to namespaces and their corresponding objects. ALWAYS use tsimsh commands or make targets instead.

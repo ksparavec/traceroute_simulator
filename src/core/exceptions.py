@@ -1,3 +1,4 @@
+#!/usr/bin/env -S python3 -B -u
 """
 Structured Exception Hierarchy for Traceroute Simulator
 

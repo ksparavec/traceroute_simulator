@@ -3,6 +3,7 @@
 
 # Project configuration
 PYTHON := python3
+PYTHON_OPTIONS := -B -u
 PIP := pip3
 ANSIBLE := ansible-playbook
 TESTS_DIR := tests
@@ -122,11 +123,11 @@ help:
 check-deps:
 	@echo "Checking Python Module Dependencies"
 	@echo "======================================="
-	@echo "Python version: $$($(PYTHON) --version 2>&1)"
+	@echo "Python version: $$($(PYTHON) $(PYTHON_OPTIONS) --version 2>&1)"
 	@echo ""
 	@missing_modules=""; \
 	for module in $(REQUIRED_MODULES); do \
-		if $(PYTHON) -c "import $$module" 2>/dev/null; then \
+		if $(PYTHON) $(PYTHON_OPTIONS) -c "import $$module" 2>/dev/null; then \
 			echo "✓ $$module"; \
 		else \
 			echo "✗ $$module"; \
@@ -140,17 +141,17 @@ check-deps:
 		for module in $$missing_modules; do \
 			case $$module in \
 				matplotlib) \
-					echo "  $(PYTHON) -m pip install matplotlib"; \
+					echo "  $(PYTHON) $(PYTHON_OPTIONS) -m pip install matplotlib"; \
 					echo "  # or: sudo apt-get install python3-matplotlib (Debian/Ubuntu)"; \
 					echo "  # or: sudo yum install python3-matplotlib (RHEL/CentOS)"; \
 					;; \
 				numpy) \
-					echo "  $(PYTHON) -m pip install numpy"; \
+					echo "  $(PYTHON) $(PYTHON_OPTIONS) -m pip install numpy"; \
 					echo "  # or: sudo apt-get install python3-numpy (Debian/Ubuntu)"; \
 					echo "  # or: sudo yum install python3-numpy (RHEL/CentOS)"; \
 					;; \
 				*) \
-					echo "  $(PYTHON) -c \"import $$module\" # $$module is a standard library module"; \
+					echo "  $(PYTHON) $(PYTHON_OPTIONS) -c \"import $$module\" # $$module is a standard library module"; \
 					;; \
 			esac; \
 		done; \
@@ -215,7 +216,7 @@ test: check-deps
 	# Run main test suite
 	@echo "1. Running Main Traceroute Simulator Tests"
 	@echo "-----------------------------------------------"
-	@cd $(TESTS_DIR) && TRACEROUTE_SIMULATOR_FACTS=/tmp/traceroute_test_output TRACEROUTE_SIMULATOR_CONF=test_config.yaml $(PYTHON) test_traceroute_simulator.py || { \
+	@cd $(TESTS_DIR) && TRACEROUTE_SIMULATOR_FACTS=/tmp/traceroute_test_output TRACEROUTE_SIMULATOR_CONF=test_config.yaml $(PYTHON) $(PYTHON_OPTIONS) test_traceroute_simulator.py || { \
 		echo "Main test suite failed!"; \
 		exit 1; \
 	}
@@ -226,7 +227,7 @@ test: check-deps
 	@if [ -f "$(TESTS_DIR)/test_ip_json_comparison.py" ]; then \
 		echo "2. Running IP JSON Wrapper Comparison Tests"; \
 		echo "--------------------------------------------------"; \
-		cd $(TESTS_DIR) && TRACEROUTE_SIMULATOR_FACTS=/tmp/traceroute_test_output TRACEROUTE_SIMULATOR_CONF=test_config.yaml $(PYTHON) test_ip_json_comparison.py || { \
+		cd $(TESTS_DIR) && TRACEROUTE_SIMULATOR_FACTS=/tmp/traceroute_test_output TRACEROUTE_SIMULATOR_CONF=test_config.yaml $(PYTHON) $(PYTHON_OPTIONS) test_ip_json_comparison.py || { \
 			echo "Warning: IP JSON wrapper tests failed (may not be critical)"; \
 		}; \
 		echo "✓ IP JSON wrapper tests completed"; \
@@ -237,7 +238,7 @@ test: check-deps
 	@if [ -f "$(TESTS_DIR)/test_mtr_integration.py" ]; then \
 		echo "2.5. Running MTR Integration Tests"; \
 		echo "-------------------------------------"; \
-		cd $(TESTS_DIR) && TRACEROUTE_SIMULATOR_FACTS=/tmp/traceroute_test_output TRACEROUTE_SIMULATOR_CONF=test_config.yaml $(PYTHON) test_mtr_integration.py || { \
+		cd $(TESTS_DIR) && TRACEROUTE_SIMULATOR_FACTS=/tmp/traceroute_test_output TRACEROUTE_SIMULATOR_CONF=test_config.yaml $(PYTHON) $(PYTHON_OPTIONS) test_mtr_integration.py || { \
 			echo "Warning: MTR integration tests failed (may not be critical)"; \
 		}; \
 		echo "✓ MTR integration tests completed"; \
@@ -283,7 +284,7 @@ test: check-deps
 	# Run comprehensive facts processing tests
 	@echo "4. Running Comprehensive Facts Processing Tests"
 	@echo "---------------------------------------------"
-	@cd $(TESTS_DIR) && TRACEROUTE_SIMULATOR_FACTS=/tmp/traceroute_test_output $(PYTHON) -B test_comprehensive_facts_processing.py || { \
+	@cd $(TESTS_DIR) && TRACEROUTE_SIMULATOR_FACTS=/tmp/traceroute_test_output $(PYTHON) $(PYTHON_OPTIONS) test_comprehensive_facts_processing.py || { \
 		echo "Comprehensive facts processing tests failed!"; \
 		exit 1; \
 	}
@@ -296,16 +297,16 @@ test: check-deps
 	@if [ "$$(id -u)" = "0" ]; then \
 		echo "Running namespace make targets tests with root privileges..."; \
 		echo "  5a. Basic functionality tests..."; \
-		TRACEROUTE_SIMULATOR_FACTS=/tmp/traceroute_test_output $(PYTHON) -B tests/test_make_targets_basic.py > /dev/null && \
+		TRACEROUTE_SIMULATOR_FACTS=/tmp/traceroute_test_output $(PYTHON) $(PYTHON_OPTIONS) tests/test_make_targets_basic.py > /dev/null && \
 		echo "  ✓ Basic tests passed" || { echo "  ✗ Basic tests failed"; exit 1; }; \
 		echo "  5b. Host management tests..."; \
-		TRACEROUTE_SIMULATOR_FACTS=/tmp/traceroute_test_output $(PYTHON) -B tests/test_make_targets_hosts.py > /dev/null && \
+		TRACEROUTE_SIMULATOR_FACTS=/tmp/traceroute_test_output $(PYTHON) $(PYTHON_OPTIONS) tests/test_make_targets_hosts.py > /dev/null && \
 		echo "  ✓ Host tests passed" || { echo "  ✗ Host tests failed"; exit 1; }; \
 		echo "  5c. Error handling tests..."; \
-		TRACEROUTE_SIMULATOR_FACTS=/tmp/traceroute_test_output $(PYTHON) -B tests/test_make_targets_errors.py > /dev/null && \
+		TRACEROUTE_SIMULATOR_FACTS=/tmp/traceroute_test_output $(PYTHON) $(PYTHON_OPTIONS) tests/test_make_targets_errors.py > /dev/null && \
 		echo "  ✓ Error tests passed" || { echo "  ✗ Error tests failed"; exit 1; }; \
 		echo "  5d. Integration tests..."; \
-		TRACEROUTE_SIMULATOR_FACTS=/tmp/traceroute_test_output $(PYTHON) -B tests/test_make_targets_integration.py > /dev/null && \
+		TRACEROUTE_SIMULATOR_FACTS=/tmp/traceroute_test_output $(PYTHON) $(PYTHON_OPTIONS) tests/test_make_targets_integration.py > /dev/null && \
 		echo "  ✓ Integration tests passed" || { echo "  ✗ Integration tests failed"; exit 1; }; \
 		echo "✓ All namespace make targets tests completed successfully"; \
 	else \
@@ -319,7 +320,7 @@ test: check-deps
 	@echo "-------------------------------------"
 	@if [ "$$(id -u)" = "0" ]; then \
 		echo "Running namespace simulation tests with root privileges..."; \
-		TRACEROUTE_SIMULATOR_FACTS=/tmp/traceroute_test_output $(PYTHON) -B tests/test_namespace_simulation.py 2>/dev/null && \
+		TRACEROUTE_SIMULATOR_FACTS=/tmp/traceroute_test_output $(PYTHON) $(PYTHON_OPTIONS) tests/test_namespace_simulation.py 2>/dev/null && \
 		echo "✓ Namespace simulation tests completed successfully" || \
 		echo "⚠ Namespace simulation tests completed with warnings (may require sudo)"; \
 	else \
@@ -497,7 +498,7 @@ tsim:
 		echo "  make tsim ARGS='-s 10.1.1.1 -d 10.2.1.1 -v --reverse-trace'"; \
 		exit 1; \
 	fi
-	@env TRACEROUTE_SIMULATOR_FACTS="$(TRACEROUTE_SIMULATOR_FACTS)" $(PYTHON) src/core/traceroute_simulator.py $(ARGS)
+	@env TRACEROUTE_SIMULATOR_FACTS="$(TRACEROUTE_SIMULATOR_FACTS)" $(PYTHON) $(PYTHON_OPTIONS) src/core/traceroute_simulator.py $(ARGS)
 
 # Run iptables forward analyzer with command line arguments  
 # Usage: make ifa ARGS="--router hq-gw -s 10.1.1.1 -d 8.8.8.8"
@@ -511,7 +512,7 @@ ifa:
 		echo "  make ifa ARGS='--router hq-gw -s 10.1.1.0/24 -d 8.8.8.8 -p all'"; \
 		exit 1; \
 	fi
-	@env TRACEROUTE_SIMULATOR_FACTS="$(TRACEROUTE_SIMULATOR_FACTS)" $(PYTHON) src/analyzers/iptables_forward_analyzer.py $(ARGS)
+	@env TRACEROUTE_SIMULATOR_FACTS="$(TRACEROUTE_SIMULATOR_FACTS)" $(PYTHON) $(PYTHON_OPTIONS) src/analyzers/iptables_forward_analyzer.py $(ARGS)
 
 # Analyze iptables logs with filtering and correlation
 # Usage: make netlog ARGS="<arguments>"
@@ -526,7 +527,7 @@ netlog:
 		echo "  make netlog ARGS='--time-range \"10:00-11:00\" --dest 8.8.8.8'"; \
 		exit 1; \
 	fi
-	@$(PYTHON) scripts/netlog $(ARGS)
+	@$(PYTHON) $(PYTHON_OPTIONS) scripts/netlog $(ARGS)
 
 # Set up Linux namespace network simulation (requires sudo)
 # Usage: sudo -E make netsetup [ARGS="-v|-vv|-vvv"]
@@ -536,7 +537,7 @@ netsetup:
 		echo "Please run: sudo -E make netsetup"; \
 		exit 1; \
 	fi
-	@env TRACEROUTE_SIMULATOR_RAW_FACTS="$(TRACEROUTE_SIMULATOR_RAW_FACTS)" $(PYTHON) src/simulators/network_namespace_setup.py $(ARGS)
+	@env TRACEROUTE_SIMULATOR_RAW_FACTS="$(TRACEROUTE_SIMULATOR_RAW_FACTS)" $(PYTHON) $(PYTHON_OPTIONS) src/simulators/network_namespace_setup.py $(ARGS)
 
 # Test network connectivity in namespace simulation (requires sudo)  
 # Usage: sudo -E make nettest ARGS="-s 10.1.1.1 -d 10.2.1.1 -p tcp --dport 80"
@@ -566,7 +567,7 @@ nettest:
 		echo "  sudo -E make nettest ARGS='--all --test-type mtr -v'                     # Test all routers (MTR, verbose)"; \
 		exit 1; \
 	fi
-	@$(PYTHON) src/simulators/network_namespace_tester.py $(ARGS)
+	@$(PYTHON) $(PYTHON_OPTIONS) src/simulators/network_namespace_tester.py $(ARGS)
 
 # Test services with automatic namespace detection (requires sudo)
 # Usage: sudo -E make svctest ARGS="-s <source_ip[:port]> -d <dest_ip:port> [-p tcp|udp]"
@@ -599,7 +600,7 @@ svctest:
 		echo "  sudo -E make svctest ARGS='--start 10.2.1.1:53 -p udp --name dns'    # Start UDP service"; \
 		exit 1; \
 	fi
-	@$(PYTHON) src/simulators/service_tester.py $(ARGS)
+	@$(PYTHON) $(PYTHON_OPTIONS) src/simulators/service_tester.py $(ARGS)
 
 # Start a service on an IP address (requires sudo)
 # Usage: sudo -E make svcstart ARGS="<ip:port> [-p tcp|udp] [--name <name>]"
@@ -625,7 +626,7 @@ svcstart:
 		echo "  sudo -E make svcstart ARGS='10.2.1.1:53 -p udp --name dns'  # Start UDP service with name"; \
 		exit 1; \
 	fi
-	@$(PYTHON) src/simulators/service_tester.py --start $(ARGS)
+	@$(PYTHON) $(PYTHON_OPTIONS) src/simulators/service_tester.py --start $(ARGS)
 
 # Stop a service on an IP address (requires sudo)
 # Usage: sudo -E make svcstop ARGS="<ip:port>"
@@ -643,7 +644,7 @@ svcstop:
 		echo "  sudo -E make svcstop ARGS='10.2.1.1:53'     # Stop service on port 53"; \
 		exit 1; \
 	fi
-	@$(PYTHON) src/simulators/service_tester.py --stop $(ARGS)
+	@$(PYTHON) $(PYTHON_OPTIONS) src/simulators/service_tester.py --stop $(ARGS)
 
 # List all services across all namespaces (requires sudo)
 # Usage: sudo -E make svclist [ARGS="-j|--json"]
@@ -653,7 +654,7 @@ svclist:
 		echo "Please run: sudo -E make svclist"; \
 		exit 1; \
 	fi
-	@$(PYTHON) src/simulators/service_manager.py status $(ARGS)
+	@$(PYTHON) $(PYTHON_OPTIONS) src/simulators/service_manager.py status $(ARGS)
 
 # Stop all services across all namespaces (requires sudo)
 # Usage: sudo -E make svcclean
@@ -663,7 +664,7 @@ svcclean:
 		echo "Please run: sudo -E make svcclean"; \
 		exit 1; \
 	fi
-	@$(PYTHON) src/simulators/service_manager.py cleanup
+	@$(PYTHON) $(PYTHON_OPTIONS) src/simulators/service_manager.py cleanup
 
 # Clean up namespace network simulation (requires sudo)
 # Usage: sudo -E make netclean [ARGS="-v|-f|--force|--limit <pattern>"]
@@ -678,7 +679,7 @@ netclean:
 		echo "Please run: sudo -E make netclean"; \
 		exit 1; \
 	fi
-	@$(PYTHON) src/simulators/network_namespace_cleanup.py $(ARGS)
+	@$(PYTHON) $(PYTHON_OPTIONS) src/simulators/network_namespace_cleanup.py $(ARGS)
 
 # Show static network topology from facts files (no root required)
 # Usage: make netshow ARGS="<router> <function> [-v]"
@@ -709,7 +710,7 @@ netshow:
 		echo "  make netshow ARGS='hq-gw interfaces -v'             # Show static interfaces with verbose output"; \
 		exit 1; \
 	fi
-	@$(PYTHON) src/simulators/network_topology_viewer.py $(ARGS)
+	@$(PYTHON) $(PYTHON_OPTIONS) src/simulators/network_topology_viewer.py $(ARGS)
 
 # Show live network namespace status (requires sudo)
 # Usage: sudo -E make netstatus [ARGS="<function> [--limit <pattern>] [-v]"]
@@ -722,9 +723,9 @@ netstatus:
 		exit 1; \
 	fi
 	@if [ -z "$(ARGS)" ]; then \
-		$(PYTHON) src/simulators/network_namespace_status.py summary; \
+		$(PYTHON) $(PYTHON_OPTIONS) src/simulators/network_namespace_status.py summary; \
 	else \
-		$(PYTHON) src/simulators/network_namespace_status.py $(ARGS); \
+		$(PYTHON) $(PYTHON_OPTIONS) src/simulators/network_namespace_status.py $(ARGS); \
 	fi
 
 # Run namespace simulation tests independently (requires sudo)
@@ -742,7 +743,7 @@ test-namespace:
 	fi
 	@echo "Running Namespace Simulation Test Suite"
 	@echo "======================================="
-	@TRACEROUTE_SIMULATOR_FACTS=/tmp/traceroute_test_output $(PYTHON) -B tests/test_namespace_simulation.py
+	@TRACEROUTE_SIMULATOR_FACTS=/tmp/traceroute_test_output $(PYTHON) $(PYTHON_OPTIONS) tests/test_namespace_simulation.py
 
 # Test enhanced iptables rules in raw facts files
 # Usage: make test-iptables-enhanced
@@ -757,7 +758,7 @@ test-iptables-enhanced:
 	@echo "  - NAT rules for gateway routers"
 	@echo "  - Packet marking for QoS"
 	@echo ""
-	@$(PYTHON) -B tests/test_iptables_enhancement_simple.py
+	@$(PYTHON) $(PYTHON_OPTIONS) tests/test_iptables_enhancement_simple.py
 	@echo ""
 	@echo "✅ All iptables rule enhancements validated successfully!"
 	@echo "   - All routers have ICMP connectivity rules"
@@ -780,7 +781,7 @@ test-policy-routing:
 	@echo "  - Emergency routing (failover scenarios)"
 	@echo "  - Additional routing tables (8 per router)"
 	@echo ""
-	@$(PYTHON) -B tests/test_policy_routing_enhancement.py
+	@$(PYTHON) $(PYTHON_OPTIONS) tests/test_policy_routing_enhancement.py
 	@echo ""
 	@echo "✅ All policy routing enhancements validated successfully!"
 	@echo "   - 286+ policy rules across all routers"
@@ -804,7 +805,7 @@ test-ipset-enhanced:
 	@echo "  - WiFi-specific wireless client ipsets"
 	@echo "  - Proper section formatting and exit codes"
 	@echo ""
-	@$(PYTHON) -B tests/test_ipset_enhancement.py
+	@$(PYTHON) $(PYTHON_OPTIONS) tests/test_ipset_enhancement.py
 	@echo ""
 	@echo "✅ All ipset configuration enhancements validated successfully!"
 	@echo "   - 754+ ipset definitions across all routers"
@@ -826,7 +827,7 @@ test-raw-facts-loading:
 	@echo "  - Routing table and policy rules parsing"
 	@echo "  - Iptables and ipset configuration parsing"
 	@echo ""
-	@$(PYTHON) -B tests/test_raw_facts_loading.py
+	@$(PYTHON) $(PYTHON_OPTIONS) tests/test_raw_facts_loading.py
 	@echo ""
 	@echo "✅ Raw facts direct loading functionality validated successfully!"
 	@echo "   - All 10 router raw facts files parsed correctly"
@@ -849,7 +850,7 @@ test-mtr-options:
 	@echo "  - Network namespace integration"
 	@echo "  - Connectivity testing functionality"
 	@echo ""
-	@$(PYTHON) -B tests/test_mtr_options.py
+	@$(PYTHON) $(PYTHON_OPTIONS) tests/test_mtr_options.py
 	@echo ""
 	@echo "✅ Enhanced MTR options implementation validated successfully!"
 	@echo "   - All 17 comprehensive test cases pass"
@@ -874,7 +875,7 @@ test-iptables-logging:
 	@echo "  - Real-time and historical log analysis"
 	@echo "  - Enhanced raw facts with LOG targets"
 	@echo ""
-	@$(PYTHON) -B tests/test_iptables_logging.py
+	@$(PYTHON) $(PYTHON_OPTIONS) tests/test_iptables_logging.py
 	@echo ""
 	@echo "✅ Iptables logging implementation validated successfully!"
 	@echo "   - All 12+ comprehensive test cases pass"
@@ -899,7 +900,7 @@ test-packet-tracing:
 	@echo "  - Trace lifecycle management and cleanup"
 	@echo "  - Concurrent tracing and error handling"
 	@echo ""
-	@$(PYTHON) -B tests/test_packet_tracing.py
+	@$(PYTHON) $(PYTHON_OPTIONS) tests/test_packet_tracing.py
 	@echo ""
 	@echo "✅ Comprehensive packet tracing implementation validated successfully!"
 	@echo "   - All 24+ comprehensive test cases pass"
@@ -933,7 +934,7 @@ test-network:
 	@echo ""
 	@echo "⚠ Note: This test suite takes 3-5 minutes to complete"
 	@echo ""
-	@TRACEROUTE_SIMULATOR_FACTS=/tmp/traceroute_test_output $(PYTHON) -B tests/test_make_targets_network.py
+	@TRACEROUTE_SIMULATOR_FACTS=/tmp/traceroute_test_output $(PYTHON) $(PYTHON_OPTIONS) tests/test_make_targets_network.py
 
 # Add dynamic host to network using bridge infrastructure (requires sudo)
 # Usage: sudo -E make hostadd ARGS="--host <name> --primary-ip <ip/prefix> [--secondary-ips <ips>] [--connect-to <router>]"
@@ -963,7 +964,7 @@ hostadd:
 		echo "  sudo -E make hostadd ARGS='--host client1 --primary-ip 10.3.1.100/24 -v'"; \
 		exit 1; \
 	fi
-	@$(PYTHON) src/simulators/host_namespace_setup.py $(ARGS)
+	@$(PYTHON) $(PYTHON_OPTIONS) src/simulators/host_namespace_setup.py $(ARGS)
 
 # Remove host from network (requires sudo)
 # Usage: sudo -E make hostdel ARGS="--host <name>"
@@ -981,7 +982,7 @@ hostdel:
 		echo "  sudo -E make hostdel ARGS='--host db1 -v'"; \
 		exit 1; \
 	fi
-	@$(PYTHON) src/simulators/host_namespace_setup.py --remove $(ARGS)
+	@$(PYTHON) $(PYTHON_OPTIONS) src/simulators/host_namespace_setup.py --remove $(ARGS)
 
 # List all registered hosts (requires sudo)
 # Usage: sudo -E make hostlist
@@ -991,7 +992,7 @@ hostlist:
 		echo "Please run: sudo -E make hostlist"; \
 		exit 1; \
 	fi
-	@$(PYTHON) src/simulators/host_namespace_setup.py --list-hosts $(ARGS)
+	@$(PYTHON) $(PYTHON_OPTIONS) src/simulators/host_namespace_setup.py --list-hosts $(ARGS)
 
 # Clean up all registered hosts (requires sudo)
 # Usage: sudo -E make hostclean [ARGS="-v|-vv"]
@@ -1001,7 +1002,7 @@ hostclean:
 		echo "Please run: sudo -E make hostclean"; \
 		exit 1; \
 	fi
-	@$(PYTHON) src/utils/host_cleanup.py $(ARGS)
+	@$(PYTHON) $(PYTHON_OPTIONS) src/utils/host_cleanup.py $(ARGS)
 
 # Clean up both network namespaces and hosts (requires sudo)
 # Usage: sudo -E make netnsclean [ARGS="-v|-f|--force"]
@@ -1011,8 +1012,8 @@ netnsclean:
 		echo "Please run: sudo -E make netnsclean"; \
 		exit 1; \
 	fi
-	@$(PYTHON) src/utils/host_cleanup.py $(ARGS)
-	@$(PYTHON) src/simulators/network_namespace_cleanup.py $(ARGS)
+	@$(PYTHON) $(PYTHON_OPTIONS) src/utils/host_cleanup.py $(ARGS)
+	@$(PYTHON) $(PYTHON_OPTIONS) src/simulators/network_namespace_cleanup.py $(ARGS)
 
 # Check if we're running in a git repository (for future enhancements)
 .git-check:
@@ -1047,7 +1048,7 @@ service-start:
 		echo "  sudo -E make service-start ARGS='--namespace br-core --name dns --port 53 --protocol udp'"; \
 		exit 1; \
 	fi
-	@$(PYTHON) src/simulators/service_manager.py start $(ARGS)
+	@$(PYTHON) $(PYTHON_OPTIONS) src/simulators/service_manager.py start $(ARGS)
 
 # Stop a service
 # Usage: sudo -E make service-stop ARGS="--namespace <ns> --name <name> --port <port>"
@@ -1064,7 +1065,7 @@ service-stop:
 		echo "  sudo -E make service-stop ARGS='--namespace hq-gw --name echo --port 8080'"; \
 		exit 1; \
 	fi
-	@$(PYTHON) src/simulators/service_manager.py stop $(ARGS)
+	@$(PYTHON) $(PYTHON_OPTIONS) src/simulators/service_manager.py stop $(ARGS)
 
 # Restart a service
 # Usage: sudo -E make service-restart ARGS="--namespace <ns> --name <name> --port <port> [--protocol tcp|udp]"
@@ -1081,7 +1082,7 @@ service-restart:
 		echo "  sudo -E make service-restart ARGS='--namespace hq-gw --name echo --port 8080'"; \
 		exit 1; \
 	fi
-	@$(PYTHON) src/simulators/service_manager.py restart $(ARGS)
+	@$(PYTHON) $(PYTHON_OPTIONS) src/simulators/service_manager.py restart $(ARGS)
 
 # Show service status
 # Usage: sudo -E make service-status [ARGS="--namespace <ns>"]
@@ -1091,7 +1092,7 @@ service-status:
 		echo "Please run: sudo -E make service-status"; \
 		exit 1; \
 	fi
-	@$(PYTHON) src/simulators/service_manager.py status $(ARGS)
+	@$(PYTHON) $(PYTHON_OPTIONS) src/simulators/service_manager.py status $(ARGS)
 
 # Test a service
 # Usage: sudo -E make service-test ARGS="--source <ns> --dest <ip> --port <port> [--protocol tcp|udp] [--message <msg>] [--timeout <sec>]"
@@ -1120,7 +1121,7 @@ service-test:
 		echo "  sudo -E make service-test ARGS='--source br-gw --dest 10.2.1.2 --port 53 --protocol udp --message QUERY'"; \
 		exit 1; \
 	fi
-	@$(PYTHON) src/simulators/service_manager.py test $(ARGS)
+	@$(PYTHON) $(PYTHON_OPTIONS) src/simulators/service_manager.py test $(ARGS)
 
 # Clean up all services
 # Usage: sudo -E make service-clean
@@ -1131,7 +1132,7 @@ service-clean:
 		exit 1; \
 	fi
 	@echo "Cleaning up all services..."
-	@$(PYTHON) src/simulators/service_manager.py cleanup
+	@$(PYTHON) $(PYTHON_OPTIONS) src/simulators/service_manager.py cleanup
 
 # Run service manager test suite
 # Usage: sudo -E make test-services
@@ -1143,7 +1144,7 @@ test-services:
 	fi
 	@echo "Running Service Manager Test Suite"
 	@echo "=================================="
-	@$(PYTHON) -B tests/test_service_manager.py
+	@$(PYTHON) $(PYTHON_OPTIONS) tests/test_service_manager.py
 
 # Build and install the netns_reader wrapper with proper capabilities
 install-wrapper:

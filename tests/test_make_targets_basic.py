@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S python3 -B -u
 """
 Basic functionality tests for make targets (Chunk 1).
 

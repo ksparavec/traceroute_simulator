@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S python3 -B -u
 """
 Test suite for Task 2.3: Iptables Logging Implementation
 

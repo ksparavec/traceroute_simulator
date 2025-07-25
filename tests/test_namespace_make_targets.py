@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S python3 -B -u
 """
 Comprehensive test suite for namespace and host management make targets.
 

@@ -1,3 +1,4 @@
+#!/usr/bin/env -S python3 -B -u
 """
 Data Models for Traceroute Simulator
 

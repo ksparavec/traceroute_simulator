@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S python3 -B -u
 """
 process_all_facts.py - Batch process all raw facts files to JSON format
 

@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S python3 -B -u
 """
 iptables_forward_analyzer.py - Analyze iptables FORWARD chain rules for packet forwarding decisions
 

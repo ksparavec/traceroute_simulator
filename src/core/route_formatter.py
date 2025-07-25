@@ -1,3 +1,4 @@
+#!/usr/bin/env -S python3 -B -u
 """
 Route Formatter Module - Unified Output Formatting for Traceroute Results
 

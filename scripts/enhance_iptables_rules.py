@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S python3 -B -u
 """
 Enhanced Iptables Rules Generator for Raw Facts Files
 

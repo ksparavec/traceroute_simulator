@@ -1,3 +1,4 @@
+#!/usr/bin/env -S python3 -B -u
 """
 Structured Logging for Traceroute Simulator
 

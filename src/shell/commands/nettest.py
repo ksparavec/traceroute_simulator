@@ -1,3 +1,4 @@
+#!/usr/bin/env -S python3 -B -u
 """
 Network test command handlers for ping and mtr operations.
 """

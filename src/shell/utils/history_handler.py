@@ -1,3 +1,4 @@
+#!/usr/bin/env -S python3 -B -u
 """
 History handler for reading XZ-compressed JSON history files.
 """

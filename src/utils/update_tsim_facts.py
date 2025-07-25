@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S python3 -B -u
 """
 Update tsim_facts JSON files to extract interfaces from routing tables
 """

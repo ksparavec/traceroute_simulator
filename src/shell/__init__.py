@@ -1,3 +1,4 @@
+#!/usr/bin/env -S python3 -B -u
 """
 Traceroute Simulator Shell Package
 Interactive command-line interface for traceroute simulator operations.

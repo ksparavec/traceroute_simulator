@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S python3 -B -u
 """
 Generate ipsets for raw facts files based on official ipset documentation.
 Creates exactly one ipset per documented type with 3 entries each.

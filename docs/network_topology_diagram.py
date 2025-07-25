@@ -1,3 +1,4 @@
+#!/usr/bin/env -S python3 -B -u
 """
 Network Topology Diagram Generator
 

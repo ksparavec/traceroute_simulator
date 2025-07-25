@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S python3 -B -u
 """
 Validate that generated ipsets comply with official ipset documentation.
 Checks each entry type against documented formats.

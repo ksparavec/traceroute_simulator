@@ -1,3 +1,4 @@
+#!/usr/bin/env -S python3 -B -u
 """
 Enhanced base command handler with unified interface support.
 """

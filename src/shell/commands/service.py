@@ -1,3 +1,4 @@
+#!/usr/bin/env -S python3 -B -u
 """
 Service command handler for managing TCP/UDP services in network simulation.
 """

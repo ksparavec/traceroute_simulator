@@ -1,3 +1,4 @@
+#!/usr/bin/env -S python3 -B -u
 """
 MTR Executor Module - Real Traceroute Execution and Parsing
 

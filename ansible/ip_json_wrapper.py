@@ -1,3 +1,4 @@
+#!/usr/bin/env -S python3 -B -u
 """
 IP Command JSON Wrapper for Older Red Hat Distributions
 

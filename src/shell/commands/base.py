@@ -1,3 +1,4 @@
+#!/usr/bin/env -S python3 -B -u
 """
 Base command handler class for shell commands.
 """

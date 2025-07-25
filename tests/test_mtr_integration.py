@@ -1,3 +1,4 @@
+#!/usr/bin/env -S python3 -B -u
 """
 Test script for MTR integration functionality.
 

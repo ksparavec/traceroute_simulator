@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S python3 -B -u
 """
 test_comprehensive_facts_processing.py - Comprehensive test suite for facts processing and iptables analysis
 

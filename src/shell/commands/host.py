@@ -1,3 +1,4 @@
+#!/usr/bin/env -S python3 -B -u
 """
 Host command handler for managing dynamic host creation and removal.
 """

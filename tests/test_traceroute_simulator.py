@@ -1,3 +1,4 @@
+#!/usr/bin/env -S python3 -B -u
 """
 Comprehensive Test Suite for Traceroute Simulator - Complex Network Topology
 

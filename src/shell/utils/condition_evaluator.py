@@ -1,3 +1,4 @@
+#!/usr/bin/env -S python3 -B -u
 # src/shell/utils/condition_evaluator.py
 
 import re

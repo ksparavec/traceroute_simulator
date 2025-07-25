@@ -1,3 +1,4 @@
+#!/usr/bin/env -S python3 -B -u
 """
 Completion command handler for generating shell completion scripts.
 """

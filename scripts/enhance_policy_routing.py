@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S python3 -B -u
 """
 Enhanced Policy Routing Generator for Raw Facts Files
 

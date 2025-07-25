@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S python3 -B -u
 """
 Enhanced Ipset Configurations Generator for Raw Facts Files
 

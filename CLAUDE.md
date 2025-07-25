@@ -347,3 +347,4 @@ The traceroute simulator provides:
 - Always execute tsimsh from top level directory and pipe script via stdin to it
 - Always cat script to stdout and pipe to tsimsh:  'cat script.tsim | ./tsimsh'
 - Never use operating system commands to start/stop/kill processes or do anything else related to namespaces and their corresponding objects. ALWAYS use tsimsh commands or make targets instead.
+- When creating new python script, set shebang line to: '#!/usr/bin/env -S python3 -B -u'

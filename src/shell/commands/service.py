@@ -150,24 +150,22 @@ class ServiceCommands(BaseCommandHandler):
         # Always show info for start operations
         self.info(f"Starting {args.protocol} service on {args.ip}:{args.port}")
         
-        # Run the service manager script
-        script_path = self.get_script_path('src/simulators/service_manager.py')
+        # Run the service tester script (which handles IP-based operations)
+        script_path = self.get_script_path('src/simulators/service_tester.py')
         if not self.check_script_exists(script_path):
             return 1
         
         # Build command arguments
         cmd_args = [
-            '--start',
-            '--ip', args.ip,
-            '--port', str(args.port),
-            '--protocol', args.protocol
+            '--start', f'{args.ip}:{args.port}',
+            '-p', args.protocol
         ]
         
         if args.name:
             cmd_args.extend(['--name', args.name])
         
         if args.verbose:
-            cmd_args.append('--verbose')
+            cmd_args.append('-v')
         
         # Run with sudo
         returncode = self.run_script_with_output(script_path, cmd_args, use_sudo=True)
@@ -228,10 +226,10 @@ class ServiceCommands(BaseCommandHandler):
         cmd_args = ['status']
         
         if args.format == 'json':
-            cmd_args.append('--json')
+            cmd_args.append('-j')
         
         if args.verbose:
-            cmd_args.append('--verbose')
+            cmd_args.append('-v')
         
         # Run with sudo
         returncode = self.run_script_with_output(script_path, cmd_args, use_sudo=True)
@@ -242,21 +240,18 @@ class ServiceCommands(BaseCommandHandler):
         """Stop a service."""
         self.info(f"Stopping {args.protocol} service on {args.ip}:{args.port}")
         
-        # Run the service manager script
-        script_path = self.get_script_path('src/simulators/service_manager.py')
+        # Run the service tester script (which handles IP-based operations)
+        script_path = self.get_script_path('src/simulators/service_tester.py')
         if not self.check_script_exists(script_path):
             return 1
         
         # Build command arguments
         cmd_args = [
-            '--stop',
-            '--ip', args.ip,
-            '--port', str(args.port),
-            '--protocol', args.protocol
+            '--stop', f'{args.ip}:{args.port}'
         ]
         
         if args.verbose:
-            cmd_args.append('--verbose')
+            cmd_args.append('-v')
         
         # Run with sudo
         returncode = self.run_script_with_output(script_path, cmd_args, use_sudo=True)
@@ -289,10 +284,10 @@ class ServiceCommands(BaseCommandHandler):
             return 1
         
         # Build command arguments
-        cmd_args = ['--clean-all']
+        cmd_args = ['cleanup']
         
         if args.verbose:
-            cmd_args.append('--verbose')
+            cmd_args.append('-v')
         
         # Run with sudo
         returncode = self.run_script_with_output(script_path, cmd_args, use_sudo=True)

@@ -19,11 +19,9 @@ import re
 from pathlib import Path
 from typing import Optional, Tuple, Dict
 
-# Add parent directory to path for imports
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-
-from src.simulators.service_manager import ServiceClient, ServiceProtocol, ServiceConfig, ServiceManager
-from src.core.exceptions import NetworkError, ConfigurationError
+# Use relative imports for package compatibility
+from .service_manager import ServiceClient, ServiceProtocol, ServiceConfig, ServiceManager
+from ..core.exceptions import NetworkError, ConfigurationError
 
 
 class ServiceTester:
@@ -364,7 +362,7 @@ def main():
             
     except Exception as e:
         # Check if it's a service-related error (should return 1) vs configuration error (should return 2)
-        from src.simulators.service_manager import ServiceError
+        from .service_manager import ServiceError
         
         if isinstance(e, ServiceError):
             exit_code = 1  # Service operation failed

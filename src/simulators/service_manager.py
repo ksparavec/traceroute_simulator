@@ -27,15 +27,13 @@ from dataclasses import dataclass, field, asdict
 from enum import Enum
 import socket
 
-# Add parent directory to path for imports
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-
-from src.core.exceptions import (
+# Use relative imports for package compatibility
+from ..core.exceptions import (
     ExecutionError, NetworkError, ValidationError, 
     PortValidationError, ConfigurationError, ErrorHandler
 )
-from src.core.models import IptablesRule
-from src.core.structured_logging import get_logger, setup_logging
+from ..core.models import IptablesRule
+from ..core.structured_logging import get_logger, setup_logging
 
 
 class ServiceProtocol(str, Enum):

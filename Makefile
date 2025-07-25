@@ -25,7 +25,7 @@ REQUIRED_MODULES := json sys argparse ipaddress os glob typing subprocess re dif
 
 # Colors removed for better terminal compatibility
 
-.PHONY: help check-deps test test-iptables-enhanced test-policy-routing test-ipset-enhanced test-raw-facts-loading test-mtr-options test-iptables-logging test-packet-tracing test-network facts clean tsim ifa netsetup nettest netclean netshow netstatus test-namespace hostadd hostdel hostlist hostclean netnsclean service-start service-stop service-restart service-status service-test service-clean test-services svctest svcstart svcstop svclist svcclean install-wrapper
+.PHONY: help check-deps test test-iptables-enhanced test-policy-routing test-ipset-enhanced test-raw-facts-loading test-mtr-options test-iptables-logging test-packet-tracing test-network facts clean tsim ifa netsetup nettest netclean netshow netstatus test-namespace hostadd hostdel hostlist hostclean netnsclean service-start service-stop service-restart service-status service-test service-clean test-services svctest svcstart svcstop svclist svcclean install-wrapper install-package install-pipx uninstall-package uninstall-pipx list-package
 
 # Default target
 help:
@@ -36,6 +36,12 @@ help:
 	@echo "facts             - Run Ansible playbook to collect network facts (requires INVENTORY_FILE or INVENTORY)"
 	@echo "clean             - Clean up generated files and cache"
 	@echo "install-wrapper   - Build and install the netns_reader wrapper with proper capabilities (requires sudo)"
+	@echo "package           - Build pip-installable tsim package (creates wheel and source distributions)"
+	@echo "install-package   - Build and install tsim package (use USER=1 for user install, BREAK_SYSTEM=1 to force)"
+	@echo "install-pipx      - Install tsim package using pipx (recommended for command-line applications)"
+	@echo "uninstall-package - Uninstall tsim package (use USER=1 for user uninstall, BREAK_SYSTEM=1 to force)"
+	@echo "uninstall-pipx    - Uninstall tsim package from pipx"
+	@echo "list-package      - List all files included in the built package"
 	@echo "tsim              - Run traceroute simulator with command line arguments (e.g., make tsim ARGS='-s 10.1.1.1 -d 10.2.1.1')"
 	@echo "ifa               - Run iptables forward analyzer with command line arguments (e.g., make ifa ARGS='--router hq-gw -s 10.1.1.1 -d 8.8.8.8')"
 	@echo "netlog            - Analyze iptables logs with filtering and correlation (e.g., make netlog ARGS='--source 10.1.1.1 --dest 10.2.1.1')"
@@ -484,6 +490,8 @@ clean:
 	else \
 		echo "✓ Test output directory already clean"; \
 	fi
+	@rm -rf build/ dist/ *.egg-info
+	@echo "✓ Cleaned up package build artifacts"
 	@echo "Cleanup completed!"
 
 # Run traceroute simulator with command line arguments
@@ -1175,3 +1183,183 @@ install-wrapper:
 	@echo ""
 	@echo "Installation complete!"
 	@echo "You can now use: $(INSTALL_DIR)/$(WRAPPER_BIN) <namespace> <command>"
+
+# Define source files that should trigger package rebuild
+PACKAGE_SOURCES := $(shell find src -name "*.py" 2>/dev/null) \
+                   $(shell find ansible -name "*.py" -o -name "*.yml" -o -name "*.yaml" -o -name "*.sh" 2>/dev/null) \
+                   setup.py MANIFEST.in requirements.txt README.md
+
+# Package timestamp file to track last build
+PACKAGE_TIMESTAMP := dist/.package.timestamp
+
+# Build pip-installable package
+# Usage: make package
+package: $(PACKAGE_TIMESTAMP)
+
+# Build package only if sources have changed
+$(PACKAGE_TIMESTAMP): $(PACKAGE_SOURCES)
+	@echo "Building tsim package..."
+	@echo "========================================"
+	@# Clean any previous builds
+	@rm -rf build/ dist/ *.egg-info
+	@echo "✓ Cleaned previous build artifacts"
+	@# Build the package
+	@$(PYTHON) $(PYTHON_OPTIONS) setup.py sdist bdist_wheel
+	@echo "✓ Package built successfully"
+	@# Create timestamp file
+	@mkdir -p dist
+	@touch $(PACKAGE_TIMESTAMP)
+	@echo ""
+	@echo "Package files created in:"
+	@echo "  dist/tsim-*.tar.gz (source distribution)"
+	@echo "  dist/tsim-*.whl (wheel distribution)"
+	@echo ""
+	@echo "To install locally: make install-package"
+	@echo "To install elsewhere: pip install dist/tsim-*.whl"
+
+# Install the package in the current Python environment
+# Usage: make install-package [USER=1] [BREAK_SYSTEM=1]
+install-package: $(PACKAGE_TIMESTAMP)
+	@echo "Installing tsim package..."
+	@echo "========================================"
+	@# Check if we're in a virtual environment
+	@if [ -n "$$VIRTUAL_ENV" ]; then \
+		echo "Detected virtual environment: $$VIRTUAL_ENV"; \
+		echo "Installing in virtual environment..."; \
+		$(PYTHON) $(PYTHON_OPTIONS) -m pip install --upgrade dist/tsim-*.whl; \
+	elif [ -n "$(BREAK_SYSTEM)" ]; then \
+		echo "⚠️  Installing with --break-system-packages (use at your own risk)"; \
+		$(PYTHON) $(PYTHON_OPTIONS) -m pip install --upgrade --break-system-packages dist/tsim-*.whl; \
+	elif [ -n "$(USER)" ]; then \
+		echo "Installing in user site-packages..."; \
+		$(PYTHON) $(PYTHON_OPTIONS) -m pip install --upgrade --user dist/tsim-*.whl || { \
+			echo ""; \
+			echo "❌ User installation failed."; \
+			echo ""; \
+			echo "Recommended alternatives:"; \
+			echo "  1. Use pipx (best for command-line applications):"; \
+			echo "     pipx install dist/tsim-*.whl"; \
+			echo ""; \
+			echo "  2. Create and use a virtual environment:"; \
+			echo "     python3 -m venv ~/tsim-venv"; \
+			echo "     source ~/tsim-venv/bin/activate"; \
+			echo "     make install-package"; \
+			echo ""; \
+			echo "  3. Force installation (override system protection):"; \
+			echo "     make install-package BREAK_SYSTEM=1"; \
+			exit 1; \
+		}; \
+	else \
+		echo "Attempting standard installation..."; \
+		$(PYTHON) $(PYTHON_OPTIONS) -m pip install --upgrade dist/tsim-*.whl || { \
+			echo ""; \
+			echo "❌ Installation failed due to externally-managed environment."; \
+			echo ""; \
+			echo "Options:"; \
+			echo "  1. Install in user directory:"; \
+			echo "     make install-package USER=1"; \
+			echo ""; \
+			echo "  2. Use pipx (recommended for applications):"; \
+			echo "     pipx install dist/tsim-*.whl"; \
+			echo ""; \
+			echo "  3. Use a virtual environment:"; \
+			echo "     python3 -m venv venv"; \
+			echo "     source venv/bin/activate"; \
+			echo "     make install-package"; \
+			echo ""; \
+			echo "  4. Force system installation (not recommended):"; \
+			echo "     make install-package BREAK_SYSTEM=1"; \
+			exit 1; \
+		}; \
+	fi
+	@echo ""
+	@echo "✓ Package installed successfully!"
+	@echo ""
+	@echo "The following command is now available in your PATH:"
+	@echo "  tsimsh - Traceroute Simulator Shell"
+	@echo ""
+	@echo "Try running: tsimsh"
+
+# Install using pipx (recommended for applications)
+# Usage: make install-pipx
+install-pipx: $(PACKAGE_TIMESTAMP)
+	@echo "Installing tsim package with pipx..."
+	@echo "========================================"
+	@if ! command -v pipx >/dev/null 2>&1; then \
+		echo "Error: pipx not found"; \
+		echo ""; \
+		echo "Install pipx with one of:"; \
+		echo "  apt install pipx        (Debian/Ubuntu)"; \
+		echo "  dnf install pipx        (Fedora)"; \
+		echo "  python3 -m pip install --user pipx"; \
+		echo ""; \
+		echo "Then ensure pipx is in your PATH:"; \
+		echo "  pipx ensurepath"; \
+		exit 1; \
+	fi
+	@pipx install dist/tsim-*.whl --force
+	@echo ""
+	@echo "✓ Package installed successfully with pipx!"
+	@echo ""
+	@echo "The following command is now available globally:"
+	@echo "  tsimsh - Traceroute Simulator Shell"
+	@echo ""
+	@echo "Try running: tsimsh"
+
+# Uninstall the package from the current Python environment
+# Usage: make uninstall-package [USER=1] [BREAK_SYSTEM=1]
+uninstall-package:
+	@echo "Uninstalling tsim package..."
+	@echo "========================================"
+	@if [ -n "$(BREAK_SYSTEM)" ]; then \
+		echo "⚠️  Uninstalling with --break-system-packages"; \
+		$(PYTHON) $(PYTHON_OPTIONS) -m pip uninstall -y --break-system-packages tsim 2>/dev/null || echo "Package not installed"; \
+	elif [ -n "$(USER)" ]; then \
+		echo "Uninstalling from user site-packages..."; \
+		$(PYTHON) $(PYTHON_OPTIONS) -m pip uninstall -y tsim 2>/dev/null || echo "Package not installed in user directory"; \
+	else \
+		echo "Attempting standard uninstallation..."; \
+		$(PYTHON) $(PYTHON_OPTIONS) -m pip uninstall -y tsim 2>/dev/null || { \
+			echo "Package not installed or requires special handling"; \
+			echo "Try: make uninstall-package USER=1"; \
+		}; \
+	fi
+	@echo "✓ Uninstall completed"
+
+# Uninstall using pipx
+# Usage: make uninstall-pipx
+uninstall-pipx:
+	@echo "Uninstalling tsim package from pipx..."
+	@echo "========================================"
+	@if ! command -v pipx >/dev/null 2>&1; then \
+		echo "Error: pipx not found"; \
+		exit 1; \
+	fi
+	@pipx uninstall tsim || echo "Package not installed via pipx"
+	@echo "✓ Uninstall completed"
+
+# List all files included in the built package
+# Usage: make list-package
+list-package:
+	@echo "Listing files in tsim package..."
+	@echo "========================================"
+	@if [ ! -f dist/tsim-*.whl ]; then \
+		echo "Error: No package found. Run 'make package' first."; \
+		exit 1; \
+	fi
+	@echo "Files in wheel package:"
+	@echo ""
+	@$(PYTHON) $(PYTHON_OPTIONS) -m zipfile -l dist/tsim-*.whl | grep -v "/$" | sort
+	@echo ""
+	@echo "Summary:"
+	@echo "--------"
+	@$(PYTHON) $(PYTHON_OPTIONS) -c "import zipfile; import glob; \
+		whl = glob.glob('dist/tsim-*.whl')[0]; \
+		with zipfile.ZipFile(whl, 'r') as z: \
+			files = [f for f in z.namelist() if not f.endswith('/')]; \
+			py_files = [f for f in files if f.endswith('.py')]; \
+			data_files = [f for f in files if not f.endswith('.py') and not f.endswith('.dist-info')]; \
+			print(f'Total files: {len(files)}'); \
+			print(f'Python files: {len(py_files)}'); \
+			print(f'Data files: {len(data_files)}'); \
+			print(f'Package size: {os.path.getsize(whl) / 1024:.1f} KB')"

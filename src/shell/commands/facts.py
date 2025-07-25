@@ -140,20 +140,72 @@ class FactsCommands(BaseCommandHandler):
         self.info("Collecting facts in test mode...")
         
         # Run the ansible playbook in test mode
-        playbook_path = os.path.join(self.project_root, 'ansible', 'get_tsim_facts.yml')
-        if not self.check_script_exists(playbook_path):
-            return 1
-        
+        if 'site-packages' in self.project_root:
+            # We're in a package, need to extract playbook to temp location
+            import tempfile
+            import shutil
+            try:
+                import importlib.resources as pkg_resources
+                with tempfile.TemporaryDirectory() as tmpdir:
+                    # Extract ansible directory to temp location
+                    ansible_dir = os.path.join(tmpdir, 'ansible')
+                    os.makedirs(ansible_dir)
+                    
+                    # Copy all ansible files
+                    for file in pkg_resources.files('tsim.ansible').iterdir():
+                        if file.is_file():
+                            dest_path = os.path.join(ansible_dir, file.name)
+                            with file.open('rb') as src_f:
+                                with open(dest_path, 'wb') as dest_f:
+                                    dest_f.write(src_f.read())
+                    
+                    playbook_path = os.path.join(ansible_dir, 'get_tsim_facts.yml')
+                    if not os.path.exists(playbook_path):
+                        self.error("Playbook not found in package")
+                        return 1
+                    
+                    # Continue with the rest of the function using tmpdir as cwd
+                    return self._run_ansible_playbook(playbook_path, args, tmpdir)
+            except Exception as e:
+                self.error(f"Error extracting playbook from package: {e}")
+                return 1
+        else:
+            playbook_path = os.path.join(self.project_root, 'ansible', 'get_tsim_facts.yml')
+            if not self.check_script_exists(playbook_path):
+                return 1
+            return self._run_ansible_playbook(playbook_path, args, self.project_root)
+    
+    def _run_ansible_playbook(self, playbook_path: str, args, cwd: str) -> int:
+        """Run ansible playbook with given arguments."""
         # Build ansible command
-        cmd = ['ansible-playbook', playbook_path, '-e', 'test=true']
+        cmd = ['ansible-playbook', playbook_path]
+        
+        # Add test=true for test mode, or normal arguments for real mode
+        if hasattr(args, 'test_mode') and args.test_mode:
+            cmd.extend(['-e', 'test=true'])
+        else:
+            # Real mode - add output_dir if specified
+            if hasattr(args, 'output_dir') and args.output_dir:
+                cmd.extend(['-e', f'output_dir={args.output_dir}'])
         
         if args.inventory:
-            cmd.extend(['-i', args.inventory])
-        else:
-            # Use default test inventory
-            inventory_path = os.path.join(self.project_root, 'tests', 'inventory.yml')
-            if os.path.exists(inventory_path):
+            # For packaged mode, we need to handle inventory path carefully
+            if 'site-packages' in self.project_root and not os.path.isabs(args.inventory):
+                # If it's a relative path and we're in package mode, use current directory
+                inventory_path = os.path.join(os.getcwd(), args.inventory)
                 cmd.extend(['-i', inventory_path])
+            else:
+                cmd.extend(['-i', args.inventory])
+        else:
+            # Use default test inventory if in test mode
+            if hasattr(args, 'test_mode') and args.test_mode:
+                if 'site-packages' in self.project_root:
+                    # Skip inventory for now in package mode
+                    pass
+                else:
+                    inventory_path = os.path.join(self.project_root, 'tests', 'inventory.yml')
+                    if os.path.exists(inventory_path):
+                        cmd.extend(['-i', inventory_path])
         
         if args.verbose:
             cmd.append('-v')
@@ -161,7 +213,7 @@ class FactsCommands(BaseCommandHandler):
         # Run the command
         try:
             import subprocess
-            result = subprocess.run(cmd, cwd=self.project_root, 
+            result = subprocess.run(cmd, cwd=cwd, 
                                   capture_output=True, text=True)
             
             if result.stdout:
@@ -170,11 +222,16 @@ class FactsCommands(BaseCommandHandler):
                 self.shell.poutput(result.stderr)
             
             if result.returncode == 0:
-                self.success("Test facts collection completed successfully")
-                self.info("Facts generated in /tmp/traceroute_test_output/")
-                # Update facts directory for this session
-                self.facts_dir = "/tmp/traceroute_test_output"
-                os.environ['TRACEROUTE_SIMULATOR_FACTS'] = self.facts_dir
+                if hasattr(args, 'test_mode') and args.test_mode:
+                    self.success("Test facts collection completed successfully")
+                    self.info("Facts generated in /tmp/traceroute_test_output/")
+                    # Update facts directory for this session
+                    self.facts_dir = "/tmp/traceroute_test_output"
+                    os.environ['TRACEROUTE_SIMULATOR_FACTS'] = self.facts_dir
+                else:
+                    self.success("Facts collection completed successfully")
+                    if hasattr(args, 'output_dir') and args.output_dir:
+                        self.info(f"Facts saved to: {args.output_dir}")
             else:
                 self.error("Facts collection failed")
             
@@ -191,85 +248,62 @@ class FactsCommands(BaseCommandHandler):
         """Collect facts from real network devices."""
         self.info("Collecting facts from network devices...")
         
-        # Run the ansible playbook
-        playbook_path = os.path.join(self.project_root, 'ansible', 'get_tsim_facts.yml')
-        if not self.check_script_exists(playbook_path):
-            return 1
-        
-        # Build ansible command
-        cmd = ['ansible-playbook', playbook_path]
-        
-        if args.inventory:
-            cmd.extend(['-i', args.inventory])
-            
-        if args.output_dir:
-            cmd.extend(['-e', f'output_dir={args.output_dir}'])
-            
-        if args.verbose:
-            cmd.append('-v')
-        
-        # Run the command
-        try:
-            import subprocess
-            result = subprocess.run(cmd, cwd=self.project_root, 
-                                  capture_output=True, text=True)
-            
-            if result.stdout:
-                self.shell.poutput(result.stdout)
-            if result.stderr:
-                self.shell.poutput(result.stderr)
-            
-            if result.returncode == 0:
-                self.success("Facts collection completed successfully")
-                if args.output_dir:
-                    self.info(f"Facts saved to: {args.output_dir}")
-            else:
-                self.error("Facts collection failed")
-            
-            return result.returncode
-            
-        except FileNotFoundError:
-            self.error("ansible-playbook not found. Please install Ansible.")
-            return 1
-        except Exception as e:
-            self.error(f"Error running facts collection: {e}")
-            return 1
+        # Handle package vs development mode
+        if 'site-packages' in self.project_root:
+            # We're in a package, need to extract playbook to temp location
+            import tempfile
+            import shutil
+            try:
+                import importlib.resources as pkg_resources
+                with tempfile.TemporaryDirectory() as tmpdir:
+                    # Extract ansible directory to temp location
+                    ansible_dir = os.path.join(tmpdir, 'ansible')
+                    os.makedirs(ansible_dir)
+                    
+                    # Copy all ansible files
+                    for file in pkg_resources.files('tsim.ansible').iterdir():
+                        if file.is_file():
+                            dest_path = os.path.join(ansible_dir, file.name)
+                            with file.open('rb') as src_f:
+                                with open(dest_path, 'wb') as dest_f:
+                                    dest_f.write(src_f.read())
+                    
+                    playbook_path = os.path.join(ansible_dir, 'get_tsim_facts.yml')
+                    if not os.path.exists(playbook_path):
+                        self.error("Playbook not found in package")
+                        return 1
+                    
+                    # Continue with the rest of the function using tmpdir as cwd
+                    return self._run_ansible_playbook(playbook_path, args, tmpdir)
+            except Exception as e:
+                self.error(f"Error extracting playbook from package: {e}")
+                return 1
+        else:
+            playbook_path = os.path.join(self.project_root, 'ansible', 'get_tsim_facts.yml')
+            if not self.check_script_exists(playbook_path):
+                return 1
+            return self._run_ansible_playbook(playbook_path, args, self.project_root)
     
-    def _process_facts(self, args: list) -> int:
+    def _process_facts(self, args: argparse.Namespace) -> int:
         """Process raw facts into structured JSON."""
-        parser = argparse.ArgumentParser(prog='facts process',
-                                       description='Process raw facts into structured JSON')
-        parser.add_argument('--input-dir', '-i',
-                          help='Input directory containing raw facts')
-        parser.add_argument('--output-dir', '-o',
-                          help='Output directory for processed facts')
-        parser.add_argument('--validate', action='store_true',
-                          help='Validate processed facts')
-        parser.add_argument('--verbose', '-v', action='store_true',
-                          help='Verbose output')
-        
-        try:
-            parsed_args = parser.parse_args(args)
-        except SystemExit:
-            return 1
         
         self.info("Processing raw facts...")
         
         # Use the process_all_facts.py script
-        script_path = os.path.join(self.project_root, 'ansible', 'process_all_facts.py')
+        script_path = self.get_script_path('ansible/process_all_facts.py')
         if not self.check_script_exists(script_path):
             return 1
         
         # Build command arguments
         cmd_args = []
         
-        if parsed_args.input_dir:
-            cmd_args.extend(['--input-dir', parsed_args.input_dir])
+        if hasattr(args, 'input_dir') and args.input_dir:
+            cmd_args.extend(['--input-dir', args.input_dir])
         
-        if parsed_args.output_dir:
-            cmd_args.extend(['--output-dir', parsed_args.output_dir])
+        if hasattr(args, 'output_dir') and args.output_dir:
+            cmd_args.extend(['--output-dir', args.output_dir])
         
-        if parsed_args.verbose:
+        if hasattr(args, 'verbose') and args.verbose:
             cmd_args.append('--verbose')
         
         cmd_args.append('--create-dirs')
@@ -279,29 +313,26 @@ class FactsCommands(BaseCommandHandler):
         
         if returncode == 0:
             self.success("Facts processing completed successfully")
-            if parsed_args.validate:
-                return self._validate_facts(['--verbose'] if parsed_args.verbose else [])
+            if hasattr(args, 'validate') and args.validate:
+                # Create a simple namespace for validate
+                validate_args = argparse.Namespace(
+                    facts_dir=None,
+                    verbose=args.verbose if hasattr(args, 'verbose') else False
+                )
+                return self._validate_facts(validate_args)
         else:
             self.error("Facts processing failed")
         
         return returncode
     
-    def _validate_facts(self, args: list) -> int:
+    def _validate_facts(self, args: argparse.Namespace) -> int:
         """Validate processed facts files."""
-        parser = argparse.ArgumentParser(prog='facts validate',
-                                       description='Validate processed facts files')
-        parser.add_argument('--facts-dir', '-d',
-                          help='Facts directory to validate')
-        parser.add_argument('--verbose', '-v', action='store_true',
-                          help='Verbose output')
+        facts_dir = args.facts_dir if hasattr(args, 'facts_dir') and args.facts_dir else self.facts_dir
         
-        try:
-            parsed_args = parser.parse_args(args)
-        except SystemExit:
+        if not facts_dir:
+            self.error("No facts directory specified. Set TRACEROUTE_SIMULATOR_FACTS or use --facts-dir")
             return 1
-        
-        facts_dir = parsed_args.facts_dir or self.facts_dir
-        
+            
         if not os.path.exists(facts_dir):
             self.error(f"Facts directory not found: {facts_dir}")
             return 1
@@ -327,7 +358,7 @@ class FactsCommands(BaseCommandHandler):
                 
                 # Basic validation
                 if isinstance(data, dict):
-                    if parsed_args.verbose:
+                    if hasattr(args, 'verbose') and args.verbose:
                         self.info(f"✓ {json_file} - Valid JSON with {len(data)} keys")
                     valid_files += 1
                 else:

@@ -1371,7 +1371,7 @@ Type 'set' to see all variables.
         
         self.poutput(f"\n{Fore.CYAN}USAGE:{Style.RESET_ALL}")
         self.poutput("  service start --ip IP --port PORT [options]")
-        self.poutput("  service test --src IP --dest IP:PORT [options]")
+        self.poutput("  service test --source IP --dest IP:PORT [options]")
         self.poutput("  service list [options]")
         self.poutput("  service stop --ip IP --port PORT [options]")
         self.poutput("  service clean [options]")
@@ -1392,25 +1392,24 @@ Type 'set' to see all variables.
         self.poutput("  -v, --verbose         Verbose output")
         
         self.poutput(f"\n{Fore.CYAN}TEST OPTIONS:{Style.RESET_ALL}")
-        self.poutput(f"  {Fore.YELLOW}--src IP{Style.RESET_ALL}             Source IP address (MANDATORY)")
-        self.poutput(f"  {Fore.YELLOW}--dest IP:PORT{Style.RESET_ALL}       Destination IP:PORT (MANDATORY)")
-        self.poutput("  --protocol PROTO      Protocol: tcp, udp (default: tcp)")
-        self.poutput("  --message MSG         Message to send (UDP only)")
+        self.poutput(f"  {Fore.YELLOW}--source, -s IP{Style.RESET_ALL}      Source IP address (MANDATORY)")
+        self.poutput(f"  {Fore.YELLOW}--dest, -d IP:PORT{Style.RESET_ALL}   Destination IP:PORT (MANDATORY)")
+        self.poutput("  --protocol, -p PROTO  Protocol: tcp, udp (default: tcp)")
+        self.poutput("  --message, -m MSG     Message to send")
         self.poutput("  --timeout SECONDS     Timeout in seconds (default: 5)")
         self.poutput("  -v, --verbose         Verbose output")
         
         self.poutput(f"\n{Fore.CYAN}LIST OPTIONS:{Style.RESET_ALL}")
-        self.poutput("  --format FORMAT       Output format: text, json (default: text)")
+        self.poutput("  --format, -f FORMAT   Output format: text, json (default: text)")
         self.poutput("  -v, --verbose         Verbose output")
         
         self.poutput(f"\n{Fore.CYAN}STOP OPTIONS:{Style.RESET_ALL}")
         self.poutput(f"  {Fore.YELLOW}--ip IP{Style.RESET_ALL}              Service IP address (MANDATORY)")
         self.poutput(f"  {Fore.YELLOW}--port PORT{Style.RESET_ALL}          Service port (MANDATORY)")
-        self.poutput("  --protocol PROTO      Protocol: tcp, udp (default: tcp)")
         self.poutput("  -v, --verbose         Verbose output")
         
         self.poutput(f"\n{Fore.CYAN}CLEAN OPTIONS:{Style.RESET_ALL}")
-        self.poutput("  --force               Force cleanup without confirmation")
+        self.poutput("  --force, -f           Force cleanup without confirmation")
         self.poutput("  -v, --verbose         Verbose output")
         
         self.poutput(f"\n{Fore.CYAN}EXAMPLES:{Style.RESET_ALL}")
@@ -1421,10 +1420,10 @@ Type 'set' to see all variables.
         self.poutput("    service start --ip 10.2.1.1 --port 53 --protocol udp --name dns")
         
         self.poutput("\n  Test TCP connectivity:")
-        self.poutput("    service test --src 10.1.1.100 --dest 10.1.1.1:8080")
+        self.poutput("    service test --source 10.1.1.100 --dest 10.1.1.1:8080")
         
         self.poutput("\n  Test UDP with message:")
-        self.poutput("    service test --src 10.1.1.100 --dest 10.2.1.1:53 --protocol udp --message 'DNS Query'")
+        self.poutput("    service test --source 10.1.1.100 --dest 10.2.1.1:53 --protocol udp --message 'DNS Query'")
         
         self.poutput("\n  List services as JSON:")
         self.poutput("    service list --format json")
@@ -1568,8 +1567,36 @@ Type 'set' to see all variables.
 
 def main():
     """Main entry point for running the shell standalone."""
-    shell = TracerouteSimulatorShell()
-    shell.cmdloop()
+    import sys
+    
+    try:
+        # Create shell instance
+        shell = TracerouteSimulatorShell()
+        
+        # Check if we're in batch mode (input or output is not a terminal)
+        if not (sys.stdin.isatty() and sys.stdout.isatty()):
+            from .utils.script_processor import ScriptProcessor
+            # Read all input
+            script_lines = sys.stdin.readlines()
+            
+            # Process script with control flow support
+            processor = ScriptProcessor(shell.variable_manager, shell)
+            exit_code = processor.process_script(script_lines)
+            sys.exit(exit_code)
+        else:
+            # Interactive mode
+            shell.cmdloop()
+            
+    except KeyboardInterrupt:
+        print("\nGoodbye!")
+        sys.exit(0)
+    except ImportError as e:
+        print(f"Error importing shell modules: {e}")
+        print("Make sure all dependencies are installed: pip install tsim")
+        sys.exit(1)
+    except Exception as e:
+        print(f"Unexpected error: {e}")
+        sys.exit(1)
 
 
 if __name__ == '__main__':

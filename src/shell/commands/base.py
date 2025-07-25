@@ -129,11 +129,18 @@ class BaseCommandHandler(ABC):
         if use_sudo:
             cmd.extend(['sudo', '-E'])
         
-        cmd.extend([self.python_cmd, '-u', '-B', script_path] + args)
+        if script_path.startswith("MODULE:"):
+            # Extract the module path from the script path
+            module_path = script_path[7:]  # Remove "MODULE:" prefix
+            # Convert src/path/to/module.py to tsim.path.to.module
+            module_name = module_path.replace('src/', 'tsim.').replace('/', '.').replace('.py', '')
+            cmd.extend([self.python_cmd, '-u', '-B', '-m', module_name] + args)
+        else:
+            cmd.extend([self.python_cmd, '-u', '-B', script_path] + args)
         
         # Set working directory
         if cwd is None:
-            cwd = self.project_root
+            cwd = self.project_root if not script_path.startswith("MODULE:") else os.getcwd()
         
         # Use existing environment variables
         env = os.environ.copy()
@@ -196,6 +203,10 @@ class BaseCommandHandler(ABC):
     
     def get_script_path(self, script_name: str) -> str:
         """Get the full path to a script in the project."""
+        # Check if we're running from an installed package
+        if 'site-packages' in self.project_root:
+            # We're in an installed package, return a module path indicator
+            return f"MODULE:{script_name}"
         return os.path.join(self.project_root, script_name)
     
     def success(self, message: str):
@@ -216,6 +227,21 @@ class BaseCommandHandler(ABC):
     
     def check_script_exists(self, script_path: str) -> bool:
         """Check if a script exists."""
+        if script_path.startswith("MODULE:"):
+            # For module paths, we'll check during execution
+            return True
+        if script_path.startswith("PACKAGE:"):
+            # For package resource files, check if they exist
+            try:
+                import importlib.resources as pkg_resources
+                package, resource = script_path[8:].split('/', 1)
+                if package == 'ansible':
+                    # Check in tsim.ansible package
+                    with pkg_resources.files('tsim.ansible').joinpath(resource) as p:
+                        return p.exists()
+            except Exception:
+                pass
+            return True  # Assume it exists, will fail during execution if not
         if not os.path.exists(script_path):
             self.error(f"Script not found: {script_path}")
             return False

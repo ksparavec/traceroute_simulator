@@ -1,0 +1,19 @@
+# Include documentation
+include README.md
+include LICENSE
+include requirements.txt
+
+# Include ansible directory
+recursive-include ansible *.py *.yml *.yaml *.sh *.txt *.json
+
+# Include data files
+recursive-include src *.yaml *.yml *.json
+
+# Exclude test files and cache
+recursive-exclude tests *
+recursive-exclude docs *
+recursive-exclude scripts *
+global-exclude __pycache__
+global-exclude *.pyc
+global-exclude *.pyo
+global-exclude .git*

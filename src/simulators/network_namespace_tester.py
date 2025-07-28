@@ -51,7 +51,7 @@ from typing import Dict, List, Tuple, Set, Optional
 class SequentialConnectivityTester:
     """Sequential network connectivity testing for namespace simulation."""
     
-    def __init__(self, verbose: int = 0, wait_time: float = 0.1, test_type: str = 'ping'):
+    def __init__(self, verbose: int = 0, wait_time: float = 0.1, test_type: str = 'ping', json_output: bool = False):
         facts_path = os.environ.get('TRACEROUTE_SIMULATOR_FACTS')
         if not facts_path:
             raise EnvironmentError("TRACEROUTE_SIMULATOR_FACTS environment variable must be set")
@@ -59,6 +59,7 @@ class SequentialConnectivityTester:
         self.verbose = verbose
         self.wait_time = wait_time
         self.test_type = test_type
+        self.json_output = json_output
         
         self.routers = {}
         self.router_ips = {}  # router_name -> [list of IPs]
@@ -73,6 +74,12 @@ class SequentialConnectivityTester:
         self.total_tests = 0
         self.passed_tests = 0
         self.failed_tests = 0
+        
+        # JSON output collection
+        self.json_results = {
+            "summary": {},
+            "tests": []
+        }
         
     def load_facts(self):
         """Load router facts and build IP mappings, including hosts from bridge registry."""
@@ -831,32 +838,142 @@ class SequentialConnectivityTester:
             
     def _handle_test_result(self, source_router: str, dest_router: str, source_ip: str, dest_ip: str,
                            success: bool, summary: str, full_output: str, test_type: str,
-                           router_passed: int, router_failed: int) -> Tuple[int, int]:
+                           router_passed: int, router_failed: int, source_namespace: str = None,
+                           dest_namespace: str = None) -> Tuple[int, int]:
         """Handle test result output and statistics."""
-        # Handle verbosity levels  
-        if self.verbose == 1:
-            # -v: compact single line format
-            status = f"PASS: {summary}" if success else f"FAIL: {summary}"
-            dest_display = dest_router if dest_router else "external"
-            print(f"    {source_router} ({source_ip}) -> {dest_display} ({dest_ip}) [{test_type}] {status}")
-        elif self.verbose >= 2:
-            # -vv/-vvv: detailed format
-            if self.verbose >= 3:
-                # -vvv: include full output
-                print(f"\nFull {test_type} output:")
-                print(full_output)
-                print()
-                
-            # Pass/fail message
-            if success:
-                print(f"✓ {test_type} PASS: {summary}")
-            else:
-                print(f"✗ {test_type} FAIL: {summary}")
+        # Determine actual source namespace data
+        if source_namespace:
+            # Use the provided namespace
+            src_ns = source_namespace
+            src_type = "host" if source_namespace in self.host_namespaces else "router"
+        else:
+            # Fallback to router
+            src_ns = source_router
+            src_type = "router"
+        
+        # Determine actual destination namespace data
+        if dest_namespace:
+            dest_ns = dest_namespace
+            dest_type = "host" if dest_namespace in self.host_namespaces else "router"
+            is_external = False
+        else:
+            # No destination namespace - it's external or unknown
+            dest_ns = None
+            dest_type = None
+            is_external = True
+        
+        # Determine which router is being used
+        router = None
+        if source_namespace and source_namespace in self.host_namespaces:
+            # Source is a host, use its connected router
+            router = source_router
+        elif src_type == "router":
+            # Source itself is a router
+            router = src_ns
+        
+        # Collect JSON data
+        test_result = {
+            "source": {
+                "namespace": src_ns,
+                "namespace_type": src_type,
+                "ip": source_ip
+            },
+            "destination": {
+                "namespace": dest_ns,
+                "namespace_type": dest_type,
+                "ip": dest_ip
+            },
+            "router": router,
+            "test_type": test_type,
+            "success": success,
+            "summary": summary,
+            "output": full_output  # Always include the actual test output
+        }
+        
+        # Parse ping-specific data from output if it's a ping test
+        if test_type.upper() == 'PING' and full_output:
+            # Extract ping statistics
+            lines = full_output.strip().split('\n')
+            for line in lines:
+                if 'packets transmitted' in line:
+                    # Parse: "3 packets transmitted, 3 received, 0% packet loss"
+                    parts = line.split(',')
+                    if len(parts) >= 3:
+                        transmitted = parts[0].strip().split()[0]
+                        received = parts[1].strip().split()[0]
+                        loss = parts[2].strip().split()[0].rstrip('%')
+                        test_result["ping_stats"] = {
+                            "packets_transmitted": int(transmitted),
+                            "packets_received": int(received),
+                            "packet_loss_percent": float(loss)
+                        }
+                elif 'rtt min/avg/max/mdev' in line:
+                    # Parse: "rtt min/avg/max/mdev = 2.269/2.327/2.359/0.041 ms"
+                    parts = line.split('=')[1].strip().split()[0].split('/')
+                    if len(parts) == 4:
+                        test_result["ping_rtt"] = {
+                            "min": float(parts[0]),
+                            "avg": float(parts[1]),
+                            "max": float(parts[2]),
+                            "mdev": float(parts[3])
+                        }
+        
+        # Parse MTR-specific data from output if it's an MTR test
+        if test_type.upper() == 'MTR' and full_output:
+            # Extract hop information from MTR output
+            hops = []
+            lines = full_output.strip().split('\n')
+            for line in lines:
+                # MTR output format: "1.|-- 10.1.1.1  0.0%  1  0.5  0.5  0.5  0.5  0.0"
+                if line.strip() and ('|--' in line or '`--' in line):
+                    parts = line.split()
+                    if len(parts) >= 3:
+                        hop_num = parts[0].rstrip('.')
+                        hop_ip = parts[1]
+                        # Try to map IP to namespace/router name
+                        hop_namespaces = self.ip_to_namespaces.get(hop_ip, [])
+                        hop_name = hop_namespaces[0] if hop_namespaces else hop_ip
+                        hops.append({
+                            "hop": hop_num,
+                            "ip": hop_ip,
+                            "namespace": hop_name,
+                            "namespace_type": "host" if hop_name in self.host_namespaces else "router" if hop_namespaces else "unknown"
+                        })
+            
+            if hops:
+                test_result["mtr_hops"] = hops
+            
+        self.json_results["tests"].append(test_result)
+        
+        # Handle regular output (if not JSON mode)
+        if not self.json_output:
+            # Handle verbosity levels  
+            if self.verbose == 1:
+                # -v: compact single line format
+                status = f"PASS: {summary}" if success else f"FAIL: {summary}"
+                dest_display = dest_router if dest_router else "external"
+                print(f"    {source_router} ({source_ip}) -> {dest_display} ({dest_ip}) [{test_type}] {status}")
+            elif self.verbose >= 2:
+                # -vv/-vvv: detailed format
+                if self.verbose >= 3:
+                    # -vvv: include full output
+                    print(f"\nFull {test_type} output:")
+                    print(full_output)
+                    print()
+                    
+                # Pass/fail message
+                if success:
+                    print(f"✓ {test_type} PASS: {summary}")
+                else:
+                    print(f"✗ {test_type} FAIL: {summary}")
                 
         # Update statistics
+        self.total_tests += 1
         if success:
+            self.passed_tests += 1
             router_passed += 1
         else:
+            self.failed_tests += 1
             router_failed += 1
             
         return router_passed, router_failed
@@ -866,14 +983,14 @@ class SequentialConnectivityTester:
         source_ips = self.router_ips.get(source_router, [])
         
         if not source_ips:
-            if self.verbose >= 1:
+            if self.verbose >= 1 and not self.json_output:
                 print(f"✗ {source_router} has no IP addresses")
             return
             
         # Use first available IP as source
         source_ip = source_ips[0]
         
-        if self.verbose >= 1:
+        if self.verbose >= 1 and not self.json_output:
             print(f"\nTesting from {source_router} ({source_ip}):")
             
         router_passed = 0
@@ -901,7 +1018,9 @@ class SequentialConnectivityTester:
                 router_passed, router_failed = self._handle_test_result(
                     source_router, dest_router, source_ip, dest_ip,
                     success, summary, full_output, 'PING',
-                    router_passed, router_failed
+                    router_passed, router_failed,
+                    source_namespace=source_router,
+                    dest_namespace=dest_router
                 )
                 
             if self.test_type in ['mtr', 'both']:
@@ -909,31 +1028,41 @@ class SequentialConnectivityTester:
                 router_passed, router_failed = self._handle_test_result(
                     source_router, dest_router, source_ip, dest_ip,
                     success, summary, full_output, 'MTR',
-                    router_passed, router_failed
+                    router_passed, router_failed,
+                    source_namespace=source_router,
+                    dest_namespace=dest_router
                 )
                 
         # Router summary
         total = router_passed + router_failed
         if total > 0:
-            if self.verbose >= 1:
+            if self.verbose >= 1 and not self.json_output:
                 if router_failed == 0:
                     print(f"  ✓ {source_router} passed all {router_passed} tests")
                 else:
                     print(f"  ⚠ {source_router} passed {router_passed}/{total} tests")
             
-            if router_failed > 0:
+            if router_failed > 0 and not self.json_output:
                 print(f"  ⚠ {source_router} has {router_failed} failures - CRITICAL ISSUE!")
             
     def test_specific_pair(self, source_ip: str, dest_ip: str):
         """Test specific source to destination from all namespaces that have the source IP."""
-        if self.verbose >= 1:
+        if self.verbose >= 1 and not self.json_output:
             print(f"\n=== Testing {source_ip} → {dest_ip} ===")
         
         # Get all namespaces that have this source IP
         source_namespaces = self.ip_to_namespaces.get(source_ip, [])
         
         if not source_namespaces:
-            if self.verbose >= 1:
+            if self.json_output:
+                # For JSON output, add an error entry
+                self.json_results["tests"].append({
+                    "error": f"Source IP {source_ip} not found in any namespace",
+                    "source": {"ip": source_ip},
+                    "destination": {"ip": dest_ip},
+                    "success": False
+                })
+            elif self.verbose >= 1:
                 print(f"✗ Source IP {source_ip} not found in any namespace")
             return False
             
@@ -957,7 +1086,7 @@ class SequentialConnectivityTester:
             self.add_public_ip_host_to_gateways(dest_ip)
             
         # Print source and destination info once (already sorted)
-        if self.verbose >= 1:
+        if self.verbose >= 1 and not self.json_output:
             if len(source_namespaces) > 1:
                 print(f"Found {len(source_namespaces)} namespaces with source IP {source_ip}: {', '.join(source_namespaces)}")
             if dest_namespaces:
@@ -996,7 +1125,7 @@ class SequentialConnectivityTester:
                             dest_name = dest_ns
                             break
             
-            if self.verbose >= 1:
+            if self.verbose >= 1 and not self.json_output:
                 print(f"\n=== Testing {source_namespace} ({source_ip}) -> {dest_name} ({dest_ip}) via {router_name} ===")
             
             namespace_success = True
@@ -1109,10 +1238,49 @@ class SequentialConnectivityTester:
                         
                         namespace_success = namespace_success and success
                         
+                        # Collect test result for JSON output
+                        if self.json_output or self.verbose >= 1:
+                            # Determine source router name
+                            source_router = source_namespace
+                            if source_namespace in self.host_namespaces:
+                                source_router = self.hosts.get(source_namespace, {}).get('connected_to', source_namespace)
+                            
+                            # Create summary based on success
+                            if success:
+                                summary = f"{test_name.upper()} successful"
+                            else:
+                                summary = f"{test_name.upper()} failed (exit code {result.returncode})"
+                            
+                            # Determine destination namespace
+                            dest_namespace_val = dest_name if dest_name != dest_ip else None
+                            
+                            # Handle test result
+                            self._handle_test_result(
+                                source_router, dest_name if dest_name != dest_ip else None,
+                                source_ip, dest_ip,
+                                success, summary, result.stdout or "",
+                                test_name.upper(),
+                                0, 0,  # We'll update stats differently
+                                source_namespace=source_namespace,
+                                dest_namespace=dest_namespace_val
+                            )
+                        
                     except Exception as e:
-                        if self.verbose >= 1:
+                        if self.verbose >= 1 and not self.json_output:
                             print(f"{test_name.upper()} error: {str(e)}")
                         namespace_success = False
+                        
+                        # Record error in JSON
+                        if self.json_output:
+                            self._handle_test_result(
+                                source_namespace, None,
+                                source_ip, dest_ip,
+                                False, f"{test_name.upper()} error: {str(e)}", "",
+                                test_name.upper(),
+                                0, 0,
+                                source_namespace=source_namespace,
+                                dest_namespace=None
+                            )
                 
                 overall_success = overall_success and namespace_success
                 
@@ -1129,7 +1297,7 @@ class SequentialConnectivityTester:
             
     def test_all_connectivity(self):
         """Test all routers sequentially."""
-        if self.verbose >= 1:
+        if self.verbose >= 1 and not self.json_output:
             print("\n=== Testing All Routers ===")
             print(f"Test type: {self.test_type}")
             print(f"Wait time between tests: {self.wait_time}s")
@@ -1150,18 +1318,32 @@ class SequentialConnectivityTester:
             
         pass_rate = (self.passed_tests / self.total_tests) * 100 if self.total_tests > 0 else 0
         
-        print("\n" + "="*50)
-        print("FINAL SUMMARY")
-        print("="*50)
-        print(f"Total tests: {self.total_tests}")
-        print(f"Passed: {self.passed_tests}")
-        print(f"Failed: {self.failed_tests}")
-        print(f"Pass rate: {pass_rate:.1f}%")
+        # Update JSON summary
+        self.json_results["summary"] = {
+            "total_tests": self.total_tests,
+            "passed": self.passed_tests,
+            "failed": self.failed_tests,
+            "pass_rate": round(pass_rate, 1),
+            "all_passed": self.failed_tests == 0
+        }
         
-        if self.failed_tests == 0:
-            print("\n✓ ALL TESTS PASSED")
+        if self.json_output:
+            # Output JSON
+            print(json.dumps(self.json_results, indent=2))
         else:
-            print(f"\n⚠ {self.failed_tests} TESTS FAILED")
+            # Regular output
+            print("\n" + "="*50)
+            print("FINAL SUMMARY")
+            print("="*50)
+            print(f"Total tests: {self.total_tests}")
+            print(f"Passed: {self.passed_tests}")
+            print(f"Failed: {self.failed_tests}")
+            print(f"Pass rate: {pass_rate:.1f}%")
+            
+            if self.failed_tests == 0:
+                print("\n✓ ALL TESTS PASSED")
+            else:
+                print(f"\n⚠ {self.failed_tests} TESTS FAILED")
             
     def run_tests(self, source_ip: str = None, dest_ip: str = None, test_all: bool = False):
         """Run connectivity tests."""
@@ -1174,12 +1356,15 @@ class SequentialConnectivityTester:
             self.test_all_connectivity()
         elif source_ip and dest_ip:
             success = self.test_specific_pair(source_ip, dest_ip)
-            # Update statistics
-            self.total_tests = 1
-            if success:
-                self.passed_tests = 1
-            else:
-                self.failed_tests = 1
+            # Statistics are already updated via _handle_test_result
+            # Just ensure we have the right counts
+            if self.total_tests == 0:
+                # If no tests were recorded (e.g., source IP not found), set stats manually
+                self.total_tests = 1
+                if success:
+                    self.passed_tests = 1
+                else:
+                    self.failed_tests = 1
         else:
             print("Error: Must specify either --all or both -s and -d")
             return False
@@ -1187,7 +1372,8 @@ class SequentialConnectivityTester:
         # Clean up any temporary public IP hosts
         self.cleanup_all_public_ip_hosts()
         
-        # No summary needed
+        # Print final summary
+        self.print_final_summary()
             
         return self.failed_tests == 0
 
@@ -1236,6 +1422,8 @@ Examples:
     # Options
     parser.add_argument('-w', '--wait', type=float, default=0.1,
                        help='Wait time between tests in seconds (default: 0.1)')
+    parser.add_argument('-j', '--json', action='store_true',
+                       help='Output in JSON format')
     parser.add_argument('-v', '--verbose', action='count', default=0,
                        help='Increase verbosity (-v: summary, -vv: details, -vvv: full output)')
     
@@ -1258,7 +1446,8 @@ Examples:
         tester = SequentialConnectivityTester(
             verbose=args.verbose,
             wait_time=args.wait,
-            test_type=args.test_type
+            test_type=args.test_type,
+            json_output=args.json
         )
         
         # Load facts

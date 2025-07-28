@@ -23,8 +23,8 @@ This document outlines the architecture for testing network service reachability
 ### Phase 1: Path Discovery (Real Network)
 
 1. **Trace the network path**:
-   ```
-   trace -s <SOURCE_IP> -d <DESTINATION_IP> -j
+   ```bash
+   echo "trace --source <SOURCE_IP> --destination <DESTINATION_IP> --json" | tsimsh -q
    TRACE_RESULT=$TSIM_RESULT
    ```
    - This is the ONLY operation performed on the real network
@@ -36,27 +36,27 @@ This document outlines the architecture for testing network service reachability
 ### Phase 2: Simulation Environment Setup
 
 1. **Add source host** to the network simulation:
-   ```
-   host add --name src_host --primary-ip <SOURCE_IP>/24 --connect-to <ROUTER>
+   ```bash
+   echo "host add --name src_host --primary-ip <SOURCE_IP>/24 --connect-to <ROUTER>" | tsimsh -q
    ```
    - Router selection based on source IP subnet matching
 
 2. **Add destination host** to the network simulation:
-   ```
-   host add --name dst_host --primary-ip <DESTINATION_IP>/24 --connect-to <ROUTER>
+   ```bash
+   echo "host add --name dst_host --primary-ip <DESTINATION_IP>/24 --connect-to <ROUTER>" | tsimsh -q
    ```
    - Router selection based on destination IP subnet matching
 
 3. **Start destination service**:
-   ```
-   service start --ip <DESTINATION_IP> --port <DESTINATION_PORT> [--protocol tcp|udp]
+   ```bash
+   echo "service start --ip <DESTINATION_IP> --port <DESTINATION_PORT> [--protocol tcp|udp]" | tsimsh -q
    ```
 
 ### Phase 3: Initial Reachability Test
 
 1. **Test ICMP connectivity (ping)**:
-   ```
-   ping -s <SOURCE_IP> -d <DESTINATION_IP> -j
+   ```bash
+   echo "ping --source <SOURCE_IP> --destination <DESTINATION_IP> --json" | tsimsh -q
    PING_RESULT=$TSIM_RESULT
    PING_RETURN=$TSIM_RETURN_VALUE
    ```
@@ -66,8 +66,8 @@ This document outlines the architecture for testing network service reachability
    - Check `$PING_RETURN` (0 = success, non-zero = failure)
 
 2. **Test path with MTR**:
-   ```
-   mtr -s <SOURCE_IP> -d <DESTINATION_IP> -j
+   ```bash
+   echo "mtr --source <SOURCE_IP> --destination <DESTINATION_IP> --json" | tsimsh -q
    MTR_RESULT=$TSIM_RESULT
    MTR_RETURN=$TSIM_RETURN_VALUE
    ```
@@ -77,8 +77,8 @@ This document outlines the architecture for testing network service reachability
    - Check `$MTR_RETURN` for success/failure
 
 3. **Test service connectivity**:
-   ```
-   service test --src <SOURCE_IP> --dest <DESTINATION_IP>:<DESTINATION_PORT> [--protocol tcp|udp] -j
+   ```bash
+   echo "service test --source <SOURCE_IP> --destination <DESTINATION_IP>:<DESTINATION_PORT> [--protocol tcp|udp] --json" | tsimsh -q
    SERVICE_RESULT=$TSIM_RESULT
    SERVICE_RETURN=$TSIM_RETURN_VALUE
    ```
@@ -92,21 +92,21 @@ This document outlines the architecture for testing network service reachability
 If the service test fails, analyze iptables rules on each router in the path:
 
 1. **Capture initial packet counts** for each router:
-   ```
-   network status -l <ROUTER> iptables -j
+   ```bash
+   echo "network status --limit <ROUTER> iptables --json" | tsimsh -q
    IPTABLES_BEFORE_<ROUTER>=$TSIM_RESULT
    ```
    - Store baseline packet counts for all chains
    - Save each router's data in separate variable
 
 2. **Attempt connection again**:
-   ```
-   service test --src <SOURCE_IP> --dest <DESTINATION_IP>:<DESTINATION_PORT> [--protocol tcp|udp] -j
+   ```bash
+   echo "service test --source <SOURCE_IP> --destination <DESTINATION_IP>:<DESTINATION_PORT> [--protocol tcp|udp] --json" | tsimsh -q
    ```
 
 3. **Capture final packet counts** for each router:
-   ```
-   network status -l <ROUTER> iptables -j
+   ```bash
+   echo "network status --limit <ROUTER> iptables --json" | tsimsh -q
    IPTABLES_AFTER_<ROUTER>=$TSIM_RESULT
    ```
 
@@ -196,6 +196,97 @@ Generate comprehensive output in appropriate format:
    - Avoid technical jargon where possible
    - Provide actionable recommendations
 
+## Bash Script Usage
+
+When using tsimsh commands in bash scripts, you must echo the commands to tsimsh with the `-q` (quiet) flag:
+
+### Basic Command Structure
+```bash
+echo "<tsimsh_command>" | tsimsh -q
+```
+
+The `-q` flag runs tsimsh in quiet mode, suppressing the interactive prompt and making it suitable for scripting.
+
+### Capturing Output
+After each command, the results are available in special variables:
+- `$TSIM_RESULT` - Contains the command output (JSON for commands with --json flag)
+- `$TSIM_RETURN_VALUE` - Contains the command return code (0 for success, non-zero for failure)
+
+### Example Script
+```bash
+#!/bin/bash
+
+# Set source and destination IPs
+SRC_IP="10.1.1.100"
+DST_IP="10.3.20.100"
+DST_PORT="80"
+
+# Trace the network path
+echo "trace --source $SRC_IP --destination $DST_IP --json" | tsimsh -q
+if [ $? -ne 0 ]; then
+    echo "Failed to trace network path"
+    exit 1
+fi
+TRACE_RESULT=$TSIM_RESULT
+
+# Add source host to simulation
+echo "host add --name src_host --primary-ip ${SRC_IP}/24 --connect-to hq-gw" | tsimsh -q
+
+# Add destination host to simulation
+echo "host add --name dst_host --primary-ip ${DST_IP}/24 --connect-to dc-srv" | tsimsh -q
+
+# Start destination service
+echo "service start --ip $DST_IP --port $DST_PORT --protocol tcp" | tsimsh -q
+
+# Test connectivity with ping
+echo "ping --source $SRC_IP --destination $DST_IP --json" | tsimsh -q
+PING_RESULT=$TSIM_RESULT
+PING_RETURN=$TSIM_RETURN_VALUE
+
+# Test service connectivity
+echo "service test --source $SRC_IP --destination ${DST_IP}:${DST_PORT} --protocol tcp --json" | tsimsh -q
+SERVICE_RESULT=$TSIM_RESULT
+SERVICE_RETURN=$TSIM_RETURN_VALUE
+
+# Cleanup
+echo "service stop --ip ${DST_IP}:${DST_PORT}" | tsimsh -q
+echo "host remove --name src_host" | tsimsh -q
+echo "host remove --name dst_host" | tsimsh -q
+
+# Check results
+if [ "$SERVICE_RETURN" -eq 0 ]; then
+    echo "Service is reachable"
+else
+    echo "Service is blocked"
+fi
+```
+
+### Working with JSON Results in Bash
+
+When using JSON output in bash scripts, you need to access the data through tsimsh variable operations:
+
+```bash
+# Get JSON result
+echo "ping --source $SRC_IP --destination $DST_IP --json" | tsimsh -q
+PING_RESULT=$TSIM_RESULT
+
+# Access JSON fields through tsimsh
+echo "ALL_PASSED=\$PING_RESULT.summary.all_passed" | tsimsh -q
+echo "PACKET_LOSS=\$PING_RESULT.tests[0].ping_stats.packet_loss_percent" | tsimsh -q
+
+# Use the extracted values in bash
+if [ "$ALL_PASSED" = "true" ]; then
+    echo "All tests passed"
+fi
+```
+
+### Important Notes
+- Always use the `-q` flag when piping to tsimsh in scripts
+- Variable assignments inside tsimsh need escaped dollar signs (`\$`)
+- Check return codes with `$?` after each command
+- JSON data must be accessed through tsimsh variable operations
+- Clean up resources (hosts, services) even if errors occur
+
 ## Implementation Algorithm
 
 ```
@@ -231,8 +322,8 @@ Generate comprehensive output in appropriate format:
 1. **trace**: Discover the packet path through routers (REAL NETWORK)
 2. **host add**: Create source/destination hosts in simulation
 3. **service start**: Start the destination service
-4. **ping**: Test ICMP connectivity
-5. **mtr**: Test path connectivity with hop-by-hop analysis
+4. **ping**: Test ICMP connectivity (supports JSON output)
+5. **mtr**: Test path connectivity with hop-by-hop analysis (supports JSON output)
 6. **service test**: Test TCP/UDP service connectivity
 7. **network status**: Retrieve iptables rules with packet counts
 8. **Variable operations**: Store and manipulate command outputs
@@ -260,55 +351,359 @@ Generate comprehensive output in appropriate format:
 The tsimsh shell provides comprehensive JSON handling capabilities that enable all required operations:
 
 ### Automatic JSON Parsing
-- Command outputs with `-j` flag are automatically parsed into objects
+- Command outputs with `-j` or `--json` flag are automatically parsed into objects
 - Variables storing JSON strings are automatically converted to dictionaries/lists
 
+### Ping and MTR JSON Output Formats
+
+The ping and mtr commands support JSON output with the `-j` or `--json` flag. The JSON output includes:
+- Complete namespace information (source and destination)
+- Full command output (same as `-v` mode)
+- Parsed statistics for easier programmatic access
+- Router information for understanding the network path
+
+**Important**: When there are multiple Linux routers on the path between source and destination, the ping and mtr commands will generate **one test per router**. For example:
+- If trace shows 3 Linux routers on the path, there will be 3 tests in the tests array
+- Each test represents connectivity testing through a specific router
+- Each test will have two hosts (source and destination) with one router in between
+
+#### Ping JSON Output
+
+Example with 3 Linux routers on the path:
+```json
+{
+  "summary": {
+    "total_tests": 3,
+    "passed": 3,
+    "failed": 0,
+    "pass_rate": 100.0,
+    "all_passed": true
+  },
+  "tests": [
+    {
+      "source": {
+        "namespace": "host1",
+        "namespace_type": "host",
+        "ip": "10.1.1.100"
+      },
+      "destination": {
+        "namespace": "host2",
+        "namespace_type": "host",
+        "ip": "10.2.1.200"
+      },
+      "router": "hq-gw",
+      "test_type": "PING",
+      "success": true,
+      "summary": "PING successful",
+      "output": "PING 10.2.1.200 (10.2.1.200) from 10.1.1.100 : 56(84) bytes of data.\n64 bytes from 10.2.1.200: icmp_seq=1 ttl=63 time=2.36 ms\n64 bytes from 10.2.1.200: icmp_seq=2 ttl=63 time=2.27 ms\n64 bytes from 10.2.1.200: icmp_seq=3 ttl=63 time=2.36 ms\n\n--- 10.2.1.200 ping statistics ---\n3 packets transmitted, 3 received, 0% packet loss, time 2003ms\nrtt min/avg/max/mdev = 2.269/2.327/2.359/0.041 ms",
+      "ping_stats": {
+        "packets_transmitted": 3,
+        "packets_received": 3,
+        "packet_loss_percent": 0.0
+      },
+      "ping_rtt": {
+        "min": 2.269,
+        "avg": 2.327,
+        "max": 2.359,
+        "mdev": 0.041
+      }
+    },
+    {
+      "source": {
+        "namespace": "host1",
+        "namespace_type": "host",
+        "ip": "10.1.1.100"
+      },
+      "destination": {
+        "namespace": "host2",
+        "namespace_type": "host",
+        "ip": "10.2.1.200"
+      },
+      "router": "hq-core",
+      "test_type": "PING",
+      "success": true,
+      "summary": "PING successful",
+      "output": "[ping output through hq-core]",
+      "ping_stats": {
+        "packets_transmitted": 3,
+        "packets_received": 3,
+        "packet_loss_percent": 0.0
+      },
+      "ping_rtt": {
+        "min": 2.456,
+        "avg": 2.512,
+        "max": 2.587,
+        "mdev": 0.055
+      }
+    },
+    {
+      "source": {
+        "namespace": "host1",
+        "namespace_type": "host",
+        "ip": "10.1.1.100"
+      },
+      "destination": {
+        "namespace": "host2",
+        "namespace_type": "host",
+        "ip": "10.2.1.200"
+      },
+      "router": "br-gw",
+      "test_type": "PING",
+      "success": true,
+      "summary": "PING successful",
+      "output": "[ping output through br-gw]",
+      "ping_stats": {
+        "packets_transmitted": 3,
+        "packets_received": 3,
+        "packet_loss_percent": 0.0
+      },
+      "ping_rtt": {
+        "min": 2.789,
+        "avg": 2.845,
+        "max": 2.923,
+        "mdev": 0.058
+      }
+    }
+  ]
+}
+```
+
+#### MTR JSON Output
+
+Example with 3 Linux routers on the path:
+```json
+{
+  "summary": {
+    "total_tests": 3,
+    "passed": 3,
+    "failed": 0,
+    "pass_rate": 100.0,
+    "all_passed": true
+  },
+  "tests": [
+    {
+      "source": {
+        "namespace": "host1",
+        "namespace_type": "host",
+        "ip": "10.1.1.100"
+      },
+      "destination": {
+        "namespace": "dc-srv",
+        "namespace_type": "router",
+        "ip": "10.3.20.2"
+      },
+      "router": "hq-gw",
+      "test_type": "MTR",
+      "success": true,
+      "summary": "MTR successful",
+      "output": "HOST: host1                       Loss%   Snt   Last   Avg  Best  Wrst StDev\n  1.|-- 10.1.1.1                   0.0%     1    0.5   0.5   0.5   0.5   0.0\n  2.|-- 10.1.0.1                   0.0%     1    1.2   1.2   1.2   1.2   0.0\n  3.|-- 172.16.0.2                 0.0%     1    2.1   2.1   2.1   2.1   0.0\n  4.|-- 10.3.20.2                  0.0%     1    2.8   2.8   2.8   2.8   0.0",
+      "mtr_hops": [
+        {
+          "hop": "1",
+          "ip": "10.1.1.1",
+          "namespace": "hq-gw",
+          "namespace_type": "router"
+        },
+        {
+          "hop": "2",
+          "ip": "10.1.0.1",
+          "namespace": "hq-core",
+          "namespace_type": "router"
+        },
+        {
+          "hop": "3",
+          "ip": "172.16.0.2",
+          "namespace": "dc-core",
+          "namespace_type": "router"
+        },
+        {
+          "hop": "4",
+          "ip": "10.3.20.2",
+          "namespace": "dc-srv",
+          "namespace_type": "router"
+        }
+      ]
+    },
+    {
+      "source": {
+        "namespace": "host1",
+        "namespace_type": "host",
+        "ip": "10.1.1.100"
+      },
+      "destination": {
+        "namespace": "dc-srv",
+        "namespace_type": "router",
+        "ip": "10.3.20.2"
+      },
+      "router": "hq-core",
+      "test_type": "MTR",
+      "success": true,
+      "summary": "MTR successful",
+      "output": "[MTR output through hq-core]",
+      "mtr_hops": [
+        {
+          "hop": "1",
+          "ip": "10.1.0.1",
+          "namespace": "hq-core",
+          "namespace_type": "router"
+        },
+        {
+          "hop": "2",
+          "ip": "172.16.0.2",
+          "namespace": "dc-core",
+          "namespace_type": "router"
+        },
+        {
+          "hop": "3",
+          "ip": "10.3.20.2",
+          "namespace": "dc-srv",
+          "namespace_type": "router"
+        }
+      ]
+    },
+    {
+      "source": {
+        "namespace": "host1",
+        "namespace_type": "host",
+        "ip": "10.1.1.100"
+      },
+      "destination": {
+        "namespace": "dc-srv",
+        "namespace_type": "router",
+        "ip": "10.3.20.2"
+      },
+      "router": "dc-core",
+      "test_type": "MTR",
+      "success": true,
+      "summary": "MTR successful",
+      "output": "[MTR output through dc-core]",
+      "mtr_hops": [
+        {
+          "hop": "1",
+          "ip": "10.3.20.1",
+          "namespace": "dc-core",
+          "namespace_type": "router"
+        },
+        {
+          "hop": "2",
+          "ip": "10.3.20.2",
+          "namespace": "dc-srv",
+          "namespace_type": "router"
+        }
+      ]
+    }
+  ]
+}
+```
+
+#### Key JSON Fields
+
+- **source/destination**: Contains namespace information
+  - `namespace`: The actual namespace where the test originates/terminates
+  - `namespace_type`: Either "host" or "router"
+  - `ip`: The IP address used
+  
+- **router**: The router through which the test is performed (when source is a host)
+
+- **tests array**: Contains one test entry per Linux router on the path
+  - If trace shows 3 Linux routers, tests array will have 3 elements
+  - Each test simulates connectivity through a specific router
+  - All tests use the same source and destination hosts
+
+- **output**: Complete command output, identical to what you see with `-v`
+
+- **ping_stats**: Parsed ping statistics (packets transmitted/received, loss percentage)
+
+- **ping_rtt**: Round-trip time statistics (min/avg/max/mdev in milliseconds)
+
+- **mtr_hops**: For MTR tests, shows each hop in the path with namespace mapping
+
 ### Accessing JSON Data
+
+#### Working with Ping/MTR JSON Results
+```bash
+# Run ping test and capture JSON
+echo "ping --source $SRC_IP --destination $DST_IP --json" | tsimsh -q
+PING_RESULT=$TSIM_RESULT
+
+# Check if all tests passed
+echo "ALL_PASSED=\$PING_RESULT.summary.all_passed" | tsimsh -q
+if [ "$ALL_PASSED" = "true" ]; then
+    echo "All ping tests passed"
+fi
+
+# Get packet loss percentage from first test
+echo "PACKET_LOSS=\$PING_RESULT.tests[0].ping_stats.packet_loss_percent" | tsimsh -q
+
+# Get average RTT
+echo "AVG_RTT=\$PING_RESULT.tests[0].ping_rtt.avg" | tsimsh -q
+
+# Get source namespace information
+echo "SOURCE_NS=\$PING_RESULT.tests[0].source.namespace" | tsimsh -q
+echo "SOURCE_TYPE=\$PING_RESULT.tests[0].source.namespace_type" | tsimsh -q
+
+# Run MTR and get hop count
+echo "mtr --source $SRC_IP --destination $DST_IP --json" | tsimsh -q
+MTR_RESULT=$TSIM_RESULT
+echo "HOP_COUNT=\$MTR_RESULT.tests[0].mtr_hops.length()" | tsimsh -q
+
+# List all routers in MTR path
+for i in $(seq 0 $(($HOP_COUNT - 1))); do
+    echo "HOP_NS=\$MTR_RESULT.tests[0].mtr_hops[$i].namespace" | tsimsh -q
+    echo "HOP_IP=\$MTR_RESULT.tests[0].mtr_hops[$i].ip" | tsimsh -q
+    echo "Hop $i: $HOP_NS ($HOP_IP)"
+done
+```
+
+#### Working with Trace Results
 ```bash
 # Extract router list from trace result
-TRACE_RESULT=`trace -s $SRC_IP -d $DST_IP -j`
-ROUTERS=$TRACE_RESULT.traceroute_path
+echo "trace --source $SRC_IP --destination $DST_IP --json" | tsimsh -q
+TRACE_RESULT=$TSIM_RESULT
+echo "ROUTERS=\$TRACE_RESULT.traceroute_path" | tsimsh -q
 
 # Access nested values
-ROUTER_NAME=$TRACE_RESULT.traceroute_path[0].name
+echo "ROUTER_NAME=\$TRACE_RESULT.traceroute_path[0].name" | tsimsh -q
 
 # Get array length
-ROUTER_COUNT=$TRACE_RESULT.traceroute_path.length()
+echo "ROUTER_COUNT=\$TRACE_RESULT.traceroute_path.length()" | tsimsh -q
 ```
 
 ### Comparing Packet Counts
 ```bash
 # Store iptables data before and after
-IPTABLES_BEFORE=`network status -l $ROUTER iptables -j`
-IPTABLES_AFTER=`network status -l $ROUTER iptables -j`
+echo "network status --limit $ROUTER iptables --json" | tsimsh -q
+IPTABLES_BEFORE=$TSIM_RESULT
+echo "network status --limit $ROUTER iptables --json" | tsimsh -q
+IPTABLES_AFTER=$TSIM_RESULT
 
 # Access specific chain and rule
 CHAIN="FORWARD"
 RULE_INDEX=7
 
 # Get packet counts
-BEFORE_COUNT=$IPTABLES_BEFORE.iptables.filter[$CHAIN][$RULE_INDEX].packets
-AFTER_COUNT=$IPTABLES_AFTER.iptables.filter[$CHAIN][$RULE_INDEX].packets
+echo "BEFORE_COUNT=\$IPTABLES_BEFORE.iptables.filter[$CHAIN][$RULE_INDEX].packets" | tsimsh -q
+echo "AFTER_COUNT=\$IPTABLES_AFTER.iptables.filter[$CHAIN][$RULE_INDEX].packets" | tsimsh -q
 
 # Compare values
-if [ "$AFTER_COUNT" > "$BEFORE_COUNT" ]; then
+if [ "$AFTER_COUNT" -gt "$BEFORE_COUNT" ]; then
     PACKETS_BLOCKED=$(($AFTER_COUNT - $BEFORE_COUNT))
-    RULE_TEXT=$IPTABLES_AFTER.iptables.filter[$CHAIN][$RULE_INDEX].rule
+    echo "RULE_TEXT=\$IPTABLES_AFTER.iptables.filter[$CHAIN][$RULE_INDEX].rule" | tsimsh -q
 fi
 ```
 
 ### Building Result JSON
 ```bash
 # Initialize result structure
-BLOCKING_ROUTERS='[]'
-NON_BLOCKING_ROUTERS='[]'
+echo "BLOCKING_ROUTERS='[]'" | tsimsh -q
+echo "NON_BLOCKING_ROUTERS='[]'" | tsimsh -q
 
 # Add to arrays dynamically
 # Note: Full JSON construction would be done through variable manipulation
 
 # Access methods
-KEYS=$IPTABLES_RESULT.iptables.filter.keys()  # Get chain names
-VALUES=$IPTABLES_RESULT.iptables.filter.values()  # Get chain data
+echo "KEYS=\$IPTABLES_RESULT.iptables.filter.keys()" | tsimsh -q  # Get chain names
+echo "VALUES=\$IPTABLES_RESULT.iptables.filter.values()" | tsimsh -q  # Get chain data
 ```
 
 ### Variable Features Used
@@ -467,7 +862,7 @@ Technical details (for administrator):
     "Reference blocking rule on router dc-core, FORWARD chain, rule #7"
   ],
   "debug_info": {
-    "trace_command": "trace -s 10.1.1.100 -d 10.3.20.100 -j",
+    "trace_command": "trace --source 10.1.1.100 --destination 10.3.20.100 --json",
     "simulation_hosts_created": ["src_host", "dst_host"],
     "services_started": ["10.3.20.100:80/tcp"],
     "cleanup_performed": true

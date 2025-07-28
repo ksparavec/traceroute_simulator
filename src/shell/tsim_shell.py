@@ -1530,6 +1530,7 @@ Type 'set' to see all variables.
         self.poutput(f"  {Fore.YELLOW}-d, --destination IP{Style.RESET_ALL} Destination IP address")
         
         self.poutput(f"\n{Fore.CYAN}OPTIONAL OPTIONS:{Style.RESET_ALL}")
+        self.poutput("  -j, --json            Output in JSON format")
         self.poutput("  -v, --verbose         Increase verbosity (can be used multiple times)")
         self.poutput("  -h, --help            Show this help message")
         
@@ -1537,6 +1538,9 @@ Type 'set' to see all variables.
         self.poutput("  Tests connectivity from all namespaces containing the source IP")
         self.poutput("  to all namespaces containing the destination IP. Shows ping results")
         self.poutput("  and routing paths for successful connections.")
+        self.poutput("")
+        self.poutput("  When using -j/--json, the output is structured JSON with summary")
+        self.poutput("  statistics and detailed test results.")
         
         self.poutput(f"\n{Fore.CYAN}EXAMPLES:{Style.RESET_ALL}")
         self.poutput("\n  Basic connectivity test:")
@@ -1544,6 +1548,10 @@ Type 'set' to see all variables.
         
         self.poutput("\n  Verbose output with details:")
         self.poutput("    ping -s 10.1.1.100 -d 10.2.1.200 -vv")
+        
+        self.poutput("\n  JSON output for scripting:")
+        self.poutput("    ping -s 10.1.1.100 -d 10.2.1.200 -j")
+        self.poutput("    # Result stored in $TSIM_RESULT as JSON")
         
         self.poutput("\n  Check return value:")
         self.poutput("    ping -s 10.1.1.100 -d 10.2.1.200")
@@ -1564,6 +1572,7 @@ Type 'set' to see all variables.
         self.poutput(f"  {Fore.YELLOW}-d, --destination IP{Style.RESET_ALL} Destination IP address")
         
         self.poutput(f"\n{Fore.CYAN}OPTIONAL OPTIONS:{Style.RESET_ALL}")
+        self.poutput("  -j, --json            Output in JSON format")
         self.poutput("  -v, --verbose         Increase verbosity (can be used multiple times)")
         self.poutput("  -h, --help            Show this help message")
         
@@ -1571,6 +1580,9 @@ Type 'set' to see all variables.
         self.poutput("  Tests connectivity from all namespaces containing the source IP")
         self.poutput("  to all namespaces containing the destination IP. Uses MTR to show")
         self.poutput("  hop-by-hop path and latency information for successful connections.")
+        self.poutput("")
+        self.poutput("  When using -j/--json, the output is structured JSON with summary")
+        self.poutput("  statistics and detailed test results.")
         
         self.poutput(f"\n{Fore.CYAN}EXAMPLES:{Style.RESET_ALL}")
         self.poutput("\n  Basic MTR trace:")
@@ -1578,6 +1590,10 @@ Type 'set' to see all variables.
         
         self.poutput("\n  Verbose output with details:")
         self.poutput("    mtr -s 10.1.1.100 -d 10.2.1.200 -vv")
+        
+        self.poutput("\n  JSON output for scripting:")
+        self.poutput("    mtr -s 10.1.1.100 -d 10.2.1.200 -j")
+        self.poutput("    # Result stored in $TSIM_RESULT as JSON")
         
         self.poutput("\n  Check return value:")
         self.poutput("    mtr -s 10.1.1.100 -d 10.2.1.200")

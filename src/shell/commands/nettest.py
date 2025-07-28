@@ -40,6 +40,8 @@ class NetTestCommands(BaseCommandHandler):
         parser.add_argument('-d', '--destination', required=True,
                           choices_provider=self.ip_choices,
                           help='Destination IP address')
+        parser.add_argument('-j', '--json', action='store_true',
+                          help='Output in JSON format')
         parser.add_argument('-v', '--verbose', action='count', default=1,
                           help='Increase verbosity (default: show ping output)')
         
@@ -58,6 +60,8 @@ class NetTestCommands(BaseCommandHandler):
         parser.add_argument('-d', '--destination', required=True,
                           choices_provider=self.ip_choices,
                           help='Destination IP address')
+        parser.add_argument('-j', '--json', action='store_true',
+                          help='Output in JSON format')
         parser.add_argument('-v', '--verbose', action='count', default=1,
                           help='Increase verbosity (default: show MTR output)')
         
@@ -106,7 +110,9 @@ class NetTestCommands(BaseCommandHandler):
     def _run_nettest(self, args: argparse.Namespace, test_type: str) -> int:
         """Run network test with specified type."""
         try:
-            self.info(f"Testing connectivity from {args.source} to {args.destination} using {test_type.upper()}")
+            # Only show info message if not using JSON output
+            if not hasattr(args, 'json') or not args.json:
+                self.info(f"Testing connectivity from {args.source} to {args.destination} using {test_type.upper()}")
             
             # Run the network namespace tester script
             script_path = self.get_script_path('src/simulators/network_namespace_tester.py')
@@ -119,6 +125,10 @@ class NetTestCommands(BaseCommandHandler):
                 '-d', args.destination,
                 '--test-type', test_type
             ]
+            
+            # Add JSON flag if requested
+            if hasattr(args, 'json') and args.json:
+                cmd_args.append('-j')
             
             # Add verbose flags (default is 1, so only add if > 1)
             if args.verbose > 1:
@@ -172,6 +182,8 @@ class NetTestCommands(BaseCommandHandler):
         # Optional arguments
         if '-v' not in used_args and '--verbose' not in used_args:
             available_args.extend(['-v', '--verbose'])
+        if '-j' not in used_args and '--json' not in used_args:
+            available_args.extend(['-j', '--json'])
         
         # Debug output at -vvv level
         if hasattr(self.shell, 'verbose') and self.shell.verbose >= 3:
@@ -221,6 +233,8 @@ class NetTestCommands(BaseCommandHandler):
         # Optional arguments
         if '-v' not in used_args and '--verbose' not in used_args:
             available_args.extend(['-v', '--verbose'])
+        if '-j' not in used_args and '--json' not in used_args:
+            available_args.extend(['-j', '--json'])
         
         # Debug output at -vvv level
         if hasattr(self.shell, 'verbose') and self.shell.verbose >= 3:

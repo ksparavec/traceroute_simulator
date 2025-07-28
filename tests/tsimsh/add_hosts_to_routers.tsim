@@ -3,7 +3,7 @@
 # Add source and destination hosts to router interfaces based on trace path
 #
 # Usage:
-#   trace -s SOURCE -d DEST -j | ./tsimsh < add_hosts_to_routers.tsim
+#   trace --source SOURCE --destination DEST --json | ./tsimsh < add_hosts_to_routers.tsim
 #   ./tsimsh < add_hosts_to_routers.tsim  (then paste JSON data)
 #
 
@@ -69,7 +69,7 @@ else
                 
                 HOST_NAME="source-$ROUTER_INDEX"
                 print "  Adding $HOST_NAME with IP $SOURCE_IP/$NETMASK to interface $INCOMING"
-                host add --name $HOST_NAME --primary-ip $SOURCE_IP/$NETMASK --connect-to $ROUTER_NAME -vvv
+                host add --name $HOST_NAME --primary-ip $SOURCE_IP/$NETMASK --connect-to $ROUTER_NAME --verbose --verbose --verbose
             fi
             
             # Add destination host connected to outgoing interface if present
@@ -99,7 +99,7 @@ else
                 
                 HOST_NAME="destination-$ROUTER_INDEX"
                 print "  Adding $HOST_NAME with IP $DEST_IP/$NETMASK to interface $OUTGOING"
-                host add --name $HOST_NAME --primary-ip $DEST_IP/$NETMASK --connect-to $ROUTER_NAME -vvv
+                host add --name $HOST_NAME --primary-ip $DEST_IP/$NETMASK --connect-to $ROUTER_NAME --verbose --verbose --verbose
             fi
             
             print ""

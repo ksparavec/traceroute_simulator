@@ -49,35 +49,35 @@ class ServiceCommands(BaseCommandHandler):
         start_parser.add_argument('--port', type=int, required=True,
                                 choices_provider=self.port_choices,
                                 help='Port number')
-        start_parser.add_argument('--protocol', '-p', choices=['tcp', 'udp'], default='tcp',
+        start_parser.add_argument('-p', '--protocol', choices=['tcp', 'udp'], default='tcp',
                                 help='Protocol (default: tcp)')
         start_parser.add_argument('--name', help='Service name')
-        start_parser.add_argument('--verbose', '-v', action='count', default=0,
+        start_parser.add_argument('-v', '--verbose', action='count', default=0,
                                 help='Increase verbosity (-v, -vv)')
         
         # Test subcommand
         test_parser = subparsers.add_parser('test', help='Test service connectivity')
-        test_parser.add_argument('--source', '-s', required=True,
+        test_parser.add_argument('-s', '--source', required=True,
                                choices_provider=self.ip_choices,
                                help='Source IP address')
-        test_parser.add_argument('--dest', '-d', required=True,
+        test_parser.add_argument('-d', '--destination', required=True,
                                help='Destination IP:PORT')
-        test_parser.add_argument('--protocol', '-p', choices=['tcp', 'udp'], default='tcp',
+        test_parser.add_argument('-p', '--protocol', choices=['tcp', 'udp'], default='tcp',
                                help='Protocol (default: tcp)')
-        test_parser.add_argument('--message', '-m',
+        test_parser.add_argument('-m', '--message',
                                help='Message to send (for UDP)')
         test_parser.add_argument('--timeout', type=int, default=5,
                                help='Connection timeout in seconds')
-        test_parser.add_argument('--verbose', '-v', action='count', default=0,
+        test_parser.add_argument('-v', '--verbose', action='count', default=0,
                                help='Increase verbosity (-v, -vv)')
-        test_parser.add_argument('--json', '-j', action='store_true',
+        test_parser.add_argument('-j', '--json', action='store_true',
                                help='Output in JSON format')
         
         # List subcommand
         list_parser = subparsers.add_parser('list', help='List all active services')
-        list_parser.add_argument('--format', '-f', choices=['text', 'json'], default='text',
-                               help='Output format')
-        list_parser.add_argument('--verbose', '-v', action='count', default=0,
+        list_parser.add_argument('-j', '--json', action='store_true',
+                               help='Output in JSON format')
+        list_parser.add_argument('-v', '--verbose', action='count', default=0,
                                help='Increase verbosity (-v, -vv)')
         
         # Stop subcommand
@@ -88,16 +88,16 @@ class ServiceCommands(BaseCommandHandler):
         stop_parser.add_argument('--port', type=int, required=True,
                                choices_provider=self.port_choices,
                                help='Port number')
-        stop_parser.add_argument('--protocol', '-p', choices=['tcp', 'udp'], default='tcp',
+        stop_parser.add_argument('-p', '--protocol', choices=['tcp', 'udp'], default='tcp',
                                help='Protocol (default: tcp)')
-        stop_parser.add_argument('--verbose', '-v', action='count', default=0,
+        stop_parser.add_argument('-v', '--verbose', action='count', default=0,
                                help='Increase verbosity (-v, -vv)')
         
         # Clean subcommand
         clean_parser = subparsers.add_parser('clean', help='Stop all services')
-        clean_parser.add_argument('--force', '-f', action='store_true',
+        clean_parser.add_argument('-f', '--force', action='store_true',
                                 help='Force cleanup without confirmation')
-        clean_parser.add_argument('--verbose', '-v', action='count', default=0,
+        clean_parser.add_argument('-v', '--verbose', action='count', default=0,
                                 help='Increase verbosity (-v, -vv)')
         
         return parser
@@ -182,7 +182,7 @@ class ServiceCommands(BaseCommandHandler):
     
     def _test_service(self, args: argparse.Namespace) -> int:
         """Test service connectivity."""
-        self.info(f"Testing {args.protocol} connectivity from {args.source} to {args.dest}")
+        self.info(f"Testing {args.protocol} connectivity from {args.source} to {args.destination}")
         
         # Run the service tester script
         script_path = self.get_script_path('src/simulators/service_tester.py')
@@ -192,7 +192,7 @@ class ServiceCommands(BaseCommandHandler):
         # Build command arguments
         cmd_args = [
             '--source', args.source,
-            '--dest', args.dest,
+            '--dest', args.destination,
             '--protocol', args.protocol,
             '--timeout', str(args.timeout)
         ]
@@ -219,7 +219,7 @@ class ServiceCommands(BaseCommandHandler):
         """List all active services."""
         
         # Only show info message if not JSON output
-        if args.format != 'json':
+        if not args.json:
             self.info("Listing all active services...")
         
         # Run the service manager script
@@ -230,7 +230,7 @@ class ServiceCommands(BaseCommandHandler):
         # Build command arguments
         cmd_args = ['status']
         
-        if args.format == 'json':
+        if args.json:
             cmd_args.append('-j')
         
         # Pass verbose count
@@ -329,47 +329,47 @@ class ServiceCommands(BaseCommandHandler):
         if subcommand == 'start':
             # Provide argument names that haven't been used yet
             used_args = set(args)
-            available_args = ['--ip', '--port', '--protocol', '--name', '--verbose']
+            available_args = ['--ip', '--port', '-p', '--protocol', '--name', '-v', '--verbose']
             
             # Check if we're completing a value for a specific argument
             if len(args) >= 2 and args[-2] == '--ip':
                 return self.ip_choices()
             elif len(args) >= 2 and args[-2] == '--port':
                 return self.port_choices()
-            elif len(args) >= 2 and args[-2] == '--protocol':
+            elif len(args) >= 2 and args[-2] in ['--protocol', '-p']:
                 return ['tcp', 'udp']
             
             return [arg for arg in available_args if arg not in used_args and arg.startswith(text)]
         
         elif subcommand == 'test':
             used_args = set(args)
-            available_args = ['--src', '--dest', '--protocol', '--message', '--timeout', '--verbose']
+            available_args = ['-s', '--source', '-d', '--destination', '-p', '--protocol', '-m', '--message', '--timeout', '-v', '--verbose', '-j', '--json']
             
             # Check if we're completing IP addresses
-            if len(args) >= 2 and args[-2] in ['--src', '--dest']:
+            if len(args) >= 2 and args[-2] in ['-s', '--source', '-d', '--destination']:
                 return self.ip_choices()
-            elif len(args) >= 2 and args[-2] == '--protocol':
+            elif len(args) >= 2 and args[-2] in ['--protocol', '-p']:
                 return ['tcp', 'udp']
             
             return [arg for arg in available_args if arg not in used_args and arg.startswith(text)]
         
         elif subcommand == 'stop':
             used_args = set(args)
-            available_args = ['--ip', '--port', '--protocol', '--verbose']
+            available_args = ['--ip', '--port', '-p', '--protocol', '-v', '--verbose']
             
             # Check if we're completing values
             if len(args) >= 2 and args[-2] == '--ip':
                 return self.ip_choices()
             elif len(args) >= 2 and args[-2] == '--port':
                 return self.port_choices()
-            elif len(args) >= 2 and args[-2] == '--protocol':
+            elif len(args) >= 2 and args[-2] in ['--protocol', '-p']:
                 return ['tcp', 'udp']
             
             return [arg for arg in available_args if arg not in used_args and arg.startswith(text)]
         
         elif subcommand == 'list':
             used_args = set(args)
-            available_args = ['--format', '--verbose']
+            available_args = ['-j', '--json', '-v', '--verbose']
             
             if len(args) >= 2 and args[-2] == '--format':
                 return ['text', 'json']
@@ -378,7 +378,7 @@ class ServiceCommands(BaseCommandHandler):
         
         elif subcommand == 'clean':
             used_args = set(args)
-            available_args = ['--force', '--verbose']
+            available_args = ['-f', '--force', '-v', '--verbose']
             return [arg for arg in available_args if arg not in used_args and arg.startswith(text)]
         
         return []

@@ -37,7 +37,7 @@ class NetTestCommands(BaseCommandHandler):
         parser.add_argument('-s', '--source', required=True,
                           choices_provider=self.ip_choices,
                           help='Source IP address')
-        parser.add_argument('-d', '--dest', '--destination', required=True,
+        parser.add_argument('-d', '--destination', required=True,
                           choices_provider=self.ip_choices,
                           help='Destination IP address')
         parser.add_argument('-v', '--verbose', action='count', default=1,
@@ -55,7 +55,7 @@ class NetTestCommands(BaseCommandHandler):
         parser.add_argument('-s', '--source', required=True,
                           choices_provider=self.ip_choices,
                           help='Source IP address')
-        parser.add_argument('-d', '--dest', '--destination', required=True,
+        parser.add_argument('-d', '--destination', required=True,
                           choices_provider=self.ip_choices,
                           help='Destination IP address')
         parser.add_argument('-v', '--verbose', action='count', default=1,
@@ -106,7 +106,7 @@ class NetTestCommands(BaseCommandHandler):
     def _run_nettest(self, args: argparse.Namespace, test_type: str) -> int:
         """Run network test with specified type."""
         try:
-            self.info(f"Testing connectivity from {args.source} to {args.dest} using {test_type.upper()}")
+            self.info(f"Testing connectivity from {args.source} to {args.destination} using {test_type.upper()}")
             
             # Run the network namespace tester script
             script_path = self.get_script_path('src/simulators/network_namespace_tester.py')
@@ -116,7 +116,7 @@ class NetTestCommands(BaseCommandHandler):
             # Build command arguments
             cmd_args = [
                 '-s', args.source,
-                '-d', args.dest,
+                '-d', args.destination,
                 '--test-type', test_type
             ]
             
@@ -136,11 +136,97 @@ class NetTestCommands(BaseCommandHandler):
     
     def complete_ping_command(self, text: str, line: str, begidx: int, endidx: int) -> List[str]:
         """Provide completion for ping command."""
-        return self._complete_with_parser(self.create_ping_parser(), text, line, begidx, endidx)
+        # Parse the line to understand what we're completing
+        args = line.split()
+        
+        # Get all available IPs for completion
+        ip_choices = self.ip_choices()
+        
+        # Debug output at -vvv level
+        if hasattr(self.shell, 'verbose') and self.shell.verbose >= 3:
+            print(f"[DEBUG] Args: {args}, IP choices count: {len(ip_choices)}")
+        
+        # Check if we're completing a value for -s or -d
+        if len(args) >= 2:
+            if args[-1] in ['-s', '--source']:
+                return [ip for ip in ip_choices if ip.startswith(text)]
+            elif args[-1] in ['-d', '--destination']:
+                return [ip for ip in ip_choices if ip.startswith(text)]
+            elif args[-2] in ['-s', '--source', '-d', '--destination'] and text:
+                # Partial IP typed
+                return [ip for ip in ip_choices if ip.startswith(text)]
+        
+        # Provide argument names that haven't been used yet
+        used_args = set(args)
+        available_args = []
+        
+        # Check which required arguments are missing
+        has_source = any(arg in used_args for arg in ['-s', '--source'])
+        has_dest = any(arg in used_args for arg in ['-d', '--destination'])
+        
+        if not has_source:
+            available_args.extend(['-s', '--source'])
+        if not has_dest:
+            available_args.extend(['-d', '--destination'])
+        
+        # Optional arguments
+        if '-v' not in used_args and '--verbose' not in used_args:
+            available_args.extend(['-v', '--verbose'])
+        
+        # Debug output at -vvv level
+        if hasattr(self.shell, 'verbose') and self.shell.verbose >= 3:
+            print(f"[DEBUG] Returning completions: {[arg for arg in available_args if arg.startswith(text)]}")
+        
+        return [arg for arg in available_args if arg.startswith(text)]
     
     def complete_mtr_command(self, text: str, line: str, begidx: int, endidx: int) -> List[str]:
         """Provide completion for mtr command."""
-        return self._complete_with_parser(self.create_mtr_parser(), text, line, begidx, endidx)
+        # Debug output at -vvv level
+        if hasattr(self.shell, 'verbose') and self.shell.verbose >= 3:
+            print(f"[DEBUG] complete_mtr_command called: text='{text}', line='{line}'")
+        
+        # Parse the line to understand what we're completing
+        args = line.split()
+        
+        # Get all available IPs for completion
+        ip_choices = self.ip_choices()
+        
+        # Debug output at -vvv level
+        if hasattr(self.shell, 'verbose') and self.shell.verbose >= 3:
+            print(f"[DEBUG] Args: {args}, IP choices count: {len(ip_choices)}")
+        
+        # Check if we're completing a value for -s or -d
+        if len(args) >= 2:
+            if args[-1] in ['-s', '--source']:
+                return [ip for ip in ip_choices if ip.startswith(text)]
+            elif args[-1] in ['-d', '--destination']:
+                return [ip for ip in ip_choices if ip.startswith(text)]
+            elif args[-2] in ['-s', '--source', '-d', '--destination'] and text:
+                # Partial IP typed
+                return [ip for ip in ip_choices if ip.startswith(text)]
+        
+        # Provide argument names that haven't been used yet
+        used_args = set(args)
+        available_args = []
+        
+        # Check which required arguments are missing
+        has_source = any(arg in used_args for arg in ['-s', '--source'])
+        has_dest = any(arg in used_args for arg in ['-d', '--destination'])
+        
+        if not has_source:
+            available_args.extend(['-s', '--source'])
+        if not has_dest:
+            available_args.extend(['-d', '--destination'])
+        
+        # Optional arguments
+        if '-v' not in used_args and '--verbose' not in used_args:
+            available_args.extend(['-v', '--verbose'])
+        
+        # Debug output at -vvv level
+        if hasattr(self.shell, 'verbose') and self.shell.verbose >= 3:
+            print(f"[DEBUG] Returning completions: {[arg for arg in available_args if arg.startswith(text)]}")
+        
+        return [arg for arg in available_args if arg.startswith(text)]
     
     def _handle_command_impl(self, args: str) -> Optional[int]:
         """Handle command - not used for ping/mtr as they have their own handlers."""

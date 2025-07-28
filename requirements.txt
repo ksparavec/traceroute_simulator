@@ -4,6 +4,7 @@ chardet
 charset-normalizer
 cmd2
 colorama
+gnureadline
 httplib2
 idna
 pip

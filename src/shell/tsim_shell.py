@@ -1335,16 +1335,16 @@ Type 'set' to see all variables.
         self.poutput("  -v, --verbose         Increase verbosity")
         
         self.poutput(f"\n{Fore.CYAN}LIST OPTIONS:{Style.RESET_ALL}")
-        self.poutput("  --format FORMAT       Output format: text, json (default: text)")
+        self.poutput("  -j, --json            Output in JSON format")
         self.poutput("  -v, --verbose         Increase verbosity")
         
         self.poutput(f"\n{Fore.CYAN}REMOVE OPTIONS:{Style.RESET_ALL}")
         self.poutput(f"  {Fore.YELLOW}--name NAME{Style.RESET_ALL}          Host name to remove (MANDATORY)")
-        self.poutput("  --force               Force removal without confirmation")
+        self.poutput("  -f, --force           Force removal without confirmation")
         self.poutput("  -v, --verbose         Increase verbosity")
         
         self.poutput(f"\n{Fore.CYAN}CLEAN OPTIONS:{Style.RESET_ALL}")
-        self.poutput("  --force               Force cleanup without confirmation")
+        self.poutput("  -f, --force           Force cleanup without confirmation")
         self.poutput("  -v, --verbose         Increase verbosity")
         
         self.poutput(f"\n{Fore.CYAN}EXAMPLES:{Style.RESET_ALL}")
@@ -1358,10 +1358,10 @@ Type 'set' to see all variables.
         self.poutput("    host list")
         
         self.poutput("\n  Remove a host:")
-        self.poutput("    host remove --name web1 --force")
+        self.poutput("    host remove --name web1 -f")
         
         self.poutput("\n  Clean all hosts:")
-        self.poutput("    host clean --force")
+        self.poutput("    host clean -f")
         self.poutput("")
     
     def help_service(self):
@@ -1371,7 +1371,7 @@ Type 'set' to see all variables.
         
         self.poutput(f"\n{Fore.CYAN}USAGE:{Style.RESET_ALL}")
         self.poutput("  service start --ip IP --port PORT [options]")
-        self.poutput("  service test --source IP --dest IP:PORT [options]")
+        self.poutput("  service test -s SOURCE_IP -d DEST_IP:PORT [options]")
         self.poutput("  service list [options]")
         self.poutput("  service stop --ip IP --port PORT [options]")
         self.poutput("  service clean [options]")
@@ -1387,46 +1387,48 @@ Type 'set' to see all variables.
         self.poutput(f"\n{Fore.CYAN}START OPTIONS:{Style.RESET_ALL}")
         self.poutput(f"  {Fore.YELLOW}--ip IP{Style.RESET_ALL}              IP address to bind to (MANDATORY)")
         self.poutput(f"  {Fore.YELLOW}--port PORT{Style.RESET_ALL}          Port number (MANDATORY)")
-        self.poutput("  --protocol PROTO      Protocol: tcp, udp (default: tcp)")
+        self.poutput("  -p, --protocol PROTO  Protocol: tcp, udp (default: tcp)")
         self.poutput("  --name NAME           Service name")
-        self.poutput("  -v, --verbose         Verbose output")
+        self.poutput("  -v, --verbose         Increase verbosity")
         
         self.poutput(f"\n{Fore.CYAN}TEST OPTIONS:{Style.RESET_ALL}")
-        self.poutput(f"  {Fore.YELLOW}--source, -s IP{Style.RESET_ALL}      Source IP address (MANDATORY)")
-        self.poutput(f"  {Fore.YELLOW}--dest, -d IP:PORT{Style.RESET_ALL}   Destination IP:PORT (MANDATORY)")
-        self.poutput("  --protocol, -p PROTO  Protocol: tcp, udp (default: tcp)")
-        self.poutput("  --message, -m MSG     Message to send")
+        self.poutput(f"  {Fore.YELLOW}-s, --source IP{Style.RESET_ALL}      Source IP address (MANDATORY)")
+        self.poutput(f"  {Fore.YELLOW}-d, --destination IP:PORT{Style.RESET_ALL}   Destination IP:PORT (MANDATORY)")
+        self.poutput("  -p, --protocol PROTO  Protocol: tcp, udp (default: tcp)")
+        self.poutput("  -m, --message MSG     Message to send")
         self.poutput("  --timeout SECONDS     Timeout in seconds (default: 5)")
-        self.poutput("  -v, --verbose         Verbose output")
+        self.poutput("  -v, --verbose         Increase verbosity (-v, -vv, -vvv)")
+        self.poutput("  -j, --json            Output in JSON format")
         
         self.poutput(f"\n{Fore.CYAN}LIST OPTIONS:{Style.RESET_ALL}")
-        self.poutput("  --format, -f FORMAT   Output format: text, json (default: text)")
-        self.poutput("  -v, --verbose         Verbose output")
+        self.poutput("  -j, --json            Output in JSON format")
+        self.poutput("  -v, --verbose         Increase verbosity")
         
         self.poutput(f"\n{Fore.CYAN}STOP OPTIONS:{Style.RESET_ALL}")
         self.poutput(f"  {Fore.YELLOW}--ip IP{Style.RESET_ALL}              Service IP address (MANDATORY)")
         self.poutput(f"  {Fore.YELLOW}--port PORT{Style.RESET_ALL}          Service port (MANDATORY)")
-        self.poutput("  -v, --verbose         Verbose output")
+        self.poutput("  -p, --protocol PROTO  Protocol: tcp, udp (default: tcp)")
+        self.poutput("  -v, --verbose         Increase verbosity")
         
         self.poutput(f"\n{Fore.CYAN}CLEAN OPTIONS:{Style.RESET_ALL}")
-        self.poutput("  --force, -f           Force cleanup without confirmation")
-        self.poutput("  -v, --verbose         Verbose output")
+        self.poutput("  -f, --force           Force cleanup without confirmation")
+        self.poutput("  -v, --verbose         Increase verbosity")
         
         self.poutput(f"\n{Fore.CYAN}EXAMPLES:{Style.RESET_ALL}")
         self.poutput("\n  Start a TCP service:")
         self.poutput("    service start --ip 10.1.1.1 --port 8080 --name webserver")
         
         self.poutput("\n  Start a UDP service:")
-        self.poutput("    service start --ip 10.2.1.1 --port 53 --protocol udp --name dns")
+        self.poutput("    service start --ip 10.2.1.1 --port 53 -p udp --name dns")
         
         self.poutput("\n  Test TCP connectivity:")
-        self.poutput("    service test --source 10.1.1.100 --dest 10.1.1.1:8080")
+        self.poutput("    service test -s 10.1.1.100 -d 10.1.1.1:8080")
         
         self.poutput("\n  Test UDP with message:")
-        self.poutput("    service test --source 10.1.1.100 --dest 10.2.1.1:53 --protocol udp --message 'DNS Query'")
+        self.poutput("    service test -s 10.1.1.100 -d 10.2.1.1:53 -p udp -m 'DNS Query'")
         
         self.poutput("\n  List services as JSON:")
-        self.poutput("    service list --format json")
+        self.poutput("    service list -j")
         
         self.poutput("\n  Stop a service:")
         self.poutput("    service stop --ip 10.1.1.1 --port 8080")
@@ -1483,7 +1485,7 @@ Type 'set' to see all variables.
         self.poutput("    trace -s 10.1.1.100 -d 10.2.1.200")
         
         self.poutput("\n  JSON output for scripting:")
-        self.poutput("    trace -s 10.1.1.100 -d 10.2.1.200 --json")
+        self.poutput("    trace -s 10.1.1.100 -d 10.2.1.200 -j")
         
         self.poutput("\n  Verbose output with timing:")
         self.poutput("    trace -s 10.1.1.100 -d 10.2.1.200 -vv")
@@ -1504,8 +1506,7 @@ Type 'set' to see all variables.
         
         self.poutput(f"\n{Fore.CYAN}MANDATORY OPTIONS:{Style.RESET_ALL}")
         self.poutput(f"  {Fore.YELLOW}-s, --source IP{Style.RESET_ALL}      Source IP address")
-        self.poutput(f"  {Fore.YELLOW}-d, --dest IP{Style.RESET_ALL}        Destination IP address")
-        self.poutput(f"  {Fore.YELLOW}    --destination IP{Style.RESET_ALL} Alternative to --dest")
+        self.poutput(f"  {Fore.YELLOW}-d, --destination IP{Style.RESET_ALL} Destination IP address")
         
         self.poutput(f"\n{Fore.CYAN}OPTIONAL OPTIONS:{Style.RESET_ALL}")
         self.poutput("  -v, --verbose         Increase verbosity (can be used multiple times)")
@@ -1539,8 +1540,7 @@ Type 'set' to see all variables.
         
         self.poutput(f"\n{Fore.CYAN}MANDATORY OPTIONS:{Style.RESET_ALL}")
         self.poutput(f"  {Fore.YELLOW}-s, --source IP{Style.RESET_ALL}      Source IP address")
-        self.poutput(f"  {Fore.YELLOW}-d, --dest IP{Style.RESET_ALL}        Destination IP address")
-        self.poutput(f"  {Fore.YELLOW}    --destination IP{Style.RESET_ALL} Alternative to --dest")
+        self.poutput(f"  {Fore.YELLOW}-d, --destination IP{Style.RESET_ALL} Destination IP address")
         
         self.poutput(f"\n{Fore.CYAN}OPTIONAL OPTIONS:{Style.RESET_ALL}")
         self.poutput("  -v, --verbose         Increase verbosity (can be used multiple times)")

@@ -59,6 +59,19 @@ tsimsh> network setup --verbose
 tsimsh> service start --ip 10.1.1.1 --port 8080
 ```
 
+## 📋 Standardized Command Options
+
+All commands follow a consistent option format for common parameters:
+
+| Option | Short | Long | Description | Commands |
+|--------|-------|------|-------------|----------|
+| Source IP | `-s` | `--source` | Source IP address | `host`, `mtr`, `ping`, `service`, `trace` |
+| Destination IP | `-d` | `--destination` | Destination IP address | `host`, `mtr`, `ping`, `service`, `trace` |
+| Protocol | `-p` | `--protocol` | Network protocol (tcp/udp/icmp) | `host`, `mtr`, `ping`, `service`, `trace` |
+| JSON Output | `-j` | `--json` | Output in JSON format | `host`, `mtr`, `ping`, `service`, `trace` |
+| Verbose | `-v` | `--verbose` | Increase verbosity (can repeat) | `host`, `mtr`, `ping`, `service`, `trace` |
+| Force | `-f` | `--force` | Force operation without prompts | `host`, `service` |
+
 ## 🔄 MTR Commands
 
 The `mtr` command group provides traceroute simulation and analysis capabilities.
@@ -72,13 +85,13 @@ The `mtr` command group provides traceroute simulation and analysis capabilities
 tsimsh> mtr route -s 10.1.1.1 -d 10.2.1.1
 
 # Verbose output with detailed information
-tsimsh> mtr route -s 10.1.1.1 -d 10.2.1.1 --verbose
+tsimsh> mtr route -s 10.1.1.1 -d 10.2.1.1 -v
 
 # JSON output for programmatic processing
-tsimsh> mtr route -s 10.1.1.1 -d 10.2.1.1 --json
+tsimsh> mtr route -s 10.1.1.1 -d 10.2.1.1 -j
 
 # Quiet mode (exit code only)
-tsimsh> mtr route -s 10.1.1.1 -d 10.2.1.1 --quiet
+tsimsh> mtr route -s 10.1.1.1 -d 10.2.1.1 -q
 
 # Simulation only (no MTR fallback)
 tsimsh> mtr route -s 10.1.1.1 -d 10.2.1.1 --no-mtr
@@ -117,7 +130,7 @@ tsimsh> mtr reverse -s 10.1.1.1 -d 8.8.8.8
 tsimsh> mtr reverse -s 10.1.1.1 -d 8.8.8.8 --controller-ip 192.168.1.100
 
 # Verbose reverse tracing
-tsimsh> mtr reverse -s 10.1.1.1 -d 8.8.8.8 --verbose
+tsimsh> mtr reverse -s 10.1.1.1 -d 8.8.8.8 -v
 ```
 
 ### MTR Command Options
@@ -187,7 +200,7 @@ tsimsh> network test -s 10.1.1.1 -d 8.8.8.8 --test-type mtr
 tsimsh> network test -s 10.1.1.1 -d 10.2.1.1 --test-type both
 
 # Verbose testing
-tsimsh> network test -s 10.1.1.1 -d 10.2.1.1 --test-type ping --verbose
+tsimsh> network test -s 10.1.1.1 -d 10.2.1.1 --test-type ping -v
 ```
 
 #### `network clean` - Cleanup Network Simulation
@@ -197,22 +210,66 @@ tsimsh> network test -s 10.1.1.1 -d 10.2.1.1 --test-type ping --verbose
 tsimsh> network clean
 
 # Clean with verbose output
-tsimsh> network clean --verbose
+tsimsh> network clean -v
 
 # Force cleanup (ignore errors)
-tsimsh> network clean --force
+tsimsh> network clean -f
 ```
 
 ### Network Command Options
 
 | Option | Description |
 |--------|-------------|
-| `--verbose` | Enable verbose output |
+| `-v, --verbose` | Enable verbose output |
 | `--facts-dir` | Custom facts directory |
 | `-s, --source` | Source IP for testing |
 | `-d, --destination` | Destination IP for testing |
 | `--test-type` | Test type (ping, mtr, both) |
-| `--force` | Force operation (ignore errors) |
+| `-f, --force` | Force operation (ignore errors) |
+
+## 🔌 Network Testing Commands
+
+### `ping` - Test Network Connectivity
+
+```bash
+# Basic ping test
+tsimsh> ping -s 10.1.1.1 -d 10.2.1.1
+
+# Verbose ping with detailed output
+tsimsh> ping -s 10.1.1.1 -d 10.2.1.1 -v
+
+# Very verbose output
+tsimsh> ping -s 10.1.1.1 -d 10.2.1.1 -vv
+```
+
+### `mtr` - Interactive Traceroute
+
+```bash
+# Basic MTR test
+tsimsh> mtr -s 10.1.1.1 -d 10.2.1.1
+
+# Verbose MTR with detailed output
+tsimsh> mtr -s 10.1.1.1 -d 10.2.1.1 -v
+
+# Very verbose output
+tsimsh> mtr -s 10.1.1.1 -d 10.2.1.1 -vv
+```
+
+### `trace` - Reverse Path Tracing
+
+```bash
+# Basic reverse path trace
+tsimsh> trace -s 10.1.1.1 -d 10.2.1.1
+
+# JSON output
+tsimsh> trace -s 10.1.1.1 -d 10.2.1.1 -j
+
+# Verbose output
+tsimsh> trace -s 10.1.1.1 -d 10.2.1.1 -v
+
+# With custom controller IP
+tsimsh> trace -s 10.1.1.1 -d 10.2.1.1 --controller-ip 192.168.1.100
+```
 
 ## 🔧 Service Commands
 
@@ -227,10 +284,10 @@ The `service` command group manages TCP/UDP services in the network simulation.
 tsimsh> service start --ip 10.1.1.1 --port 8080
 
 # Start UDP service with name
-tsimsh> service start --ip 10.2.1.1 --port 53 --protocol udp --name dns
+tsimsh> service start --ip 10.2.1.1 --port 53 -p udp --name dns
 
 # Start service with verbose output
-tsimsh> service start --ip 10.1.1.1 --port 80 --verbose
+tsimsh> service start --ip 10.1.1.1 --port 80 -v
 ```
 
 #### `service stop` - Stop Network Services
@@ -240,7 +297,7 @@ tsimsh> service start --ip 10.1.1.1 --port 80 --verbose
 tsimsh> service stop --ip 10.1.1.1 --port 8080
 
 # Stop service with verbose output
-tsimsh> service stop --ip 10.1.1.1 --port 8080 --verbose
+tsimsh> service stop --ip 10.1.1.1 --port 8080 -v
 ```
 
 #### `service list` - List Running Services
@@ -250,10 +307,10 @@ tsimsh> service stop --ip 10.1.1.1 --port 8080 --verbose
 tsimsh> service list
 
 # List services in JSON format
-tsimsh> service list --json
+tsimsh> service list -j
 
-# List services for specific IP
-tsimsh> service list --ip 10.1.1.1
+# List services with verbose output
+tsimsh> service list -v
 ```
 
 #### `service test` - Test Service Connectivity
@@ -263,20 +320,26 @@ tsimsh> service list --ip 10.1.1.1
 tsimsh> service test -s 10.1.1.1 -d 10.2.1.1:8080
 
 # Test UDP service with message
-tsimsh> service test -s 10.1.1.1 -d 10.2.1.1:53 --protocol udp --message "Test query"
+tsimsh> service test -s 10.1.1.1 -d 10.2.1.1:53 -p udp -m "Test query"
 
 # Test with verbose output
-tsimsh> service test -s 10.1.1.1 -d 10.2.1.1:8080 --verbose
+tsimsh> service test -s 10.1.1.1 -d 10.2.1.1:8080 -v
+
+# Test with JSON output
+tsimsh> service test -s 10.1.1.1 -d 10.2.1.1:8080 -j
 ```
 
 #### `service clean` - Stop All Services
 
 ```bash
-# Stop all running services
+# Stop all running services (prompts for confirmation)
 tsimsh> service clean
 
+# Force clean without confirmation
+tsimsh> service clean -f
+
 # Clean with verbose output
-tsimsh> service clean --verbose
+tsimsh> service clean -v
 ```
 
 ### Service Command Options
@@ -285,13 +348,14 @@ tsimsh> service clean --verbose
 |--------|-------------|
 | `--ip` | IP address for service |
 | `--port` | Port number |
-| `--protocol` | Protocol (tcp, udp) |
+| `-p, --protocol` | Protocol (tcp, udp) |
 | `--name` | Service name |
 | `-s, --source` | Source IP for testing |
 | `-d, --destination` | Destination IP:port for testing |
-| `--message` | Test message for UDP |
-| `--json` | JSON output format |
-| `--verbose` | Enable verbose output |
+| `-m, --message` | Test message for UDP |
+| `-j, --json` | JSON output format |
+| `-v, --verbose` | Enable verbose output |
+| `-f, --force` | Force operation without confirmation |
 
 ## 🏠 Host Commands
 
@@ -309,20 +373,20 @@ tsimsh> host add --name web1 --primary-ip 10.1.1.100/24 --connect-to hq-gw
 tsimsh> host add --name db1 --primary-ip 10.3.20.100/24 --connect-to dc-srv --secondary-ips 192.168.1.1/24
 
 # Add host with verbose output
-tsimsh> host add --name app1 --primary-ip 10.2.1.50/24 --connect-to br-gw --verbose
+tsimsh> host add --name app1 --primary-ip 10.2.1.50/24 --connect-to br-gw -v
 ```
 
 #### `host remove` - Remove Dynamic Host
 
 ```bash
-# Remove specific host
+# Remove specific host (prompts for confirmation)
 tsimsh> host remove --name web1
 
-# Remove with confirmation
-tsimsh> host remove --name web1 --force
+# Force remove without confirmation
+tsimsh> host remove --name web1 -f
 
 # Remove with verbose output
-tsimsh> host remove --name web1 --verbose
+tsimsh> host remove --name web1 -v
 ```
 
 #### `host list` - List Dynamic Hosts
@@ -332,23 +396,23 @@ tsimsh> host remove --name web1 --verbose
 tsimsh> host list
 
 # List hosts in JSON format
-tsimsh> host list --json
+tsimsh> host list -j
 
-# List specific host details
-tsimsh> host list --name web1
+# List with verbose output
+tsimsh> host list -v
 ```
 
 #### `host clean` - Remove All Hosts
 
 ```bash
-# Remove all dynamic hosts
+# Remove all dynamic hosts (prompts for confirmation)
 tsimsh> host clean
 
-# Clean with verbose output
-tsimsh> host clean --verbose
+# Force clean without confirmation
+tsimsh> host clean -f
 
-# Force clean (ignore errors)
-tsimsh> host clean --force
+# Clean with verbose output
+tsimsh> host clean -v
 ```
 
 ### Host Command Options
@@ -359,9 +423,9 @@ tsimsh> host clean --force
 | `--primary-ip` | Primary IP with CIDR |
 | `--connect-to` | Router to connect to |
 | `--secondary-ips` | Additional IP addresses |
-| `--force` | Force operation |
-| `--json` | JSON output format |
-| `--verbose` | Enable verbose output |
+| `-f, --force` | Force operation without confirmation |
+| `-j, --json` | JSON output format |
+| `-v, --verbose` | Enable verbose output |
 
 ## 📊 Facts Commands
 
@@ -379,7 +443,7 @@ tsimsh> facts process input.txt output.json
 tsimsh> facts process input.txt output.json --validate
 
 # Process with verbose output
-tsimsh> facts process input.txt output.json --verbose
+tsimsh> facts process input.txt output.json -v
 ```
 
 #### `facts validate` - Validate Facts Data
@@ -392,7 +456,7 @@ tsimsh> facts validate
 tsimsh> facts validate --file router.json
 
 # Validate with detailed output
-tsimsh> facts validate --verbose
+tsimsh> facts validate -v
 ```
 
 #### `facts extract` - Extract Interface Information
@@ -408,7 +472,7 @@ tsimsh> facts extract router.json --interface eth0
 tsimsh> facts extract router.json --ips-only --family inet
 
 # Extract as JSON
-tsimsh> facts extract router.json --json
+tsimsh> facts extract router.json -j
 ```
 
 ### Facts Command Options
@@ -420,8 +484,8 @@ tsimsh> facts extract router.json --json
 | `--interface` | Specific interface |
 | `--ips-only` | Extract IP addresses only |
 | `--family` | IP family (inet, inet6) |
-| `--json` | JSON output format |
-| `--verbose` | Enable verbose output |
+| `-j, --json` | JSON output format |
+| `-v, --verbose` | Enable verbose output |
 
 ## 🔧 Advanced Features
 
@@ -463,7 +527,7 @@ Some commands support context mode for streamlined operations:
 ```bash
 # Enter network context
 tsimsh> network
-network> setup --verbose
+network> setup -v
 network> status all summary
 network> test -s 10.1.1.1 -d 10.2.1.1 --test-type ping
 network> exit
@@ -471,8 +535,8 @@ network> exit
 # Enter service context
 tsimsh> service
 service> start --ip 10.1.1.1 --port 8080
-service> list
-service> test -s 10.1.1.1 -d 10.2.1.1:8080
+service> list -j
+service> test -s 10.1.1.1 -d 10.2.1.1:8080 -v
 service> exit
 ```
 
@@ -505,10 +569,10 @@ Create script files with shell commands:
 
 ```bash
 # network_setup.tsim
-network setup --verbose
+network setup -v
 network status all summary
 service start --ip 10.1.1.1 --port 8080
-service start --ip 10.2.1.1 --port 80
+service start --ip 10.2.1.1 --port 80 -p tcp
 host add --name web1 --primary-ip 10.1.1.100/24 --connect-to hq-gw
 
 # Execute script
@@ -527,7 +591,7 @@ TSIMSH="./tsimsh"
 
 # Test key network paths
 echo "Testing HQ to Branch connectivity..."
-echo "mtr route -s 10.1.1.1 -d 10.2.1.1 --quiet" | $TSIMSH
+echo "mtr route -s 10.1.1.1 -d 10.2.1.1 -q" | $TSIMSH
 if [ $? -eq 0 ]; then
     echo "✓ HQ to Branch: OK"
 else
@@ -535,7 +599,7 @@ else
 fi
 
 echo "Testing internet connectivity..."
-echo "mtr route -s 10.1.1.1 -d 8.8.8.8 --quiet" | $TSIMSH
+echo "mtr route -s 10.1.1.1 -d 8.8.8.8 -q" | $TSIMSH
 if [ $? -eq 0 ]; then
     echo "✓ Internet access: OK"
 else
@@ -558,10 +622,10 @@ SERVICES=(
 
 for service in "${SERVICES[@]}"; do
     IFS=':' read -r ip port proto name <<< "$service"
-    echo "service start --ip $ip --port $port --protocol $proto --name $name" | ./tsimsh
+    echo "service start --ip $ip --port $port -p $proto --name $name" | ./tsimsh
 done
 
-echo "service list" | ./tsimsh
+echo "service list -j" | ./tsimsh
 ```
 
 ### Configuration Integration
@@ -629,9 +693,10 @@ export TRACEROUTE_SIMULATOR_FACTS=tests/tsim_facts
 Enable verbose output for troubleshooting:
 
 ```bash
-tsimsh> mtr route -s 10.1.1.1 -d 10.2.1.1 --verbose
-tsimsh> network setup --verbose
-tsimsh> service start --ip 10.1.1.1 --port 8080 --verbose
+tsimsh> mtr route -s 10.1.1.1 -d 10.2.1.1 -v
+tsimsh> network setup -v
+tsimsh> service start --ip 10.1.1.1 --port 8080 -v
+tsimsh> trace -s 10.1.1.1 -d 10.2.1.1 -vv
 ```
 
 ### Getting Help
@@ -661,8 +726,8 @@ tsimsh> service start --ip 10.1.1.1 --port 8080 --verbose
 
 ### Performance Optimization
 
-1. **Quiet Mode**: Use `--quiet` for automation scripts
-2. **JSON Output**: Use `--json` for programmatic processing
+1. **Quiet Mode**: Use `-q` for automation scripts
+2. **JSON Output**: Use `-j` for programmatic processing
 3. **Targeted Testing**: Test specific components instead of full setup
 4. **Resource Cleanup**: Clean up unused hosts and services
 5. **Batch Operations**: Group related commands in scripts

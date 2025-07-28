@@ -73,14 +73,14 @@ class HostCommands(BaseCommandHandler):
                               help='Router to connect to')
         add_parser.add_argument('--secondary-ips', nargs='*',
                               help='Secondary IP addresses')
-        add_parser.add_argument('--verbose', '-v', action='count', default=0,
+        add_parser.add_argument('-v', '--verbose', action='count', default=0,
                               help='Increase verbosity (-v for info, -vv for debug, -vvv for trace)')
         
         # List subcommand
         list_parser = subparsers.add_parser('list', help='List all hosts')
-        list_parser.add_argument('--format', '-f', choices=['text', 'json'], default='text',
-                               help='Output format')
-        list_parser.add_argument('--verbose', '-v', action='count', default=0,
+        list_parser.add_argument('-j', '--json', action='store_true',
+                               help='Output in JSON format')
+        list_parser.add_argument('-v', '--verbose', action='count', default=0,
                                help='Increase verbosity (-v for info, -vv for debug, -vvv for trace)')
         
         # Remove subcommand
@@ -88,16 +88,16 @@ class HostCommands(BaseCommandHandler):
         remove_parser.add_argument('--name', required=True,
                                  choices_provider=self.host_choices,
                                  help='Host name to remove')
-        remove_parser.add_argument('--force', '-f', action='store_true',
+        remove_parser.add_argument('-f', '--force', action='store_true',
                                  help='Force removal without confirmation')
-        remove_parser.add_argument('--verbose', '-v', action='count', default=0,
+        remove_parser.add_argument('-v', '--verbose', action='count', default=0,
                                  help='Increase verbosity (-v for info, -vv for debug, -vvv for trace)')
         
         # Clean subcommand
         clean_parser = subparsers.add_parser('clean', help='Remove all hosts')
-        clean_parser.add_argument('--force', '-f', action='store_true',
+        clean_parser.add_argument('-f', '--force', action='store_true',
                                 help='Force cleanup without confirmation')
-        clean_parser.add_argument('--verbose', '-v', action='count', default=0,
+        clean_parser.add_argument('-v', '--verbose', action='count', default=0,
                                 help='Increase verbosity (-v for info, -vv for debug, -vvv for trace)')
         
         return parser
@@ -181,7 +181,7 @@ class HostCommands(BaseCommandHandler):
     def _list_hosts(self, args: argparse.Namespace) -> int:
         """List all hosts."""
         # Only show info message if not JSON output
-        if args.format != 'json':
+        if not args.json:
             self.info("Listing all hosts...")
         
         # Run the host listing script
@@ -192,7 +192,7 @@ class HostCommands(BaseCommandHandler):
         # Build command arguments
         cmd_args = ['--list']
         
-        if args.format == 'json':
+        if args.json:
             cmd_args.append('--json')
         
         # Add verbose flags based on count
@@ -313,7 +313,7 @@ class HostCommands(BaseCommandHandler):
             
             # Provide argument names that haven't been used yet
             used_args = set(args)
-            available_args = ['--name', '--primary-ip', '--connect-to', '--secondary-ips', '--verbose']
+            available_args = ['--name', '--primary-ip', '--connect-to', '--secondary-ips', '-v', '--verbose']
             return [arg for arg in available_args if arg not in used_args and arg.startswith(text)]
         
         elif subcommand == 'remove':
@@ -326,16 +326,16 @@ class HostCommands(BaseCommandHandler):
             
             # Provide argument names
             used_args = set(args)
-            available_args = ['--name', '--force', '--verbose']
+            available_args = ['--name', '-f', '--force', '-v', '--verbose']
             return [arg for arg in available_args if arg not in used_args and arg.startswith(text)]
         
         elif subcommand in ['list', 'clean']:
             # These subcommands have simpler arguments
             used_args = set(args)
             if subcommand == 'list':
-                available_args = ['--format', '--verbose']
+                available_args = ['-j', '--json', '-v', '--verbose']
             else:  # clean
-                available_args = ['--force', '--verbose']
+                available_args = ['-f', '--force', '-v', '--verbose']
             return [arg for arg in available_args if arg not in used_args and arg.startswith(text)]
         
         return []

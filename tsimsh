@@ -6,20 +6,44 @@ Interactive command-line interface for traceroute simulator operations.
 
 import os
 import sys
+import argparse
 
-# Add src directory to Python path
+# Try to detect if we're running from development directory or installed
 script_dir = os.path.dirname(os.path.abspath(__file__))
 src_dir = os.path.join(script_dir, 'src')
-sys.path.insert(0, src_dir)
+
+# Check if src directory exists (development mode)
+if os.path.exists(src_dir):
+    sys.path.insert(0, src_dir)
+    # Development mode - we'll import from shell.tsim_shell
+    is_installed = False
+else:
+    # Installed mode - we'll import from tsim.shell.tsim_shell
+    is_installed = True
 
 def main():
     """Main entry point for the shell."""
+    # Parse command-line arguments
+    parser = argparse.ArgumentParser(description='Traceroute Simulator Shell')
+    parser.add_argument('-q', '--quick', action='store_true',
+                        help='Quick startup: disable network status check and .tsimrc loading')
+    args = parser.parse_args()
+    
+    # Clear sys.argv to prevent cmd2 from processing our arguments
+    sys.argv = [sys.argv[0]]
+    
     try:
-        from shell.tsim_shell import TracerouteSimulatorShell
-        from shell.utils.script_processor import ScriptProcessor
+        if is_installed:
+            # Import from installed package
+            from tsim.shell.tsim_shell import TracerouteSimulatorShell
+            from tsim.shell.utils.script_processor import ScriptProcessor
+        else:
+            # Import from development directory
+            from shell.tsim_shell import TracerouteSimulatorShell
+            from shell.utils.script_processor import ScriptProcessor
         
-        # Create shell instance
-        shell = TracerouteSimulatorShell()
+        # Create shell instance with quick mode option
+        shell = TracerouteSimulatorShell(quick_mode=args.quick)
         
         # Check if we're in batch mode (input or output is not a terminal)
         if not (sys.stdin.isatty() and sys.stdout.isatty()):

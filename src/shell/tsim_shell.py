@@ -42,7 +42,10 @@ class TracerouteSimulatorShell(cmd2.Cmd):
     # Class attribute for cmd2 compatibility
     orig_rl_history_length = 0
     
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, quick_mode=False, **kwargs):
+        # Store quick mode flag
+        self.quick_mode = quick_mode
+        
         # Detect if we are in an interactive session
         # Check both stdin and stdout to ensure we're in a real terminal
         self.is_interactive = sys.stdin.isatty() and sys.stdout.isatty()
@@ -93,7 +96,19 @@ class TracerouteSimulatorShell(cmd2.Cmd):
         # --- Mode-specific configuration ---
         if self.is_interactive:
             # Shell configuration for interactive mode
-            self.intro = f"""{Fore.CYAN}
+            if self.quick_mode:
+                self.intro = f"""{Fore.CYAN}
+╔═══════════════════════════════════════════════════════════════════════════════════╗
+║                        Traceroute Simulator Shell v1.0 (Quick Mode)               ║
+║                    Interactive Network Simulation Interface                       ║
+╚═══════════════════════════════════════════════════════════════════════════════════╝
+{Style.RESET_ALL}
+Type 'help' for available commands, 'help <command>' for specific command help.
+Variables are supported: VAR=value, VAR="value", VAR=$(command). Use $VAR to substitute.
+Type 'set' to see all variables.
+"""
+            else:
+                self.intro = f"""{Fore.CYAN}
 ╔═══════════════════════════════════════════════════════════════════════════════════╗
 ║                        Traceroute Simulator Shell v1.0                            ║
 ║                    Interactive Network Simulation Interface                       ║
@@ -143,8 +158,8 @@ Type 'set' to see all variables.
         if self.is_interactive and intro:
             self.poutput(intro)
             
-        # Load .tsimrc after intro has been displayed
-        if self.is_interactive:
+        # Load .tsimrc after intro has been displayed (skip in quick mode)
+        if self.is_interactive and not self.quick_mode:
             self._load_tsimrc()
             # Apply history length setting after .tsimrc is loaded
             self._apply_history_length()
@@ -184,6 +199,12 @@ Type 'set' to see all variables.
     
     def _initialize_network_status(self):
         """Initialize TSIM_NETWORK_STATUS and TSIM_NETWORK_ROUTERS variables."""
+        # Skip in quick mode
+        if self.quick_mode:
+            self.variable_manager.set_variable('TSIM_NETWORK_STATUS', {})
+            self.variable_manager.set_variable('TSIM_NETWORK_ROUTERS', [])
+            return
+            
         import io
         import json
         

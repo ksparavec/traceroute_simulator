@@ -1187,7 +1187,7 @@ install-wrapper:
 # Define source files that should trigger package rebuild
 PACKAGE_SOURCES := $(shell find src -name "*.py" 2>/dev/null) \
                    $(shell find ansible -name "*.py" -o -name "*.yml" -o -name "*.yaml" -o -name "*.sh" 2>/dev/null) \
-                   setup.py MANIFEST.in requirements.txt README.md
+                   pyproject.toml MANIFEST.in requirements.txt README.md tsimsh
 
 # Package timestamp file to track last build
 PACKAGE_TIMESTAMP := dist/.package.timestamp
@@ -1204,7 +1204,8 @@ $(PACKAGE_TIMESTAMP): $(PACKAGE_SOURCES)
 	@rm -rf build/ dist/ *.egg-info
 	@echo "✓ Cleaned previous build artifacts"
 	@# Build the package
-	@$(PYTHON) $(PYTHON_OPTIONS) setup.py sdist bdist_wheel
+	@$(PYTHON) $(PYTHON_OPTIONS) -m pip install --quiet build
+	@PYTHONDONTWRITEBYTECODE=1 $(PYTHON) $(PYTHON_OPTIONS) -m build
 	@echo "✓ Package built successfully"
 	@# Create timestamp file
 	@mkdir -p dist
@@ -1226,13 +1227,13 @@ install-package: $(PACKAGE_TIMESTAMP)
 	@if [ -n "$$VIRTUAL_ENV" ]; then \
 		echo "Detected virtual environment: $$VIRTUAL_ENV"; \
 		echo "Installing in virtual environment..."; \
-		$(PYTHON) $(PYTHON_OPTIONS) -m pip install --upgrade dist/tsim-*.whl; \
+		PYTHONDONTWRITEBYTECODE=1 $(PYTHON) $(PYTHON_OPTIONS) -m pip install --no-compile --upgrade dist/tsim-*.whl; \
 	elif [ -n "$(BREAK_SYSTEM)" ]; then \
 		echo "⚠️  Installing with --break-system-packages (use at your own risk)"; \
-		$(PYTHON) $(PYTHON_OPTIONS) -m pip install --upgrade --break-system-packages dist/tsim-*.whl; \
+		PYTHONDONTWRITEBYTECODE=1 $(PYTHON) $(PYTHON_OPTIONS) -m pip install --no-compile --upgrade --break-system-packages dist/tsim-*.whl; \
 	elif [ -n "$(USER)" ]; then \
 		echo "Installing in user site-packages..."; \
-		$(PYTHON) $(PYTHON_OPTIONS) -m pip install --upgrade --user dist/tsim-*.whl || { \
+		PYTHONDONTWRITEBYTECODE=1 $(PYTHON) $(PYTHON_OPTIONS) -m pip install --no-compile --upgrade --user dist/tsim-*.whl || { \
 			echo ""; \
 			echo "❌ User installation failed."; \
 			echo ""; \
@@ -1251,7 +1252,7 @@ install-package: $(PACKAGE_TIMESTAMP)
 		}; \
 	else \
 		echo "Attempting standard installation..."; \
-		$(PYTHON) $(PYTHON_OPTIONS) -m pip install --upgrade dist/tsim-*.whl || { \
+		PYTHONDONTWRITEBYTECODE=1 $(PYTHON) $(PYTHON_OPTIONS) -m pip install --no-compile --upgrade dist/tsim-*.whl || { \
 			echo ""; \
 			echo "❌ Installation failed due to externally-managed environment."; \
 			echo ""; \
@@ -1271,6 +1272,22 @@ install-package: $(PACKAGE_TIMESTAMP)
 			echo "     make install-package BREAK_SYSTEM=1"; \
 			exit 1; \
 		}; \
+	fi
+	@# Fix the shebang line in the installed tsimsh script
+	@echo "Fixing shebang line in tsimsh..."
+	@if [ -n "$$VIRTUAL_ENV" ]; then \
+		TSIMSH_PATH="$$VIRTUAL_ENV/bin/tsimsh"; \
+	else \
+		TSIMSH_PATH="$$($(PYTHON) -m site --user-base)/bin/tsimsh"; \
+		if [ ! -f "$$TSIMSH_PATH" ]; then \
+			TSIMSH_PATH="$$(which tsimsh 2>/dev/null)"; \
+		fi; \
+	fi; \
+	if [ -f "$$TSIMSH_PATH" ]; then \
+		sed -i '1s|^#!.*|#!/usr/bin/env -S python3 -B -u|' "$$TSIMSH_PATH" && \
+		echo "✓ Fixed shebang in $$TSIMSH_PATH"; \
+	else \
+		echo "⚠ Could not find tsimsh to fix shebang"; \
 	fi
 	@echo ""
 	@echo "✓ Package installed successfully!"

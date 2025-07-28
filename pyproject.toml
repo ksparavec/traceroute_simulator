@@ -1,0 +1,84 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tsim"
+version = "1.0.0"
+description = "Traceroute Simulator - Network path discovery and simulation tool"
+readme = "README.md"
+requires-python = ">=3.6"
+license = "MIT"
+authors = [
+    {name = "Network Analysis Tool"},
+]
+keywords = ["traceroute", "networking", "simulation", "routing", "iptables", "namespace"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: System Administrators",
+    "Intended Audience :: Developers",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.6",
+    "Programming Language :: Python :: 3.7",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: System :: Networking",
+    "Topic :: System :: Systems Administration",
+]
+
+dynamic = ["dependencies"]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=6.0.0",
+    "pytest-cov>=2.0.0",
+    "flake8>=3.8.0",
+]
+ansible = [
+    "ansible>=2.9.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/yourusername/traceroute_simulator"
+
+[tool.setuptools.dynamic]
+dependencies = {file = ["requirements.txt"]}
+
+[tool.setuptools]
+script-files = ["tsimsh"]
+packages = [
+    "tsim",
+    "tsim.core",
+    "tsim.analyzers", 
+    "tsim.executors",
+    "tsim.simulators",
+    "tsim.utils",
+    "tsim.shell",
+    "tsim.shell.commands",
+    "tsim.shell.completers",
+    "tsim.shell.utils",
+    "tsim.ansible"
+]
+
+[tool.setuptools.package-dir]
+"tsim" = "src"
+"tsim.core" = "src/core"
+"tsim.analyzers" = "src/analyzers"
+"tsim.executors" = "src/executors"
+"tsim.simulators" = "src/simulators"
+"tsim.utils" = "src/utils"
+"tsim.shell" = "src/shell"
+"tsim.shell.commands" = "src/shell/commands"
+"tsim.shell.completers" = "src/shell/completers"
+"tsim.shell.utils" = "src/shell/utils"
+"tsim.ansible" = "ansible"
+
+[tool.setuptools.package-data]
+tsim = ["*.yaml", "*.yml", "*.json"]
+"tsim.ansible" = ["*.py", "*.yml", "*.yaml", "*.sh", "*.txt"]
+
+[tool.setuptools.exclude-package-data]
+"*" = ["__pycache__", "*.pyc", "*.pyo"]

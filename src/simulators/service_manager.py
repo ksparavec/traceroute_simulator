@@ -567,36 +567,38 @@ class ServiceClient:
         else:
             return self._test_udp_service(source_namespace, dest_ip, port, message, timeout)
     
-    def _test_tcp_service(
-        self,
-        namespace: str,
-        dest_ip: str,
-        port: int,
-        message: str,
-        timeout: int
-    ) -> Tuple[bool, str]:
-        """Test TCP service by connecting to the actual running service."""
-        if self.verbose_level >= 3:
-            print(f"[DEBUG] _test_tcp_service: ns={namespace}, dest={dest_ip}:{port}")
+    def _create_python_test_script(self, protocol: str, dest_ip: str, port: int, message: str, timeout: int) -> str:
+        """Create Python script for testing services (TCP or UDP)."""
+        if protocol.upper() == "TCP":
+            socket_type = "socket.SOCK_STREAM"
+            connect_code = f"sock.connect(('{dest_ip}', {port}))"
+            send_recv_code = f"""
+    # Send message
+    sock.send('{message}'.encode() + b'\\n')
+    
+    # Receive response
+    response = sock.recv(1024).decode()"""
+        else:  # UDP
+            socket_type = "socket.SOCK_DGRAM"
+            connect_code = ""  # UDP doesn't connect
+            send_recv_code = f"""
+    # Send message
+    sock.sendto('{message}'.encode() + b'\\n', ('{dest_ip}', {port}))
+    
+    # Receive response (with timeout)
+    response, addr = sock.recvfrom(1024)
+    response = response.decode()"""
         
-        # Python TCP client script
-        python_script = f'''
+        return f'''
 import socket
 import sys
 
 try:
     # Create socket
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock = socket.socket(socket.AF_INET, {socket_type})
     sock.settimeout({timeout})
-    
-    # Connect to server
-    sock.connect(('{dest_ip}', {port}))
-    
-    # Send message
-    sock.send('{message}'.encode() + b'\\n')
-    
-    # Receive response
-    response = sock.recv(1024).decode()
+    {connect_code}
+    {send_recv_code}
     
     # Close connection
     sock.close()
@@ -615,6 +617,22 @@ except Exception as e:
     print(f"Error: {{e}}", file=sys.stderr)
     sys.exit(1)
 '''
+
+    def _test_service_common(
+        self,
+        namespace: str,
+        dest_ip: str,
+        port: int,
+        protocol: str,
+        message: str,
+        timeout: int
+    ) -> Tuple[bool, str]:
+        """Common method for testing both TCP and UDP services."""
+        if self.verbose_level >= 3:
+            print(f"[DEBUG] _test_{protocol.lower()}_service: ns={namespace}, dest={dest_ip}:{port}")
+        
+        # Create Python script
+        python_script = self._create_python_test_script(protocol, dest_ip, port, message, timeout)
         
         # Run Python script in namespace
         cmd = [
@@ -624,11 +642,11 @@ except Exception as e:
         
         # Show command with -vv
         if self.verbose_level >= 2:
-            print(f"[CMD] Running Python TCP client in namespace {namespace}")
+            print(f"[CMD] Running Python {protocol} client in namespace {namespace}")
         
         try:
             if self.verbose_level >= 3:
-                print(f"[DEBUG] Running Python TCP client...")
+                print(f"[DEBUG] Running Python {protocol} client...")
             
             result = subprocess.run(
                 cmd,
@@ -650,11 +668,11 @@ except Exception as e:
             if result.returncode != 0:
                 stderr_lower = result.stderr.lower()
                 if "connection refused" in stderr_lower:
-                    raise ServiceConnectionError(dest_ip, port, "TCP", "Connection refused")
+                    raise ServiceConnectionError(dest_ip, port, protocol, "Connection refused")
                 elif "connection timeout" in stderr_lower:
-                    raise ServiceConnectionError(dest_ip, port, "TCP", "Connection timeout")
+                    raise ServiceConnectionError(dest_ip, port, protocol, "Connection timeout")
                 else:
-                    raise ServiceConnectionError(dest_ip, port, "TCP", result.stderr.strip())
+                    raise ServiceConnectionError(dest_ip, port, protocol, result.stderr.strip())
             
             # Success: check if message is in response
             if message in response:
@@ -673,13 +691,24 @@ except Exception as e:
             raise ServiceResponseError(message, response.strip())
             
         except subprocess.TimeoutExpired:
-            raise ServiceConnectionError(dest_ip, port, "TCP", "Command execution timeout")
+            raise ServiceConnectionError(dest_ip, port, protocol, "Command execution timeout")
         except Exception as e:
             if self.verbose_level >= 3:
-                print(f"[DEBUG] Exception in _test_tcp_service: {type(e).__name__}: {e}")
+                print(f"[DEBUG] Exception in _test_{protocol.lower()}_service: {type(e).__name__}: {e}")
             if isinstance(e, ServiceError):
                 raise
-            raise ServiceConnectionError(dest_ip, port, "TCP", str(e), cause=e)
+            raise ServiceConnectionError(dest_ip, port, protocol, str(e), cause=e)
+
+    def _test_tcp_service(
+        self,
+        namespace: str,
+        dest_ip: str,
+        port: int,
+        message: str,
+        timeout: int
+    ) -> Tuple[bool, str]:
+        """Test TCP service by connecting to the actual running service."""
+        return self._test_service_common(namespace, dest_ip, port, "TCP", message, timeout)
     
     def _test_udp_service(
         self,
@@ -689,62 +718,8 @@ except Exception as e:
         message: str,
         timeout: int
     ) -> Tuple[bool, str]:
-        """Test UDP service by connecting to the actual running service."""
-        # Use nc (netcat) for UDP testing
-        cmd = [
-            "ip", "netns", "exec", namespace,
-            "sh", "-c",
-            f'echo "{message}" | timeout {timeout} nc -u -w1 {dest_ip} {port}'
-        ]
-        
-        try:
-            # Show command with -vv
-            if self.verbose_level >= 2:
-                import shlex
-                print(f"[CMD] {' '.join(shlex.quote(arg) for arg in cmd)}")
-            
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                timeout=timeout + 1
-            )
-            
-            # UDP doesn't give connection errors, just timeouts
-            if result.returncode == 124:  # timeout
-                raise ServiceConnectionError(
-                    dest_ip, port, "UDP",
-                    "No response from UDP service (timeout)"
-                )
-            
-            # Check response - the service should echo back what we sent
-            response = result.stdout.strip()
-            
-            if not response:
-                raise ServiceConnectionError(
-                    dest_ip, port, "UDP",
-                    "No response from UDP service"
-                )
-            
-            # Service might add prefix or just echo - check if our message is in response
-            if message in response or response == message:
-                return True, response
-            else:
-                raise ServiceResponseError(message, response)
-            
-        except subprocess.TimeoutExpired:
-            raise ServiceConnectionError(
-                dest_ip, port, "UDP",
-                "Command execution timeout"
-            )
-        except Exception as e:
-            if isinstance(e, ServiceError):
-                raise
-            raise ServiceConnectionError(
-                dest_ip, port, "UDP",
-                str(e),
-                cause=e
-            )
+        """Test UDP service by sending a message and checking response."""
+        return self._test_service_common(namespace, dest_ip, port, "UDP", message, timeout)
 
 
 @ErrorHandler.wrap_main

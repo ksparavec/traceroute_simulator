@@ -15,8 +15,8 @@ This document outlines the architecture for testing network service reachability
 ### Output Requirements
 1. Reachability status (reachable/unreachable)
 2. Complete packet path through Linux routers
-3. If blocked: identify blocking router and specific iptables rule
-4. Step-by-step execution trace with intermediate results
+3. Analyze packet counts before/after test and report results (see below)
+4. Step-by-step execution trace with intermediate results and step duration in seconds
 
 ## Solution Architecture
 
@@ -87,7 +87,11 @@ This document outlines the architecture for testing network service reachability
    - Store result in `$SERVICE_RESULT`
    - Check `$SERVICE_RETURN` (0 = success, non-zero = failure)
 
-### Phase 4: Packet Count Analysis (for unreachable services)
+### Phase 4: Packet Count Analysis (**implemented**)
+
+N.B. Packet analysis is fully implemented in ./analyze_packet_counts.py. Script usage example: ./test_packet_counting.sh
+Use this script only - do not create any new code.
+Following documentation is only to be seen as reference:
 
 If the service test fails, analyze iptables rules on each router in the path:
 
@@ -143,58 +147,10 @@ Generate comprehensive output in appropriate format:
    - If batch mode: output JSON
    - If interactive: output human-readable text
 
-2. **Create final report structure**:
-   ```json
-   {
-     "summary": {
-       "service_reachable": false,
-       "test_performed": "TCP service on 10.3.20.100:80 from 10.1.1.100",
-       "overall_result": "Service is BLOCKED by firewall rules"
-     },
-     "connectivity_tests": {
-       "layer3_ping": {
-         "status": "success",
-         "description": "Basic network connectivity works"
-       },
-       "path_mtr": {
-         "status": "success", 
-         "description": "All routers along the path are responding"
-       },
-       "service_test": {
-         "status": "failed",
-         "description": "TCP connection to port 80 was blocked"
-       }
-     },
-     "network_path": {
-       "routers": ["hq-gw", "hq-core", "dc-core", "dc-srv"],
-       "description": "Packets travel through 4 routers from source to destination"
-     },
-     "blocking_analysis": {
-       "blocked": true,
-       "blocking_points": [
-         {
-           "router": "dc-core",
-           "explanation": "This router blocked the connection",
-           "rule_description": "Firewall rule blocks all web traffic (port 80) from HQ network (10.1.0.0/16) to datacenter servers (10.3.20.0/24)",
-           "technical_details": {
-             "chain": "FORWARD",
-             "rule_number": 7,
-             "action": "DROP"
-           }
-         }
-       ]
-     },
-     "recommendations": [
-       "Contact network administrator to allow web traffic from HQ to datacenter servers",
-       "Specify source IP 10.1.1.100 and destination 10.3.20.100:80 in the request"
-     ]
-   }
-   ```
+2. **Create final report**:
+   - final report has to contain detailed results from each step (copy result JSON objects from previous steps verbatim)
+   - final report has to contain summary section with most important findings
 
-3. **Human-readable format** (for interactive mode):
-   - Use clear headings and explanations
-   - Avoid technical jargon where possible
-   - Provide actionable recommendations
 
 ## Bash Script Usage
 
@@ -202,15 +158,10 @@ When using tsimsh commands in bash scripts, you must echo the commands to tsimsh
 
 ### Basic Command Structure
 ```bash
-echo "<tsimsh_command>" | tsimsh -q
+source /home/sparavec/tsim-venv/bin/activate && echo "<tsimsh_command>" | tsimsh -q
 ```
 
 The `-q` flag runs tsimsh in quiet mode, suppressing the interactive prompt and making it suitable for scripting.
-
-### Capturing Output
-After each command, the results are available in special variables:
-- `$TSIM_RESULT` - Contains the command output (JSON for commands with --json flag)
-- `$TSIM_RETURN_VALUE` - Contains the command return code (0 for success, non-zero for failure)
 
 ### Example Script
 ```bash
@@ -222,12 +173,7 @@ DST_IP="10.3.20.100"
 DST_PORT="80"
 
 # Trace the network path
-echo "trace --source $SRC_IP --destination $DST_IP --json" | tsimsh -q
-if [ $? -ne 0 ]; then
-    echo "Failed to trace network path"
-    exit 1
-fi
-TRACE_RESULT=$TSIM_RESULT
+TRACE_RESULT=`echo "trace --source $SRC_IP --destination $DST_IP --json" | tsimsh -q`
 
 # Add source host to simulation
 echo "host add --name src_host --primary-ip ${SRC_IP}/24 --connect-to hq-gw" | tsimsh -q
@@ -239,52 +185,21 @@ echo "host add --name dst_host --primary-ip ${DST_IP}/24 --connect-to dc-srv" | 
 echo "service start --ip $DST_IP --port $DST_PORT --protocol tcp" | tsimsh -q
 
 # Test connectivity with ping
-echo "ping --source $SRC_IP --destination $DST_IP --json" | tsimsh -q
-PING_RESULT=$TSIM_RESULT
-PING_RETURN=$TSIM_RETURN_VALUE
+PING_RESULT=`echo "ping --source $SRC_IP --destination $DST_IP --json" | tsimsh -q`
 
 # Test service connectivity
-echo "service test --source $SRC_IP --destination ${DST_IP}:${DST_PORT} --protocol tcp --json" | tsimsh -q
-SERVICE_RESULT=$TSIM_RESULT
-SERVICE_RETURN=$TSIM_RETURN_VALUE
+SERVICE_RESULT=`echo "service test --source $SRC_IP --destination ${DST_IP}:${DST_PORT} --protocol tcp --json" | tsimsh -q`
 
 # Cleanup
-echo "service stop --ip ${DST_IP}:${DST_PORT}" | tsimsh -q
+echo "service stop --ip ${DST_IP} --port ${DST_PORT}" --protocol tcp | tsimsh -q
 echo "host remove --name src_host" | tsimsh -q
 echo "host remove --name dst_host" | tsimsh -q
-
-# Check results
-if [ "$SERVICE_RETURN" -eq 0 ]; then
-    echo "Service is reachable"
-else
-    echo "Service is blocked"
-fi
-```
-
-### Working with JSON Results in Bash
-
-When using JSON output in bash scripts, you need to access the data through tsimsh variable operations:
-
-```bash
-# Get JSON result
-echo "ping --source $SRC_IP --destination $DST_IP --json" | tsimsh -q
-PING_RESULT=$TSIM_RESULT
-
-# Access JSON fields through tsimsh
-echo "ALL_PASSED=\$PING_RESULT.summary.all_passed" | tsimsh -q
-echo "PACKET_LOSS=\$PING_RESULT.tests[0].ping_stats.packet_loss_percent" | tsimsh -q
-
-# Use the extracted values in bash
-if [ "$ALL_PASSED" = "true" ]; then
-    echo "All tests passed"
-fi
 ```
 
 ### Important Notes
 - Always use the `-q` flag when piping to tsimsh in scripts
-- Variable assignments inside tsimsh need escaped dollar signs (`\$`)
+- When testing, always source venv first (see above for example)
 - Check return codes with `$?` after each command
-- JSON data must be accessed through tsimsh variable operations
 - Clean up resources (hosts, services) even if errors occur
 
 ## Implementation Algorithm
@@ -317,6 +232,11 @@ fi
     c. Leave network setup unchanged
 ```
 
+## Important Notes
+1. Output has to be in single JSON object format only - no human readable messages printed whatsoever
+2. Script should return result on its stdout, even if errors occur during execution
+3. Return value: 0 if successful, 1 otherwise
+
 ## Key tsimsh Commands Used
 
 1. **trace**: Discover the packet path through routers (REAL NETWORK)
@@ -326,13 +246,10 @@ fi
 5. **mtr**: Test path connectivity with hop-by-hop analysis (supports JSON output)
 6. **service test**: Test TCP/UDP service connectivity
 7. **network status**: Retrieve iptables rules with packet counts
-8. **Variable operations**: Store and manipulate command outputs
 
 ## Error Handling
 
 - Validate all input parameters before proceeding
-- Check command return values via `$TSIM_RETURN_VALUE`
-- Handle cases where hosts cannot be added (subnet mismatch)
 - Clean up resources even if errors occur:
   - Always stop services before removing hosts
   - Never modify the base network setup
@@ -596,7 +513,7 @@ Example with 3 Linux routers on the path:
 }
 ```
 
-#### Key JSON Fields
+#### Some Key JSON Fields
 
 - **source/destination**: Contains namespace information
   - `namespace`: The actual namespace where the test originates/terminates
@@ -617,255 +534,3 @@ Example with 3 Linux routers on the path:
 - **ping_rtt**: Round-trip time statistics (min/avg/max/mdev in milliseconds)
 
 - **mtr_hops**: For MTR tests, shows each hop in the path with namespace mapping
-
-### Accessing JSON Data
-
-#### Working with Ping/MTR JSON Results
-```bash
-# Run ping test and capture JSON
-echo "ping --source $SRC_IP --destination $DST_IP --json" | tsimsh -q
-PING_RESULT=$TSIM_RESULT
-
-# Check if all tests passed
-echo "ALL_PASSED=\$PING_RESULT.summary.all_passed" | tsimsh -q
-if [ "$ALL_PASSED" = "true" ]; then
-    echo "All ping tests passed"
-fi
-
-# Get packet loss percentage from first test
-echo "PACKET_LOSS=\$PING_RESULT.tests[0].ping_stats.packet_loss_percent" | tsimsh -q
-
-# Get average RTT
-echo "AVG_RTT=\$PING_RESULT.tests[0].ping_rtt.avg" | tsimsh -q
-
-# Get source namespace information
-echo "SOURCE_NS=\$PING_RESULT.tests[0].source.namespace" | tsimsh -q
-echo "SOURCE_TYPE=\$PING_RESULT.tests[0].source.namespace_type" | tsimsh -q
-
-# Run MTR and get hop count
-echo "mtr --source $SRC_IP --destination $DST_IP --json" | tsimsh -q
-MTR_RESULT=$TSIM_RESULT
-echo "HOP_COUNT=\$MTR_RESULT.tests[0].mtr_hops.length()" | tsimsh -q
-
-# List all routers in MTR path
-for i in $(seq 0 $(($HOP_COUNT - 1))); do
-    echo "HOP_NS=\$MTR_RESULT.tests[0].mtr_hops[$i].namespace" | tsimsh -q
-    echo "HOP_IP=\$MTR_RESULT.tests[0].mtr_hops[$i].ip" | tsimsh -q
-    echo "Hop $i: $HOP_NS ($HOP_IP)"
-done
-```
-
-#### Working with Trace Results
-```bash
-# Extract router list from trace result
-echo "trace --source $SRC_IP --destination $DST_IP --json" | tsimsh -q
-TRACE_RESULT=$TSIM_RESULT
-echo "ROUTERS=\$TRACE_RESULT.traceroute_path" | tsimsh -q
-
-# Access nested values
-echo "ROUTER_NAME=\$TRACE_RESULT.traceroute_path[0].name" | tsimsh -q
-
-# Get array length
-echo "ROUTER_COUNT=\$TRACE_RESULT.traceroute_path.length()" | tsimsh -q
-```
-
-### Comparing Packet Counts
-```bash
-# Store iptables data before and after
-echo "network status --limit $ROUTER iptables --json" | tsimsh -q
-IPTABLES_BEFORE=$TSIM_RESULT
-echo "network status --limit $ROUTER iptables --json" | tsimsh -q
-IPTABLES_AFTER=$TSIM_RESULT
-
-# Access specific chain and rule
-CHAIN="FORWARD"
-RULE_INDEX=7
-
-# Get packet counts
-echo "BEFORE_COUNT=\$IPTABLES_BEFORE.iptables.filter[$CHAIN][$RULE_INDEX].packets" | tsimsh -q
-echo "AFTER_COUNT=\$IPTABLES_AFTER.iptables.filter[$CHAIN][$RULE_INDEX].packets" | tsimsh -q
-
-# Compare values
-if [ "$AFTER_COUNT" -gt "$BEFORE_COUNT" ]; then
-    PACKETS_BLOCKED=$(($AFTER_COUNT - $BEFORE_COUNT))
-    echo "RULE_TEXT=\$IPTABLES_AFTER.iptables.filter[$CHAIN][$RULE_INDEX].rule" | tsimsh -q
-fi
-```
-
-### Building Result JSON
-```bash
-# Initialize result structure
-echo "BLOCKING_ROUTERS='[]'" | tsimsh -q
-echo "NON_BLOCKING_ROUTERS='[]'" | tsimsh -q
-
-# Add to arrays dynamically
-# Note: Full JSON construction would be done through variable manipulation
-
-# Access methods
-echo "KEYS=\$IPTABLES_RESULT.iptables.filter.keys()" | tsimsh -q  # Get chain names
-echo "VALUES=\$IPTABLES_RESULT.iptables.filter.values()" | tsimsh -q  # Get chain data
-```
-
-### Variable Features Used
-- **Nested access**: `$VAR.key1.key2[index]`
-- **Array indexing**: `$VAR[0]`, `$VAR[-1]`
-- **Method calls**: `.length()`, `.keys()`, `.values()`
-- **Dynamic key access**: `$VAR[$KEY_VARIABLE]`
-- **Arithmetic**: `$(($VAR1 - $VAR2))`
-- **Conditionals**: Numeric and string comparisons
-
-## Example Output Formats
-
-### Interactive Mode (Human-Readable)
-
-```
-=== Network Service Reachability Test ===
-
-Testing: Can 10.1.1.100 reach web service on 10.3.20.100:80?
-
-[Step 1/5] Discovering network path...
-✓ Path found: Your connection goes through 4 routers
-
-[Step 2/5] Setting up test environment...
-✓ Test environment ready
-
-[Step 3/5] Running connectivity tests...
-✓ Basic network connectivity (ping): SUCCESS
-  - The destination computer is reachable on the network
-✓ Path connectivity (mtr): SUCCESS  
-  - All routers along the path are working properly
-✗ Service connectivity: FAILED
-  - Cannot connect to web service on port 80
-
-[Step 4/5] Analyzing why the connection failed...
-✓ Found the blocking point
-
-[Step 5/5] Cleaning up...
-✓ Cleanup complete
-
-=== RESULTS ===
-
-Status: SERVICE BLOCKED
-
-What happened:
-- Your computer CAN reach the destination on the network
-- But a firewall is blocking access to the web service
-
-Where it's blocked:
-- Router: dc-core (datacenter core router)
-- Reason: Security rule blocks web traffic from HQ network to datacenter servers
-
-What to do:
-1. Contact your network administrator
-2. Request access from source IP 10.1.1.100 to 10.3.20.100 port 80
-3. Reference blocking rule: "HQ to DC web traffic restriction"
-
-Technical details (for administrator):
-- Blocking router: dc-core
-- Firewall chain: FORWARD
-- Rule #7: -s 10.1.0.0/16 -d 10.3.20.0/24 -p tcp --dport 80 -j DROP
-```
-
-### Batch Mode (JSON)
-
-```json
-{
-  "summary": {
-    "service_reachable": false,
-    "source": "10.1.1.100",
-    "destination": "10.3.20.100:80",
-    "protocol": "tcp",
-    "overall_result": "Service blocked by firewall",
-    "test_timestamp": "2024-01-15T14:32:10Z"
-  },
-  "connectivity_tests": {
-    "ping": {
-      "success": true,
-      "description": "Basic network connectivity works",
-      "return_code": 0
-    },
-    "mtr": {
-      "success": true,
-      "description": "All routers responding along path",
-      "return_code": 0,
-      "hop_count": 4
-    },
-    "service": {
-      "success": false,
-      "description": "TCP connection blocked",
-      "return_code": 1
-    }
-  },
-  "network_path": {
-    "routers": [
-      {
-        "name": "hq-gw",
-        "incoming_interface": "eth0",
-        "incoming_ip": "10.1.1.1",
-        "outgoing_interface": "eth1",
-        "outgoing_ip": "10.1.0.1"
-      },
-      {
-        "name": "hq-core",
-        "incoming_interface": "eth0",
-        "incoming_ip": "10.1.0.2",
-        "outgoing_interface": "eth2",
-        "outgoing_ip": "172.16.0.1"
-      },
-      {
-        "name": "dc-core",
-        "incoming_interface": "eth0",
-        "incoming_ip": "172.16.0.2",
-        "outgoing_interface": "eth2",
-        "outgoing_ip": "10.3.20.1"
-      },
-      {
-        "name": "dc-srv",
-        "incoming_interface": "eth0",
-        "incoming_ip": "10.3.20.2",
-        "outgoing_interface": null,
-        "outgoing_ip": null
-      }
-    ],
-    "source_host": {
-      "ip": "10.1.1.100",
-      "connected_to": "hq-gw"
-    },
-    "destination_host": {
-      "ip": "10.3.20.100",
-      "connected_to": "dc-srv",
-      "service_port": 80,
-      "service_protocol": "tcp"
-    }
-  },
-  "blocking_analysis": {
-    "service_blocked": true,
-    "blocking_routers": [
-      {
-        "router": "dc-core",
-        "rule_description": "Blocks web traffic from HQ to datacenter",
-        "source_match": "10.1.0.0/16",
-        "destination_match": "10.3.20.0/24",
-        "port_match": "80",
-        "action": "DROP",
-        "chain": "FORWARD",
-        "rule_number": 7,
-        "packets_blocked": 1,
-        "rule_text": "-s 10.1.0.0/16 -d 10.3.20.0/24 -p tcp --dport 80 -j DROP"
-      }
-    ],
-    "non_blocking_routers": ["hq-gw", "hq-core", "dc-srv"],
-    "analysis_method": "packet_count_comparison"
-  },
-  "recommendations": [
-    "Request firewall exception for 10.1.1.100 to 10.3.20.100:80",
-    "Reference blocking rule on router dc-core, FORWARD chain, rule #7"
-  ],
-  "debug_info": {
-    "trace_command": "trace --source 10.1.1.100 --destination 10.3.20.100 --json",
-    "simulation_hosts_created": ["src_host", "dst_host"],
-    "services_started": ["10.3.20.100:80/tcp"],
-    "cleanup_performed": true
-  }
-}
-```

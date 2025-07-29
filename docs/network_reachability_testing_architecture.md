@@ -25,13 +25,14 @@ This document outlines the architecture for testing network service reachability
 1. **Trace the network path**:
    ```bash
    echo "trace --source <SOURCE_IP> --destination <DESTINATION_IP> --json" | tsimsh -q
-   TRACE_RESULT=$TSIM_RESULT
    ```
    - This is the ONLY operation performed on the real network
    - Provides bidirectional path information
    - JSON output contains router sequence
    - Store result in `$TRACE_RESULT` for parsing
    - Identifies all Linux routers that packets will traverse
+
+   Script has to alternatively accept trace file as input. Use enclosed ./trace_example.json for testing - no live tracing is currently available.
 
 ### Phase 2: Simulation Environment Setup
 

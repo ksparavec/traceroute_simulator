@@ -771,10 +771,8 @@ class SequentialConnectivityTester:
             print(f"  timeout: {timeout}")
         
         # Run mtr from specified namespace
-        # Use -r for report mode, -c for probe count, -n for no DNS, -m for max-ttl based on timeout
-        # Note: MTR doesn't have a direct timeout parameter, so we use max-ttl based on timeout
-        max_ttl = min(timeout * 2, 30)  # Reasonable max based on timeout
-        cmd = f"ip netns exec {namespace} mtr -r -c {count} -n -m {max_ttl} -a {source_ip} {dest_ip}"
+        # Use -r for report mode, -c for probe count, -n for no DNS, -Z for timeout, -G for interval
+        cmd = f"ip netns exec {namespace} mtr -r -c {count} -n -Z {timeout} -G 1 -a {source_ip} {dest_ip}"
         
         # Verbose level 2: show namespace command
         if self.verbose >= 2:
@@ -1144,13 +1142,11 @@ class SequentialConnectivityTester:
                 if self.test_type == 'ping':
                     test_commands = [('ping', f'ping -c {self.ping_count} -W {int(self.ping_timeout)} -i 1 -I {source_ip} {dest_ip}')]
                 elif self.test_type == 'mtr':
-                    max_ttl = min(int(self.mtr_timeout * 2), 30)
-                    test_commands = [('mtr', f'mtr --report -c {self.mtr_count} -n -m {max_ttl} {dest_ip}')]
+                    test_commands = [('mtr', f'mtr --report -c {self.mtr_count} -n -Z {int(self.mtr_timeout)} -G 1 {dest_ip}')]
                 else:  # both
-                    max_ttl = min(int(self.mtr_timeout * 2), 30)
                     test_commands = [
                         ('ping', f'ping -c {self.ping_count} -W {int(self.ping_timeout)} -i 1 -I {source_ip} {dest_ip}'),
-                        ('mtr', f'mtr --report -c {self.mtr_count} -n -m {max_ttl} {dest_ip}')
+                        ('mtr', f'mtr --report -c {self.mtr_count} -n -Z {int(self.mtr_timeout)} -G 1 {dest_ip}')
                     ]
                 
                 namespace_success = True

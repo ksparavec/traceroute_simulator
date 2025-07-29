@@ -51,7 +51,8 @@ from typing import Dict, List, Tuple, Set, Optional
 class SequentialConnectivityTester:
     """Sequential network connectivity testing for namespace simulation."""
     
-    def __init__(self, verbose: int = 0, wait_time: float = 0.1, test_type: str = 'ping', json_output: bool = False):
+    def __init__(self, verbose: int = 0, wait_time: float = 0.1, test_type: str = 'ping', json_output: bool = False,
+                 ping_count: int = 3, ping_timeout: float = 3.0, mtr_count: int = 10, mtr_timeout: float = 10.0):
         facts_path = os.environ.get('TRACEROUTE_SIMULATOR_FACTS')
         if not facts_path:
             raise EnvironmentError("TRACEROUTE_SIMULATOR_FACTS environment variable must be set")
@@ -60,6 +61,10 @@ class SequentialConnectivityTester:
         self.wait_time = wait_time
         self.test_type = test_type
         self.json_output = json_output
+        self.ping_count = ping_count
+        self.ping_timeout = ping_timeout
+        self.mtr_count = mtr_count
+        self.mtr_timeout = mtr_timeout
         
         self.routers = {}
         self.router_ips = {}  # router_name -> [list of IPs]
@@ -588,7 +593,7 @@ class SequentialConnectivityTester:
                 public_ip = '.'.join(parts)
                 self.remove_public_ip_host_from_gateways(public_ip)
                 
-    def ping_test_from_namespace(self, namespace: str, source_ip: str, dest_ip: str, timeout: int = 3) -> Tuple[bool, str, str]:
+    def ping_test_from_namespace(self, namespace: str, source_ip: str, dest_ip: str, timeout: int = 3, count: int = 3) -> Tuple[bool, str, str]:
         """Perform ping test from a specific namespace using source IP to destination IP.
         
         Allows any destination IP - follows routing tables and gateway behavior.
@@ -646,7 +651,7 @@ class SequentialConnectivityTester:
                 dest_info = f" (reaching one of: {', '.join(dest_namespaces)})"
         
         # Run ping from specified namespace
-        cmd = f"ip netns exec {namespace} ping -c 1 -W {timeout} -I {source_ip} {dest_ip}"
+        cmd = f"ip netns exec {namespace} ping -c {count} -W {timeout} -I {source_ip} {dest_ip}"
         
         # Verbose level 2: show namespace command
         if self.verbose >= 2:
@@ -693,7 +698,7 @@ class SequentialConnectivityTester:
         except Exception as e:
             return False, f"Error: {str(e)}", ""
     
-    def ping_test(self, source_ip: str, dest_ip: str, timeout: int = 3) -> Tuple[bool, str, str]:
+    def ping_test(self, source_ip: str, dest_ip: str, timeout: int = 3, count: int = 3) -> Tuple[bool, str, str]:
         """Legacy ping test - uses first namespace with source IP.
         
         DEPRECATED: Use ping_test_from_namespace for multiple namespace support.
@@ -707,7 +712,7 @@ class SequentialConnectivityTester:
             return False, f"Source IP {source_ip} not found", ""
             
         # Use the new function with the single namespace
-        return self.ping_test_from_namespace(source_router, source_ip, dest_ip, timeout)
+        return self.ping_test_from_namespace(source_router, source_ip, dest_ip, timeout, count)
         
         try:
             result = subprocess.run(
@@ -749,7 +754,7 @@ class SequentialConnectivityTester:
             exception_output = f"Command: {cmd}\nExit code: exception\nException occurred: {str(e)}"
             return False, f"Exception: {str(e)[:50]}", exception_output
             
-    def mtr_test_from_namespace(self, namespace: str, source_ip: str, dest_ip: str, timeout: int = 10) -> Tuple[bool, str, str]:
+    def mtr_test_from_namespace(self, namespace: str, source_ip: str, dest_ip: str, timeout: int = 10, count: int = 10) -> Tuple[bool, str, str]:
         """Perform MTR traceroute test from a specific namespace using source IP to destination IP.
         
         Allows any destination IP - follows routing tables and gateway behavior.
@@ -766,8 +771,10 @@ class SequentialConnectivityTester:
             print(f"  timeout: {timeout}")
         
         # Run mtr from specified namespace
-        # Use -r for report mode, -c 1 for single probe, -n for no DNS
-        cmd = f"ip netns exec {namespace} mtr -r -c 1 -n -a {source_ip} {dest_ip}"
+        # Use -r for report mode, -c for probe count, -n for no DNS, -m for max-ttl based on timeout
+        # Note: MTR doesn't have a direct timeout parameter, so we use max-ttl based on timeout
+        max_ttl = min(timeout * 2, 30)  # Reasonable max based on timeout
+        cmd = f"ip netns exec {namespace} mtr -r -c {count} -n -m {max_ttl} -a {source_ip} {dest_ip}"
         
         # Verbose level 2: show namespace command
         if self.verbose >= 2:
@@ -820,7 +827,7 @@ class SequentialConnectivityTester:
         except Exception as e:
             return False, f"Error: {str(e)}", ""
     
-    def mtr_test(self, source_ip: str, dest_ip: str, timeout: int = 10) -> Tuple[bool, str, str]:
+    def mtr_test(self, source_ip: str, dest_ip: str, timeout: int = 10, count: int = 10) -> Tuple[bool, str, str]:
         """Legacy MTR test - uses first namespace with source IP.
         
         DEPRECATED: Use mtr_test_from_namespace for multiple namespace support.
@@ -834,7 +841,7 @@ class SequentialConnectivityTester:
             return False, f"Source IP {source_ip} not found", ""
             
         # Use the new function with the single namespace
-        return self.mtr_test_from_namespace(source_router, source_ip, dest_ip, timeout)
+        return self.mtr_test_from_namespace(source_router, source_ip, dest_ip, timeout, count)
             
     def _handle_test_result(self, source_router: str, dest_router: str, source_ip: str, dest_ip: str,
                            success: bool, summary: str, full_output: str, test_type: str,
@@ -1014,7 +1021,7 @@ class SequentialConnectivityTester:
                 
             # Run test based on test_type
             if self.test_type in ['ping', 'both']:
-                success, summary, full_output = self.ping_test(source_ip, dest_ip)
+                success, summary, full_output = self.ping_test(source_ip, dest_ip, self.ping_timeout, self.ping_count)
                 router_passed, router_failed = self._handle_test_result(
                     source_router, dest_router, source_ip, dest_ip,
                     success, summary, full_output, 'PING',
@@ -1024,7 +1031,7 @@ class SequentialConnectivityTester:
                 )
                 
             if self.test_type in ['mtr', 'both']:
-                success, summary, full_output = self.mtr_test(source_ip, dest_ip)
+                success, summary, full_output = self.mtr_test(source_ip, dest_ip, self.mtr_timeout, self.mtr_count)
                 router_passed, router_failed = self._handle_test_result(
                     source_router, dest_router, source_ip, dest_ip,
                     success, summary, full_output, 'MTR',
@@ -1132,14 +1139,18 @@ class SequentialConnectivityTester:
             
             try:
                 # Determine which command to run
+                # Note: These are the direct namespace commands, not using our wrapper functions
+                # The wrapper functions handle the logic; these are just for display/output
                 if self.test_type == 'ping':
-                    test_commands = [('ping', f'ping -c 3 -W 1 -i 1 -I {source_ip} {dest_ip}')]
+                    test_commands = [('ping', f'ping -c {self.ping_count} -W {int(self.ping_timeout)} -i 1 -I {source_ip} {dest_ip}')]
                 elif self.test_type == 'mtr':
-                    test_commands = [('mtr', f'mtr --report -c 1 -n {dest_ip}')]
+                    max_ttl = min(int(self.mtr_timeout * 2), 30)
+                    test_commands = [('mtr', f'mtr --report -c {self.mtr_count} -n -m {max_ttl} {dest_ip}')]
                 else:  # both
+                    max_ttl = min(int(self.mtr_timeout * 2), 30)
                     test_commands = [
-                        ('ping', f'ping -c 3 -W 1 -i 1 -I {source_ip} {dest_ip}'),
-                        ('mtr', f'mtr --report -c 1 -n {dest_ip}')
+                        ('ping', f'ping -c {self.ping_count} -W {int(self.ping_timeout)} -i 1 -I {source_ip} {dest_ip}'),
+                        ('mtr', f'mtr --report -c {self.mtr_count} -n -m {max_ttl} {dest_ip}')
                     ]
                 
                 namespace_success = True
@@ -1427,6 +1438,12 @@ Examples:
     parser.add_argument('-v', '--verbose', action='count', default=0,
                        help='Increase verbosity (-v: summary, -vv: details, -vvv: full output)')
     
+    # Test parameters
+    parser.add_argument('--count', type=int, default=None,
+                       help='Number of packets/probes to send (default: 3 for ping, 10 for mtr)')
+    parser.add_argument('--timeout', type=float, default=None,
+                       help='Timeout in seconds (default: 3.0 for ping, 10.0 for mtr)')
+    
     args = parser.parse_args()
     
     # Validate arguments
@@ -1442,12 +1459,33 @@ Examples:
         sys.exit(1)
         
     try:
+        # Determine count and timeout based on test type and arguments
+        if args.test_type == 'ping':
+            ping_count = args.count if args.count is not None else 3
+            ping_timeout = args.timeout if args.timeout is not None else 3.0
+            mtr_count = 10  # default
+            mtr_timeout = 10.0  # default
+        elif args.test_type == 'mtr':
+            ping_count = 3  # default
+            ping_timeout = 3.0  # default
+            mtr_count = args.count if args.count is not None else 10
+            mtr_timeout = args.timeout if args.timeout is not None else 10.0
+        else:  # both
+            ping_count = args.count if args.count is not None else 3
+            ping_timeout = args.timeout if args.timeout is not None else 3.0
+            mtr_count = args.count if args.count is not None else 10
+            mtr_timeout = args.timeout if args.timeout is not None else 10.0
+        
         # Create tester
         tester = SequentialConnectivityTester(
             verbose=args.verbose,
             wait_time=args.wait,
             test_type=args.test_type,
-            json_output=args.json
+            json_output=args.json,
+            ping_count=ping_count,
+            ping_timeout=ping_timeout,
+            mtr_count=mtr_count,
+            mtr_timeout=mtr_timeout
         )
         
         # Load facts

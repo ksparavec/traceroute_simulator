@@ -42,6 +42,10 @@ class NetTestCommands(BaseCommandHandler):
                           help='Destination IP address')
         parser.add_argument('-j', '--json', action='store_true',
                           help='Output in JSON format')
+        parser.add_argument('-c', '--count', type=int, default=3,
+                          help='Number of ping packets to send (default: 3)')
+        parser.add_argument('-t', '--timeout', type=float, default=2.0,
+                          help='Timeout in seconds for each ping (default: 2.0)')
         parser.add_argument('-v', '--verbose', action='count', default=1,
                           help='Increase verbosity (default: show ping output)')
         
@@ -62,6 +66,10 @@ class NetTestCommands(BaseCommandHandler):
                           help='Destination IP address')
         parser.add_argument('-j', '--json', action='store_true',
                           help='Output in JSON format')
+        parser.add_argument('-c', '--count', type=int, default=10,
+                          help='Number of packets to send to each hop (default: 10)')
+        parser.add_argument('-t', '--timeout', type=float, default=2.0,
+                          help='Timeout in seconds for each packet (default: 2.0)')
         parser.add_argument('-v', '--verbose', action='count', default=1,
                           help='Increase verbosity (default: show MTR output)')
         
@@ -125,6 +133,20 @@ class NetTestCommands(BaseCommandHandler):
                 '-d', args.destination,
                 '--test-type', test_type
             ]
+            
+            # Add count parameter if specified and not default
+            if hasattr(args, 'count'):
+                if test_type == 'ping' and args.count != 3:
+                    cmd_args.extend(['--count', str(args.count)])
+                elif test_type == 'mtr' and args.count != 10:
+                    cmd_args.extend(['--count', str(args.count)])
+            
+            # Add timeout parameter if specified and not default
+            if hasattr(args, 'timeout'):
+                if test_type == 'ping' and args.timeout != 2.0:
+                    cmd_args.extend(['--timeout', str(args.timeout)])
+                elif test_type == 'mtr' and args.timeout != 2.0:
+                    cmd_args.extend(['--timeout', str(args.timeout)])
             
             # Add JSON flag if requested
             if hasattr(args, 'json') and args.json:

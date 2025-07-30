@@ -544,27 +544,62 @@ phase3_reachability_tests() {
     end_step "$service_result"
     
     # Analyze service test results to determine reachability per router
-    if [[ -n "$service_result" && "$service_result" != "{}" ]]; then
-        # Extract per-router results from service test
-        local router_results=$(echo "$service_result" | python3 -c "
+    # Get all routers from the trace path
+    local all_routers="${JSON_RESULTS[routers_in_path]:-[]}"
+    
+    if [[ -z "$service_result" || "$service_result" == "{}" ]]; then
+        echo "Error: Service test results are missing. Cannot determine router allow/block status." >&2
+        exit 1
+    fi
+    
+    local router_results=$(echo "$service_result" | python3 -c "
 import sys, json
+
 try:
     data = json.loads(sys.stdin.read())
-    if 'tests' in data:
-        results = {}
-        for test in data['tests']:
-            if 'via_router' in test:
-                router = test['via_router']
-                status = test.get('status', 'UNKNOWN')
-                results[router] = status
-        print(json.dumps(results))
-    else:
-        print('{}')
-except:
-    print('{}')
+    all_routers = json.loads('$all_routers')
+    
+    if 'tests' not in data or not data['tests']:
+        print('ERROR: No service tests found in results')
+        sys.exit(1)
+    
+    # Build results from service tests
+    results = {}
+    
+    # Process each test result
+    for test in data['tests']:
+        if 'via_router' in test:
+            router = test['via_router']
+            status = test.get('status', '')
+            
+            if status == 'OK':
+                results[router] = 'ALLOWED'
+            elif status in ['FAIL', 'TIMEOUT', 'ERROR']:
+                results[router] = 'BLOCKED'
+            else:
+                print(f'ERROR: Unknown status {status} for router {router}')
+                sys.exit(1)
+    
+    # Verify we have results for all routers
+    missing_routers = set(all_routers) - set(results.keys())
+    if missing_routers:
+        print(f'ERROR: Missing service test results for routers: {list(missing_routers)}')
+        sys.exit(1)
+    
+    print(json.dumps(results))
+    
+except Exception as e:
+    print(f'ERROR: Failed to parse service test results: {e}')
+    sys.exit(1)
 ")
-        JSON_RESULTS[router_service_results]="$router_results"
+    
+    # Check if Python script reported an error
+    if [[ "$router_results" == ERROR:* ]]; then
+        echo "$router_results" >&2
+        exit 1
     fi
+    
+    JSON_RESULTS[router_service_results]="$router_results"
     
     # Overall status based on service test
     if [[ $service_return -eq 0 ]]; then
@@ -645,7 +680,7 @@ try:
 except:
     print('FAIL')
 ")
-                if [[ "$router_status" == "OK" ]]; then
+                if [[ "$router_status" == "ALLOWED" ]]; then
                     analysis_mode="allowing"
                 fi
             fi

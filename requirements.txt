@@ -7,11 +7,14 @@ colorama
 gnureadline
 httplib2
 idna
+matplotlib
+NetworkX
 pip
 posix_ipc
 psutil
 pyaml
 pycurl
+pyhyphen
 pyparsing
 pyperclip
 PySimpleSOAP

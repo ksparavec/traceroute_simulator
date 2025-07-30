@@ -938,15 +938,15 @@ class HostNamespaceManager:
         # Move mesh side to hidden-mesh namespace and connect to specific mesh bridge
         self.run_command(f"ip link set {mesh_veth} netns hidden-mesh")
         
-        # 1 second delay after moving to namespace
+        # Short delay after moving to namespace (reduced from 1.0s)
         import time
-        time.sleep(1.0)
+        time.sleep(0.2)
         
         self.run_command(f"ip link set {mesh_veth} master {mesh_bridge}", namespace="hidden-mesh")
         self.run_command(f"ip link set {mesh_veth} up", namespace="hidden-mesh")
         
-        # 1 second delay after bringing interface up
-        time.sleep(1.0)
+        # Short delay after bringing interface up (reduced from 1.0s)
+        time.sleep(0.3)
         
         # Clean bridge FDB entries to prevent stale MAC issues
         # This is needed when hosts are recreated with same names but different MAC addresses
@@ -956,8 +956,8 @@ class HostNamespaceManager:
         self.logger.info(f"Step 1: Flushing all learned entries on bridge {mesh_bridge}")
         self.run_command(f"ip link set {mesh_bridge} type bridge ageing_time 0", namespace="hidden-mesh", check=False)
         
-        # 1 second delay to ensure ageing takes effect
-        time.sleep(1.0)
+        # Short delay to ensure ageing takes effect (reduced from 1.0s)
+        time.sleep(0.1)
         
         # Flush specific device entries
         self.logger.info(f"Step 2: Flushing FDB entries for {mesh_veth}")
@@ -972,28 +972,28 @@ class HostNamespaceManager:
         self.logger.info(f"Step 4: Flushing all bridge FDB entries")
         self.run_command(f"bridge fdb flush dev {mesh_bridge} self", namespace="hidden-mesh", check=False)
         
-        # 1 second delay before restoring ageing
-        time.sleep(1.0)
+        # Short delay before restoring ageing (reduced from 1.0s)
+        time.sleep(0.1)
         
         # Restore normal ageing time
         self.logger.info(f"Step 5: Restoring bridge ageing time")
         self.run_command(f"ip link set {mesh_bridge} type bridge ageing_time 30000", namespace="hidden-mesh", check=False)
         
-        # Final 1 second delay to ensure settings are applied
-        time.sleep(1.0)
+        # Short delay to ensure settings are applied (reduced from 1.0s)
+        time.sleep(0.2)
         
         # Configure host IP
         self.run_command(f"ip addr add {primary_ip} dev eth0", namespace=host_name)
         self.run_command(f"ip link set eth0 up", namespace=host_name)
         
-        # 1 second delay after bringing up interface
-        time.sleep(1.0)
+        # Short delay after bringing up interface (reduced from 1.0s)
+        time.sleep(0.3)
         
         # Add 1ms latency to physical interface for realistic network behavior
         self.configure_host_latency(host_name, "eth0", latency_ms=1.0)
         
-        # Final 1 second delay to allow everything to stabilize
-        time.sleep(1.0)
+        # Short delay to allow everything to stabilize (reduced from 1.0s)
+        time.sleep(0.5)
         
         # Clear neighbor cache on host to ensure fresh ARP
         self.logger.info(f"Clearing neighbor cache on host {host_name}")
@@ -1004,38 +1004,30 @@ class HostNamespaceManager:
             self.logger.info(f"Clearing neighbor cache on router {target_router}")
             self.run_command(f"ip neigh flush all", namespace=target_router, check=False)
         
-        # Extra delay to ensure bridge forwarding is ready
-        self.logger.info("Waiting 2 seconds for bridge forwarding to stabilize...")
-        time.sleep(2.0)
+        # Minimal delay to ensure bridge forwarding is ready (reduced from 2.0s)
+        self.logger.info("Waiting for bridge forwarding to stabilize...")
+        time.sleep(0.5)
         
         # Trigger bidirectional traffic to ensure bridge MAC learning
         if gateway_ip and target_router:
             self.logger.info(f"Triggering bidirectional traffic for bridge MAC learning")
             
-            # Step 1: Send broadcast ping from host to trigger initial learning
-            self.logger.info(f"Sending broadcast ping from host")
+            # Use non-blocking pings to speed up MAC learning
+            self.logger.info(f"Triggering non-blocking pings for fast MAC learning")
             host_network = ipaddress.IPv4Network(primary_ip, strict=False)
             broadcast_ip = str(host_network.broadcast_address)
-            self.run_command(f"ping -b -c 1 -w 1 {broadcast_ip}", namespace=host_name, check=False)
+            host_ip_only = primary_ip.split('/')[0]
             
-            # Small delay
-            time.sleep(0.5)
+            # Launch all pings in background (non-blocking)
+            self.run_command(f"ping -b -c 1 -W 1 {broadcast_ip} >/dev/null 2>&1 &", namespace=host_name, check=False)
             
-            # Step 2: Ping from router to host to trigger learning in reverse direction
             if target_router in self.available_namespaces:
-                self.logger.info(f"Pinging from router to host")
-                host_ip_only = primary_ip.split('/')[0]
-                self.run_command(f"ping -c 1 -w 1 {host_ip_only}", namespace=target_router, check=False)
-                
-                # Small delay
-                time.sleep(0.5)
+                self.run_command(f"ping -c 1 -W 1 {host_ip_only} >/dev/null 2>&1 &", namespace=target_router, check=False)
             
-            # Step 3: Now try regular ping from host to gateway
-            self.logger.info(f"Final ping from host to gateway")
-            self.run_command(f"ping -c 1 -w 1 {gateway_ip}", namespace=host_name, check=False)
+            self.run_command(f"ping -c 1 -W 1 {gateway_ip} >/dev/null 2>&1 &", namespace=host_name, check=False)
             
-            # Final delay
-            time.sleep(0.5)
+            # Single short delay for all pings to complete (reduced from 1.5s total)
+            time.sleep(0.3)
         
         connection_info = {
             "connection_type": "sim_mesh_direct",
@@ -1405,7 +1397,7 @@ class HostNamespaceManager:
                 # Flush dynamic entries on the bridge
                 self.run_command(f"ip link set {mesh_bridge} type bridge ageing_time 0", namespace="hidden-mesh", check=False)
                 import time
-                time.sleep(0.5)
+                time.sleep(0.1)
                 self.run_command(f"ip link set {mesh_bridge} type bridge ageing_time 30000", namespace="hidden-mesh", check=False)
                     
         except Exception as e:

@@ -68,7 +68,6 @@ class SequentialConnectivityTester:
         
         self.routers = {}
         self.router_ips = {}  # router_name -> [list of IPs]
-        self.ip_to_router = {}  # IP -> router_name (includes hosts) - DEPRECATED
         self.ip_to_namespaces = {}  # IP -> [list of namespace names] (supports multiple hosts with same IP)
         self.gateway_routers = set()  # Gateway routers that can handle public IPs
         self.hosts = {}  # host_name -> host_config
@@ -108,9 +107,7 @@ class SequentialConnectivityTester:
                         if ip_address and '/' in ip_address:
                             ip = ip_address.split('/')[0]
                             if not ip.startswith('127.'):
-                                # Maintain backward compatibility
-                                self.ip_to_router[ip] = router_name
-                                # Add to new multi-namespace mapping
+                                # Add to multi-namespace mapping
                                 if ip not in self.ip_to_namespaces:
                                     self.ip_to_namespaces[ip] = []
                                 if router_name not in self.ip_to_namespaces[ip]:
@@ -131,9 +128,7 @@ class SequentialConnectivityTester:
                         if ip_address and '/' in ip_address:
                             ip = ip_address.split('/')[0]
                             if not ip.startswith('127.'):
-                                # Maintain backward compatibility
-                                self.ip_to_router[ip] = host_name
-                                # Add to new multi-namespace mapping
+                                # Add to multi-namespace mapping
                                 if ip not in self.ip_to_namespaces:
                                     self.ip_to_namespaces[ip] = []
                                 if host_name not in self.ip_to_namespaces[ip]:
@@ -165,9 +160,7 @@ class SequentialConnectivityTester:
                     if primary_ip and '/' in primary_ip:
                         ip = primary_ip.split('/')[0]
                         if not ip.startswith('127.'):
-                            # Maintain backward compatibility
-                            self.ip_to_router[ip] = host_name
-                            # Add to new multi-namespace mapping
+                            # Add to multi-namespace mapping
                             if ip not in self.ip_to_namespaces:
                                 self.ip_to_namespaces[ip] = []
                             if host_name not in self.ip_to_namespaces[ip]:
@@ -185,9 +178,7 @@ class SequentialConnectivityTester:
                         if secondary_ip and '/' in secondary_ip:
                             ip = secondary_ip.split('/')[0]
                             if not ip.startswith('127.'):
-                                # Maintain backward compatibility
-                                self.ip_to_router[ip] = host_name
-                                # Add to new multi-namespace mapping
+                                # Add to multi-namespace mapping
                                 if ip not in self.ip_to_namespaces:
                                     self.ip_to_namespaces[ip] = []
                                 if host_name not in self.ip_to_namespaces[ip]:
@@ -231,9 +222,7 @@ class SequentialConnectivityTester:
                                     if addr.get('family') == 'inet':
                                         ip = addr.get('local', '')
                                         if ip and not ip.startswith('127.'):
-                                            # Maintain backward compatibility
-                                            self.ip_to_router[ip] = router_name
-                                            # Add to new multi-namespace mapping
+                                            # Add to multi-namespace mapping
                                             if ip not in self.ip_to_namespaces:
                                                 self.ip_to_namespaces[ip] = []
                                             if router_name not in self.ip_to_namespaces[ip]:
@@ -507,7 +496,6 @@ class SequentialConnectivityTester:
                 self.added_public_ip_hosts.add(public_ip)
                 
                 # Update our IP mappings
-                self.ip_to_router[public_ip] = host_name
                 if public_ip not in self.ip_to_namespaces:
                     self.ip_to_namespaces[public_ip] = []
                 if host_name not in self.ip_to_namespaces[public_ip]:
@@ -560,8 +548,6 @@ class SequentialConnectivityTester:
             self.added_public_ip_hosts.discard(public_ip)
             
             # Update our IP mappings
-            if public_ip in self.ip_to_router:
-                del self.ip_to_router[public_ip]
             if public_ip in self.ip_to_namespaces:
                 self.ip_to_namespaces[public_ip] = [ns for ns in self.ip_to_namespaces[public_ip] if ns != host_name]
                 if not self.ip_to_namespaces[public_ip]:
@@ -698,21 +684,6 @@ class SequentialConnectivityTester:
         except Exception as e:
             return False, f"Error: {str(e)}", ""
     
-    def ping_test(self, source_ip: str, dest_ip: str, timeout: int = 3, count: int = 3) -> Tuple[bool, str, str]:
-        """Legacy ping test - uses first namespace with source IP.
-        
-        DEPRECATED: Use ping_test_from_namespace for multiple namespace support.
-        
-        Returns:
-            Tuple[bool, str, str]: (success, summary, full_output)
-        """
-        source_router = self.ip_to_router.get(source_ip)
-        
-        if not source_router:
-            return False, f"Source IP {source_ip} not found", ""
-            
-        # Use the new function with the single namespace
-        return self.ping_test_from_namespace(source_router, source_ip, dest_ip, timeout, count)
         
         try:
             result = subprocess.run(
@@ -798,21 +769,44 @@ class SequentialConnectivityTester:
                 lines = result.stdout.strip().split('\n')
                 hop_count = 0
                 reached_dest = False
+                last_hop_ip = None
+                last_hop_loss = None
                 
                 for line in lines:
-                    # Skip header lines
-                    if line.strip() and not line.startswith('Start:') and not line.startswith('HOST:'):
+                    # Look for hop lines that start with hop number like "  1.|--"
+                    line = line.strip()
+                    if line and '.|--' in line:
+                        # This is a hop line
+                        # Format: "  1.|-- 10.1.1.1                  0.0%     1    0.5   0.5   0.5   0.5   0.0"
                         parts = line.split()
-                        if len(parts) >= 2:
+                        if len(parts) >= 3:
                             hop_count += 1
-                            # Check if we reached the destination
-                            if parts[1] == dest_ip:
-                                reached_dest = True
-                                
-                if reached_dest:
-                    return True, f"Reached in {hop_count} hops", result.stdout
+                            # IP address is always at position 1 (after hop number)
+                            if len(parts) > 1:
+                                last_hop_ip = parts[1]
+                                if last_hop_ip == dest_ip:
+                                    reached_dest = True
+                            
+                            # Loss percentage is always at position 2
+                            if len(parts) > 2 and parts[2].endswith('%'):
+                                try:
+                                    last_hop_loss = float(parts[2].rstrip('%'))
+                                except ValueError:
+                                    pass
+                
+                # Check success criteria:
+                # 1. Last hop must contain destination IP
+                # 2. Loss must be less than 50% (reachability > 50%)
+                if hop_count == 0:
+                    return False, "No hops found in MTR output", result.stdout
+                elif last_hop_ip != dest_ip:
+                    return False, f"Last hop ({last_hop_ip}) does not match destination ({dest_ip})", result.stdout
+                elif last_hop_loss is not None and last_hop_loss >= 50.0:
+                    return False, f"Destination unreachable (loss: {last_hop_loss}%)", result.stdout
                 else:
-                    return True, f"Traced {hop_count} hops", result.stdout
+                    # Success: reached destination with acceptable loss
+                    loss_msg = f", loss: {last_hop_loss}%" if last_hop_loss is not None else ""
+                    return True, f"Reached in {hop_count} hops{loss_msg}", result.stdout
             else:
                 # Parse error
                 if "mtr: can't find interface" in result.stderr:
@@ -825,21 +819,6 @@ class SequentialConnectivityTester:
         except Exception as e:
             return False, f"Error: {str(e)}", ""
     
-    def mtr_test(self, source_ip: str, dest_ip: str, timeout: int = 10, count: int = 10) -> Tuple[bool, str, str]:
-        """Legacy MTR test - uses first namespace with source IP.
-        
-        DEPRECATED: Use mtr_test_from_namespace for multiple namespace support.
-        
-        Returns:
-            Tuple[bool, str, str]: (success, summary, full_output)
-        """
-        source_router = self.ip_to_router.get(source_ip)
-        
-        if not source_router:
-            return False, f"Source IP {source_ip} not found", ""
-            
-        # Use the new function with the single namespace
-        return self.mtr_test_from_namespace(source_router, source_ip, dest_ip, timeout, count)
             
     def _handle_test_result(self, source_router: str, dest_router: str, source_ip: str, dest_ip: str,
                            success: bool, summary: str, full_output: str, test_type: str,
@@ -1019,7 +998,7 @@ class SequentialConnectivityTester:
                 
             # Run test based on test_type
             if self.test_type in ['ping', 'both']:
-                success, summary, full_output = self.ping_test(source_ip, dest_ip, self.ping_timeout, self.ping_count)
+                success, summary, full_output = self.ping_test_from_namespace(source_router, source_ip, dest_ip, self.ping_timeout, self.ping_count)
                 router_passed, router_failed = self._handle_test_result(
                     source_router, dest_router, source_ip, dest_ip,
                     success, summary, full_output, 'PING',
@@ -1029,7 +1008,7 @@ class SequentialConnectivityTester:
                 )
                 
             if self.test_type in ['mtr', 'both']:
-                success, summary, full_output = self.mtr_test(source_ip, dest_ip, self.mtr_timeout, self.mtr_count)
+                success, summary, full_output = self.mtr_test_from_namespace(source_router, source_ip, dest_ip, self.mtr_timeout, self.mtr_count)
                 router_passed, router_failed = self._handle_test_result(
                     source_router, dest_router, source_ip, dest_ip,
                     success, summary, full_output, 'MTR',
@@ -1187,7 +1166,43 @@ class SequentialConnectivityTester:
                                     for line in stdout.rstrip('\n').split('\n'):
                                         print(line)
                                 
-                                success = process.returncode == 0
+                                # For MTR, parse output to check success criteria
+                                if process.returncode == 0 and stdout:
+                                    # Parse MTR output
+                                    lines = stdout.strip().split('\n')
+                                    hop_count = 0
+                                    last_hop_ip = None
+                                    last_hop_loss = None
+                                    
+                                    for line in lines:
+                                        line = line.strip()
+                                        if line and '.|--' in line:
+                                            # Format: "  1.|-- 10.1.1.1                  0.0%     1    0.5   0.5   0.5   0.5   0.0"
+                                            parts = line.split()
+                                            if len(parts) >= 3:
+                                                hop_count += 1
+                                                # IP address is at position 1
+                                                if len(parts) > 1:
+                                                    last_hop_ip = parts[1]
+                                                # Loss percentage is at position 2
+                                                if len(parts) > 2 and parts[2].endswith('%'):
+                                                    try:
+                                                        last_hop_loss = float(parts[2].rstrip('%'))
+                                                    except ValueError:
+                                                        pass
+                                    
+                                    # Check success criteria
+                                    if hop_count == 0:
+                                        success = False
+                                    elif last_hop_ip != dest_ip:
+                                        success = False
+                                    elif last_hop_loss is not None and last_hop_loss >= 50.0:
+                                        success = False
+                                    else:
+                                        success = True
+                                else:
+                                    success = False
+                                
                                 result = type('Result', (), {
                                     'returncode': process.returncode,
                                     'stdout': stdout,
@@ -1211,7 +1226,43 @@ class SequentialConnectivityTester:
                                 full_cmd, shell=True, capture_output=True, text=True
                             )
                             
-                            success = result.returncode == 0
+                            # For MTR, parse output to check success criteria
+                            if test_name == 'mtr' and result.returncode == 0 and result.stdout:
+                                # Parse MTR output
+                                lines = result.stdout.strip().split('\n')
+                                hop_count = 0
+                                last_hop_ip = None
+                                last_hop_loss = None
+                                
+                                for line in lines:
+                                    line = line.strip()
+                                    if line and '.|--' in line:
+                                        # Format: "  1.|-- 10.1.1.1                  0.0%     1    0.5   0.5   0.5   0.5   0.0"
+                                        parts = line.split()
+                                        if len(parts) >= 3:
+                                            hop_count += 1
+                                            # IP address is at position 1
+                                            if len(parts) > 1:
+                                                last_hop_ip = parts[1]
+                                            # Loss percentage is at position 2
+                                            if len(parts) > 2 and parts[2].endswith('%'):
+                                                try:
+                                                    last_hop_loss = float(parts[2].rstrip('%'))
+                                                except ValueError:
+                                                    pass
+                                
+                                # Check success criteria
+                                if hop_count == 0:
+                                    success = False
+                                elif last_hop_ip != dest_ip:
+                                    success = False
+                                elif last_hop_loss is not None and last_hop_loss >= 50.0:
+                                    success = False
+                                else:
+                                    success = True
+                            else:
+                                # For ping or failed MTR, just check return code
+                                success = result.returncode == 0
                         
                         # In interactive mode with verbose >= 1, output was already streamed
                         if not (is_interactive and self.verbose >= 1):

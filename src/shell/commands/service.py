@@ -129,7 +129,7 @@ class ServiceCommands(BaseCommandHandler):
             return 1
     
     def _handle_command_impl(self, args: str) -> Optional[int]:
-        """Handle service command with subcommands (legacy support)."""
+        """Handle service command with subcommands."""
         # Check for help flags first
         args_list = args.strip().split() if args.strip() else []
         if not args.strip() or '--help' in args_list or '-h' in args_list:

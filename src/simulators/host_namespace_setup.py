@@ -1397,35 +1397,6 @@ class HostNamespaceManager:
                 mesh_veth = host_config.get("mesh_veth")
                 if mesh_veth:
                     self.run_command(f"ip netns exec hidden-mesh ip link del {mesh_veth}", check=False)
-            elif connection_type == "sim_namespace":
-                # Remove sim veth from host namespace (simulation bridge connection) - legacy
-                sim_veth = host_config.get("sim_veth")
-                if sim_veth:
-                    self.run_command(f"ip link del {sim_veth}", check=False)
-            elif connection_type == "mesh_direct":
-                # Remove mesh veth from host namespace (shared mesh) - legacy
-                mesh_veth = host_config.get("mesh_veth")
-                if mesh_veth:
-                    self.run_command(f"ip link del {mesh_veth}", check=False)
-            elif connection_type == "bridge_direct":
-                # Remove bridge veth from router namespace (legacy)
-                connected_router = host_config.get("connected_to")
-                bridge_veth = host_config.get("bridge_veth")
-                if connected_router and bridge_veth and connected_router in self.available_namespaces:
-                    self.run_command(f"ip link del {bridge_veth}", namespace=connected_router, check=False)
-            elif connection_type == "veth_pair":
-                # Remove legacy veth pair
-                connected_router = host_config.get("connected_to")
-                router_veth = host_config.get("router_veth")
-                if connected_router and router_veth and connected_router in self.available_namespaces:
-                    # Remove specific host route if it exists
-                    primary_ip = host_config.get("primary_ip", "")
-                    if primary_ip and '/' in primary_ip:
-                        host_ip = primary_ip.split('/')[0]
-                        self.run_command(f"ip route del {host_ip}/32 dev {router_veth}", namespace=connected_router, check=False)
-                    
-                    # Remove veth from router namespace
-                    self.run_command(f"ip link del {router_veth}", namespace=connected_router, check=False)
             
             # Clean bridge FDB entries if we have the mesh bridge info
             mesh_bridge = host_config.get("mesh_bridge")

@@ -23,6 +23,9 @@ declare SERVICE_STARTED=false
 declare TRACE_FILE=""
 declare INTERACTIVE_MODE=false
 
+# Get precise start time at script beginning
+SCRIPT_START_TIME=$(python3 -c "import time; print(time.time())")
+
 # Input parameters
 SOURCE_IP=""
 SOURCE_PORT=""
@@ -40,6 +43,13 @@ declare -A JSON_RESULTS
 # Function to get current timestamp
 get_timestamp() {
     date +%s.%N
+}
+
+# Function to get elapsed time since script start
+get_elapsed_time() {
+    local current_time=$(python3 -c "import time; print(time.time())")
+    local elapsed=$(echo "scale=2; $current_time - $SCRIPT_START_TIME" | bc)
+    printf "%5.2f" "$elapsed"
 }
 
 # Function to format duration
@@ -73,8 +83,8 @@ tsimsh_exec() {
     local command="$1"
     local capture_output="${2:-false}"
     
-    # Debug: print command to stderr
-    echo "[$(basename "$0")] tsimsh: $command" >&2
+    # Debug: print command to stderr with timing
+    echo "$(get_elapsed_time) tsimsh: $command" >&2
     
     if [[ "$capture_output" == "true" ]]; then
         # Only capture stdout, filter out info lines starting with ℹ
@@ -480,32 +490,61 @@ phase3_reachability_tests() {
     
     local overall_result="success"
     
-    # Test 1: ICMP Ping
-    start_step "ping"
-    local ping_result=$(tsimsh_exec "ping --source ${SOURCE_IP} --destination ${DEST_IP} --timeout 1 --count 2 --json" true)
-    local ping_return=$?
+    # Run all three tests in parallel
+    local ping_file="${TEMP_DIR}/ping_result.json"
+    local mtr_file="${TEMP_DIR}/mtr_result.json"
+    local service_file="${TEMP_DIR}/service_result.json"
+    
+    # Test 1: ICMP Ping (background)
+    {
+        start_step "ping"
+        tsimsh_exec "ping --source ${SOURCE_IP} --destination ${DEST_IP} --timeout 1 --count 2 --json" true > "$ping_file"
+        echo $? > "${ping_file}.rc"
+    } &
+    local ping_pid=$!
+    
+    # Test 2: MTR (background)
+    {
+        start_step "mtr"
+        tsimsh_exec "mtr --source ${SOURCE_IP} --destination ${DEST_IP} --timeout 1 --count 2 --json" true > "$mtr_file"
+        echo $? > "${mtr_file}.rc"
+    } &
+    local mtr_pid=$!
+    
+    # Test 3: Service Test (background)
+    {
+        start_step "service_test"
+        tsimsh_exec "service test --source ${SOURCE_IP} --destination ${DEST_IP}:${DEST_PORT} --protocol ${PROTOCOL} --timeout 1 --json" true > "$service_file"
+        echo $? > "${service_file}.rc"
+    } &
+    local service_pid=$!
+    
+    # Wait for all tests to complete
+    wait $ping_pid
+    wait $mtr_pid
+    wait $service_pid
+    
+    # Collect results
+    local ping_result=$(cat "$ping_file" 2>/dev/null || echo "{}")
+    local ping_return=$(cat "${ping_file}.rc" 2>/dev/null || echo "1")
     JSON_RESULTS[ping_result]="$ping_result"
     JSON_RESULTS[ping_return_code]="$ping_return"
     end_step "$ping_result"
     
-    # Test 2: MTR
-    start_step "mtr"
-    local mtr_result=$(tsimsh_exec "mtr --source ${SOURCE_IP} --destination ${DEST_IP} --timeout 1 --count 2 --json" true)
-    local mtr_return=$?
+    local mtr_result=$(cat "$mtr_file" 2>/dev/null || echo "{}")
+    local mtr_return=$(cat "${mtr_file}.rc" 2>/dev/null || echo "1")
     JSON_RESULTS[mtr_result]="$mtr_result"
     JSON_RESULTS[mtr_return_code]="$mtr_return"
     end_step "$mtr_result"
     
-    # Test 3: Service Test
-    start_step "service_test"
-    local service_result=$(tsimsh_exec "service test --source ${SOURCE_IP} --destination ${DEST_IP}:${DEST_PORT} --protocol ${PROTOCOL} --timeout 1 --json" true)
-    local service_return=$?
+    local service_result=$(cat "$service_file" 2>/dev/null || echo "{}")
+    local service_return=$(cat "${service_file}.rc" 2>/dev/null || echo "1")
     JSON_RESULTS[service_result]="$service_result"
     JSON_RESULTS[service_return_code]="$service_return"
     end_step "$service_result"
     
     # Analyze service test results to determine reachability per router
-    if [[ -n "$service_result" ]]; then
+    if [[ -n "$service_result" && "$service_result" != "{}" ]]; then
         # Extract per-router results from service test
         local router_results=$(echo "$service_result" | python3 -c "
 import sys, json
@@ -546,17 +585,59 @@ phase4_packet_analysis() {
     
     start_step "packet_count_analysis"
     
-    local packet_analysis_results=()
-    
-    # For each router in path
+    # Prepare router array for parallel processing
+    local router_array=()
     while IFS= read -r router; do
         [[ -z "$router" ]] && continue
-        
-        # Determine analysis mode based on the service test result for THIS specific router
-        local analysis_mode="blocking"  # default to blocking
-        if [[ -n "${JSON_RESULTS[router_service_results]}" ]]; then
-            # Extract the status for this specific router from router_service_results
-            local router_status=$(echo "${JSON_RESULTS[router_service_results]}" | python3 -c "
+        router_array+=("$router")
+    done <<< "$routers"
+    
+    # Step 1: Get "before" snapshots for ALL routers in parallel
+    local before_pids=()
+    for router in "${router_array[@]}"; do
+        {
+            local before_file="${TEMP_DIR}/${router}_before.json"
+            tsimsh_exec "network status --limit ${router} iptables --json" true > "$before_file"
+        } &
+        before_pids+=($!)
+    done
+    
+    # Wait for all "before" snapshots to complete
+    for pid in "${before_pids[@]}"; do
+        wait $pid
+    done
+    
+    # Step 2: Execute test traffic once (this affects all routers)
+    tsimsh_exec "service test --source ${SOURCE_IP} --destination ${DEST_IP}:${DEST_PORT} --protocol ${PROTOCOL} --timeout 1 --json" true >/dev/null
+    
+    # Step 3: Get "after" snapshots for ALL routers in parallel
+    local after_pids=()
+    for router in "${router_array[@]}"; do
+        {
+            local after_file="${TEMP_DIR}/${router}_after.json"
+            tsimsh_exec "network status --limit ${router} iptables --json" true > "$after_file"
+        } &
+        after_pids+=($!)
+    done
+    
+    # Wait for all "after" snapshots to complete
+    for pid in "${after_pids[@]}"; do
+        wait $pid
+    done
+    
+    # Step 4: Analyze packet counts for all routers in parallel
+    local analysis_pids=()
+    local analysis_results_dir="${TEMP_DIR}/analysis_results"
+    mkdir -p "$analysis_results_dir"
+    
+    for router in "${router_array[@]}"; do
+        local result_file="${analysis_results_dir}/${router}.json"
+        {
+            # Determine analysis mode based on the service test result for THIS specific router
+            local analysis_mode="blocking"  # default to blocking
+            if [[ -n "${JSON_RESULTS[router_service_results]}" ]]; then
+                # Extract the status for this specific router from router_service_results
+                local router_status=$(echo "${JSON_RESULTS[router_service_results]}" | python3 -c "
 import sys, json
 try:
     data = json.loads(sys.stdin.read())
@@ -564,34 +645,41 @@ try:
 except:
     print('FAIL')
 ")
-            if [[ "$router_status" == "OK" ]]; then
-                analysis_mode="allowing"
+                if [[ "$router_status" == "OK" ]]; then
+                    analysis_mode="allowing"
+                fi
+            fi
+            
+            start_step "analyze_packet_counts.py $router -m $analysis_mode"
+            
+            local before_file="${TEMP_DIR}/${router}_before.json"
+            local after_file="${TEMP_DIR}/${router}_after.json"
+            
+            # Run packet count analysis with appropriate mode
+            echo "$(get_elapsed_time) ${SCRIPT_DIR}/analyze_packet_counts.py $router $before_file $after_file -m $analysis_mode" >&2
+            "${SCRIPT_DIR}/analyze_packet_counts.py" "$router" "$before_file" "$after_file" -m "$analysis_mode" > "$result_file" 2>/dev/null || echo "{}" > "$result_file"
+            
+            end_step "completed"
+        } &
+        analysis_pids+=($!)
+    done
+    
+    # Wait for all analyses to complete
+    for pid in "${analysis_pids[@]}"; do
+        wait $pid
+    done
+    
+    # Step 5: Gather results from analyzer processes
+    local packet_analysis_results=()
+    for router in "${router_array[@]}"; do
+        local result_file="${analysis_results_dir}/${router}.json"
+        if [[ -f "$result_file" ]]; then
+            local result=$(cat "$result_file")
+            if [[ -n "$result" && "$result" != "{}" ]]; then
+                packet_analysis_results+=("$result")
             fi
         fi
-        
-        start_step "analyze_packet_counts.py $router -m $analysis_mode"
-        
-        # Get initial packet counts for THIS router only
-        local before_file="${TEMP_DIR}/${router}_before.json"
-        tsimsh_exec "network status --limit ${router} iptables --json" true > "$before_file"
-        
-        # Attempt connection again through THIS router
-        tsimsh_exec "service test --source ${SOURCE_IP} --destination ${DEST_IP}:${DEST_PORT} --protocol ${PROTOCOL} --timeout 1 --json" true >/dev/null
-        
-        # Get final packet counts for THIS router only
-        local after_file="${TEMP_DIR}/${router}_after.json"
-        tsimsh_exec "network status --limit ${router} iptables --json" true > "$after_file"
-        
-        # Run packet count analysis with appropriate mode
-        echo "[$(basename "$0")] ${SCRIPT_DIR}/analyze_packet_counts.py $router $before_file $after_file -m $analysis_mode" >&2
-        local analysis_result=$("${SCRIPT_DIR}/analyze_packet_counts.py" "$router" "$before_file" "$after_file" -m "$analysis_mode" 2>/dev/null || echo "{}")
-        
-        if [[ -n "$analysis_result" && "$analysis_result" != "{}" ]]; then
-            packet_analysis_results+=("$analysis_result")
-        fi
-        
-        end_step "completed"
-    done <<< "$routers"
+    done
     
     # Combine all packet analysis results
     if [[ ${#packet_analysis_results[@]} -gt 0 ]]; then

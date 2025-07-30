@@ -46,6 +46,10 @@ import ipaddress
 from pathlib import Path
 from typing import Dict, List, Tuple, Set, Optional
 
+# Import configuration loader
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from core.config_loader import get_registry_paths
+
 
 
 class SequentialConnectivityTester:
@@ -72,7 +76,12 @@ class SequentialConnectivityTester:
         self.gateway_routers = set()  # Gateway routers that can handle public IPs
         self.hosts = {}  # host_name -> host_config
         self.host_namespaces = set()  # Track which namespaces are hosts
-        self.host_registry_file = Path("/tmp/traceroute_hosts_registry.json")
+        
+        # Load registry paths from configuration
+        registry_paths = get_registry_paths()
+        self.host_registry_file = Path(registry_paths['hosts'])
+        self.bridge_registry_file = Path(registry_paths['bridges'])
+        
         self.added_public_ip_hosts = set()  # Track temporarily added public IP hosts
         
         self.total_tests = 0
@@ -89,9 +98,8 @@ class SequentialConnectivityTester:
         """Load router facts and build IP mappings, including hosts from bridge registry."""
         # Load bridge registry to get hosts
         try:
-            bridge_registry_file = Path("/tmp/traceroute_bridges_registry.json")
-            if bridge_registry_file.exists():
-                with open(bridge_registry_file, 'r') as f:
+            if self.bridge_registry_file.exists():
+                with open(self.bridge_registry_file, 'r') as f:
                     bridge_registry = json.load(f)
                     
                 # Process all bridges

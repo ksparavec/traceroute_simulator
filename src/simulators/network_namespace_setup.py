@@ -49,9 +49,10 @@ class FlushingWrapper:
 sys.stdout = FlushingWrapper(sys.stdout)
 sys.stderr = FlushingWrapper(sys.stderr)
 
-# Import the raw facts block loader
+# Import the raw facts block loader and config loader
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from core.raw_facts_block_loader import RawFactsBlockLoader, RouterRawFacts
+from core.config_loader import get_registry_paths
 
 
 class HiddenMeshNetworkSetup:
@@ -90,15 +91,18 @@ class HiddenMeshNetworkSetup:
         self.router_codes: Dict[str, str] = {}  # full_name -> short_code
         self.code_to_router: Dict[str, str] = {}  # short_code -> full_name
         
+        # Load registry paths from configuration
+        registry_paths = get_registry_paths()
+        
         # Router registry for persistent code mapping
-        self.router_registry_file = Path("/tmp/traceroute_routers_registry.json")
+        self.router_registry_file = Path(registry_paths['routers'])
         
         # Interface registry for persistent interface numbering
-        self.interface_registry_file = Path("/tmp/traceroute_interfaces_registry.json")
+        self.interface_registry_file = Path(registry_paths['interfaces'])
         self.interface_registry: Dict[str, Dict[str, str]] = {}  # router_code -> {interface_name -> interface_code}
         
         # Bridge registry for subnet bridge tracking
-        self.bridge_registry_file = Path("/tmp/traceroute_bridges_registry.json")
+        self.bridge_registry_file = Path(registry_paths['bridges'])
         # Enhanced bridge registry: bridge_name -> {"routers": {router_name: {interface, ipv4, state}}, "hosts": {host_name: {interface, ipv4, state}}}
         self.bridge_registry: Dict[str, Dict[str, Dict[str, Dict[str, str]]]] = {}
         

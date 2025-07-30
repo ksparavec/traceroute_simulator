@@ -34,6 +34,10 @@ import re
 from typing import List, Set
 from pathlib import Path
 
+# Import configuration loader
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from core.config_loader import get_registry_paths
+
 
 class NetworkNamespaceCleanup:
     """
@@ -57,11 +61,14 @@ class NetworkNamespaceCleanup:
         self.limit_pattern = limit_pattern
         self.setup_logging()
         
+        # Load registry paths from configuration
+        registry_paths = get_registry_paths()
+        
         # Registry file paths
-        self.router_registry_file = Path("/tmp/traceroute_routers_registry.json")
-        self.interface_registry_file = Path("/tmp/traceroute_interfaces_registry.json")
-        self.host_registry_file = Path("/tmp/traceroute_hosts_registry.json")
-        self.bridge_registry_file = Path("/tmp/traceroute_bridges_registry.json")
+        self.router_registry_file = Path(registry_paths['routers'])
+        self.interface_registry_file = Path(registry_paths['interfaces'])
+        self.host_registry_file = Path(registry_paths['hosts'])
+        self.bridge_registry_file = Path(registry_paths['bridges'])
         
         # Dynamic router discovery from existing registries and namespaces
         self.known_routers: Set[str] = set()

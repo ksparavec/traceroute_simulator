@@ -8,6 +8,7 @@ gnureadline
 httplib2
 idna
 pip
+posix_ipc
 psutil
 pyaml
 pycurl

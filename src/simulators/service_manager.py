@@ -26,6 +26,8 @@ from typing import Dict, List, Optional, Tuple, Any
 from dataclasses import dataclass, field, asdict
 from enum import Enum
 import socket
+import posix_ipc
+import hashlib
 
 # Use relative imports for package compatibility
 from ..core.exceptions import (
@@ -34,6 +36,7 @@ from ..core.exceptions import (
 )
 from ..core.models import IptablesRule
 from ..core.structured_logging import get_logger, setup_logging
+from ..core.config_loader import get_registry_paths
 
 
 class ServiceProtocol(str, Enum):
@@ -174,36 +177,72 @@ class ServiceManager:
         setup_logging(verbose_level)
         self.logger = get_logger(__name__, verbose_level)
         
+        # Load registry paths from configuration
+        registry_paths = get_registry_paths()
+        
         # Service registry
-        self.registry_file = Path("/tmp/traceroute_services_registry.json")
+        self.registry_file = Path(registry_paths['services'])
+        
+        # Initialize semaphore for atomic operations
+        self._init_semaphore()
+        
+        # Load registry with atomic operations
         self.services: Dict[str, ServiceConfig] = self._load_registry()
         
+    def _init_semaphore(self):
+        """Initialize POSIX semaphore for service registry."""
+        self.sem_name = "/tsim_services_reg"
+        try:
+            # Try to open existing semaphore first
+            self.semaphore = posix_ipc.Semaphore(self.sem_name)
+        except posix_ipc.ExistentialError:
+            # Create new semaphore if it doesn't exist
+            try:
+                self.semaphore = posix_ipc.Semaphore(self.sem_name, posix_ipc.O_CREAT | posix_ipc.O_EXCL, initial_value=1)
+            except posix_ipc.ExistentialError:
+                # Another process created it between our check and create
+                self.semaphore = posix_ipc.Semaphore(self.sem_name)
+        except Exception as e:
+            self.logger.warning(f"Failed to access semaphore, using fallback", error=str(e))
+            # Create with a unique name as fallback
+            unique_suffix = hashlib.md5(str(os.getpid()).encode()).hexdigest()[:8]
+            self.sem_name = f"/tsim_services_reg_{unique_suffix}"
+            self.semaphore = posix_ipc.Semaphore(self.sem_name, posix_ipc.O_CREAT, initial_value=1)
+        
     def _load_registry(self) -> Dict[str, ServiceConfig]:
-        """Load service registry from disk."""
+        """Load service registry from disk with atomic operations."""
         if not self.registry_file.exists():
             return {}
             
         try:
-            with open(self.registry_file, 'r') as f:
-                data = json.load(f)
-            
-            services = {}
-            for key, config in data.items():
-                services[key] = ServiceConfig.from_dict(config)
-            return services
-            
+            self.semaphore.acquire()
+            try:
+                with open(self.registry_file, 'r') as f:
+                    data = json.load(f)
+                
+                services = {}
+                for key, config in data.items():
+                    services[key] = ServiceConfig.from_dict(config)
+                return services
+            finally:
+                self.semaphore.release()
+                
         except (json.JSONDecodeError, KeyError) as e:
             self.logger.warning(f"Failed to load service registry", error=str(e))
             return {}
     
     def _save_registry(self) -> None:
-        """Save service registry to disk."""
+        """Save service registry to disk with atomic operations."""
         data = {}
         for key, config in self.services.items():
             data[key] = config.to_dict()
             
-        with open(self.registry_file, 'w') as f:
-            json.dump(data, f, indent=2)
+        self.semaphore.acquire()
+        try:
+            with open(self.registry_file, 'w') as f:
+                json.dump(data, f, indent=2)
+        finally:
+            self.semaphore.release()
     
     def _get_service_key(self, namespace: str, name: str, port: int, protocol: str = None) -> str:
         """Generate unique service key."""
@@ -460,7 +499,9 @@ class ServiceManager:
         # Get active routers from bridge registry
         known_routers = set()
         try:
-            registry_file = Path("/tmp/traceroute_bridges_registry.json")
+            # Load registry paths from configuration
+            registry_paths = get_registry_paths()
+            registry_file = Path(registry_paths['bridges'])
             if registry_file.exists():
                 with open(registry_file, 'r') as f:
                     bridge_registry = json.load(f)
@@ -475,7 +516,7 @@ class ServiceManager:
         # Get active hosts from host registry
         hosts = {}
         try:
-            host_registry_file = Path("/tmp/traceroute_hosts_registry.json")
+            host_registry_file = Path(registry_paths['hosts'])
             if host_registry_file.exists():
                 with open(host_registry_file, 'r') as f:
                     hosts = json.load(f)

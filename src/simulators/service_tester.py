@@ -22,6 +22,7 @@ from typing import Optional, Tuple, Dict, List, Set
 # Use relative imports for package compatibility
 from .service_manager import ServiceClient, ServiceProtocol, ServiceConfig, ServiceManager
 from ..core.exceptions import NetworkError, ConfigurationError
+from ..core.config_loader import get_registry_paths
 
 
 class ServiceTester:
@@ -36,9 +37,12 @@ class ServiceTester:
         
     def _load_known_routers(self) -> set:
         """Load list of active routers from bridge registry."""
+        # Load registry paths
+        registry_paths = get_registry_paths()
+        
         routers = set()
         try:
-            registry_file = Path("/tmp/traceroute_bridges_registry.json")
+            registry_file = Path(registry_paths['bridges'])
             if registry_file.exists():
                 with open(registry_file, 'r') as f:
                     bridge_registry = json.load(f)
@@ -56,9 +60,12 @@ class ServiceTester:
         
     def _load_known_hosts(self) -> Dict[str, Dict]:
         """Load registered hosts from host registry."""
+        # Load registry paths
+        registry_paths = get_registry_paths()
+        
         hosts = {}
         try:
-            host_registry_file = Path("/tmp/traceroute_hosts_registry.json")
+            host_registry_file = Path(registry_paths['hosts'])
             if host_registry_file.exists():
                 with open(host_registry_file, 'r') as f:
                     hosts = json.load(f)
@@ -78,7 +85,9 @@ class ServiceTester:
         
         # Get router IPs from bridge registry
         try:
-            registry_file = Path("/tmp/traceroute_bridges_registry.json")
+            # Load registry paths
+            registry_paths = get_registry_paths()
+            registry_file = Path(registry_paths['bridges'])
             if registry_file.exists():
                 with open(registry_file, 'r') as f:
                     bridge_registry = json.load(f)
@@ -118,7 +127,7 @@ class ServiceTester:
         
         # Get additional host IPs from host registry (for secondary IPs)
         try:
-            host_registry_file = Path("/tmp/traceroute_hosts_registry.json")
+            host_registry_file = Path(registry_paths['hosts'])
             if host_registry_file.exists():
                 with open(host_registry_file, 'r') as f:
                     host_registry = json.load(f)
@@ -464,7 +473,9 @@ class ServiceTester:
             )
             
         # Load service registry to find the service names
-        registry_file = Path("/tmp/traceroute_services_registry.json")
+        # Load registry paths
+        registry_paths = get_registry_paths()
+        registry_file = Path(registry_paths['services'])
         if not registry_file.exists():
             raise ConfigurationError(
                 "No services found",

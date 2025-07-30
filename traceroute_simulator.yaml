@@ -13,9 +13,6 @@
 # 2. Configuration file values
 # 3. Hard-coded defaults
 
-# Network and routing configuration
-routing_dir: "routing_facts"                    # Directory containing routing facts
-
 # Output configuration  
 verbose: false                                  # Enable verbose output (-v flag)
 verbose_level: 1                               # Verbosity level (1=basic, 2=detailed)
@@ -24,23 +21,16 @@ json_output: false                             # Output results in JSON format
 
 # Tracing behavior
 enable_mtr_fallback: true                      # Enable MTR fallback for incomplete paths
-enable_reverse_trace: false                    # Enable reverse path tracing when forward fails
+enable_reverse_trace: true                     # Enable reverse path tracing when forward fails
 
 # Network discovery (required for reverse path tracing)
-controller_ip: null                            # Ansible controller IP (required for reverse tracing)
+controller_ip: "127.0.0.1"                            # Ansible controller IP (required for reverse tracing)
 
-# Examples of usage:
-#
-# Basic configuration for simulation-only mode:
-# enable_mtr_fallback: false
-# verbose: true
-#
-# JSON output with reverse tracing:
-# json_output: true  
-# enable_reverse_trace: true
-# verbose_level: 2
-#
-# Production environment with custom routing directory:
-# routing_dir: "/etc/traceroute-simulator/routing_facts"
-# enable_mtr_fallback: true
-# controller_ip: "192.168.1.100"
+# Registry files for network simulation state
+registry_files:
+  hosts: "/tmp/traceroute_hosts_registry.json"        # Host namespace registry
+  routers: "/tmp/traceroute_routers_registry.json"    # Router/host name to code mappings
+  interfaces: "/tmp/traceroute_interfaces_registry.json"  # Interface name to code mappings
+  bridges: "/tmp/traceroute_bridges_registry.json"    # Bridge and connection registry
+  services: "/tmp/traceroute_services_registry.json"  # Network services registry
+

@@ -47,6 +47,10 @@ import re
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Any
 
+# Import configuration loader
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from core.config_loader import get_registry_paths
+
 
 class NetworkNamespaceStatus:
     """
@@ -72,7 +76,11 @@ class NetworkNamespaceStatus:
         # Live namespace state tracking only
         self.hosts: Dict[str, Dict] = {}  # host registry data
         self.available_namespaces: Set[str] = set()
-        self.host_registry_file = Path("/tmp/traceroute_hosts_registry.json")
+        
+        # Load registry paths from configuration
+        registry_paths = get_registry_paths()
+        self.host_registry_file = Path(registry_paths['hosts'])
+        
         self.known_routers: Set[str] = set()  # routers from facts
         
         # Reversible name mapping reconstruction (from facts for display purposes only)

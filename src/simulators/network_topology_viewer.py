@@ -40,6 +40,10 @@ import sys
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Any
 
+# Import configuration loader
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from core.config_loader import get_registry_paths
+
 
 class NetworkTopologyViewer:
     """
@@ -63,7 +67,10 @@ class NetworkTopologyViewer:
         # Network state from facts only
         self.routers: Dict[str, Dict] = {}
         self.hosts: Dict[str, Dict] = {}  # host registry data
-        self.host_registry_file = Path("/tmp/traceroute_hosts_registry.json")
+        
+        # Load registry paths from configuration
+        registry_paths = get_registry_paths()
+        self.host_registry_file = Path(registry_paths['hosts'])
         
         # Subnet topology data (extracted from router facts)
         self.subnets: Dict[str, List[tuple]] = {}  # subnet -> [(router, interface, ip)]

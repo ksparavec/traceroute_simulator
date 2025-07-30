@@ -42,6 +42,12 @@ import ipaddress
 import re
 from pathlib import Path
 from typing import Dict, List, Set, Optional, Any, Tuple
+import posix_ipc
+import hashlib
+
+# Import configuration loader
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from core.config_loader import get_registry_paths
 
 
 class HostNamespaceManager:
@@ -60,12 +66,18 @@ class HostNamespaceManager:
         self.routers: Dict[str, Dict] = {}
         self.router_subnets: Dict[str, List[tuple]] = {}  # subnet -> [(router, interface, ip)]
         self.available_namespaces: Set[str] = set()
-        self.host_registry_file = Path("/tmp/traceroute_hosts_registry.json")
         
-        # Registry files for interface tracking
-        self.router_registry_file = Path("/tmp/traceroute_routers_registry.json")
-        self.interface_registry_file = Path("/tmp/traceroute_interfaces_registry.json")
+        # Load registry paths from configuration
+        registry_paths = get_registry_paths()
+        self.host_registry_file = Path(registry_paths['hosts'])
+        self.router_registry_file = Path(registry_paths['routers'])
+        self.interface_registry_file = Path(registry_paths['interfaces'])
+        self.bridge_registry_file = Path(registry_paths['bridges'])
+        
         self.interface_registry: Dict[str, Dict[str, str]] = {}  # host_code -> {interface_name -> interface_code}
+        
+        # Initialize semaphores for atomic registry operations
+        self._init_semaphores()
         
     def setup_logging(self):
         """Configure logging based on verbosity level."""
@@ -81,6 +93,90 @@ class HostNamespaceManager:
             format='%(levelname)s: %(message)s'
         )
         self.logger = logging.getLogger(__name__)
+    
+    def _init_semaphores(self):
+        """Initialize POSIX semaphores for registry files."""
+        # Semaphore names for each registry
+        self.sem_names = {
+            str(self.host_registry_file): "/tsim_hosts_reg",
+            str(self.router_registry_file): "/tsim_routers_reg", 
+            str(self.interface_registry_file): "/tsim_interfaces_reg",
+            str(self.bridge_registry_file): "/tsim_bridges_reg"
+        }
+        
+        # Create or open semaphores
+        self.semaphores = {}
+        for path, sem_name in self.sem_names.items():
+            try:
+                # Try to create semaphore with initial value 1
+                sem = posix_ipc.Semaphore(sem_name, flags=posix_ipc.O_CREX, initial_value=1)
+                self.semaphores[path] = sem
+                self.logger.debug(f"Created semaphore {sem_name}")
+            except posix_ipc.ExistentialError:
+                # Semaphore exists, open it
+                sem = posix_ipc.Semaphore(sem_name)
+                self.semaphores[path] = sem
+                self.logger.debug(f"Opened existing semaphore {sem_name}")
+    
+    def _atomic_json_operation(self, file_path: str, operation, timeout: float = 5.0):
+        """Perform atomic JSON file operation using semaphore locking.
+        
+        Args:
+            file_path: Path to the JSON file
+            operation: Function that takes current data and returns (success, result/updated_data)
+            timeout: Semaphore acquire timeout in seconds
+        """
+        path_str = str(file_path)
+        sem = self.semaphores.get(path_str)
+        
+        if not sem:
+            # Create semaphore for unknown file
+            path_hash = hashlib.md5(path_str.encode()).hexdigest()[:8]
+            sem_name = f"/tsim_custom_{path_hash}"
+            try:
+                sem = posix_ipc.Semaphore(sem_name, flags=posix_ipc.O_CREX, initial_value=1)
+            except posix_ipc.ExistentialError:
+                sem = posix_ipc.Semaphore(sem_name)
+            self.semaphores[path_str] = sem
+        
+        # Acquire semaphore
+        try:
+            sem.acquire(timeout)
+        except posix_ipc.BusyError:
+            self.logger.error(f"Failed to acquire lock for {file_path}")
+            return False, None
+        
+        try:
+            # Read current data
+            current_data = {}
+            if Path(file_path).exists():
+                try:
+                    with open(file_path, 'r') as f:
+                        current_data = json.load(f)
+                except (json.JSONDecodeError, IOError) as e:
+                    self.logger.warning(f"Error reading {file_path}: {e}")
+            
+            # Perform operation
+            success, result = operation(current_data)
+            
+            # If operation returns updated data, write it back
+            if success and isinstance(result, dict):
+                temp_file = Path(file_path).with_suffix('.tmp')
+                try:
+                    with open(temp_file, 'w') as f:
+                        json.dump(result, f, indent=2)
+                    temp_file.replace(Path(file_path))
+                except IOError as e:
+                    self.logger.error(f"Error writing {file_path}: {e}")
+                    if temp_file.exists():
+                        temp_file.unlink()
+                    return False, None
+            
+            return success, result
+            
+        finally:
+            # Always release semaphore
+            sem.release()
         
     def load_router_facts(self):
         """Load router facts to understand network topology."""
@@ -185,44 +281,38 @@ class HostNamespaceManager:
         return result
         
     def load_router_registry(self) -> Dict[str, str]:
-        """Load registry of router/host name to code mappings."""
-        if not self.router_registry_file.exists():
-            return {}
-            
-        try:
-            with open(self.router_registry_file, 'r') as f:
-                return json.load(f)
-        except (json.JSONDecodeError, IOError) as e:
-            self.logger.warning(f"Could not load router registry: {e}")
-            return {}
+        """Load registry of router/host name to code mappings atomically."""
+        def read_op(data):
+            return True, data
+        
+        success, registry = self._atomic_json_operation(self.router_registry_file, read_op)
+        return registry if success else {}
             
     def save_router_registry(self, registry: Dict[str, str]):
-        """Save registry of router/host name to code mappings."""
-        try:
-            with open(self.router_registry_file, 'w') as f:
-                json.dump(registry, f, indent=2)
-        except IOError as e:
-            self.logger.error(f"Could not save router registry: {e}")
+        """Save registry of router/host name to code mappings atomically."""
+        def write_op(current):
+            return True, registry
+        
+        success, _ = self._atomic_json_operation(self.router_registry_file, write_op)
+        if not success:
+            self.logger.error(f"Could not save router registry")
 
     def load_interface_registry(self) -> Dict[str, Dict[str, str]]:
-        """Load registry of interface name to code mappings per router/host."""
-        if not self.interface_registry_file.exists():
-            return {}
-            
-        try:
-            with open(self.interface_registry_file, 'r') as f:
-                return json.load(f)
-        except (json.JSONDecodeError, IOError) as e:
-            self.logger.warning(f"Could not load interface registry: {e}")
-            return {}
+        """Load registry of interface name to code mappings per router/host atomically."""
+        def read_op(data):
+            return True, data
+        
+        success, registry = self._atomic_json_operation(self.interface_registry_file, read_op)
+        return registry if success else {}
             
     def save_interface_registry(self):
-        """Save registry of interface name to code mappings per router/host."""
-        try:
-            with open(self.interface_registry_file, 'w') as f:
-                json.dump(self.interface_registry, f, indent=2)
-        except IOError as e:
-            self.logger.error(f"Could not save interface registry: {e}")
+        """Save registry of interface name to code mappings per router/host atomically."""
+        def write_op(current):
+            return True, self.interface_registry
+        
+        success, _ = self._atomic_json_operation(self.interface_registry_file, write_op)
+        if not success:
+            self.logger.error(f"Could not save interface registry")
 
     def get_host_code(self, host_name: str) -> str:
         """Get or generate host code for given host name."""
@@ -292,17 +382,8 @@ class HostNamespaceManager:
         self.save_interface_registry()
 
     def register_host_in_bridge_registry(self, host_name: str, primary_ip: str, bridge_name: str):
-        """Register host in the bridge registry."""
-        try:
-            registry_file = Path("/tmp/traceroute_bridges_registry.json")
-            if not registry_file.exists():
-                self.logger.error("Bridge registry not found")
-                return False
-                
-            with open(registry_file, 'r') as f:
-                bridge_registry = json.load(f)
-            
-            # Add host to the bridge
+        """Register host in the bridge registry atomically."""
+        def update_op(bridge_registry):
             if bridge_name in bridge_registry:
                 if 'hosts' not in bridge_registry[bridge_name]:
                     bridge_registry[bridge_name]['hosts'] = {}
@@ -313,19 +394,14 @@ class HostNamespaceManager:
                     "state": "UP"
                 }
                 
-                # Save updated registry
-                with open(registry_file, 'w') as f:
-                    json.dump(bridge_registry, f, indent=2)
-                    
                 self.logger.debug(f"Registered host {host_name} in bridge {bridge_name}")
-                return True
+                return True, bridge_registry
             else:
                 self.logger.error(f"Bridge {bridge_name} not found in registry")
-                return False
-                
-        except Exception as e:
-            self.logger.error(f"Error registering host in bridge registry: {e}")
-            return False
+                return False, bridge_registry
+        
+        success, _ = self._atomic_json_operation(str(self.bridge_registry_file), update_op)
+        return success
 
     def unregister_host_interfaces(self, host_name: str):
         """Unregister all interfaces for a host from the interface registry."""
@@ -353,15 +429,8 @@ class HostNamespaceManager:
             self.logger.debug(f"Unregistered host {host_name} from router registry")
 
     def unregister_host_from_bridge_registry(self, host_name: str):
-        """Unregister host from the bridge registry."""
-        try:
-            registry_file = Path("/tmp/traceroute_bridges_registry.json")
-            if not registry_file.exists():
-                return
-                
-            with open(registry_file, 'r') as f:
-                bridge_registry = json.load(f)
-            
+        """Unregister host from the bridge registry atomically."""
+        def update_op(bridge_registry):
             # Find and remove host from all bridges
             for bridge_name, bridge_info in bridge_registry.items():
                 hosts = bridge_info.get('hosts', {})
@@ -369,12 +438,9 @@ class HostNamespaceManager:
                     del hosts[host_name]
                     self.logger.debug(f"Unregistered host {host_name} from bridge {bridge_name}")
             
-            # Save updated registry
-            with open(registry_file, 'w') as f:
-                json.dump(bridge_registry, f, indent=2)
-                
-        except Exception as e:
-            self.logger.error(f"Error unregistering host from bridge registry: {e}")
+            return True, bridge_registry
+        
+        self._atomic_json_operation(str(self.bridge_registry_file), update_op)
         
     def check_command_availability(self, command: str) -> bool:
         """Check if a command is available on the system."""
@@ -430,24 +496,21 @@ class HostNamespaceManager:
             self.logger.warning(f"Error configuring latency for {host_name}:{interface}: {e}")
             
     def load_host_registry(self) -> Dict[str, Dict]:
-        """Load registry of existing hosts."""
-        if not self.host_registry_file.exists():
-            return {}
-            
-        try:
-            with open(self.host_registry_file, 'r') as f:
-                return json.load(f)
-        except (json.JSONDecodeError, IOError) as e:
-            self.logger.warning(f"Could not load host registry: {e}")
-            return {}
+        """Load registry of existing hosts atomically."""
+        def read_op(data):
+            return True, data
+        
+        success, registry = self._atomic_json_operation(self.host_registry_file, read_op)
+        return registry if success else {}
             
     def save_host_registry(self, registry: Dict[str, Dict]):
-        """Save registry of hosts."""
-        try:
-            with open(self.host_registry_file, 'w') as f:
-                json.dump(registry, f, indent=2)
-        except IOError as e:
-            self.logger.error(f"Could not save host registry: {e}")
+        """Save registry of hosts atomically."""
+        def write_op(current):
+            return True, registry
+        
+        success, _ = self._atomic_json_operation(self.host_registry_file, write_op)
+        if not success:
+            self.logger.error(f"Could not save host registry")
             
     def find_router_for_subnet(self, primary_ip: str) -> Optional[Tuple[str, str, str]]:
         """Find which router and interface can connect to the given IP."""
@@ -616,14 +679,14 @@ class HostNamespaceManager:
         try:
             host_network = ipaddress.IPv4Network(primary_ip, strict=False)
             
-            # Load bridge registry
-            registry_file = Path("/tmp/traceroute_bridges_registry.json")
-            if not registry_file.exists():
+            # Load bridge registry atomically
+            def read_op(data):
+                return True, data
+            
+            success, bridge_registry = self._atomic_json_operation(str(self.bridge_registry_file), read_op)
+            if not success or not bridge_registry:
                 self.logger.error("Bridge registry not found. Run netsetup first.")
                 return None
-                
-            with open(registry_file, 'r') as f:
-                bridge_registry = json.load(f)
             
             # Find bridge that contains this IP
             for bridge_name, bridge_info in bridge_registry.items():
@@ -650,14 +713,14 @@ class HostNamespaceManager:
     def find_router_bridge(self, router_name: str, interface_name: str) -> Optional[str]:
         """Find the bridge that a specific router interface is connected to."""
         try:
-            # Load bridge registry
-            registry_file = Path("/tmp/traceroute_bridges_registry.json")
-            if not registry_file.exists():
+            # Load bridge registry atomically
+            def read_op(data):
+                return True, data
+            
+            success, bridge_registry = self._atomic_json_operation(str(self.bridge_registry_file), read_op)
+            if not success or not bridge_registry:
                 self.logger.error("Bridge registry not found. Run netsetup first.")
                 return None
-                
-            with open(registry_file, 'r') as f:
-                bridge_registry = json.load(f)
             
             # Find bridge that contains this router and interface
             for bridge_name, bridge_info in bridge_registry.items():
@@ -704,12 +767,13 @@ class HostNamespaceManager:
     def get_all_registered_ips(self) -> Dict[str, Dict]:
         """Get all IP addresses registered in the bridge registry."""
         try:
-            registry_file = Path("/tmp/traceroute_bridges_registry.json")
-            if not registry_file.exists():
+            # Load bridge registry atomically
+            def read_op(data):
+                return True, data
+            
+            success, bridge_registry = self._atomic_json_operation(str(self.bridge_registry_file), read_op)
+            if not success:
                 return {}
-                
-            with open(registry_file, 'r') as f:
-                bridge_registry = json.load(f)
             
             all_ips = {}
             
@@ -1250,7 +1314,7 @@ class HostNamespaceManager:
             if bridge_name:
                 self.register_host_in_bridge_registry(host_name, primary_ip, bridge_name)
             
-            # Register host
+            # Register host atomically
             host_config = {
                 "primary_ip": primary_ip,
                 "secondary_ips": secondary_ips,
@@ -1265,8 +1329,14 @@ class HostNamespaceManager:
             # Add connection-specific information
             host_config.update(connection_info)
             
-            registry[host_name] = host_config
-            self.save_host_registry(registry)
+            # Use atomic operation to add host
+            def add_host_op(registry):
+                registry[host_name] = host_config
+                return True, registry
+            
+            success, _ = self._atomic_json_operation(self.host_registry_file, add_host_op)
+            if not success:
+                raise Exception("Failed to register host in registry")
             
             if self.verbose >= 1:
                 print(f"✓ Host {host_name} created successfully")
@@ -1307,9 +1377,13 @@ class HostNamespaceManager:
             # Remove host resources
             self.cleanup_host_resources(host_name, host_config)
             
-            # Remove from registry
-            del registry[host_name]
-            self.save_host_registry(registry)
+            # Remove from registry atomically
+            def remove_host_op(registry):
+                if host_name in registry:
+                    del registry[host_name]
+                return True, registry
+            
+            self._atomic_json_operation(self.host_registry_file, remove_host_op)
             
             if self.verbose >= 1:
                 print(f"✓ Host {host_name} removed successfully")
@@ -1468,6 +1542,15 @@ class HostNamespaceManager:
             return False
             
         return True
+    
+    def __del__(self):
+        """Cleanup semaphores on object destruction."""
+        if hasattr(self, 'semaphores'):
+            for sem in self.semaphores.values():
+                try:
+                    sem.close()
+                except:
+                    pass
 
 
 def main():

@@ -88,9 +88,9 @@ tsimsh_exec() {
     
     if [[ "$capture_output" == "true" ]]; then
         # Only capture stdout, filter out info lines starting with ℹ
-        source /home/sparavec/tsim-venv/bin/activate && echo "$command" | tsimsh -q | grep -v '^ℹ'
+        echo "$command" | tsimsh -q | grep -v '^ℹ'
     else
-        source /home/sparavec/tsim-venv/bin/activate && echo "$command" | tsimsh -q >/dev/null 2>&1
+        echo "$command" | tsimsh -q >/dev/null 2>&1
         return $?
     fi
 }

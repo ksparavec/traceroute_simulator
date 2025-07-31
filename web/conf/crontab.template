@@ -1,0 +1,8 @@
+# Crontab entries for traceroute web service
+# Add these to www-data user's crontab with: sudo -u www-data crontab -e
+
+# Daily cleanup at 2 AM
+0 2 * * * /usr/bin/python3 /var/www/traceroute-web/cgi-bin/cleanup.py >> /var/www/traceroute-web/logs/cleanup.log 2>&1
+
+# Session cleanup every hour
+0 * * * * /usr/bin/python3 -c "import sys; sys.path.append('/var/www/traceroute-web/cgi-bin/lib'); from session import SessionManager; SessionManager().cleanup_expired_sessions()"

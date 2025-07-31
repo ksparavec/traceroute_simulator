@@ -1380,3 +1380,110 @@ list-package:
 			print(f'Python files: {len(py_files)}'); \
 			print(f'Data files: {len(data_files)}'); \
 			print(f'Package size: {os.path.getsize(whl) / 1024:.1f} KB')"
+
+# Install web service files
+# Usage: make install-web WEB_ROOT=/var/www/traceroute-web
+install-web:
+	@echo "Installing web service files..."
+	@echo "========================================"
+	@if [ -z "$(WEB_ROOT)" ]; then \
+		echo "Error: WEB_ROOT not specified"; \
+		echo "Usage: make install-web WEB_ROOT=/var/www/traceroute-web"; \
+		exit 1; \
+	fi
+	@if [ ! -d "$(WEB_ROOT)" ]; then \
+		echo "Error: Target directory $(WEB_ROOT) does not exist"; \
+		echo "Please create it first with appropriate permissions"; \
+		exit 1; \
+	fi
+	@echo "Installing to: $(WEB_ROOT)"
+	
+	# Create directory structure
+	@echo "Creating directory structure..."
+	@mkdir -p "$(WEB_ROOT)/cgi-bin/lib"
+	@mkdir -p "$(WEB_ROOT)/htdocs/css"
+	@mkdir -p "$(WEB_ROOT)/htdocs/js"
+	@mkdir -p "$(WEB_ROOT)/data/traces"
+	@mkdir -p "$(WEB_ROOT)/data/results"
+	@mkdir -p "$(WEB_ROOT)/data/pdfs"
+	@mkdir -p "$(WEB_ROOT)/data/sessions"
+	@mkdir -p "$(WEB_ROOT)/data/users"
+	@mkdir -p "$(WEB_ROOT)/logs"
+	@mkdir -p "$(WEB_ROOT)/conf"
+	@mkdir -p "$(WEB_ROOT)/scripts"
+	
+	# Copy CGI scripts
+	@echo "Installing CGI scripts..."
+	@cp -r web/cgi-bin/* "$(WEB_ROOT)/cgi-bin/"
+	@chmod +x "$(WEB_ROOT)/cgi-bin/"*.py
+	@chmod +x "$(WEB_ROOT)/cgi-bin/lib/"*.py
+	
+	# Copy frontend files
+	@echo "Installing frontend files..."
+	@cp -r web/htdocs/* "$(WEB_ROOT)/htdocs/"
+	
+	# Copy scripts
+	@echo "Installing utility scripts..."
+	@cp web/scripts/network_reachability_test_wrapper.py "$(WEB_ROOT)/scripts/"
+	@cp web/scripts/create_user.sh "$(WEB_ROOT)/scripts/"
+	@chmod +x "$(WEB_ROOT)/scripts/"*.py
+	@chmod +x "$(WEB_ROOT)/scripts/"*.sh
+	
+	# Copy configuration templates
+	@echo "Installing configuration templates..."
+	@cp web/conf/* "$(WEB_ROOT)/conf/"
+	
+	# Create default configuration if doesn't exist
+	@if [ ! -f "$(WEB_ROOT)/conf/config.json" ]; then \
+		echo "Creating default configuration..."; \
+		$(PYTHON) $(PYTHON_OPTIONS) -c " \
+import json; \
+import secrets; \
+config = { \
+    'data_retention_days': 365, \
+    'session_timeout': 3600, \
+    'venv_path': '$(HOME)/tsim-venv', \
+    'tsimsh_path': 'tsimsh', \
+    'traceroute_simulator_path': '$(PWD)', \
+    'log_level': 'DEBUG', \
+    'secret_key': secrets.token_hex(32) \
+}; \
+with open('$(WEB_ROOT)/conf/config.json', 'w') as f: \
+    json.dump(config, f, indent=2)"; \
+	fi
+	
+	# Set permissions
+	@echo "Setting permissions..."
+	@if [ "$$(id -u)" = "0" ]; then \
+		echo "Setting ownership to www-data..."; \
+		chown -R www-data:www-data "$(WEB_ROOT)"; \
+	else \
+		echo "Warning: Not running as root, cannot set www-data ownership"; \
+		echo "You may need to run: sudo chown -R www-data:www-data $(WEB_ROOT)"; \
+	fi
+	@chmod 750 "$(WEB_ROOT)/data"
+	@chmod 750 "$(WEB_ROOT)/logs"
+	@chmod 755 "$(WEB_ROOT)/htdocs"
+	@chmod 755 "$(WEB_ROOT)/cgi-bin"
+	
+	@echo ""
+	@echo "✓ Web service files installed successfully!"
+	@echo ""
+	@echo "Next steps:"
+	@echo "1. Create an initial user:"
+	@echo "   cd $(WEB_ROOT) && sudo -u www-data ./scripts/create_user.sh"
+	@echo ""
+	@echo "2. Configure Apache:"
+	@echo "   sudo cp $(WEB_ROOT)/conf/apache-site.conf.template /etc/apache2/sites-available/traceroute-web.conf"
+	@echo "   Edit the configuration file as needed"
+	@echo "   sudo a2ensite traceroute-web"
+	@echo "   sudo systemctl reload apache2"
+	@echo ""
+	@echo "3. Set up cron jobs:"
+	@echo "   sudo -u www-data crontab -e"
+	@echo "   Add entries from $(WEB_ROOT)/conf/crontab.template"
+	@echo ""
+	@echo "4. Create SSL certificate (for testing):"
+	@echo "   sudo openssl req -x509 -nodes -days 365 -newkey rsa:2048 \\"
+	@echo "     -keyout /etc/ssl/private/traceroute.key \\"
+	@echo "     -out /etc/ssl/certs/traceroute.crt"

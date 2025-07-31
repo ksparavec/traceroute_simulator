@@ -1,0 +1,63 @@
+# Apache VirtualHost configuration for Network Reachability Web Service
+# Copy this file to /etc/apache2/sites-available/traceroute-web.conf
+# Then enable with: sudo a2ensite traceroute-web
+
+<VirtualHost *:443>
+    ServerName traceroute.example.com
+    DocumentRoot /var/www/traceroute-web/htdocs
+    
+    SSLEngine on
+    SSLCertificateFile /etc/ssl/certs/traceroute.crt
+    SSLCertificateKeyFile /etc/ssl/private/traceroute.key
+    
+    # Increase timeout for long-running tests
+    Timeout 600
+    
+    # CGI configuration
+    ScriptAlias /cgi-bin/ /var/www/traceroute-web/cgi-bin/
+    
+    <Directory "/var/www/traceroute-web/cgi-bin">
+        Options +ExecCGI
+        AddHandler cgi-script .py
+        Require all granted
+        
+        # Increase CGI timeout
+        CGIScriptTimeout 600
+    </Directory>
+    
+    # Redirect root to login
+    RedirectMatch ^/$ /login.html
+    
+    # Protected form page (session check in CGI)
+    <Location "/form.html">
+        Require all granted
+    </Location>
+    
+    # Public login page
+    <Location "/login.html">
+        Require all granted
+    </Location>
+    
+    # Static resources
+    <Directory "/var/www/traceroute-web/htdocs">
+        Options -Indexes
+        Require all granted
+    </Directory>
+    
+    # Security headers
+    Header always set X-Content-Type-Options "nosniff"
+    Header always set X-Frame-Options "DENY"
+    Header always set X-XSS-Protection "1; mode=block"
+    Header always set Strict-Transport-Security "max-age=31536000"
+    Header always set Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'"
+    
+    # Logging
+    ErrorLog /var/www/traceroute-web/logs/apache_error.log
+    CustomLog /var/www/traceroute-web/logs/apache_access.log combined
+</VirtualHost>
+
+# Redirect HTTP to HTTPS
+<VirtualHost *:80>
+    ServerName traceroute.example.com
+    Redirect permanent / https://traceroute.example.com/
+</VirtualHost>

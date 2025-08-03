@@ -10,9 +10,20 @@ class Config:
         "session_timeout": 3600,
         "venv_path": "/home/sparavec/tsim-venv",
         "tsimsh_path": "tsimsh",
-        "traceroute_simulator_path": "/home/sparavec/git/traceroute_simulator",
+        "traceroute_simulator_path": "/var/www/traceroute-web/scripts",
+        "traceroute_simulator_conf": "/var/www/traceroute-web/conf/traceroute_simulator.yaml",
+        "traceroute_simulator_facts": "/var/local/tsim_facts",
+        "traceroute_simulator_raw_facts": "/var/local/tsim_raw_facts",
         "log_level": "DEBUG",
-        "secret_key": None  # Generated on first run
+        "secret_key": None,  # Generated on first run
+        "controller_ip": "127.0.0.1",
+        "registry_files": {
+            "hosts": "/var/opt/traceroute-simulator/traceroute_hosts_registry.json",
+            "routers": "/var/opt/traceroute-simulator/traceroute_routers_registry.json",
+            "interfaces": "/var/opt/traceroute-simulator/traceroute_interfaces_registry.json",
+            "bridges": "/var/opt/traceroute-simulator/traceroute_bridges_registry.json",
+            "services": "/var/opt/traceroute-simulator/traceroute_services_registry.json"
+        }
     }
     
     def __init__(self, config_file="/var/www/traceroute-web/conf/config.json"):

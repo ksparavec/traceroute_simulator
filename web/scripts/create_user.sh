@@ -6,7 +6,7 @@ CGI_DIR="$SCRIPT_DIR/../cgi-bin"
 
 cd "$CGI_DIR"
 
-python3 -c "
+python3 -B -u -c "
 import sys
 sys.path.append('lib')
 from auth import AuthManager

@@ -51,6 +51,12 @@
     Header always set Strict-Transport-Security "max-age=31536000"
     Header always set Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'"
     
+    # Allow PDF viewer to embed PDFs
+    <Location "/cgi-bin/pdf_viewer.py">
+        Header always unset X-Frame-Options
+        Header always set Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; object-src 'self'; frame-ancestors 'self'"
+    </Location>
+    
     # Logging
     ErrorLog /var/www/traceroute-web/logs/apache_error.log
     CustomLog /var/www/traceroute-web/logs/apache_access.log combined

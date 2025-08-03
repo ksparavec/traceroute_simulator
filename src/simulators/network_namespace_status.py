@@ -349,10 +349,23 @@ class NetworkNamespaceStatus:
             
     def run_command(self, command: str, namespace: str = None, check: bool = True) -> subprocess.CompletedProcess:
         """Execute command optionally in namespace."""
+        # Add sudo if needed
+        needs_sudo = False
+        if os.geteuid() != 0:
+            # Commands that need sudo
+            if namespace or command.startswith("ip netns"):
+                needs_sudo = True
+        
         if namespace:
-            full_command = f"ip netns exec {namespace} {command}"
+            if needs_sudo:
+                full_command = f"sudo ip netns exec {namespace} {command}"
+            else:
+                full_command = f"ip netns exec {namespace} {command}"
         else:
-            full_command = command
+            if needs_sudo:
+                full_command = f"sudo {command}"
+            else:
+                full_command = command
             
         self.logger.debug(f"Running: {full_command}")
         
@@ -1564,15 +1577,21 @@ Environment Variables:
             print("Example: TRACEROUTE_SIMULATOR_FACTS=/path/to/facts", file=sys.stderr)
         sys.exit(1)
     
-    # Check for root privileges
+    # Check if user is in tsim-users group (unless running as root)
     if os.geteuid() != 0:
-        if args.json:
-            print(json.dumps({"error": "This script requires root privileges to access network namespaces"}), file=sys.stdout)
-        else:
-            print("Error: This script requires root privileges to access network namespaces", file=sys.stderr)
-            print("Please run with sudo:", file=sys.stderr)
-            print(f"  sudo {' '.join(sys.argv)}", file=sys.stderr)
-        sys.exit(1)
+        import grp
+        import pwd
+        try:
+            username = pwd.getpwuid(os.getuid()).pw_name
+            tsim_group = grp.getgrnam('tsim-users')
+            if username not in tsim_group.gr_mem:
+                if not args.json and args.verbose >= 1:
+                    print("Warning: User not in tsim-users group. Namespace operations may fail.", file=sys.stderr)
+                    print("Run: sudo usermod -a -G tsim-users $USER", file=sys.stderr)
+        except (KeyError, OSError):
+            if not args.json and args.verbose >= 1:
+                print("Warning: tsim-users group not found. Namespace operations may fail.", file=sys.stderr)
+                print("Run: sudo groupadd -f tsim-users", file=sys.stderr)
         
     try:
         status_tool = NetworkNamespaceStatus(facts_dir, args.verbose)

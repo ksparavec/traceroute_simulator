@@ -5,6 +5,7 @@ import os
 import sys
 import json
 import hashlib
+import hmac
 from http import cookies
 
 sys.path.append(os.path.join(os.path.dirname(__file__), 'lib'))
@@ -47,7 +48,7 @@ def show_error(message="An error occurred. Please try again."):
 def generate_shareable_link(run_id, config):
     """Generate secure shareable link"""
     secret = config.config['secret_key']
-    token = hashlib.hmac(
+    token = hmac.new(
         key=secret.encode(),
         msg=run_id.encode(),
         digestmod=hashlib.sha256
@@ -132,9 +133,9 @@ def main():
         # Generate shareable link
         share_link = generate_shareable_link(run_id, config)
         
-        # Redirect to PDF viewer
+        # Redirect to PDF viewer HTML page
         print("Status: 302 Found")
-        print(f"Location: /cgi-bin/pdf_viewer.py?id={run_id}&session={session_id}")
+        print(f"Location: /pdf_viewer_final.html?id={run_id}&session={session_id}")
         print()
         
     except Exception as e:

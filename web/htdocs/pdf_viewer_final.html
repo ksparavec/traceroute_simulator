@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Network Reachability Report</title>
+    <link rel="stylesheet" href="/css/style.css">
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        .pdf-header {
+            height: 50px;
+            background: #333;
+            color: white;
+            display: flex;
+            align-items: center;
+            padding: 0 20px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        .pdf-header h3 {
+            margin: 0;
+            flex: 1;
+        }
+        .pdf-header a {
+            color: white;
+            text-decoration: none;
+            padding: 8px 16px;
+            background: #007bff;
+            border-radius: 4px;
+            margin-left: 10px;
+        }
+        .pdf-header a:hover {
+            background: #0056b3;
+        }
+        .pdf-container {
+            flex: 1;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        object {
+            width: 100%;
+            height: 100%;
+            background: white;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        }
+        .error-message {
+            text-align: center;
+            padding: 50px;
+            background: white;
+            margin: 20px;
+            border-radius: 5px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        .button-group {
+            margin-top: 20px;
+        }
+        .button-group a {
+            display: inline-block;
+            padding: 10px 20px;
+            margin: 0 10px;
+            background: #007bff;
+            color: white;
+            text-decoration: none;
+            border-radius: 4px;
+        }
+        .button-group a:hover {
+            background: #0056b3;
+        }
+    </style>
+</head>
+<body>
+    <div class="pdf-header">
+        <h3>Network Reachability Report</h3>
+        <a href="/form.html">New Test</a>
+    </div>
+    <div class="pdf-container">
+        <object id="pdfObject" type="application/pdf">
+            <div class="error-message">
+                <h2>PDF Display Options</h2>
+                <p>The PDF cannot be displayed inline in your browser.</p>
+                <div class="button-group">
+                    <a id="openNewTab" href="#" target="_blank">Open in New Tab</a>
+                    <a id="downloadPdf" href="#" download>Download PDF</a>
+                </div>
+            </div>
+        </object>
+    </div>
+
+    <script>
+        // Get parameters from URL
+        const urlParams = new URLSearchParams(window.location.search);
+        const runId = urlParams.get('id');
+        const sessionId = urlParams.get('session');
+        const token = urlParams.get('token');
+        
+        if (!runId) {
+            document.querySelector('.pdf-container').innerHTML = 
+                '<div class="error-message"><h2>Error</h2><p>Missing report ID</p></div>';
+        } else {
+            // Build PDF URL
+            let pdfUrl = `/cgi-bin/pdf_viewer.py?id=${runId}`;
+            if (sessionId) {
+                pdfUrl += `&session=${sessionId}`;
+            } else if (token) {
+                pdfUrl += `&token=${token}`;
+            }
+            
+            // Set object data attribute
+            const pdfObject = document.getElementById('pdfObject');
+            pdfObject.data = pdfUrl;
+            
+            // Set fallback links
+            document.getElementById('openNewTab').href = pdfUrl;
+            document.getElementById('downloadPdf').href = pdfUrl + '&download=1';
+            document.getElementById('downloadPdf').setAttribute('download', `report_${runId}.pdf`);
+        }
+    </script>
+</body>
+</html>

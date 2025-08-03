@@ -47,7 +47,7 @@ class TestBridgeArchitecture(unittest.TestCase):
         subprocess.run("sudo make netclean ARGS='-f'", shell=True, capture_output=True)
         
         # Remove any existing host registry
-        host_registry = Path("/tmp/traceroute_hosts_registry.json")
+        host_registry = Path("/var/opt/traceroute-simulator/traceroute_hosts_registry.json")
         if host_registry.exists():
             host_registry.unlink()
             
@@ -60,7 +60,7 @@ class TestBridgeArchitecture(unittest.TestCase):
         subprocess.run("sudo make netclean ARGS='-f'", shell=True, capture_output=True)
         
         # Remove host registry
-        host_registry = Path("/tmp/traceroute_hosts_registry.json")
+        host_registry = Path("/var/opt/traceroute-simulator/traceroute_hosts_registry.json")
         if host_registry.exists():
             host_registry.unlink()
             

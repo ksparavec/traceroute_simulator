@@ -266,11 +266,26 @@ class SequentialConnectivityTester:
         # Discover runtime IPs that may have been dynamically added
         self._discover_runtime_router_ips()
             
+    def run_command(self, cmd, shell=False, timeout=None):
+        """Run a command with sudo if needed and not running as root."""
+        if os.geteuid() != 0:
+            # Add sudo to commands that need it
+            if shell:
+                # For shell commands, check if it needs sudo
+                if any(x in cmd for x in ['ip netns', 'iptables', 'ipset']):
+                    cmd = f"sudo {cmd}"
+            else:
+                # For list commands, check first element
+                if cmd[0] in ['ip', 'iptables', 'ipset']:
+                    cmd = ['sudo'] + cmd
+        
+        return subprocess.run(cmd, shell=shell, capture_output=True, text=True, timeout=timeout)
+    
     def _discover_runtime_router_ips(self):
         """Discover actual router IPs from runtime namespaces to catch dynamically added IPs."""
         try:
             # Get all namespaces
-            result = subprocess.run(['ip', 'netns', 'list'], capture_output=True, text=True)
+            result = self.run_command(['ip', 'netns', 'list'])
             if result.returncode != 0:
                 return
                 
@@ -286,7 +301,7 @@ class SequentialConnectivityTester:
                 if any(pattern in namespace for pattern in ['befw', 'beis', 'belb', 'bens']) or namespace in self.routers:
                     # Get all IPv4 addresses from this namespace
                     cmd = f'ip netns exec {namespace} ip -4 addr show'
-                    result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+                    result = self.run_command(cmd, shell=True)
                     
                     if result.returncode == 0:
                         # Parse IP addresses
@@ -487,7 +502,7 @@ class SequentialConnectivityTester:
             if self.verbose >= 2:
                 print(f"Adding public IP host: {cmd}")
                 
-            result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+            result = self.run_command(cmd, shell=True)
             
             # Verbose level 2: show command output
             if self.verbose >= 2 and (result.stdout or result.stderr):
@@ -540,7 +555,7 @@ class SequentialConnectivityTester:
         if self.verbose >= 2:
             print(f"Removing public IP host: {cmd}")
             
-        result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+        result = self.run_command(cmd, shell=True)
         
         # Verbose level 2: show command output
         if self.verbose >= 2 and (result.stdout or result.stderr):
@@ -652,8 +667,8 @@ class SequentialConnectivityTester:
             print(f"\nExecuting namespace command: {cmd}")
         
         try:
-            result = subprocess.run(
-                cmd, shell=True, capture_output=True, text=True, timeout=timeout+2
+            result = self.run_command(
+                cmd, shell=True, timeout=timeout+2
             )
             
             # Verbose level 2: show command output
@@ -694,8 +709,8 @@ class SequentialConnectivityTester:
     
         
         try:
-            result = subprocess.run(
-                cmd, shell=True, capture_output=True, text=True, timeout=timeout+2
+            result = self.run_command(
+                cmd, shell=True, timeout=timeout+2
             )
             
             # Prepare full output with command and result
@@ -758,8 +773,8 @@ class SequentialConnectivityTester:
             print(f"\nExecuting namespace command: {cmd}")
         
         try:
-            result = subprocess.run(
-                cmd, shell=True, capture_output=True, text=True, timeout=timeout+2
+            result = self.run_command(
+                cmd, shell=True, timeout=timeout+2
             )
             
             # Verbose level 2: show command output
@@ -1230,8 +1245,8 @@ class SequentialConnectivityTester:
                                 })
                         else:
                             # Batch mode: capture output normally
-                            result = subprocess.run(
-                                full_cmd, shell=True, capture_output=True, text=True
+                            result = self.run_command(
+                                full_cmd, shell=True
                             )
                             
                             # For MTR, parse output to check success criteria
@@ -1507,11 +1522,19 @@ Examples:
     if args.dest and not args.source:
         parser.error("-d/--dest requires -s/--source")
         
-    # Check for root privileges
+    # Check for tsim-users group membership
     if os.geteuid() != 0:
-        print("Error: This script requires root privileges")
-        print("Please run: sudo -E python3 network_namespace_tester.py ...")
-        sys.exit(1)
+        import grp
+        import pwd
+        try:
+            username = pwd.getpwuid(os.getuid()).pw_name
+            tsim_group = grp.getgrnam('tsim-users')
+            if username not in tsim_group.gr_mem:
+                if args.verbose >= 1:
+                    print("Warning: User not in tsim-users group. Namespace operations may fail.", file=sys.stderr)
+        except KeyError:
+            if args.verbose >= 1:
+                print("Warning: tsim-users group not found. Namespace operations may fail.", file=sys.stderr)
         
     try:
         # Determine count and timeout based on test type and arguments

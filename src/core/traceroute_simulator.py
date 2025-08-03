@@ -460,11 +460,11 @@ def get_default_config() -> Dict[str, Any]:
         'software_simulation_only': False,
         'controller_ip': None,
         'registry_files': {
-            'hosts': '/tmp/traceroute_hosts_registry.json',
-            'routers': '/tmp/traceroute_routers_registry.json',
-            'interfaces': '/tmp/traceroute_interfaces_registry.json',
-            'bridges': '/tmp/traceroute_bridges_registry.json',
-            'services': '/tmp/traceroute_services_registry.json'
+            'hosts': '/var/opt/traceroute-simulator/traceroute_hosts_registry.json',
+            'routers': '/var/opt/traceroute-simulator/traceroute_routers_registry.json',
+            'interfaces': '/var/opt/traceroute-simulator/traceroute_interfaces_registry.json',
+            'bridges': '/var/opt/traceroute-simulator/traceroute_bridges_registry.json',
+            'services': '/var/opt/traceroute-simulator/traceroute_services_registry.json'
         }
     }
 

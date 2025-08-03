@@ -4,6 +4,7 @@ import cgitb
 import os
 import sys
 import hashlib
+import hmac
 
 sys.path.append(os.path.join(os.path.dirname(__file__), 'lib'))
 
@@ -17,15 +18,15 @@ cgitb.enable(display=0, logdir="/var/www/traceroute-web/logs")
 def verify_token(run_id, token, config):
     """Verify shareable link token"""
     secret = config.config['secret_key']
-    expected_token = hashlib.hmac(
+    expected_token = hmac.new(
         key=secret.encode(),
         msg=run_id.encode(),
         digestmod=hashlib.sha256
     ).hexdigest()
     return token == expected_token
 
-def serve_pdf(pdf_path):
-    """Serve PDF file for inline display"""
+def serve_pdf(pdf_path, download=False):
+    """Serve PDF file for inline display or download"""
     if not os.path.exists(pdf_path):
         print("Status: 404 Not Found")
         print("Content-Type: text/plain")
@@ -36,10 +37,16 @@ def serve_pdf(pdf_path):
     # Get file size
     file_size = os.path.getsize(pdf_path)
     
-    # Send PDF headers for inline display
+    # Send PDF headers
     print("Content-Type: application/pdf")
     print(f"Content-Length: {file_size}")
-    print("Content-Disposition: inline")
+    
+    if download:
+        filename = os.path.basename(pdf_path)
+        print(f"Content-Disposition: attachment; filename=\"{filename}\"")
+    else:
+        print("Content-Disposition: inline")
+    
     print("Cache-Control: no-cache")
     print()
     
@@ -58,6 +65,7 @@ def main():
         run_id = form.getvalue('id', '').strip()
         token = form.getvalue('token', '').strip()
         session_param = form.getvalue('session', '').strip()
+        download = form.getvalue('download', '').strip() == '1'
         
         if not run_id:
             print("Status: 400 Bad Request")
@@ -103,7 +111,7 @@ def main():
                                f"{run_id}_report.pdf")
         
         # Serve PDF
-        serve_pdf(pdf_path)
+        serve_pdf(pdf_path, download)
         
     except Exception as e:
         logger.log_error(

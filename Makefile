@@ -25,7 +25,7 @@ REQUIRED_MODULES := json sys argparse ipaddress os glob typing subprocess re dif
 
 # Colors removed for better terminal compatibility
 
-.PHONY: help check-deps test test-iptables-enhanced test-policy-routing test-ipset-enhanced test-raw-facts-loading test-mtr-options test-iptables-logging test-packet-tracing test-network facts clean tsim ifa netsetup nettest netclean netshow netstatus test-namespace hostadd hostdel hostlist hostclean netnsclean service-start service-stop service-restart service-status service-test service-clean test-services svctest svcstart svcstop svclist svcclean install-wrapper install-package install-pipx uninstall-package uninstall-pipx list-package
+.PHONY: help check-deps test test-iptables-enhanced test-policy-routing test-ipset-enhanced test-raw-facts-loading test-mtr-options test-iptables-logging test-packet-tracing test-network facts clean tsim ifa netsetup nettest netclean netshow netstatus test-namespace hostadd hostdel hostlist hostclean netnsclean service-start service-stop service-restart service-status service-test service-clean test-services svctest svcstart svcstop svclist svcclean install-wrapper install-package install-pipx uninstall-package uninstall-pipx list-package show-sudoers
 
 # Default target
 help:
@@ -35,6 +35,7 @@ help:
 	@echo "test              - Execute all test scripts with test setup and report results (includes make targets tests)"
 	@echo "facts             - Run Ansible playbook to collect network facts (requires INVENTORY_FILE or INVENTORY)"
 	@echo "clean             - Clean up generated files and cache"
+	@echo "show-sudoers      - Display sudoers configuration for namespace operations"
 	@echo "install-wrapper   - Build and install the netns_reader wrapper with proper capabilities (requires sudo)"
 	@echo "package           - Build pip-installable tsim package (creates wheel and source distributions)"
 	@echo "install-package   - Build and install tsim package (use USER=1 for user install, BREAK_SYSTEM=1 to force)"
@@ -494,6 +495,24 @@ clean:
 	@echo "✓ Cleaned up package build artifacts"
 	@echo "Cleanup completed!"
 
+# Show sudoers configuration
+show-sudoers:
+	@echo "=== Traceroute Simulator Sudoers Configuration ==="
+	@echo ""
+	@echo "1. Namespace Operations (for tsim-users group):"
+	@echo "---------------------------------------------------"
+	@cat etc/sudoers.d/traceroute-simulator-namespaces
+	@echo ""
+	@echo "2. Web Interface (for www-data - optional):"
+	@echo "---------------------------------------------------"
+	@cat web/config/tsimsh-sudoers
+	@echo ""
+	@echo "Installation:"
+	@echo "  sudo cp etc/sudoers.d/traceroute-simulator-namespaces /etc/sudoers.d/"
+	@echo "  sudo chmod 0440 /etc/sudoers.d/traceroute-simulator-namespaces"
+	@echo "  sudo groupadd -f tsim-users"
+	@echo "  sudo usermod -a -G tsim-users <username>"
+
 # Run traceroute simulator with command line arguments
 # Usage: make tsim ARGS="-s 10.1.1.1 -d 10.2.1.1"
 tsim:
@@ -545,6 +564,10 @@ netsetup:
 		echo "Please run: sudo -E make netsetup"; \
 		exit 1; \
 	fi
+	@echo "Ensuring /var/opt/traceroute-simulator directory exists with proper permissions..."
+	@mkdir -p /var/opt/traceroute-simulator
+	@chgrp tsim-users /var/opt/traceroute-simulator 2>/dev/null || true
+	@chmod 2775 /var/opt/traceroute-simulator
 	@env TRACEROUTE_SIMULATOR_RAW_FACTS="$(TRACEROUTE_SIMULATOR_RAW_FACTS)" $(PYTHON) $(PYTHON_OPTIONS) src/simulators/network_namespace_setup.py $(ARGS)
 
 # Test network connectivity in namespace simulation (requires sudo)  
@@ -1412,6 +1435,12 @@ install-web:
 	@mkdir -p "$(WEB_ROOT)/conf"
 	@mkdir -p "$(WEB_ROOT)/scripts"
 	
+	# Create shared registry directory
+	@echo "Creating shared registry directory..."
+	@mkdir -p /var/opt/traceroute-simulator
+	@chgrp tsim-users /var/opt/traceroute-simulator 2>/dev/null || true
+	@chmod 2775 /var/opt/traceroute-simulator
+	
 	# Copy CGI scripts
 	@echo "Installing CGI scripts..."
 	@cp -r web/cgi-bin/* "$(WEB_ROOT)/cgi-bin/"
@@ -1426,30 +1455,22 @@ install-web:
 	@echo "Installing utility scripts..."
 	@cp web/scripts/network_reachability_test_wrapper.py "$(WEB_ROOT)/scripts/"
 	@cp web/scripts/create_user.sh "$(WEB_ROOT)/scripts/"
+	@cp src/scripts/network_reachability_test.sh "$(WEB_ROOT)/scripts/"
+	@cp src/scripts/visualize_reachability.py "$(WEB_ROOT)/scripts/"
+	@cp src/scripts/format_reachability_output.py "$(WEB_ROOT)/scripts/"
+	@cp web/scripts/test_me.py "$(WEB_ROOT)/scripts/"
 	@chmod +x "$(WEB_ROOT)/scripts/"*.py
 	@chmod +x "$(WEB_ROOT)/scripts/"*.sh
 	
 	# Copy configuration templates
 	@echo "Installing configuration templates..."
 	@cp web/conf/* "$(WEB_ROOT)/conf/"
+	@cp traceroute_simulator.yaml "$(WEB_ROOT)/conf/"
 	
 	# Create default configuration if doesn't exist
 	@if [ ! -f "$(WEB_ROOT)/conf/config.json" ]; then \
 		echo "Creating default configuration..."; \
-		$(PYTHON) $(PYTHON_OPTIONS) -c " \
-import json; \
-import secrets; \
-config = { \
-    'data_retention_days': 365, \
-    'session_timeout': 3600, \
-    'venv_path': '$(HOME)/tsim-venv', \
-    'tsimsh_path': 'tsimsh', \
-    'traceroute_simulator_path': '$(PWD)', \
-    'log_level': 'DEBUG', \
-    'secret_key': secrets.token_hex(32) \
-}; \
-with open('$(WEB_ROOT)/conf/config.json', 'w') as f: \
-    json.dump(config, f, indent=2)"; \
+		$(PYTHON) $(PYTHON_OPTIONS) -c "import json; import secrets; config = {'data_retention_days': 365, 'session_timeout': 3600, 'venv_path': '$(HOME)/tsim-venv', 'tsimsh_path': 'tsimsh', 'traceroute_simulator_path': '$(WEB_ROOT)/scripts', 'traceroute_simulator_conf': '$(WEB_ROOT)/conf/traceroute_simulator.yaml', 'traceroute_simulator_facts': '/var/local/tsim_facts', 'traceroute_simulator_raw_facts': '/var/local/tsim_raw_facts', 'log_level': 'DEBUG', 'secret_key': secrets.token_hex(32), 'controller_ip': '127.0.0.1', 'registry_files': {'hosts': '/var/opt/traceroute-simulator/traceroute_hosts_registry.json', 'routers': '/var/opt/traceroute-simulator/traceroute_routers_registry.json', 'interfaces': '/var/opt/traceroute-simulator/traceroute_interfaces_registry.json', 'bridges': '/var/opt/traceroute-simulator/traceroute_bridges_registry.json', 'services': '/var/opt/traceroute-simulator/traceroute_services_registry.json'}}; json.dump(config, open('$(WEB_ROOT)/conf/config.json', 'w'), indent=2)"; \
 	fi
 	
 	# Set permissions
@@ -1470,20 +1491,32 @@ with open('$(WEB_ROOT)/conf/config.json', 'w') as f: \
 	@echo "✓ Web service files installed successfully!"
 	@echo ""
 	@echo "Next steps:"
-	@echo "1. Create an initial user:"
+	@echo "1. Configure sudo permissions:"
+	@echo "   a) For namespace operations (tsim-users group):"
+	@echo "      sudo cp etc/sudoers.d/traceroute-simulator-namespaces /etc/sudoers.d/"
+	@echo "      sudo chmod 0440 /etc/sudoers.d/traceroute-simulator-namespaces"
+	@echo "      sudo groupadd -f tsim-users"
+	@echo "      sudo usermod -a -G tsim-users www-data"
+	@echo "      sudo usermod -a -G tsim-users $(USER)"
+	@echo ""
+	@echo "   b) For web interface (if needed):"
+	@echo "      sudo cp web/config/tsimsh-sudoers /etc/sudoers.d/tsimsh-web"
+	@echo "      sudo chmod 0440 /etc/sudoers.d/tsimsh-web"
+	@echo ""
+	@echo "2. Create an initial user:"
 	@echo "   cd $(WEB_ROOT) && sudo -u www-data ./scripts/create_user.sh"
 	@echo ""
-	@echo "2. Configure Apache:"
+	@echo "3. Configure Apache:"
 	@echo "   sudo cp $(WEB_ROOT)/conf/apache-site.conf.template /etc/apache2/sites-available/traceroute-web.conf"
 	@echo "   Edit the configuration file as needed"
 	@echo "   sudo a2ensite traceroute-web"
 	@echo "   sudo systemctl reload apache2"
 	@echo ""
-	@echo "3. Set up cron jobs:"
+	@echo "4. Set up cron jobs:"
 	@echo "   sudo -u www-data crontab -e"
 	@echo "   Add entries from $(WEB_ROOT)/conf/crontab.template"
 	@echo ""
-	@echo "4. Create SSL certificate (for testing):"
+	@echo "5. Create SSL certificate (for testing):"
 	@echo "   sudo openssl req -x509 -nodes -days 365 -newkey rsa:2048 \\"
 	@echo "     -keyout /etc/ssl/private/traceroute.key \\"
 	@echo "     -out /etc/ssl/certs/traceroute.crt"

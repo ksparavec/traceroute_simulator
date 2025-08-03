@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Network Reachability Report</title>
+    <link rel="stylesheet" href="/css/style.css">
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+        }
+        .pdf-container {
+            position: absolute;
+            top: 50px;
+            left: 0;
+            right: 0;
+            bottom: 0;
+        }
+        .pdf-header {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 50px;
+            background: #333;
+            color: white;
+            display: flex;
+            align-items: center;
+            padding: 0 20px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            z-index: 1000;
+        }
+        .pdf-header h3 {
+            margin: 0;
+            flex: 1;
+        }
+        .pdf-header a {
+            color: white;
+            text-decoration: none;
+            padding: 8px 16px;
+            background: #007bff;
+            border-radius: 4px;
+            margin-left: 10px;
+        }
+        .pdf-header a:hover {
+            background: #0056b3;
+        }
+        iframe {
+            width: 100%;
+            height: 100%;
+            border: none;
+        }
+        .error-message {
+            text-align: center;
+            padding: 50px;
+            color: #666;
+        }
+        .loading {
+            text-align: center;
+            padding: 50px;
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+    <div class="pdf-header">
+        <h3>Network Reachability Report</h3>
+        <a href="#" id="downloadBtn">Download PDF</a>
+        <a href="#" id="shareBtn">Share Link</a>
+        <a href="/form.html">New Test</a>
+    </div>
+    <div class="pdf-container" id="pdfContainer">
+        <div class="loading" id="loading">Loading PDF...</div>
+    </div>
+
+    <script>
+        // Get parameters from URL
+        const urlParams = new URLSearchParams(window.location.search);
+        const runId = urlParams.get('id');
+        const sessionId = urlParams.get('session');
+        const token = urlParams.get('token');
+        
+        if (!runId) {
+            document.getElementById('loading').innerHTML = 'Error: Missing report ID';
+        } else {
+            // Build PDF URL
+            let pdfUrl = `/cgi-bin/pdf_viewer.py?id=${runId}`;
+            if (sessionId) {
+                pdfUrl += `&session=${sessionId}`;
+            } else if (token) {
+                pdfUrl += `&token=${token}`;
+            }
+            
+            // Set up download link
+            const downloadBtn = document.getElementById('downloadBtn');
+            const downloadLink = document.getElementById('downloadLink');
+            downloadBtn.href = pdfUrl + '&download=1';
+            downloadBtn.setAttribute('download', `report_${runId}.pdf`);
+            downloadLink.href = pdfUrl + '&download=1';
+            downloadLink.setAttribute('download', `report_${runId}.pdf`);
+            
+            // Set up share link
+            const shareBtn = document.getElementById('shareBtn');
+            shareBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                // This would need to be implemented to generate a shareable link
+                alert('Share functionality coming soon!');
+            });
+            
+            // Create and load PDF object dynamically
+            const loading = document.getElementById('loading');
+            const container = document.getElementById('pdfContainer');
+            
+            // Create object element
+            const pdfObject = document.createElement('object');
+            pdfObject.type = 'application/pdf';
+            pdfObject.data = pdfUrl;
+            pdfObject.style.width = '100%';
+            pdfObject.style.height = '100%';
+            
+            // Create fallback content
+            const fallback = document.createElement('div');
+            fallback.className = 'error-message';
+            fallback.innerHTML = `
+                <h2>Unable to display PDF inline</h2>
+                <p>Your browser may not support inline PDF viewing.</p>
+                <p><a href="${pdfUrl}&download=1" download="report_${runId}.pdf">Click here to download the PDF</a></p>
+                <p>Or <a href="${pdfUrl}" target="_blank">open in new tab</a></p>
+            `;
+            
+            pdfObject.appendChild(fallback);
+            
+            // Replace loading with object
+            setTimeout(() => {
+                loading.style.display = 'none';
+                container.appendChild(pdfObject);
+            }, 100);
+        }
+    </script>
+</body>
+</html>

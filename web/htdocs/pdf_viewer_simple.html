@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Network Reachability Report</title>
+    <link rel="stylesheet" href="/css/style.css">
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        .pdf-header {
+            height: 50px;
+            background: #333;
+            color: white;
+            display: flex;
+            align-items: center;
+            padding: 0 20px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        .pdf-header h3 {
+            margin: 0;
+            flex: 1;
+        }
+        .pdf-header a {
+            color: white;
+            text-decoration: none;
+            padding: 8px 16px;
+            background: #007bff;
+            border-radius: 4px;
+            margin-left: 10px;
+        }
+        .pdf-header a:hover {
+            background: #0056b3;
+        }
+        .pdf-container {
+            flex: 1;
+            width: 100%;
+            height: calc(100vh - 50px);
+        }
+        object, embed {
+            width: 100%;
+            height: 100%;
+        }
+        .fallback {
+            text-align: center;
+            padding: 50px;
+        }
+    </style>
+</head>
+<body>
+    <div class="pdf-header">
+        <h3>Network Reachability Report</h3>
+        <a href="#" id="downloadBtn">Download PDF</a>
+        <a href="/form.html">New Test</a>
+    </div>
+    <div class="pdf-container">
+        <object id="pdfObject" type="application/pdf">
+            <embed id="pdfEmbed" type="application/pdf" />
+            <div class="fallback">
+                <p>Your browser cannot display PDFs inline.</p>
+                <p><a href="#" id="fallbackDownload">Click here to download the PDF</a></p>
+            </div>
+        </object>
+    </div>
+
+    <script>
+        // Get parameters from URL
+        const urlParams = new URLSearchParams(window.location.search);
+        const runId = urlParams.get('id');
+        const sessionId = urlParams.get('session');
+        const token = urlParams.get('token');
+        
+        if (!runId) {
+            document.querySelector('.pdf-container').innerHTML = '<div class="fallback">Error: Missing report ID</div>';
+        } else {
+            // Build PDF URL
+            let pdfUrl = `/cgi-bin/pdf_viewer.py?id=${runId}`;
+            if (sessionId) {
+                pdfUrl += `&session=${sessionId}`;
+            } else if (token) {
+                pdfUrl += `&token=${token}`;
+            }
+            
+            // Set PDF URLs
+            document.getElementById('pdfObject').data = pdfUrl;
+            document.getElementById('pdfEmbed').src = pdfUrl;
+            
+            // Set up download links
+            const downloadUrl = pdfUrl + '&download=1';
+            document.getElementById('downloadBtn').href = downloadUrl;
+            document.getElementById('downloadBtn').setAttribute('download', `report_${runId}.pdf`);
+            document.getElementById('fallbackDownload').href = downloadUrl;
+            document.getElementById('fallbackDownload').setAttribute('download', `report_${runId}.pdf`);
+        }
+    </script>
+</body>
+</html>

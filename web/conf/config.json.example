@@ -1,0 +1,23 @@
+{
+    "secret_key": "CHANGE_ME_TO_RANDOM_SECRET",
+    "session_timeout": 3600,
+    "data_retention_days": 7,
+    "allowed_ips": [],
+    "max_trace_hops": 30,
+    "venv_path": "/home/sparavec/tsim-venv",
+    "tsimsh_path": "/home/sparavec/tsim-venv/bin/tsimsh",
+    "traceroute_simulator_path": "/var/www/traceroute-web/scripts",
+    "traceroute_simulator_mode": "test",
+    "test_trace_file": "/var/www/traceroute-web/data/test/trace_example.json",
+    "traceroute_simulator_facts": "/home/sparavec/tsim_facts",
+    "traceroute_simulator_raw_facts": "/home/sparavec/raw_facts",
+    "traceroute_simulator_conf": "/var/www/traceroute-web/conf/traceroute_simulator.yaml",
+    "tsimsh_verbose_level": 0,
+    "registry_files": {
+        "hosts": "/var/opt/traceroute-simulator/traceroute_hosts_registry.json",
+        "routers": "/var/opt/traceroute-simulator/traceroute_routers_registry.json",
+        "interfaces": "/var/opt/traceroute-simulator/traceroute_interfaces_registry.json",
+        "bridges": "/var/opt/traceroute-simulator/traceroute_bridges_registry.json",
+        "services": "/var/opt/traceroute-simulator/traceroute_services_registry.json"
+    }
+}

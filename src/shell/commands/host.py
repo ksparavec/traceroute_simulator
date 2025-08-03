@@ -168,8 +168,8 @@ class HostCommands(BaseCommandHandler):
         for _ in range(args.verbose):
             cmd_args.append('-v')
         
-        # Run with sudo
-        returncode = self.run_script_with_output(script_path, cmd_args, use_sudo=True)
+        # Run script (sudo will be added by script for specific commands)
+        returncode = self.run_script_with_output(script_path, cmd_args, use_sudo=False)
         
         if returncode == 0:
             self.success(f"Host {args.name} added successfully")
@@ -199,8 +199,8 @@ class HostCommands(BaseCommandHandler):
         for _ in range(args.verbose):
             cmd_args.append('-v')
         
-        # Run with sudo
-        returncode = self.run_script_with_output(script_path, cmd_args, use_sudo=True)
+        # Run script (sudo will be added by script for specific commands)
+        returncode = self.run_script_with_output(script_path, cmd_args, use_sudo=False)
         
         return returncode
     
@@ -234,8 +234,8 @@ class HostCommands(BaseCommandHandler):
         for _ in range(args.verbose):
             cmd_args.append('-v')
         
-        # Run with sudo
-        returncode = self.run_script_with_output(script_path, cmd_args, use_sudo=True)
+        # Run script (sudo will be added by script for specific commands)
+        returncode = self.run_script_with_output(script_path, cmd_args, use_sudo=False)
         
         if returncode == 0:
             self.success(f"Host {args.name} removed successfully")
@@ -272,8 +272,8 @@ class HostCommands(BaseCommandHandler):
             for _ in range(args.verbose):
                 cmd_args.append('-v')
         
-        # Run with sudo
-        returncode = self.run_script_with_output(script_path, cmd_args, use_sudo=True)
+        # Run script (sudo will be added by script for specific commands)
+        returncode = self.run_script_with_output(script_path, cmd_args, use_sudo=False)
         
         if returncode == 0:
             self.success("All hosts removed successfully")

@@ -174,6 +174,38 @@ class HiddenMeshNetworkSetup:
         # Generate compressed router codes
         self._generate_router_codes()
     
+    def _is_tsim_managed_namespace(self, namespace_name: str) -> bool:
+        """Check if a namespace is managed by tsim by checking registries."""
+        # Check if it's the hidden namespace
+        if namespace_name == self.hidden_ns:
+            return True
+        
+        # Check router registry
+        if self.router_registry_file.exists():
+            try:
+                router_registry = self.load_router_registry()
+                if namespace_name in router_registry or namespace_name in router_registry.values():
+                    return True
+            except Exception:
+                pass
+        
+        # Check if it's in our loaded routers
+        if namespace_name in self.routers:
+            return True
+        
+        # Check host registry (if it exists)
+        host_registry_file = Path("/var/opt/traceroute-simulator/traceroute_simulator_host_registry.json")
+        if host_registry_file.exists():
+            try:
+                with open(host_registry_file, 'r') as f:
+                    host_registry = json.load(f)
+                    if namespace_name in host_registry.get('hosts', {}):
+                        return True
+            except Exception:
+                pass
+        
+        return False
+
     def _filter_routers(self, all_routers: Dict, pattern: str) -> Dict:
         """Filter routers based on glob pattern."""
         import fnmatch
@@ -201,8 +233,27 @@ class HiddenMeshNetworkSetup:
     def save_router_registry(self):
         """Save registry of router name to code mappings."""
         try:
-            with open(self.router_registry_file, 'w') as f:
-                json.dump(self.router_codes, f, indent=2)
+            # Debug: Check who we're running as
+            if self.verbose >= 2:
+                import pwd
+                current_user = pwd.getpwuid(os.getuid()).pw_name
+                current_euid = os.geteuid()
+                if current_euid == 0:
+                    self.logger.warning(f"WARNING: Running as root! User={current_user}, EUID={current_euid}")
+                else:
+                    self.logger.debug(f"Running as user={current_user}, EUID={current_euid}")
+            
+            # Save current umask and set new one for group write
+            old_umask = os.umask(0o002)  # Allow group write
+            try:
+                with open(self.router_registry_file, 'w') as f:
+                    json.dump(self.router_codes, f, indent=2)
+                
+                # Ensure the file has correct permissions
+                os.chmod(self.router_registry_file, 0o664)  # rw-rw-r--
+            finally:
+                # Restore original umask
+                os.umask(old_umask)
         except IOError as e:
             self.logger.error(f"Could not save router registry: {e}")
 
@@ -221,8 +272,17 @@ class HiddenMeshNetworkSetup:
     def save_interface_registry(self):
         """Save registry of interface name to code mappings per router."""
         try:
-            with open(self.interface_registry_file, 'w') as f:
-                json.dump(self.interface_registry, f, indent=2)
+            # Save current umask and set new one for group write
+            old_umask = os.umask(0o002)  # Allow group write
+            try:
+                with open(self.interface_registry_file, 'w') as f:
+                    json.dump(self.interface_registry, f, indent=2)
+                
+                # Ensure the file has correct permissions
+                os.chmod(self.interface_registry_file, 0o664)  # rw-rw-r--
+            finally:
+                # Restore original umask
+                os.umask(old_umask)
         except IOError as e:
             self.logger.error(f"Could not save interface registry: {e}")
     
@@ -234,6 +294,13 @@ class HiddenMeshNetworkSetup:
                 with open(self.bridge_registry_file, 'r') as f:
                     self.bridge_registry = json.load(f)
                 self.logger.debug(f"Loaded bridge registry from {self.bridge_registry_file}")
+                
+                # Fix permissions on existing file if needed
+                try:
+                    os.chmod(self.bridge_registry_file, 0o664)
+                except OSError:
+                    pass  # Ignore if we can't change permissions
+                    
             except Exception as e:
                 self.logger.warning(f"Failed to load bridge registry: {e}")
                 self.bridge_registry = {}
@@ -244,9 +311,18 @@ class HiddenMeshNetworkSetup:
         """Save bridge registry to persistent file."""
         try:
             import json
-            with open(self.bridge_registry_file, 'w') as f:
-                json.dump(self.bridge_registry, f, indent=2)
-            self.logger.debug(f"Saved bridge registry to {self.bridge_registry_file}")
+            # Save current umask and set new one for group write
+            old_umask = os.umask(0o002)  # Allow group write
+            try:
+                with open(self.bridge_registry_file, 'w') as f:
+                    json.dump(self.bridge_registry, f, indent=2)
+                
+                # Ensure the file has correct permissions
+                os.chmod(self.bridge_registry_file, 0o664)  # rw-rw-r--
+                self.logger.debug(f"Saved bridge registry to {self.bridge_registry_file}")
+            finally:
+                # Restore original umask
+                os.umask(old_umask)
         except Exception as e:
             self.logger.warning(f"Failed to save bridge registry: {e}")
     
@@ -611,13 +687,70 @@ Then run netsetup again.
         """Extract a specific property from interface details line."""
         match = re.search(regex_pattern, details_line)
         return match.group(1) if match else None
+    
+    def _needs_sudo(self, cmd: str, namespace: str = None) -> bool:
+        """Check if a command needs sudo privileges."""
+        # If we're already root, no need for sudo
+        if os.geteuid() == 0:
+            return False
+        
+        # Commands that need privileges
+        privileged_commands = [
+            'ip netns add',
+            'ip netns del',
+            'ip netns exec',
+            'ip link add',
+            'ip link del',
+            'ip link set',
+            'ip addr add',
+            'ip addr del',
+            'ip route add',
+            'ip route del',
+            'ip rule add',
+            'ip rule del',
+            'brctl addbr',
+            'brctl delbr',
+            'brctl addif',
+            'brctl delif',
+            'iptables',
+            'iptables-restore',
+            'iptables-save',
+            'ipset',
+            'ipset restore',
+            'ipset save',
+            'sysctl',
+            'tc qdisc',
+            'echo 1 >',  # For IP forwarding
+            'kill',
+            'pkill'
+        ]
+        
+        # If executing in namespace, always needs sudo
+        if namespace:
+            return True
+        
+        # Check if command starts with any privileged command
+        for priv_cmd in privileged_commands:
+            if cmd.startswith(priv_cmd):
+                return True
+        
+        return False
             
     def run_cmd(self, cmd: str, namespace: str = None, check: bool = True, log_cmd: bool = False):
         """Run a command, optionally in a namespace."""
+        # Determine if command needs sudo
+        needs_sudo = self._needs_sudo(cmd, namespace)
+        
         if namespace:
-            full_cmd = f"ip netns exec {namespace} {cmd}"
+            if needs_sudo and os.geteuid() != 0:
+                full_cmd = f"sudo ip netns exec {namespace} {cmd}"
+            else:
+                full_cmd = f"ip netns exec {namespace} {cmd}"
         else:
-            full_cmd = cmd
+            if needs_sudo and os.geteuid() != 0:
+                full_cmd = f"sudo {cmd}"
+            else:
+                full_cmd = cmd
             
         # Log command details for -vvv level
         if self.verbose >= 3 and log_cmd:
@@ -868,6 +1001,15 @@ Then run netsetup again.
         if self.verbose >= 1:
             print("\n=== Creating hidden mesh infrastructure ===")
         
+        # Check if namespace exists first
+        result = self.run_cmd(f"ip netns list | grep -w {self.hidden_ns}", check=False)
+        if result.returncode == 0:
+            # Namespace exists - this is OK for hidden-mesh as it's a known tsim namespace
+            if self.verbose > 0:
+                self.logger.warning(f"Hidden namespace {self.hidden_ns} already exists, continuing...")
+            self.created_namespaces.add(self.hidden_ns)
+            return
+        
         try:
             self.run_cmd(f"ip netns add {self.hidden_ns}")
             self.created_namespaces.add(self.hidden_ns)
@@ -875,16 +1017,9 @@ Then run netsetup again.
                 self.logger.debug(f"Created hidden namespace {self.hidden_ns}")
             
         except subprocess.CalledProcessError as e:
-            # Check if namespace actually exists
-            result = self.run_cmd(f"ip netns list | grep -w {self.hidden_ns}", check=False)
-            if result.returncode == 0:
-                if self.verbose >= 3:
-                    self.logger.debug(f"Hidden namespace {self.hidden_ns} already exists")
-                self.created_namespaces.add(self.hidden_ns)
-            else:
-                error_msg = f"CRITICAL: Failed to create hidden namespace {self.hidden_ns}: {e}"
-                self.logger.error(error_msg)
-                raise Exception(error_msg)
+            error_msg = f"CRITICAL: Failed to create hidden namespace {self.hidden_ns}: {e}"
+            self.logger.error(error_msg)
+            raise Exception(error_msg)
         
         # Verify the namespace exists before proceeding
         result = self.run_cmd(f"ip netns list | grep -w {self.hidden_ns}", check=False)
@@ -895,7 +1030,7 @@ Then run netsetup again.
         
         try:
             # Enable IP forwarding in hidden namespace
-            self.run_cmd(f"echo 1 > /proc/sys/net/ipv4/ip_forward", self.hidden_ns)
+            self.run_cmd(f"sysctl -w net.ipv4.ip_forward=1", self.hidden_ns)
             self.run_cmd(f"ip link set lo up", self.hidden_ns)
             self.logger.debug(f"Configured hidden namespace {self.hidden_ns}")
             
@@ -1121,22 +1256,33 @@ Then run netsetup again.
                 if self.verbose >= 2:
                     print(f"  → Creating namespace {router_name}")
                 
-                try:
-                    self.run_cmd(f"ip netns add {router_name}")
-                    self.created_namespaces.add(router_name)
-                    self.router_stats[router_name]['namespace_created'] = True
-                    if self.verbose >= 2:
-                        print(f"    ✓ Namespace created")
-                except subprocess.CalledProcessError as e:
-                    # Check if namespace already exists
-                    result = self.run_cmd(f"ip netns list | grep -w {router_name}", check=False)
-                    if result.returncode == 0:
+                # Check if namespace exists first
+                result = self.run_cmd(f"ip netns list | grep -w {router_name}", check=False)
+                if result.returncode == 0:
+                    # Namespace exists - check if it's tsim-managed
+                    if self._is_tsim_managed_namespace(router_name):
+                        if self.verbose > 0:
+                            self.logger.warning(f"Namespace {router_name} already exists (tsim-managed), continuing...")
                         if self.verbose >= 2:
-                            print(f"    ⚠ Namespace already exists")
-                        self.router_stats[router_name]['warnings'].append("Namespace already existed")
+                            print(f"    ⚠ Namespace already exists (tsim-managed)")
+                        self.router_stats[router_name]['warnings'].append("Namespace already existed (tsim-managed)")
                         self.created_namespaces.add(router_name)
                         self.router_stats[router_name]['namespace_created'] = True
                     else:
+                        # Not tsim-managed - critical error
+                        error_msg = f"CRITICAL: Namespace {router_name} already exists but is not managed by tsim"
+                        self.router_stats[router_name]['errors'].append(error_msg)
+                        self.logger.error(error_msg)
+                        raise Exception(error_msg)
+                else:
+                    # Namespace doesn't exist - create it
+                    try:
+                        self.run_cmd(f"ip netns add {router_name}")
+                        self.created_namespaces.add(router_name)
+                        self.router_stats[router_name]['namespace_created'] = True
+                        if self.verbose >= 2:
+                            print(f"    ✓ Namespace created")
+                    except subprocess.CalledProcessError as e:
                         error_msg = f"Failed to create namespace: {e}"
                         self.router_stats[router_name]['errors'].append(error_msg)
                         self.logger.error(f"Critical error for {router_name}: {error_msg}")
@@ -1146,7 +1292,7 @@ Then run netsetup again.
                 if self.verbose >= 2:
                     print(f"    → Enabling IP forwarding")
                 try:
-                    self.run_cmd(f"echo 1 > /proc/sys/net/ipv4/ip_forward", router_name)
+                    self.run_cmd(f"sysctl -w net.ipv4.ip_forward=1", router_name)
                     if self.verbose >= 2:
                         print(f"    ✓ IP forwarding enabled")
                 except subprocess.CalledProcessError as e:
@@ -2116,7 +2262,11 @@ Then run netsetup again.
         
         try:
             if router_name:
-                full_cmd = f"ip netns exec {router_name} iptables-restore"
+                # Add sudo if not running as root
+                if os.geteuid() != 0:
+                    full_cmd = f"sudo ip netns exec {router_name} iptables-restore"
+                else:
+                    full_cmd = f"ip netns exec {router_name} iptables-restore"
             else:
                 full_cmd = "iptables-restore"
             
@@ -2235,7 +2385,11 @@ Then run netsetup again.
         
         try:
             if router_name:
-                full_cmd = f"ip netns exec {router_name} ipset restore"
+                # Add sudo if not running as root
+                if os.geteuid() != 0:
+                    full_cmd = f"sudo ip netns exec {router_name} ipset restore"
+                else:
+                    full_cmd = f"ip netns exec {router_name} ipset restore"
             else:
                 full_cmd = "ipset restore"
             
@@ -2379,10 +2533,21 @@ def main():
     
     args = parser.parse_args()
     
-    if os.geteuid() != 0:
-        if args.verbose >= 1:
-            print("Error: This script must be run as root (use sudo)")
-        return 1
+    # No longer require root - sudo will be added to individual commands as needed
+    # Just check if user is in tsim-users group
+    import grp
+    import pwd
+    try:
+        username = pwd.getpwuid(os.getuid()).pw_name
+        tsim_group = grp.getgrnam('tsim-users')
+        if username not in tsim_group.gr_mem and os.getuid() != 0:
+            if args.verbose >= 1:
+                print("Warning: User not in tsim-users group. Namespace operations may fail.")
+                print("Run: sudo usermod -a -G tsim-users $USER")
+    except (KeyError, OSError):
+        if args.verbose >= 1 and os.getuid() != 0:
+            print("Warning: tsim-users group not found. Namespace operations may fail.")
+            print("Run: sudo groupadd -f tsim-users")
     
     setup = HiddenMeshNetworkSetup(verbose=args.verbose, limit_pattern=args.limit)
     

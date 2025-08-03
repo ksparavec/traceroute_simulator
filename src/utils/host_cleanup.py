@@ -96,10 +96,17 @@ class HostCleanup:
         
     def check_prerequisites(self) -> bool:
         """Check that required tools and conditions are met."""
-        # Check for root privileges
+        # Check for tsim-users group membership
         if os.geteuid() != 0:
-            self.logger.error("Root privileges required for host cleanup")
-            return False
+            import grp
+            import pwd
+            try:
+                username = pwd.getpwuid(os.getuid()).pw_name
+                tsim_group = grp.getgrnam('tsim-users')
+                if username not in tsim_group.gr_mem:
+                    self.logger.warning("User not in tsim-users group. Operations may fail.")
+            except KeyError:
+                self.logger.warning("tsim-users group not found. Operations may fail.")
             
         return True
 

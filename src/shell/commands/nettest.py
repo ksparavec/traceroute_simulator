@@ -157,8 +157,8 @@ class NetTestCommands(BaseCommandHandler):
                 for _ in range(args.verbose - 1):
                     cmd_args.append('-v')
             
-            # Run with sudo since we need namespace access
-            returncode = self.run_script_with_output(script_path, cmd_args, use_sudo=True)
+            # Run script (sudo will be added by script for specific commands)
+            returncode = self.run_script_with_output(script_path, cmd_args, use_sudo=False)
             
             return returncode
             

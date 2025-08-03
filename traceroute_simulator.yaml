@@ -28,9 +28,9 @@ controller_ip: "127.0.0.1"                            # Ansible controller IP (r
 
 # Registry files for network simulation state
 registry_files:
-  hosts: "/tmp/traceroute_hosts_registry.json"        # Host namespace registry
-  routers: "/tmp/traceroute_routers_registry.json"    # Router/host name to code mappings
-  interfaces: "/tmp/traceroute_interfaces_registry.json"  # Interface name to code mappings
-  bridges: "/tmp/traceroute_bridges_registry.json"    # Bridge and connection registry
-  services: "/tmp/traceroute_services_registry.json"  # Network services registry
+  hosts: "/var/opt/traceroute-simulator/traceroute_hosts_registry.json"        # Host namespace registry
+  routers: "/var/opt/traceroute-simulator/traceroute_routers_registry.json"    # Router/host name to code mappings
+  interfaces: "/var/opt/traceroute-simulator/traceroute_interfaces_registry.json"  # Interface name to code mappings
+  bridges: "/var/opt/traceroute-simulator/traceroute_bridges_registry.json"    # Bridge and connection registry
+  services: "/var/opt/traceroute-simulator/traceroute_services_registry.json"  # Network services registry
 

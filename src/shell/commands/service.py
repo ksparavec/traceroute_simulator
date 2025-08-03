@@ -170,8 +170,8 @@ class ServiceCommands(BaseCommandHandler):
         for _ in range(args.verbose):
             cmd_args.append('-v')
         
-        # Run with sudo
-        returncode = self.run_script_with_output(script_path, cmd_args, use_sudo=True)
+        # Run script (sudo will be added by script for specific commands)
+        returncode = self.run_script_with_output(script_path, cmd_args, use_sudo=False)
         
         if returncode == 0:
             self.success(f"Service started on {args.ip}:{args.port}")
@@ -208,8 +208,8 @@ class ServiceCommands(BaseCommandHandler):
         if hasattr(args, 'json') and args.json:
             cmd_args.append('-j')
         
-        # Run with sudo
-        returncode = self.run_script_with_output(script_path, cmd_args, use_sudo=True)
+        # Run script (sudo will be added by script for specific commands)
+        returncode = self.run_script_with_output(script_path, cmd_args, use_sudo=False)
         
         # Don't print success/error messages here - service_tester.py handles all output
         
@@ -237,8 +237,8 @@ class ServiceCommands(BaseCommandHandler):
         for _ in range(args.verbose):
             cmd_args.append('-v')
         
-        # Run with sudo
-        returncode = self.run_script_with_output(script_path, cmd_args, use_sudo=True)
+        # Run script (sudo will be added by script for specific commands)
+        returncode = self.run_script_with_output(script_path, cmd_args, use_sudo=False)
         
         return returncode
     
@@ -260,8 +260,8 @@ class ServiceCommands(BaseCommandHandler):
         for _ in range(args.verbose):
             cmd_args.append('-v')
         
-        # Run with sudo
-        returncode = self.run_script_with_output(script_path, cmd_args, use_sudo=True)
+        # Run script (sudo will be added by script for specific commands)
+        returncode = self.run_script_with_output(script_path, cmd_args, use_sudo=False)
         
         if returncode == 0:
             self.success(f"Service stopped on {args.ip}:{args.port}")
@@ -297,8 +297,8 @@ class ServiceCommands(BaseCommandHandler):
         for _ in range(args.verbose):
             cmd_args.append('-v')
         
-        # Run with sudo
-        returncode = self.run_script_with_output(script_path, cmd_args, use_sudo=True)
+        # Run script (sudo will be added by script for specific commands)
+        returncode = self.run_script_with_output(script_path, cmd_args, use_sudo=False)
         
         if returncode == 0:
             self.success("All services stopped successfully")

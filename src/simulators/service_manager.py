@@ -151,9 +151,9 @@ class ServiceConfig:
             
         # Set default paths if not provided
         if not self.pid_file:
-            self.pid_file = f"/tmp/traceroute_service_{self.namespace}_{self.name}_{self.port}.pid"
+            self.pid_file = f"/var/opt/traceroute-simulator/traceroute_service_{self.namespace}_{self.name}_{self.port}.pid"
         if not self.log_file:
-            self.log_file = f"/tmp/traceroute_service_{self.namespace}_{self.name}_{self.port}.log"
+            self.log_file = f"/var/opt/traceroute-simulator/traceroute_service_{self.namespace}_{self.name}_{self.port}.log"
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
@@ -198,7 +198,11 @@ class ServiceManager:
         except posix_ipc.ExistentialError:
             # Create new semaphore if it doesn't exist
             try:
-                self.semaphore = posix_ipc.Semaphore(self.sem_name, posix_ipc.O_CREAT | posix_ipc.O_EXCL, initial_value=1)
+                self.semaphore = posix_ipc.Semaphore(self.sem_name, posix_ipc.O_CREAT | posix_ipc.O_EXCL, initial_value=1, mode=0o660)
+                # Ensure correct permissions (override umask)
+                sem_path = f"/dev/shm/sem.{self.sem_name[1:]}"  # Remove leading slash
+                if os.path.exists(sem_path):
+                    os.chmod(sem_path, 0o660)
             except posix_ipc.ExistentialError:
                 # Another process created it between our check and create
                 self.semaphore = posix_ipc.Semaphore(self.sem_name)
@@ -207,7 +211,11 @@ class ServiceManager:
             # Create with a unique name as fallback
             unique_suffix = hashlib.md5(str(os.getpid()).encode()).hexdigest()[:8]
             self.sem_name = f"/tsim_services_reg_{unique_suffix}"
-            self.semaphore = posix_ipc.Semaphore(self.sem_name, posix_ipc.O_CREAT, initial_value=1)
+            self.semaphore = posix_ipc.Semaphore(self.sem_name, posix_ipc.O_CREAT, initial_value=1, mode=0o660)
+            # Ensure correct permissions (override umask)
+            sem_path = f"/dev/shm/sem.{self.sem_name[1:]}"  # Remove leading slash
+            if os.path.exists(sem_path):
+                os.chmod(sem_path, 0o660)
         
     def _load_registry(self) -> Dict[str, ServiceConfig]:
         """Load service registry from disk with atomic operations."""
@@ -239,8 +247,17 @@ class ServiceManager:
             
         self.semaphore.acquire()
         try:
-            with open(self.registry_file, 'w') as f:
-                json.dump(data, f, indent=2)
+            # Save current umask and set new one for group write
+            old_umask = os.umask(0o002)  # Allow group write
+            try:
+                with open(self.registry_file, 'w') as f:
+                    json.dump(data, f, indent=2)
+                
+                # Ensure the file has correct permissions
+                os.chmod(self.registry_file, 0o664)  # rw-rw-r--
+            finally:
+                # Restore original umask
+                os.umask(old_umask)
         finally:
             self.semaphore.release()
     
@@ -260,13 +277,30 @@ class ServiceManager:
                 suggestion="Install socat: sudo apt-get install socat"
             )
     
+    def _run_command(self, cmd: list, check: bool = True) -> subprocess.CompletedProcess:
+        """Run command with sudo if needed."""
+        # Check if command needs sudo
+        cmd_str = ' '.join(cmd)
+        needs_sudo = False
+        
+        # Commands that need sudo
+        if not os.geteuid() == 0:  # Not already root
+            if cmd[0] == "ip" and len(cmd) > 2 and cmd[1] == "netns" and cmd[2] == "exec":
+                needs_sudo = True
+            elif cmd[0] in ["kill", "pkill"]:
+                needs_sudo = True
+        
+        if needs_sudo:
+            cmd = ["sudo"] + cmd
+        
+        return subprocess.run(cmd, check=check, capture_output=True, text=True)
+    
     def _check_namespace_exists(self, namespace: str) -> None:
         """Check if namespace exists."""
         try:
-            subprocess.run(
+            self._run_command(
                 ["ip", "netns", "exec", namespace, "true"],
-                check=True,
-                capture_output=True
+                check=True
             )
         except subprocess.CalledProcessError:
             raise ConfigurationError(
@@ -289,7 +323,7 @@ class ServiceManager:
             print(f"[CMD] {' '.join(shlex.quote(arg) for arg in cmd)}")
         
         try:
-            result = subprocess.run(cmd, capture_output=True, text=True)
+            result = self._run_command(cmd, check=False)
             # If grep finds anything, the port is in use for this protocol
             return result.returncode != 0  # grep returns 0 if found, 1 if not found
         except subprocess.CalledProcessError:
@@ -343,6 +377,10 @@ class ServiceManager:
             "ip", "netns", "exec", config.namespace,
             "socat", listen_spec, "EXEC:cat"
         ]
+        
+        # Add sudo if needed
+        if not os.geteuid() == 0:
+            cmd = ["sudo"] + cmd
         
         # Show command with -vv
         if self.verbose_level >= 2:
@@ -411,18 +449,37 @@ class ServiceManager:
                 with open(config.pid_file, 'r') as f:
                     pid = int(f.read().strip())
                 
+                # Kill the entire process group to handle sudo + child processes
                 # Try graceful termination first
                 try:
-                    os.kill(pid, signal.SIGTERM)
+                    if os.geteuid() == 0:
+                        os.killpg(os.getpgid(pid), signal.SIGTERM)
+                    else:
+                        # Use sudo pkill to kill process group - suppress errors
+                        subprocess.run(["sudo", "pkill", "-TERM", "-P", str(pid)], 
+                                     check=False, capture_output=True)
+                        subprocess.run(["sudo", "kill", "-TERM", str(pid)], 
+                                     check=False, capture_output=True)
                     time.sleep(0.5)
-                except ProcessLookupError:
+                except (ProcessLookupError, subprocess.CalledProcessError):
                     pass  # Already dead
                 
-                # Force kill if still running
-                try:
-                    os.kill(pid, signal.SIGKILL)
-                except ProcessLookupError:
-                    pass
+                # Check if process still exists before force kill
+                check_result = subprocess.run(["sudo", "kill", "-0", str(pid)], 
+                                            check=False, capture_output=True)
+                if check_result.returncode == 0:
+                    # Process still exists, force kill
+                    try:
+                        if os.geteuid() == 0:
+                            os.killpg(os.getpgid(pid), signal.SIGKILL)
+                        else:
+                            # Use sudo pkill to kill process group - suppress errors
+                            subprocess.run(["sudo", "pkill", "-KILL", "-P", str(pid)], 
+                                         check=False, capture_output=True)
+                            subprocess.run(["sudo", "kill", "-KILL", str(pid)], 
+                                         check=False, capture_output=True)
+                    except (ProcessLookupError, subprocess.CalledProcessError):
+                        pass
                     
                 self.logger.info(f"Service {name} stopped", pid=pid)
                 
@@ -465,7 +522,13 @@ class ServiceManager:
                 pid = int(f.read().strip())
             
             # Check if process exists
-            os.kill(pid, 0)
+            if os.geteuid() == 0:
+                os.kill(pid, 0)
+            else:
+                # Use kill -0 with sudo to check
+                result = subprocess.run(["sudo", "kill", "-0", str(pid)], check=False, capture_output=True)
+                if result.returncode != 0:
+                    return False
             return True
             
         except (ValueError, OSError, ProcessLookupError):
@@ -558,9 +621,17 @@ class ServiceManager:
         for key in service_keys:
             parts = key.split(':')
             if len(parts) == 3:
+                # Old format: namespace:name:port
                 namespace, name, port = parts
                 try:
                     self.stop_service(namespace, name, int(port))
+                except Exception as e:
+                    self.logger.warning(f"Failed to stop service {key}", error=str(e))
+            elif len(parts) == 4:
+                # New format: namespace:name:port:protocol
+                namespace, name, port, protocol = parts
+                try:
+                    self.stop_service(namespace, name, int(port), protocol)
                 except Exception as e:
                     self.logger.warning(f"Failed to stop service {key}", error=str(e))
         
@@ -688,6 +759,10 @@ except Exception as e:
         try:
             if self.verbose_level >= 3:
                 print(f"[DEBUG] Running Python {protocol} client...")
+            
+            # Add sudo if needed
+            if not os.geteuid() == 0:
+                cmd = ["sudo"] + cmd
             
             result = subprocess.run(
                 cmd,

@@ -5,7 +5,7 @@
 # Outputs comprehensive JSON report with all test results
 #
 
-set -euo pipefail
+set -eo pipefail
 
 # Script version
 readonly VERSION="1.0.0"
@@ -16,15 +16,17 @@ readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # Global variables
 declare -A STEP_TIMERS
 declare -i STEP_COUNTER=0
-declare CLEANUP_REQUIRED=false
 declare SOURCE_HOST_ADDED=false
 declare DEST_HOST_ADDED=false
 declare SERVICE_STARTED=false
 declare TRACE_FILE=""
 declare INTERACTIVE_MODE=false
+declare TSIMSH_VERBOSE=""
+# Track hosts we create for cleanup
+declare -a CREATED_HOSTS=()
 
 # Get precise start time at script beginning
-SCRIPT_START_TIME=$(python3 -c "import time; print(time.time())")
+SCRIPT_START_TIME=$(python3 -B -u -c "import time; print(time.time())")
 
 # Input parameters
 SOURCE_IP=""
@@ -47,7 +49,7 @@ get_timestamp() {
 
 # Function to get elapsed time since script start
 get_elapsed_time() {
-    local current_time=$(python3 -c "import time; print(time.time())")
+    local current_time=$(python3 -B -u -c "import time; print(time.time())")
     local elapsed=$(echo "scale=2; $current_time - $SCRIPT_START_TIME" | bc)
     printf "%5.2f" "$elapsed"
 }
@@ -83,50 +85,72 @@ tsimsh_exec() {
     local command="$1"
     local capture_output="${2:-false}"
     
+    # Add verbose flags to the command if set
+    if [[ -n "$TSIMSH_VERBOSE" ]]; then
+        command="$command $TSIMSH_VERBOSE"
+    fi
+    
     # Debug: print command to stderr with timing
     echo "$(get_elapsed_time) tsimsh: $command" >&2
     
     if [[ "$capture_output" == "true" ]]; then
-        # Only capture stdout, filter out info lines starting with ℹ
-        echo "$command" | tsimsh -q | grep -v '^ℹ'
+        # Capture stdout, filter out info lines starting with ℹ
+        local output
+        output=$(echo "$command" | tsimsh -q 2>&1 | grep -v '^ℹ')
+        echo "$output"
+        return ${PIPESTATUS[1]:-0}  # Return tsimsh exit code
     else
-        echo "$command" | tsimsh -q >/dev/null 2>&1
-        return $?
+        # Even when not capturing for return, capture for debug logging
+        local output
+        local error_output
+        output=$(echo "$command" | tsimsh -q 2>&1)
+        local exit_code=$?
+        
+        # If verbose mode is on or command failed, log the output
+        if [[ -n "$TSIMSH_VERBOSE" ]] || [[ $exit_code -ne 0 ]]; then
+            echo "  Output: $output" >&2
+        fi
+        
+        return $exit_code
     fi
 }
 
 # Function to clean up resources
 cleanup() {
-    if [[ "$CLEANUP_REQUIRED" == "true" ]]; then
-        start_step "cleanup"
-        
-        # Stop service first
-        if [[ "$SERVICE_STARTED" == "true" ]]; then
-            tsimsh_exec "service stop --ip ${DEST_IP} --port ${DEST_PORT} --protocol ${PROTOCOL}" false || true
-        fi
-        
-        # Remove hosts we added
-        if [[ "$SOURCE_HOST_ADDED" == "true" && -n "${JSON_RESULTS[source_hosts_added]}" ]]; then
-            for host in ${JSON_RESULTS[source_hosts_added]}; do
-                tsimsh_exec "host remove --name ${host} --force" false || true
-            done
-        fi
-        
-        if [[ "$DEST_HOST_ADDED" == "true" && -n "${JSON_RESULTS[dest_hosts_added]}" ]]; then
-            for host in ${JSON_RESULTS[dest_hosts_added]}; do
-                tsimsh_exec "host remove --name ${host} --force" false || true
-            done
-        fi
-        
-        end_step "completed"
+    # Always run cleanup
+    start_step "cleanup"
+    
+    # Stop service first
+    if [[ "$SERVICE_STARTED" == "true" ]]; then
+        tsimsh_exec "service stop --ip ${DEST_IP} --port ${DEST_PORT} --protocol ${PROTOCOL}" false || true
     fi
+    
+    # Remove hosts we created
+    if [[ ${#CREATED_HOSTS[@]} -gt 0 ]]; then
+        for host in "${CREATED_HOSTS[@]}"; do
+            tsimsh_exec "host remove --name ${host} --force" false || true
+        done
+    fi
+    
+    end_step "completed"
     
     # Clean up temporary directory
     rm -rf "$TEMP_DIR"
 }
 
-# Set up cleanup trap
-trap cleanup EXIT
+# Error handler function
+error_handler() {
+    local exit_code=$?
+    local line_no=$1
+    if [[ $exit_code -ne 0 ]]; then
+        echo "Error occurred at line $line_no with exit code $exit_code" >&2
+    fi
+    return $exit_code
+}
+
+# Set up cleanup trap for all exit scenarios
+trap cleanup EXIT INT TERM HUP
+trap 'error_handler $LINENO' ERR
 
 # Function to display usage
 usage() {
@@ -143,6 +167,7 @@ Options:
     -i, --interactive         Interactive mode (human-readable output)
     -h, --help                Display this help message
     -v, --version             Display version information
+    -V, --verbose             Verbose mode for tsimsh commands (can be used multiple times)
 
 Examples:
     Live trace:
@@ -195,6 +220,10 @@ parse_args() {
             -v|--version)
                 echo "Network Reachability Test v${VERSION}"
                 exit 0
+                ;;
+            -V|--verbose)
+                TSIMSH_VERBOSE="${TSIMSH_VERBOSE} -v"
+                shift
                 ;;
             *)
                 echo "Error: Unknown option $1" >&2
@@ -285,7 +314,7 @@ phase1_path_discovery() {
     # Extract routers from trace
     local routers=$(extract_routers_from_trace "$trace_result")
     # Convert router list to JSON array using Python
-    JSON_RESULTS[routers_in_path]=$(echo "$routers" | python3 -c "import sys, json; print(json.dumps([line.strip() for line in sys.stdin if line.strip()]))")
+    JSON_RESULTS[routers_in_path]=$(echo "$routers" | python3 -B -u -c "import sys, json; print(json.dumps([line.strip() for line in sys.stdin if line.strip()]))")
     
     end_step "$trace_result"
     
@@ -298,8 +327,6 @@ phase2_setup_environment() {
     
     start_step "environment_setup"
     
-    CLEANUP_REQUIRED=true
-    
     # Get list of existing hosts
     local host_list=$(tsimsh_exec "host list --json" true)
     
@@ -309,7 +336,7 @@ phase2_setup_environment() {
     
     if [[ -n "$host_list" ]]; then
         # Extract existing hosts with matching IPs
-        existing_source_hosts=$(echo "$host_list" | python3 -c "
+        existing_source_hosts=$(echo "$host_list" | python3 -B -u -c "
 import sys, json
 try:
     data = json.loads(sys.stdin.read())
@@ -328,7 +355,7 @@ except:
     pass
 ")
         
-        existing_dest_hosts=$(echo "$host_list" | python3 -c "
+        existing_dest_hosts=$(echo "$host_list" | python3 -B -u -c "
 import sys, json
 try:
     data = json.loads(sys.stdin.read())
@@ -371,6 +398,7 @@ except:
             if tsimsh_exec "host add --name ${src_host_name} --primary-ip ${SOURCE_IP}/24 --connect-to ${router}" false; then
                 source_hosts_added+="${src_host_name} "
                 SOURCE_HOST_ADDED=true
+                CREATED_HOSTS+=("${src_host_name}")
             else
                 # Clean up any hosts we've added so far
                 for host in $source_hosts_added; do
@@ -400,6 +428,7 @@ except:
             if tsimsh_exec "host add --name ${dst_host_name} --primary-ip ${DEST_IP}/24 --connect-to ${router}" false; then
                 dest_hosts_added+="${dst_host_name} "
                 DEST_HOST_ADDED=true
+                CREATED_HOSTS+=("${dst_host_name}")
             else
                 # Clean up any hosts we've added so far
                 for host in $source_hosts_added; do
@@ -448,7 +477,7 @@ except:
     
     if [[ -n "$service_list" ]]; then
         # Check if this specific service is already running
-        service_exists=$(echo "$service_list" | python3 -c "
+        service_exists=$(echo "$service_list" | python3 -B -u -c "
 import sys, json
 try:
     services = json.loads(sys.stdin.read())
@@ -552,7 +581,7 @@ phase3_reachability_tests() {
         exit 1
     fi
     
-    local router_results=$(echo "$service_result" | python3 -c "
+    local router_results=$(echo "$service_result" | python3 -B -u -c "
 import sys, json
 
 try:
@@ -672,7 +701,7 @@ phase4_packet_analysis() {
             local analysis_mode="blocking"  # default to blocking
             if [[ -n "${JSON_RESULTS[router_service_results]}" ]]; then
                 # Extract the status for this specific router from router_service_results
-                local router_status=$(echo "${JSON_RESULTS[router_service_results]}" | python3 -c "
+                local router_status=$(echo "${JSON_RESULTS[router_service_results]}" | python3 -B -u -c "
 import sys, json
 try:
     data = json.loads(sys.stdin.read())
@@ -719,7 +748,7 @@ except:
     # Combine all packet analysis results
     if [[ ${#packet_analysis_results[@]} -gt 0 ]]; then
         # Use Python to combine JSON results
-        JSON_RESULTS[packet_count_analysis]=$(printf '%s\n' "${packet_analysis_results[@]}" | python3 -c "
+        JSON_RESULTS[packet_count_analysis]=$(printf '%s\n' "${packet_analysis_results[@]}" | python3 -B -u -c "
 import sys, json
 results = []
 for line in sys.stdin:
@@ -760,7 +789,7 @@ phase5_compile_results() {
             fi
             first=false
             # Use Python to properly escape JSON strings
-            local result_json=$(echo "$result" | python3 -c "import sys, json; print(json.dumps(sys.stdin.read().strip()))")
+            local result_json=$(echo "$result" | python3 -B -u -c "import sys, json; print(json.dumps(sys.stdin.read().strip()))")
             execution_trace+="{\"step\": \"$step_name\", \"duration_seconds\": $duration, \"result\": $result_json}"
         fi
     done
@@ -798,7 +827,8 @@ phase5_compile_results() {
     end_step "completed"
     
     # Use Python script to format output
-    "${SCRIPT_DIR}/format_reachability_output.py"
+    # Use env to ensure all exported variables are passed to the Python script
+    env "${SCRIPT_DIR}/format_reachability_output.py"
 }
 
 # Main execution

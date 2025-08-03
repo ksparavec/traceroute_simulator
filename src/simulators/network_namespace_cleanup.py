@@ -217,6 +217,15 @@ class NetworkNamespaceCleanup:
         Returns:
             CompletedProcess result
         """
+        # Add sudo if needed
+        if os.geteuid() != 0:
+            # Commands that need sudo
+            if (command.startswith("ip netns") or 
+                command.startswith("ip link") or
+                command.startswith("brctl") or
+                command.startswith("pkill")):
+                command = f"sudo {command}"
+        
         self.logger.debug(f"Running: {command}")
         
         try:
@@ -1052,12 +1061,21 @@ Safety:
     
     args = parser.parse_args()
     
-    # Check for root privileges
+    # Check if user is in tsim-users group (unless running as root)
     if os.geteuid() != 0:
-        print("Error: This script requires root privileges to manage network namespaces")
-        print("Please run with sudo:")
-        print(f"  sudo {' '.join(sys.argv)}")
-        sys.exit(1)
+        import grp
+        import pwd
+        try:
+            username = pwd.getpwuid(os.getuid()).pw_name
+            tsim_group = grp.getgrnam('tsim-users')
+            if username not in tsim_group.gr_mem:
+                if args.verbose >= 1:
+                    print("Warning: User not in tsim-users group. Namespace operations may fail.")
+                    print("Run: sudo usermod -a -G tsim-users $USER")
+        except (KeyError, OSError):
+            if args.verbose >= 1:
+                print("Warning: tsim-users group not found. Namespace operations may fail.")
+                print("Run: sudo groupadd -f tsim-users")
         
     try:
         cleanup = NetworkNamespaceCleanup(args.force, args.verbose, args.limit)

@@ -225,8 +225,8 @@ class NetworkCommands(BaseCommandHandler):
         if parsed_args.verbose:
             cmd_args.append('-' + 'v' * parsed_args.verbose)
         
-        # Run with sudo
-        returncode = self.run_script_with_output(script_path, cmd_args, use_sudo=True)
+        # Run script (sudo will be added by script for specific commands)
+        returncode = self.run_script_with_output(script_path, cmd_args, use_sudo=False)
         
         if returncode == 0:
             self.success("Network namespace setup completed successfully")
@@ -277,8 +277,8 @@ class NetworkCommands(BaseCommandHandler):
         if parsed_args.verbose:
             cmd_args.append('-' + 'v' * parsed_args.verbose)
         
-        # Run with sudo
-        returncode = self.run_script_with_output(script_path, cmd_args, use_sudo=True)
+        # Run script (sudo will be added by script for specific commands)
+        returncode = self.run_script_with_output(script_path, cmd_args, use_sudo=False)
         
         return returncode
     
@@ -328,8 +328,8 @@ class NetworkCommands(BaseCommandHandler):
         if parsed_args.verbose:
             cmd_args.append('-' + 'v' * parsed_args.verbose)
         
-        # Run with sudo
-        returncode = self.run_script_with_output(script_path, cmd_args, use_sudo=True)
+        # Run script (sudo will be added by script for specific commands)
+        returncode = self.run_script_with_output(script_path, cmd_args, use_sudo=False)
         
         if returncode == 0:
             self.success("Network cleanup completed successfully")
@@ -393,8 +393,8 @@ class NetworkCommands(BaseCommandHandler):
         if parsed_args.verbose:
             cmd_args.append('-' + 'v' * parsed_args.verbose)
         
-        # Run with sudo
-        returncode = self.run_script_with_output(script_path, cmd_args, use_sudo=True)
+        # Run script (sudo will be added by script for specific commands)
+        returncode = self.run_script_with_output(script_path, cmd_args, use_sudo=False)
         
         if returncode == 0:
             self.success("Network test completed successfully")

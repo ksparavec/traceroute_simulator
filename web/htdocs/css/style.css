@@ -33,17 +33,31 @@ h1 {
     font-size: 28px;
 }
 
-.logout {
-    color: #e74c3c;
+.logout, .test-me {
     text-decoration: none;
     padding: 8px 16px;
-    border: 1px solid #e74c3c;
     border-radius: 4px;
     transition: all 0.3s;
+    margin-left: 10px;
+}
+
+.logout {
+    color: #e74c3c;
+    border: 1px solid #e74c3c;
 }
 
 .logout:hover {
     background-color: #e74c3c;
+    color: white;
+}
+
+.test-me {
+    color: #3498db;
+    border: 1px solid #3498db;
+}
+
+.test-me:hover {
+    background-color: #3498db;
     color: white;
 }
 

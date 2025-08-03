@@ -108,10 +108,14 @@ class HostNamespaceManager:
         self.semaphores = {}
         for path, sem_name in self.sem_names.items():
             try:
-                # Try to create semaphore with initial value 1
-                sem = posix_ipc.Semaphore(sem_name, flags=posix_ipc.O_CREX, initial_value=1)
+                # Try to create semaphore with initial value 1 and group permissions
+                sem = posix_ipc.Semaphore(sem_name, flags=posix_ipc.O_CREX, initial_value=1, mode=0o660)
                 self.semaphores[path] = sem
                 self.logger.debug(f"Created semaphore {sem_name}")
+                # Ensure correct permissions (override umask)
+                sem_path = f"/dev/shm/sem.{sem_name[1:]}"  # Remove leading slash
+                if os.path.exists(sem_path):
+                    os.chmod(sem_path, 0o660)
             except posix_ipc.ExistentialError:
                 # Semaphore exists, open it
                 sem = posix_ipc.Semaphore(sem_name)
@@ -134,7 +138,11 @@ class HostNamespaceManager:
             path_hash = hashlib.md5(path_str.encode()).hexdigest()[:8]
             sem_name = f"/tsim_custom_{path_hash}"
             try:
-                sem = posix_ipc.Semaphore(sem_name, flags=posix_ipc.O_CREX, initial_value=1)
+                sem = posix_ipc.Semaphore(sem_name, flags=posix_ipc.O_CREX, initial_value=1, mode=0o660)
+                # Ensure correct permissions (override umask)
+                sem_path = f"/dev/shm/sem.{sem_name[1:]}"  # Remove leading slash
+                if os.path.exists(sem_path):
+                    os.chmod(sem_path, 0o660)
             except posix_ipc.ExistentialError:
                 sem = posix_ipc.Semaphore(sem_name)
             self.semaphores[path_str] = sem
@@ -163,9 +171,18 @@ class HostNamespaceManager:
             if success and isinstance(result, dict):
                 temp_file = Path(file_path).with_suffix('.tmp')
                 try:
-                    with open(temp_file, 'w') as f:
-                        json.dump(result, f, indent=2)
-                    temp_file.replace(Path(file_path))
+                    # Save current umask and set new one for group write
+                    old_umask = os.umask(0o002)  # Allow group write
+                    try:
+                        with open(temp_file, 'w') as f:
+                            json.dump(result, f, indent=2)
+                        temp_file.replace(Path(file_path))
+                        
+                        # Ensure the final file has correct permissions
+                        os.chmod(file_path, 0o664)  # rw-rw-r--
+                    finally:
+                        # Restore original umask
+                        os.umask(old_umask)
                 except IOError as e:
                     self.logger.error(f"Error writing {file_path}: {e}")
                     if temp_file.exists():
@@ -245,13 +262,60 @@ class HostNamespaceManager:
             self.logger.error(f"Error discovering namespaces: {e}")
             
         self.logger.info(f"Found {len(self.available_namespaces)} available namespaces")
+    
+    def _needs_sudo(self, cmd: str, namespace: str = None) -> bool:
+        """Check if a command needs sudo privileges."""
+        # If we're already root, no need for sudo
+        if os.geteuid() == 0:
+            return False
+        
+        # Commands that need privileges
+        privileged_commands = [
+            'ip netns add',
+            'ip netns del',
+            'ip netns exec',
+            'ip link add',
+            'ip link del',
+            'ip link set',
+            'ip addr add',
+            'ip addr del',
+            'ip route add',
+            'ip route del',
+            'brctl addbr',
+            'brctl delbr',
+            'brctl addif',
+            'brctl delif',
+            'tc qdisc',
+            'kill',
+            'pkill'
+        ]
+        
+        # If executing in namespace, always needs sudo
+        if namespace:
+            return True
+        
+        # Check if command starts with any privileged command
+        for priv_cmd in privileged_commands:
+            if cmd.startswith(priv_cmd):
+                return True
+        
+        return False
         
     def run_command(self, command: str, namespace: str = None, check: bool = True) -> subprocess.CompletedProcess:
         """Execute command optionally in namespace."""
+        # Determine if command needs sudo
+        needs_sudo = self._needs_sudo(command, namespace)
+        
         if namespace:
-            full_command = f"ip netns exec {namespace} {command}"
+            if needs_sudo and os.geteuid() != 0:
+                full_command = f"sudo ip netns exec {namespace} {command}"
+            else:
+                full_command = f"ip netns exec {namespace} {command}"
         else:
-            full_command = command
+            if needs_sudo and os.geteuid() != 0:
+                full_command = f"sudo {command}"
+            else:
+                full_command = command
             
         self.logger.debug(f"Running: {full_command}")
         
@@ -313,6 +377,33 @@ class HostNamespaceManager:
         success, _ = self._atomic_json_operation(self.interface_registry_file, write_op)
         if not success:
             self.logger.error(f"Could not save interface registry")
+
+    def _is_tsim_managed_namespace(self, namespace_name: str) -> bool:
+        """Check if a namespace is managed by tsim by checking registries."""
+        # Check if it's the hidden namespace
+        if namespace_name == "hidden-mesh":
+            return True
+        
+        # Check router registry (hosts are stored here too)
+        if self.router_registry_file.exists():
+            try:
+                router_registry = self.load_router_registry()
+                if namespace_name in router_registry or namespace_name in router_registry.values():
+                    return True
+            except Exception:
+                pass
+        
+        # Check host registry
+        if self.host_registry_file.exists():
+            try:
+                with open(self.host_registry_file, 'r') as f:
+                    host_registry = json.load(f)
+                    if namespace_name in host_registry.get('hosts', {}):
+                        return True
+            except Exception:
+                pass
+        
+        return False
 
     def get_host_code(self, host_name: str) -> str:
         """Get or generate host code for given host name."""
@@ -1240,8 +1331,21 @@ class HostNamespaceManager:
         self.logger.info(f"Connecting host {host_name} to router {target_router} via gateway {gateway_ip} using unified mesh infrastructure")
         
         try:
-            # Create host namespace
-            self.run_command(f"ip netns add {host_name}")
+            # Check if namespace exists first
+            result = self.run_command(f"ip netns list | grep -w {host_name}", check=False)
+            if result.returncode == 0:
+                # Namespace exists - check if it's tsim-managed
+                if self._is_tsim_managed_namespace(host_name):
+                    if self.verbose > 0:
+                        self.logger.warning(f"Host namespace {host_name} already exists (tsim-managed), continuing...")
+                else:
+                    # Not tsim-managed - critical error
+                    error_msg = f"CRITICAL: Namespace {host_name} already exists but is not managed by tsim"
+                    self.logger.error(error_msg)
+                    raise Exception(error_msg)
+            else:
+                # Namespace doesn't exist - create it
+                self.run_command(f"ip netns add {host_name}")
             
             # Enable loopback
             self.run_command("ip link set lo up", namespace=host_name)
@@ -1536,10 +1640,19 @@ class HostNamespaceManager:
             self.logger.error("'ip' command not available - required for namespace operations")
             return False
             
-        # Check for root privileges
+        # Check if user is in tsim-users group (unless running as root)
         if os.geteuid() != 0:
-            self.logger.error("Root privileges required for namespace operations")
-            return False
+            import grp
+            import pwd
+            try:
+                username = pwd.getpwuid(os.getuid()).pw_name
+                tsim_group = grp.getgrnam('tsim-users')
+                if username not in tsim_group.gr_mem:
+                    self.logger.warning("User not in tsim-users group. Namespace operations may fail.")
+                    self.logger.warning("Run: sudo usermod -a -G tsim-users $USER")
+            except (KeyError, OSError):
+                self.logger.warning("tsim-users group not found. Namespace operations may fail.")
+                self.logger.warning("Run: sudo groupadd -f tsim-users")
             
         return True
     

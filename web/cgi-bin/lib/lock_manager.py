@@ -43,6 +43,31 @@ class NetworkLockManager:
                 initial_value=1
             )
             
+            # Fix group ownership of semaphore file
+            try:
+                import grp
+                import subprocess
+                sem_path = f"/dev/shm/sem.{self.SEMAPHORE_NAME[1:]}"  # Remove leading /
+                tsim_gid = grp.getgrnam('tsim-users').gr_gid
+                
+                # Check current ownership
+                stat_info = os.stat(sem_path)
+                if stat_info.st_gid != tsim_gid:
+                    # Change group ownership
+                    if os.geteuid() == 0:
+                        os.chown(sem_path, -1, tsim_gid)  # -1 means don't change user
+                    else:
+                        # Use sudo if not root
+                        subprocess.run(['sudo', 'chgrp', 'tsim-users', sem_path], 
+                                     check=False, capture_output=True)
+                    
+                    # Also set group read/write permissions
+                    os.chmod(sem_path, 0o660)
+            except Exception as e:
+                # Log but don't fail - semaphore still works
+                if self.logger:
+                    self.logger.log_info(f"Could not change semaphore group: {e}")
+            
             # Try to acquire with polling
             while True:
                 try:

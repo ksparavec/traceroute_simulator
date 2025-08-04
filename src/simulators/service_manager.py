@@ -396,8 +396,8 @@ class ServiceManager:
                 process = subprocess.Popen(
                     cmd,
                     stdout=log_file,
-                    stderr=log_file,
-                    start_new_session=True  # Detach from parent
+                    stderr=log_file
+                    # Removed start_new_session=True to keep process in same group
                 )
             
             # Give it a moment to start
@@ -413,7 +413,9 @@ class ServiceManager:
                     f"Process exited immediately: {error_output}"
                 )
             
-            # Save PID
+            # Save PID of the sudo process
+            # When we kill the sudo process, it will also kill its children (socat)
+            self.logger.debug(f"Saving PID {process.pid} to {config.pid_file}")
             with open(config.pid_file, 'w') as f:
                 f.write(str(process.pid))
             
@@ -439,6 +441,8 @@ class ServiceManager:
         
         if key not in self.services:
             self.logger.warning(f"Service {name} not found in registry")
+            print(f"[STOP] Service {name} not found in registry (key: {key})", file=sys.stderr)
+            print(f"[STOP] Available services: {list(self.services.keys())}", file=sys.stderr)
             return
             
         config = self.services[key]
@@ -449,35 +453,35 @@ class ServiceManager:
                 with open(config.pid_file, 'r') as f:
                     pid = int(f.read().strip())
                 
-                # Kill the entire process group to handle sudo + child processes
+                print(f"[STOP] Service {name} - PID {pid} from {config.pid_file}", file=sys.stderr)
+                
+                # Kill the sudo process directly (this will also kill its children)
                 # Try graceful termination first
                 try:
-                    if os.geteuid() == 0:
-                        os.killpg(os.getpgid(pid), signal.SIGTERM)
-                    else:
-                        # Use sudo pkill to kill process group - suppress errors
-                        subprocess.run(["sudo", "pkill", "-TERM", "-P", str(pid)], 
-                                     check=False, capture_output=True)
-                        subprocess.run(["sudo", "kill", "-TERM", str(pid)], 
-                                     check=False, capture_output=True)
+                    kill_cmd = ["sudo", "kill", "-TERM", str(pid)]
+                    self.logger.debug(f"Executing kill command: {' '.join(kill_cmd)}")
+                    if self.verbose_level >= 1:
+                        print(f"[SERVICE] Killing process {pid} with SIGTERM")
+                    result = subprocess.run(kill_cmd, check=False, capture_output=True)
+                    if result.returncode != 0:
+                        self.logger.warning(f"Kill TERM failed: {result.stderr}")
+                        if self.verbose_level >= 1:
+                            print(f"[SERVICE] Kill TERM failed: {result.stderr.decode() if result.stderr else 'no error'}")
                     time.sleep(0.5)
                 except (ProcessLookupError, subprocess.CalledProcessError):
                     pass  # Already dead
                 
                 # Check if process still exists before force kill
-                check_result = subprocess.run(["sudo", "kill", "-0", str(pid)], 
-                                            check=False, capture_output=True)
+                check_cmd = ["sudo", "kill", "-0", str(pid)]
+                check_result = subprocess.run(check_cmd, check=False, capture_output=True)
                 if check_result.returncode == 0:
                     # Process still exists, force kill
+                    self.logger.warning(f"Process {pid} still exists after TERM, using KILL")
                     try:
-                        if os.geteuid() == 0:
-                            os.killpg(os.getpgid(pid), signal.SIGKILL)
-                        else:
-                            # Use sudo pkill to kill process group - suppress errors
-                            subprocess.run(["sudo", "pkill", "-KILL", "-P", str(pid)], 
-                                         check=False, capture_output=True)
-                            subprocess.run(["sudo", "kill", "-KILL", str(pid)], 
-                                         check=False, capture_output=True)
+                        kill_cmd = ["sudo", "kill", "-KILL", str(pid)]
+                        result = subprocess.run(kill_cmd, check=False, capture_output=True)
+                        if result.returncode != 0:
+                            self.logger.error(f"Kill KILL failed: {result.stderr}")
                     except (ProcessLookupError, subprocess.CalledProcessError):
                         pass
                     

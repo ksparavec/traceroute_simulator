@@ -32,8 +32,14 @@ class CommandExecutor:
         cmd_str = ' '.join(cmd)
         bash_cmd = f'source {venv_activate} && {cmd_str}'
         
-        # Create a clean environment with all necessary variables
-        env = {
+        # Debug logging
+        self.logger.log_info(f"Executing bash command: {bash_cmd}")
+        
+        # Start with current environment and update specific variables
+        env = os.environ.copy()
+        
+        # Update/override specific environment variables
+        env.update({
             # Basic environment
             'PATH': f"{self.venv_path}/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
             'VIRTUAL_ENV': self.venv_path,
@@ -44,10 +50,13 @@ class CommandExecutor:
             'LANG': 'C.UTF-8',
             'LC_ALL': 'C.UTF-8',
             
+            # Matplotlib backend for headless operation
+            'MPLBACKEND': 'Agg',
+            
             # Traceroute simulator specific
             'TRACEROUTE_SIMULATOR_RAW_FACTS': self.raw_facts_path if self.raw_facts_path else '',
             'TRACEROUTE_SIMULATOR_FACTS': self.facts_path if self.facts_path else '',
-        }
+        })
         
         # Set config file path
         config_file = self.config.config.get('traceroute_simulator_conf', '')
@@ -60,6 +69,10 @@ class CommandExecutor:
         # Execute command with bash
         start_time = time.time()
         try:
+            # Add debug output to see what command is being run
+            if "visualize_reachability" in bash_cmd:
+                self.logger.log_info(f"About to execute visualization: {bash_cmd[:200]}")
+            
             result = subprocess.run(
                 ['bash', '-c', bash_cmd],
                 env=env,
@@ -105,8 +118,14 @@ class CommandExecutor:
         cmd_str = ' '.join(cmd)
         bash_cmd = f'source {venv_activate} && {cmd_str}'
         
-        # Create a clean environment with all necessary variables
-        env = {
+        # Debug logging
+        self.logger.log_info(f"Executing bash command: {bash_cmd}")
+        
+        # Start with current environment and update specific variables
+        env = os.environ.copy()
+        
+        # Update/override specific environment variables
+        env.update({
             # Basic environment
             'PATH': f"{self.venv_path}/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
             'VIRTUAL_ENV': self.venv_path,
@@ -117,10 +136,13 @@ class CommandExecutor:
             'LANG': 'C.UTF-8',
             'LC_ALL': 'C.UTF-8',
             
+            # Matplotlib backend for headless operation
+            'MPLBACKEND': 'Agg',
+            
             # Traceroute simulator specific
             'TRACEROUTE_SIMULATOR_RAW_FACTS': self.raw_facts_path if self.raw_facts_path else '',
             'TRACEROUTE_SIMULATOR_FACTS': self.facts_path if self.facts_path else '',
-        }
+        })
         
         # Set config file path
         config_file = self.config.config.get('traceroute_simulator_conf', '')
@@ -322,20 +344,28 @@ class CommandExecutor:
         pdf_file = os.path.join(self.data_dir, "pdfs", f"{run_id}_report.pdf")
         os.makedirs(os.path.dirname(pdf_file), exist_ok=True)
         
-        # Build command
+        # Build command - temporarily run test script
         cmd = [
             os.path.join(self.venv_path, "bin", "python"),
             "-B", "-u",
-            os.path.join(self.simulator_path, "visualize_reachability.py"),
-            "--trace", trace_file,
-            "--results", results_file,
-            "--output", pdf_file
+            os.path.join(self.simulator_path, "../src/scripts/test_visualize.py")
         ]
         
-        # Execute command
+        # Debug logging
+        self.logger.log_info(f"PDF generation command: {cmd}")
+        self.logger.log_info(f"PDF generation files - trace: {trace_file}, results: {results_file}, output: {pdf_file}")
+        
+        # Execute command with shorter timeout for debugging
         start_time = time.time()
-        result = self._activate_venv_and_run(cmd, timeout=60)
+        result = self._activate_venv_and_run(cmd, timeout=10)  # Reduced timeout for debugging
         end_time = time.time()
+        
+        # Log the result details
+        self.logger.log_info(f"PDF generation result - success: {result['success']}, return_code: {result['return_code']}, duration: {end_time - start_time}")
+        if result['output']:
+            self.logger.log_info(f"PDF generation stdout: {result['output'][:500]}")
+        if result['error']:
+            self.logger.log_info(f"PDF generation stderr: {result['error'][:500]}")
         
         # Log execution
         self.logger.log_command_execution(

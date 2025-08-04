@@ -226,10 +226,10 @@ class CommandExecutor:
         
         # Live mode - execute real trace
         # Build command - tsimsh expects commands via stdin
-        trace_command = f"trace -s {source_ip} -d {dest_ip} -j"
+        trace_command = f"trace -s {source_ip} -d {dest_ip} -j -vv"
         
         # Use tsimsh directly - environment is set by _activate_venv_and_run_with_input
-        cmd = [os.path.join(self.venv_path, "bin", "tsimsh"), "-q"]
+        cmd = [self.tsimsh_path, "-q"]
         
         # Log the command being executed
         self.logger.log_info(f"Executing tsimsh trace: cmd={cmd}, trace_command={trace_command}")
@@ -239,8 +239,16 @@ class CommandExecutor:
         result = self._activate_venv_and_run_with_input(cmd, trace_command + "\n", timeout=120)
         end_time = time.time()
         
-        # Log the raw result
-        self.logger.log_info(f"Tsimsh trace result: success={result['success']}, return_code={result['return_code']}, output_len={len(result['output'])}, error={result['error'][:100] if result['error'] else 'None'}")
+        # Log the raw result with full output
+        self.logger.log_info(f"Tsimsh trace result: success={result['success']}, return_code={result['return_code']}, output_len={len(result['output'])}")
+        if result['output']:
+            self.logger.log_info(f"Tsimsh trace stdout: {result['output']}")
+        else:
+            self.logger.log_info("Tsimsh trace stdout is empty")
+        if result['error']:
+            self.logger.log_info(f"Tsimsh trace stderr: {result['error']}")
+        else:
+            self.logger.log_info("Tsimsh trace stderr is empty")
         
         # Log execution
         self.logger.log_command_execution(

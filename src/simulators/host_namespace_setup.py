@@ -109,13 +109,14 @@ class HostNamespaceManager:
         for path, sem_name in self.sem_names.items():
             try:
                 # Try to create semaphore with initial value 1 and group permissions
-                sem = posix_ipc.Semaphore(sem_name, flags=posix_ipc.O_CREX, initial_value=1, mode=0o660)
+                # Clear umask temporarily to ensure permissions are set correctly
+                old_umask = os.umask(0)
+                try:
+                    sem = posix_ipc.Semaphore(sem_name, flags=posix_ipc.O_CREX, initial_value=1, mode=0o660)
+                finally:
+                    os.umask(old_umask)  # Restore original umask
                 self.semaphores[path] = sem
                 self.logger.debug(f"Created semaphore {sem_name}")
-                # Ensure correct permissions (override umask)
-                sem_path = f"/dev/shm/sem.{sem_name[1:]}"  # Remove leading slash
-                if os.path.exists(sem_path):
-                    os.chmod(sem_path, 0o660)
             except posix_ipc.ExistentialError:
                 # Semaphore exists, open it
                 sem = posix_ipc.Semaphore(sem_name)
@@ -138,11 +139,12 @@ class HostNamespaceManager:
             path_hash = hashlib.md5(path_str.encode()).hexdigest()[:8]
             sem_name = f"/tsim_custom_{path_hash}"
             try:
-                sem = posix_ipc.Semaphore(sem_name, flags=posix_ipc.O_CREX, initial_value=1, mode=0o660)
-                # Ensure correct permissions (override umask)
-                sem_path = f"/dev/shm/sem.{sem_name[1:]}"  # Remove leading slash
-                if os.path.exists(sem_path):
-                    os.chmod(sem_path, 0o660)
+                # Clear umask temporarily to ensure permissions are set correctly
+                old_umask = os.umask(0)
+                try:
+                    sem = posix_ipc.Semaphore(sem_name, flags=posix_ipc.O_CREX, initial_value=1, mode=0o660)
+                finally:
+                    os.umask(old_umask)  # Restore original umask
             except posix_ipc.ExistentialError:
                 sem = posix_ipc.Semaphore(sem_name)
             self.semaphores[path_str] = sem
@@ -770,6 +772,10 @@ class HostNamespaceManager:
         try:
             host_network = ipaddress.IPv4Network(primary_ip, strict=False)
             
+            # Log bridge registry location in verbose mode
+            if self.verbose > 0:
+                self.logger.info(f"Loading bridge registry from: {self.bridge_registry_file}")
+            
             # Load bridge registry atomically
             def read_op(data):
                 return True, data
@@ -804,6 +810,10 @@ class HostNamespaceManager:
     def find_router_bridge(self, router_name: str, interface_name: str) -> Optional[str]:
         """Find the bridge that a specific router interface is connected to."""
         try:
+            # Log bridge registry location in verbose mode
+            if self.verbose > 0:
+                self.logger.info(f"Loading bridge registry from: {self.bridge_registry_file}")
+            
             # Load bridge registry atomically
             def read_op(data):
                 return True, data

@@ -12,6 +12,9 @@ Usage:
 
 import json
 import sys
+# Set matplotlib to use non-interactive backend before importing pyplot
+import matplotlib
+matplotlib.use('Agg')  # Use Anti-Grain Geometry backend (no display required)
 import matplotlib.pyplot as plt
 import networkx as nx
 # from networkx.drawing.nx_agraph import graphviz_layout

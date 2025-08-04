@@ -8,11 +8,17 @@ cd "$CGI_DIR"
 
 python3 -B -u -c "
 import sys
+import getpass
 sys.path.append('lib')
 from auth import AuthManager
 
 username = input('Username: ')
-password = input('Password: ')
+password = getpass.getpass('Password: ')
+password_confirm = getpass.getpass('Confirm password: ')
+
+if password != password_confirm:
+    print('Passwords do not match')
+    sys.exit(1)
 
 auth = AuthManager()
 if auth.create_user(username, password):

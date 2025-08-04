@@ -44,7 +44,7 @@ class CommandExecutor:
             'PATH': f"{self.venv_path}/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
             'VIRTUAL_ENV': self.venv_path,
             'PYTHONPATH': self.simulator_path,
-            'HOME': '/tmp',  # Safe home directory for www-data
+            'HOME': '/var/www/traceroute-web',  # Persistent home directory for www-data
             'USER': 'www-data',
             'SHELL': '/bin/bash',
             'LANG': 'C.UTF-8',
@@ -52,6 +52,7 @@ class CommandExecutor:
             
             # Matplotlib backend for headless operation
             'MPLBACKEND': 'Agg',
+            'DISPLAY': '',  # Explicitly unset DISPLAY to prevent X11 connection attempts
             
             # Traceroute simulator specific
             'TRACEROUTE_SIMULATOR_RAW_FACTS': self.raw_facts_path if self.raw_facts_path else '',
@@ -130,7 +131,7 @@ class CommandExecutor:
             'PATH': f"{self.venv_path}/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
             'VIRTUAL_ENV': self.venv_path,
             'PYTHONPATH': self.simulator_path,
-            'HOME': '/tmp',  # Safe home directory for www-data
+            'HOME': '/var/www/traceroute-web',  # Persistent home directory for www-data
             'USER': 'www-data',
             'SHELL': '/bin/bash',
             'LANG': 'C.UTF-8',
@@ -138,6 +139,7 @@ class CommandExecutor:
             
             # Matplotlib backend for headless operation
             'MPLBACKEND': 'Agg',
+            'DISPLAY': '',  # Explicitly unset DISPLAY to prevent X11 connection attempts
             
             # Traceroute simulator specific
             'TRACEROUTE_SIMULATOR_RAW_FACTS': self.raw_facts_path if self.raw_facts_path else '',
@@ -340,54 +342,48 @@ class CommandExecutor:
             raise Exception(f"Reachability test failed: {error_msg}")
     
     def generate_pdf(self, session_id, username, run_id, trace_file, results_file):
-        """Execute visualize_reachability.py to generate PDF"""
+        """Generate PDF by calling generate_pdf.sh via curl"""
+        import urllib.parse
+        import urllib.request
+        
         pdf_file = os.path.join(self.data_dir, "pdfs", f"{run_id}_report.pdf")
         os.makedirs(os.path.dirname(pdf_file), exist_ok=True)
         
-        # Build command - temporarily run test script
-        cmd = [
-            os.path.join(self.venv_path, "bin", "python"),
-            "-B", "-u",
-            os.path.join(self.simulator_path, "../src/scripts/test_visualize.py")
-        ]
+        # Get base URL from config (required)
+        base_url = self.config.config.get('base_url')
+        if not base_url:
+            raise Exception("base_url not configured in config.json")
         
-        # Debug logging
-        self.logger.log_info(f"PDF generation command: {cmd}")
-        self.logger.log_info(f"PDF generation files - trace: {trace_file}, results: {results_file}, output: {pdf_file}")
+        # Build URL with parameters
+        params = {
+            'trace': trace_file,
+            'results': results_file,
+            'output': pdf_file
+        }
+        query_string = urllib.parse.urlencode(params)
+        url = f"{base_url}/cgi-bin/generate_pdf.sh?{query_string}"
         
-        # Execute command with shorter timeout for debugging
-        start_time = time.time()
-        result = self._activate_venv_and_run(cmd, timeout=10)  # Reduced timeout for debugging
-        end_time = time.time()
+        self.logger.log_info(f"Calling PDF generation via: {url}")
         
-        # Log the result details
-        self.logger.log_info(f"PDF generation result - success: {result['success']}, return_code: {result['return_code']}, duration: {end_time - start_time}")
-        if result['output']:
-            self.logger.log_info(f"PDF generation stdout: {result['output'][:500]}")
-        if result['error']:
-            self.logger.log_info(f"PDF generation stderr: {result['error'][:500]}")
-        
-        # Log execution
-        self.logger.log_command_execution(
-            session_id=session_id,
-            username=username,
-            command="visualize_reachability.py",
-            args={
-                'trace': trace_file,
-                'results': results_file,
-                'output': pdf_file
-            },
-            start_time=start_time,
-            end_time=end_time,
-            return_code=result['return_code'],
-            output=result['output'],
-            error=result['error']
-        )
-        
-        if result['success'] and os.path.exists(pdf_file):
-            return pdf_file
-        else:
-            raise Exception(f"PDF generation failed: {result['error']}")
+        try:
+            # Make the request
+            with urllib.request.urlopen(url, timeout=30) as response:
+                if response.headers.get('content-type') == 'application/pdf':
+                    # Save the PDF
+                    pdf_data = response.read()
+                    with open(pdf_file, 'wb') as f:
+                        f.write(pdf_data)
+                    self.logger.log_info(f"PDF generated successfully, size: {len(pdf_data)} bytes")
+                    return pdf_file
+                else:
+                    # Read error message
+                    error_msg = response.read().decode('utf-8')
+                    self.logger.log_error("PDF generation failed", error_msg)
+                    raise Exception(f"PDF generation failed: {error_msg}")
+                    
+        except urllib.error.URLError as e:
+            self.logger.log_error("PDF generation failed", str(e))
+            raise Exception(f"PDF generation failed: {str(e)}")
     
     def cleanup_old_data(self):
         """Remove data older than retention period"""

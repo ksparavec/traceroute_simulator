@@ -1457,7 +1457,9 @@ install-web:
 	@cp web/scripts/create_user.sh "$(WEB_ROOT)/scripts/"
 	@cp src/scripts/network_reachability_test.sh "$(WEB_ROOT)/scripts/"
 	@cp src/scripts/visualize_reachability.py "$(WEB_ROOT)/scripts/"
+	@cp src/scripts/visualize_reachability_wrapper.sh "$(WEB_ROOT)/scripts/"
 	@cp src/scripts/format_reachability_output.py "$(WEB_ROOT)/scripts/"
+	@cp src/scripts/analyze_packet_counts.py "$(WEB_ROOT)/scripts/"
 	@cp web/scripts/test_me.py "$(WEB_ROOT)/scripts/"
 	@chmod +x "$(WEB_ROOT)/scripts/"*.py
 	@chmod +x "$(WEB_ROOT)/scripts/"*.sh

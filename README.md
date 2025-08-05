@@ -55,6 +55,7 @@ A comprehensive network path discovery tool that simulates traceroute behavior u
 - [Exit Codes](#exit-codes)
 - [Testing](#testing)
 - [Examples](#examples)
+- [Web Interface](#-web-interface)
 - [Troubleshooting](#troubleshooting)
 - [Contributing](#contributing)
 
@@ -523,6 +524,8 @@ The JSON output includes 9 fields for comprehensive path information:
 - **Two-Phase Construction**: Handles edge cases with proper path assembly
 - **Enhanced Field Names**: More intuitive field naming (incoming/outgoing, prev_hop/next_hop)
 - **Comprehensive JSON**: All fields populated for every hop, not just routers
+
+**Note**: The trace command in tsimsh uses the enhanced field names mentioned above. The main traceroute simulator (when run directly) uses legacy field names: `interface`, `is_router_owned`, `connected_router`, and `outgoing_interface`.
 
 ### Configuration Loading
 
@@ -1413,6 +1416,132 @@ make trace ARGS="-s 10.1.1.1 -d 203.0.113.1 -vv"
 make trace ARGS="-s 10.1.1.1 -d 10.2.1.1 -vvv"
 # Output: Shows YAML config file loading and parsing details
 ```
+
+## 🌐 Web Interface
+
+The project includes a comprehensive web interface for network reachability testing with authentication and report generation capabilities.
+
+### Web Interface Features
+
+- **Authentication System**: Secure login with session management
+- **Network Reachability Testing**: Web form for testing service connectivity
+- **User-Provided Trace Files**: Support for uploading custom trace JSON data
+- **PDF Report Generation**: Comprehensive network analysis reports in PDF format
+- **Interactive Testing**: Real-time execution of network tests via tsimsh
+- **Visual Network Diagrams**: Integration with network topology visualization
+
+### Web Interface Setup
+
+1. **Configure Apache** (see `web/conf/apache-site.conf.template`):
+   ```bash
+   # Copy and customize the Apache configuration
+   cp web/conf/apache-site.conf.template /etc/apache2/sites-available/traceroute-sim.conf
+   
+   # Enable required Apache modules
+   a2enmod cgi
+   a2enmod rewrite
+   
+   # Enable the site
+   a2ensite traceroute-sim
+   systemctl reload apache2
+   ```
+
+2. **Configure the Application**:
+   ```bash
+   # Copy and customize the configuration
+   cp web/conf/config.json.example web/conf/config.json
+   
+   # Create users for authentication
+   ./web/scripts/create_user.sh username
+   ```
+
+3. **Set Up Permissions**:
+   ```bash
+   # Follow the group permissions setup guide
+   # See web/docs/group-permissions-setup.md for details
+   ```
+
+### Web Interface Usage
+
+1. **Access the Login Page**: Navigate to `http://your-server/login.html`
+
+2. **Network Reachability Test Form**:
+   - **Source IP**: Starting point for the test
+   - **Source Port**: Optional source port
+   - **Destination IP**: Target endpoint
+   - **Destination Port**: Required service port
+   - **Protocol**: TCP or UDP
+   - **Trace File Input**: Optional custom trace data
+
+3. **Test Results Include**:
+   - Network path trace analysis
+   - Connectivity tests (ping, MTR, service)
+   - Firewall rule analysis
+   - Visual network diagram
+   - Comprehensive PDF report (see example at `docs/report_example.pdf`)
+
+### Network Reachability Script
+
+The web interface uses `network_reachability_test.sh` which provides:
+- JSON-formatted test results
+- Integration with tsimsh commands
+- Comprehensive network analysis
+- Support for both interactive and batch modes
+
+### PDF Report Generation
+
+The system generates comprehensive PDF reports that include:
+
+1. **Network Path Visualization**: NetworkX-based graph showing the complete path from source to destination
+2. **Router Details**: For each router in the path:
+   - Router name and IP addresses
+   - Firewall rules (iptables FORWARD chain)
+   - Packet counts before and after testing
+   - Rule analysis showing which rules would match the test traffic
+3. **Test Results Summary**: 
+   - ICMP ping test results
+   - MTR (My TraceRoute) hop-by-hop analysis
+   - Service connectivity test results
+   - Overall reachability verdict
+4. **Timing Information**: Execution time for each test phase
+
+**Example Report**: See `docs/report_example.pdf` for a complete example of the generated report format.
+
+#### Report Generation Process
+
+The PDF generation involves several components working together:
+
+1. **network_reachability_test.sh**: Main test orchestration script that:
+   - Sets up test environment using tsimsh commands
+   - Executes connectivity tests (ping, MTR, service test)
+   - Captures iptables packet counts before and after tests
+   - Outputs comprehensive JSON results
+
+2. **analyze_packet_counts.py**: Analyzes iptables rules and packet count changes:
+   - Parses iptables rules from each router
+   - Compares packet counts before and after tests
+   - Identifies which rules matched the test traffic
+   - Provides detailed firewall analysis
+
+3. **visualize_reachability.py**: Creates the PDF report using:
+   - **NetworkX**: For network graph layout and visualization
+   - **Matplotlib**: For rendering the network diagram
+   - **PyHyphen** (optional): For better text wrapping in tables
+   - Combines trace data and test results into a visual report
+
+4. **Web Interface Integration**:
+   - `web/cgi-bin/main.py`: Handles form submission and orchestrates the test
+   - `web/cgi-bin/lib/executor.py`: Manages command execution with proper environment
+   - `web/cgi-bin/generate_pdf.sh`: CGI wrapper for PDF generation
+   - Results are stored in `/var/www/traceroute-web/data/pdfs/`
+
+### Security Considerations
+
+- Authentication required for all operations
+- Session management with secure cookies
+- Input validation on all form fields
+- Audit logging of all operations
+- Network locking to prevent concurrent tests
 
 ## 🔍 Troubleshooting
 

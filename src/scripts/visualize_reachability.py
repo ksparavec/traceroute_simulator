@@ -491,7 +491,7 @@ def create_networkx_visualization(trace_data: Dict[str, Any], results_data: Dict
         table_data.append(['SERVICE TEST', 
                           f"Overall: {service_summary.get('successful', 0)}/{service_summary.get('total_tests', 0)} successful", 
                           service_summary.get('overall_status', 'N/A'),
-                          f"TCP port {summary.get('destination_port', 'N/A')} connectivity"])
+                          f"{summary.get('protocol', 'tcp').upper()} port {summary.get('destination_port', 'N/A')} connectivity"])
         table_colors.append(['lightgray'] * 4)
         wrapped_content.append(1)  # Single line
         

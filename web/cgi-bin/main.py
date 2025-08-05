@@ -82,6 +82,7 @@ def main():
         dest_ip = form.getvalue('dest_ip', '').strip()
         dest_port = form.getvalue('dest_port', '').strip()
         protocol = form.getvalue('protocol', 'tcp').lower()
+        user_trace_data = form.getvalue('user_trace_data', '').strip()
         
         # Validate inputs
         if not validator.validate_ip(source_ip):
@@ -94,6 +95,13 @@ def main():
             raise ValueError("Invalid source port")
         if not validator.validate_protocol(protocol):
             raise ValueError("Invalid protocol")
+        
+        # Validate user trace data if provided
+        if user_trace_data:
+            try:
+                json.loads(user_trace_data)
+            except json.JSONDecodeError:
+                raise ValueError("Invalid JSON format in trace data")
         
         # Sanitize inputs
         source_ip = validator.sanitize_input(source_ip)
@@ -116,7 +124,7 @@ def main():
         
         # 1. Execute trace
         run_id, trace_file = executor.execute_trace(
-            session_id, session['username'], source_ip, dest_ip
+            session_id, session['username'], source_ip, dest_ip, user_trace_data
         )
         
         # 2. Execute reachability test

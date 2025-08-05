@@ -194,16 +194,62 @@ class CommandExecutor:
                 'duration': end_time - start_time
             }
     
-    def execute_trace(self, session_id, username, source_ip, dest_ip):
-        """Execute tsimsh trace command or use test trace file"""
+    def execute_trace(self, session_id, username, source_ip, dest_ip, user_trace_data=None):
+        """Execute tsimsh trace command or use test trace file or user-provided trace data"""
         run_id = str(uuid.uuid4())
         trace_file = os.path.join(self.data_dir, "traces", f"{run_id}_trace.json")
         
         # Ensure directory exists
         os.makedirs(os.path.dirname(trace_file), exist_ok=True)
         
+        # Check if user provided trace data
+        if user_trace_data:
+            self.logger.log_info(f"Using user-provided trace data, length: {len(user_trace_data)}")
+            
+            # Save user trace data
+            try:
+                # Validate JSON format one more time
+                user_json = json.loads(user_trace_data)
+                self.logger.log_info(f"User trace data - destination IP: {user_json.get('destination', 'NOT FOUND')}")
+                self.logger.log_info(f"User trace data first 200 chars: {user_trace_data[:200]}")
+                
+                # Log if file already exists (shouldn't happen with UUID)
+                if os.path.exists(trace_file):
+                    self.logger.log_info(f"Warning: trace file already exists: {trace_file}")
+                
+                with open(trace_file, 'w') as f:
+                    f.write(user_trace_data)
+                    f.flush()  # Force write to disk
+                    os.fsync(f.fileno())  # Ensure it's written to disk
+                
+                # Log file creation time and content
+                stat_info = os.stat(trace_file)
+                self.logger.log_info(f"Trace file saved: {trace_file}, size: {stat_info.st_size}, mtime: {time.ctime(stat_info.st_mtime)}")
+                
+                # Immediately read back and verify what was written
+                with open(trace_file, 'r') as f:
+                    saved_content = f.read()
+                    saved_json = json.loads(saved_content)
+                    self.logger.log_info(f"Trace file verification - destination IP immediately after save: {saved_json.get('destination', 'NOT FOUND')}")
+                    self.logger.log_info(f"First 200 chars of saved trace: {saved_content[:200]}")
+                
+                self.logger.log_command_execution(
+                    session_id=session_id,
+                    username=username,
+                    command="tsimsh trace (user-provided)",
+                    args={'source': source_ip, 'dest': dest_ip, 'user_provided': True},
+                    start_time=time.time(),
+                    end_time=time.time(),
+                    return_code=0,
+                    output="User-provided trace data used",
+                    error=""
+                )
+                return run_id, trace_file
+            except Exception as e:
+                raise Exception(f"Failed to save user-provided trace data: {str(e)}")
+        
         # Check if we're in test mode
-        if self.mode == 'test' and self.test_trace_file:
+        elif self.mode == 'test' and self.test_trace_file:
             self.logger.log_info(f"Test mode: Using test trace file {self.test_trace_file}")
             
             # Copy test trace file
@@ -333,7 +379,22 @@ class CommandExecutor:
             error=result['error']
         )
         
+        # Log trace file details before reachability test
+        self.logger.log_info(f"About to run reachability test with trace file: {trace_file}")
+        try:
+            trace_stat = os.stat(trace_file)
+            self.logger.log_info(f"Trace file stats: size={trace_stat.st_size}, mtime={time.ctime(trace_stat.st_mtime)}")
+            
+            with open(trace_file, 'r') as f:
+                trace_content = f.read()
+                trace_json = json.loads(trace_content)
+                self.logger.log_info(f"Trace file content - destination IP: {trace_json.get('destination', 'NOT FOUND')}")
+                self.logger.log_info(f"Trace file first 200 chars before reachability test: {trace_content[:200]}")
+        except Exception as e:
+            self.logger.log_error("Failed to read trace file for debugging", str(e))
+        
         if result['success'] and result['output']:
+            
             # Save the JSON output to results file
             with open(results_file, 'w') as f:
                 f.write(result['output'])

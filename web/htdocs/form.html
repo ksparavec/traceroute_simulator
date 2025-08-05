@@ -47,11 +47,35 @@
                 </select>
             </div>
             
+            <!-- Hidden field for user trace data -->
+            <input type="hidden" id="user_trace_data" name="user_trace_data" value="">
+            
             <div class="form-actions">
                 <button type="submit">Run Test</button>
                 <button type="button" onclick="clearForm()">Clear</button>
+                <button type="button" onclick="openTraceFileInput()">Trace File Input</button>
             </div>
         </form>
+        
+        <!-- Modal for trace file input -->
+        <div id="traceModal" class="modal" style="display: none;">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2>Trace File Input</h2>
+                    <span class="close" onclick="closeTraceModal()">&times;</span>
+                </div>
+                <div class="modal-body">
+                    <p>Paste your trace file JSON content below:</p>
+                    <textarea id="traceJsonInput" placeholder="Paste JSON trace data here..." rows="15"></textarea>
+                    <div id="jsonValidationError" class="error-message" style="display: none;"></div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" onclick="validateAndSaveTrace()">Save</button>
+                    <button type="button" onclick="clearTraceInput()">Clear</button>
+                    <button type="button" onclick="closeTraceModal()">Cancel</button>
+                </div>
+            </div>
+        </div>
         
         <div class="info">
             <p>This tool will generate a comprehensive network reachability report including:</p>

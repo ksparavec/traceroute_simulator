@@ -66,6 +66,10 @@ def main():
             
             # Build command to source venv and run script
             script_args = ' '.join([f'"{arg}"' for arg in sys.argv[1:]])
+            
+            # Log the arguments for debugging
+            logger.log_info(f"Wrapper passing arguments to script: {script_args}")
+            
             cmd = ['bash', '-c', f'source {venv_activate} && {actual_script} {verbose_flags} {script_args}']
             
             # Set up environment with TRACEROUTE_* variables

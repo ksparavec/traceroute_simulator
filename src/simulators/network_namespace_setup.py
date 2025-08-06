@@ -66,6 +66,17 @@ class HiddenMeshNetworkSetup:
         self.limit_pattern = limit_pattern
         self.setup_logging()
         
+        # Cache frequently used values for performance
+        self.is_root = os.geteuid() == 0
+        
+        # Create set of privileged commands for O(1) lookup
+        self.privileged_commands_set = {
+            'ip', 'brctl', 'iptables', 'ip6tables', 'ipset',
+            'nft', 'ovs-vsctl', 'ovs-ofctl', 'modprobe', 
+            'rmmod', 'mount', 'umount', 'sysctl', 'tc',
+            'echo', 'kill', 'pkill'
+        }
+        
         # Determine facts directories
         raw_facts_path = os.environ.get('TRACEROUTE_SIMULATOR_RAW_FACTS')
         if not raw_facts_path:
@@ -690,64 +701,64 @@ Then run netsetup again.
     
     def _needs_sudo(self, cmd: str, namespace: str = None) -> bool:
         """Check if a command needs sudo privileges."""
-        # If we're already root, no need for sudo
-        if os.geteuid() == 0:
+        # Phase 1 optimization: Use cached root check
+        if self.is_root:
             return False
         
-        # Commands that need privileges
-        privileged_commands = [
-            'ip netns add',
-            'ip netns del',
-            'ip netns exec',
-            'ip link add',
-            'ip link del',
-            'ip link set',
-            'ip addr add',
-            'ip addr del',
-            'ip route add',
-            'ip route del',
-            'ip rule add',
-            'ip rule del',
-            'brctl addbr',
-            'brctl delbr',
-            'brctl addif',
-            'brctl delif',
-            'iptables',
-            'iptables-restore',
-            'iptables-save',
-            'ipset',
-            'ipset restore',
-            'ipset save',
-            'sysctl',
-            'tc qdisc',
-            'echo 1 >',  # For IP forwarding
-            'kill',
-            'pkill'
-        ]
-        
-        # If executing in namespace, always needs sudo
+        # Phase 1 optimization: Check namespace first (early return)
         if namespace:
             return True
         
-        # Check if command starts with any privileged command
-        for priv_cmd in privileged_commands:
-            if cmd.startswith(priv_cmd):
+        # Phase 1 optimization: Use set for O(1) lookup on first word
+        first_word = cmd.split()[0] if cmd else ''
+        
+        # Special cases that need checking beyond first word
+        if first_word == 'echo' and '>' in cmd:
+            return True
+        elif first_word == 'ip':
+            # Check second word for ip commands
+            parts = cmd.split()
+            if len(parts) > 1 and parts[1] in {'netns', 'link', 'addr', 'route', 'rule', 'tunnel', 'xfrm', 'tuntap'}:
                 return True
+        elif first_word == 'ipset':
+            # Check second word for ipset commands
+            parts = cmd.split()
+            if len(parts) > 1 and parts[1] in {'create', 'add', 'destroy', 'save', 'restore'}:
+                return True
+        elif first_word == 'tc':
+            # Check if it's tc qdisc
+            if 'qdisc' in cmd:
+                return True
+        elif first_word in self.privileged_commands_set:
+            return True
         
         return False
             
     def run_cmd(self, cmd: str, namespace: str = None, check: bool = True, log_cmd: bool = False):
         """Run a command, optionally in a namespace."""
-        # Determine if command needs sudo
+        # Phase 2 optimization: Try to use command list instead of shell=True
+        # Check if command contains shell metacharacters that require shell
+        shell_required = any(char in cmd for char in ['|', '>', '<', '&', ';', '$', '`', '(', ')', '[', ']', '{', '}', '*', '?', '~'])
+        
+        if not shell_required:
+            # Try to execute without shell for better performance
+            try:
+                return self._run_cmd_no_shell(cmd, namespace, check, log_cmd)
+            except Exception as e:
+                # Fall back to shell execution if parsing fails
+                if self.verbose >= 3:
+                    self.logger.debug(f"Failed to run without shell, falling back: {e}")
+        
+        # Original shell-based execution
         needs_sudo = self._needs_sudo(cmd, namespace)
         
         if namespace:
-            if needs_sudo and os.geteuid() != 0:
+            if needs_sudo and not self.is_root:
                 full_cmd = f"sudo ip netns exec {namespace} {cmd}"
             else:
                 full_cmd = f"ip netns exec {namespace} {cmd}"
         else:
-            if needs_sudo and os.geteuid() != 0:
+            if needs_sudo and not self.is_root:
                 full_cmd = f"sudo {cmd}"
             else:
                 full_cmd = cmd
@@ -781,6 +792,162 @@ Then run netsetup again.
             raise subprocess.CalledProcessError(result.returncode, full_cmd, result.stderr)
             
         return result
+    
+    def _run_cmd_no_shell(self, cmd: str, namespace: str = None, check: bool = True, log_cmd: bool = False):
+        """Run a command without shell=True for better performance.
+        
+        Phase 2 optimization: Direct execution without shell overhead.
+        """
+        import shlex
+        
+        # Parse command into list
+        cmd_parts = shlex.split(cmd)
+        if not cmd_parts:
+            return subprocess.CompletedProcess(args=[], returncode=0)
+        
+        # Determine if command needs sudo
+        needs_sudo = self._needs_sudo(cmd, namespace)
+        
+        # Build command list
+        if namespace:
+            if needs_sudo and not self.is_root:
+                cmd_list = ['sudo', 'ip', 'netns', 'exec', namespace] + cmd_parts
+            else:
+                cmd_list = ['ip', 'netns', 'exec', namespace] + cmd_parts
+        else:
+            if needs_sudo and not self.is_root:
+                cmd_list = ['sudo'] + cmd_parts
+            else:
+                cmd_list = cmd_parts
+        
+        # Log command details for -vvv level
+        if self.verbose >= 3 and log_cmd:
+            print(f"      CMD: {' '.join(cmd_list)}")
+        
+        if self.verbose >= 3:
+            self.logger.debug(f"Running (no shell): {' '.join(cmd_list)}")
+        
+        result = subprocess.run(
+            cmd_list, capture_output=True, text=True, check=check
+        )
+        
+        # Log command response for -vvv level
+        if self.verbose >= 3 and log_cmd:
+            if result.returncode == 0:
+                print(f"      OK: Command succeeded")
+                if result.stdout.strip():
+                    print(f"      OUT: {result.stdout.strip()}")
+            else:
+                print(f"      ERR: Command failed (exit {result.returncode})")
+                if result.stderr.strip():
+                    print(f"      STDERR: {result.stderr.strip()}")
+        
+        if result.returncode != 0 and check:
+            if self.verbose >= 1:
+                self.logger.error(f"Command failed: {' '.join(cmd_list)}")
+                self.logger.error(f"Error: {result.stderr}")
+            raise subprocess.CalledProcessError(result.returncode, cmd_list, result.stderr)
+            
+        return result
+    
+    def run_cmd_batch(self, cmds: List[str], namespace: str = None, check: bool = True):
+        """Run multiple commands in batch mode for better performance.
+        
+        Phase 2 optimization: Batch multiple commands together to reduce subprocess overhead.
+        """
+        if not cmds:
+            return
+        
+        # Group commands by type for IP batch mode
+        ip_route_cmds = []
+        ip_rule_cmds = []
+        other_cmds = []
+        
+        for cmd in cmds:
+            if cmd.startswith('ip route add'):
+                # Extract route spec after 'ip route add'
+                route_spec = cmd[13:].strip()
+                ip_route_cmds.append(route_spec)
+            elif cmd.startswith('ip rule add'):
+                # Extract rule spec after 'ip rule add'
+                rule_spec = cmd[12:].strip()
+                ip_rule_cmds.append(rule_spec)
+            else:
+                other_cmds.append(cmd)
+        
+        # Execute IP route commands in batch
+        if ip_route_cmds:
+            batch_content = '\n'.join(f"route add {spec}" for spec in ip_route_cmds)
+            batch_cmd = f"ip -batch -"
+            
+            if namespace:
+                if not self.is_root:
+                    full_cmd = ['sudo', 'ip', 'netns', 'exec', namespace, 'ip', '-batch', '-']
+                else:
+                    full_cmd = ['ip', 'netns', 'exec', namespace, 'ip', '-batch', '-']
+            else:
+                if not self.is_root:
+                    full_cmd = ['sudo', 'ip', '-batch', '-']
+                else:
+                    full_cmd = ['ip', '-batch', '-']
+            
+            if self.verbose >= 2:
+                self.logger.info(f"Executing {len(ip_route_cmds)} routes in batch mode")
+            
+            # Phase 2 optimization: Use subprocess without shell=True
+            result = subprocess.run(
+                full_cmd, 
+                input=batch_content,
+                capture_output=True, 
+                text=True, 
+                check=False
+            )
+            
+            if result.returncode != 0 and check:
+                if self.verbose >= 1:
+                    self.logger.error(f"Batch route command failed")
+                    self.logger.error(f"Error: {result.stderr}")
+                # Fall back to individual commands on batch failure
+                for cmd in [f"ip route add {spec}" for spec in ip_route_cmds]:
+                    self.run_cmd(cmd, namespace, check=False)
+        
+        # Execute IP rule commands in batch
+        if ip_rule_cmds:
+            batch_content = '\n'.join(f"rule add {spec}" for spec in ip_rule_cmds)
+            
+            if namespace:
+                if not self.is_root:
+                    full_cmd = ['sudo', 'ip', 'netns', 'exec', namespace, 'ip', '-batch', '-']
+                else:
+                    full_cmd = ['ip', 'netns', 'exec', namespace, 'ip', '-batch', '-']
+            else:
+                if not self.is_root:
+                    full_cmd = ['sudo', 'ip', '-batch', '-']
+                else:
+                    full_cmd = ['ip', '-batch', '-']
+            
+            if self.verbose >= 2:
+                self.logger.info(f"Executing {len(ip_rule_cmds)} rules in batch mode")
+            
+            result = subprocess.run(
+                full_cmd, 
+                input=batch_content,
+                capture_output=True, 
+                text=True, 
+                check=False
+            )
+            
+            if result.returncode != 0 and check:
+                if self.verbose >= 1:
+                    self.logger.error(f"Batch rule command failed")
+                    self.logger.error(f"Error: {result.stderr}")
+                # Fall back to individual commands on batch failure
+                for cmd in [f"ip rule add {spec}" for spec in ip_rule_cmds]:
+                    self.run_cmd(cmd, namespace, check=False)
+        
+        # Execute other commands individually
+        for cmd in other_cmds:
+            self.run_cmd(cmd, namespace, check)
         
     def setup_hidden_mesh_network(self):
         """Set up network with hidden mesh infrastructure."""
@@ -1996,6 +2163,9 @@ Then run netsetup again.
         # Track added connected routes to avoid duplicates
         added_connected_routes = set()
         
+        # Phase 2 optimization: Collect all route commands for batch execution
+        route_commands = []
+        
         for route in sorted_routes:
             # Check if this route has a gateway that needs a connected route
             route_parts = route.split()
@@ -2039,17 +2209,12 @@ Then run netsetup again.
                                 else:
                                     connected_cmd = f"ip route add {connected_route}"
                                 
-                                try:
-                                    self.run_cmd(connected_cmd, router_name)
-                                    routes_count += 1
-                                    added_connected_routes.add(connected_route_key)
-                                    route_warnings.append(f"Added missing connected route for gateway {gateway_ip}: {connected_route}")
-                                    if self.verbose >= 2:
-                                        self.logger.info(f"Added missing connected route: {connected_route}")
-                                except subprocess.CalledProcessError as e:
-                                    # Ignore if route already exists
-                                    if "File exists" not in str(e):
-                                        route_errors.append(f"Failed to add connected route for {gateway_ip}: {str(e)}")
+                                # Phase 2: Collect command instead of executing immediately
+                                route_commands.append(connected_cmd)
+                                added_connected_routes.add(connected_route_key)
+                                route_warnings.append(f"Added missing connected route for gateway {gateway_ip}: {connected_route}")
+                                if self.verbose >= 2:
+                                    self.logger.info(f"Will add missing connected route: {connected_route}")
                                 
                 except (ipaddress.AddressValueError, ValueError):
                     # Not a valid IP address, skip
@@ -2075,25 +2240,49 @@ Then run netsetup again.
             else:
                 cmd = f"ip route add {modified_route}"
             
+            # Phase 2: Collect command for batch execution
+            route_commands.append(cmd)
+            if self.verbose >= 2:
+                self.logger.info(f"Will add route: {modified_route}")
+        
+        # Phase 2: Execute all route commands in batch
+        if route_commands:
+            if self.verbose >= 2:
+                self.logger.info(f"Executing {len(route_commands)} route commands in batch mode")
+            
             try:
-                self.run_cmd(cmd, router_name)
-                routes_count += 1
-                if self.verbose >= 2:
-                    self.logger.info(f"Added route: {modified_route}")
-            except subprocess.CalledProcessError as e:
-                # Collect error and continue with other routes
-                error_msg = f"Route '{route}' in table '{table}': {str(e)}"
-                if e.stderr:
-                    error_msg += f" - {e.stderr.strip()}"
-                route_errors.append(error_msg)
-                if self.verbose >= 2:
-                    self.logger.error(f"Route add failed: {error_msg}")
+                self.run_cmd_batch(route_commands, router_name, check=False)
+                routes_count = len(route_commands)
             except Exception as e:
-                # Collect error and continue with other routes
-                error_msg = f"Route '{route}' in table '{table}': {str(e)}"
-                route_errors.append(error_msg)
-                if self.verbose >= 2:
-                    self.logger.error(f"Route add failed: {error_msg}")
+                # Fall back to individual execution on batch failure
+                if self.verbose >= 1:
+                    self.logger.warning(f"Batch execution failed, falling back to individual commands: {e}")
+                
+                for cmd in route_commands:
+                    try:
+                        self.run_cmd(cmd, router_name)
+                        routes_count += 1
+                    except subprocess.CalledProcessError as e:
+                        # Extract route from command
+                        route = cmd.replace('ip route add table', '').replace('ip route add', '').strip()
+                        if route.startswith(table + ' '):
+                            route = route[len(table)+1:].strip()
+                        
+                        error_msg = f"Route '{route}' in table '{table}': {str(e)}"
+                        if e.stderr:
+                            error_msg += f" - {e.stderr.strip()}"
+                        route_errors.append(error_msg)
+                        if self.verbose >= 2:
+                            self.logger.error(f"Route add failed: {error_msg}")
+                    except Exception as e:
+                        route = cmd.replace('ip route add table', '').replace('ip route add', '').strip()
+                        if route.startswith(table + ' '):
+                            route = route[len(table)+1:].strip()
+                        
+                        error_msg = f"Route '{route}' in table '{table}': {str(e)}"
+                        route_errors.append(error_msg)
+                        if self.verbose >= 2:
+                            self.logger.error(f"Route add failed: {error_msg}")
         
         return routes_count, route_errors, route_warnings
                 
@@ -2124,6 +2313,9 @@ Then run netsetup again.
         
         rules_count = 0
         import re
+        
+        # Phase 2: Collect all rule commands for batch execution
+        rule_commands = []
         
         for line in rules_content.split('\n'):
             line = line.strip()
@@ -2158,12 +2350,29 @@ Then run netsetup again.
                 
                 cmd = f"ip rule add pref {priority} {rule_spec}"
                 
-                try:
-                    self.run_cmd(cmd, router_name, check=False)
-                    rules_count += 1
-                    self.logger.debug(f"Added rule: {rule_spec}")
-                except Exception as e:
-                    self.logger.debug(f"Rule add failed (expected): {e}")
+                # Phase 2: Collect command for batch execution
+                rule_commands.append(cmd)
+                self.logger.debug(f"Will add rule: {rule_spec}")
+        
+        # Phase 2: Execute all rule commands in batch
+        if rule_commands:
+            if self.verbose >= 2:
+                self.logger.info(f"Executing {len(rule_commands)} rule commands in batch mode")
+            
+            try:
+                self.run_cmd_batch(rule_commands, router_name, check=False)
+                rules_count = len(rule_commands)
+            except Exception as e:
+                # Fall back to individual execution on batch failure
+                if self.verbose >= 1:
+                    self.logger.warning(f"Batch rule execution failed, falling back to individual commands: {e}")
+                
+                for cmd in rule_commands:
+                    try:
+                        self.run_cmd(cmd, router_name, check=False)
+                        rules_count += 1
+                    except Exception as e:
+                        self.logger.debug(f"Rule add failed (expected): {e}")
         
         return rules_count
     

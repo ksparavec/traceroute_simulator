@@ -27,6 +27,8 @@ import sys
 import re
 from pathlib import Path
 from typing import Dict, List, Set, Optional, Tuple
+import concurrent.futures
+import threading
 
 # Configure global output flushing - disable all buffering
 class FlushingWrapper:
@@ -76,6 +78,18 @@ class HiddenMeshNetworkSetup:
             'rmmod', 'mount', 'umount', 'sysctl', 'tc',
             'echo', 'kill', 'pkill'
         }
+        
+        # Phase 3: Thread-safe locks for shared resources
+        self.registry_lock = threading.Lock()
+        self.stats_lock = threading.Lock()
+        
+        # Phase 3: Command deduplication tracking
+        self.executed_commands = set()
+        self.commands_lock = threading.Lock()
+        
+        # Phase 3: Lazy operations queue
+        self.lazy_operations = []
+        self.lazy_lock = threading.Lock()
         
         # Determine facts directories
         raw_facts_path = os.environ.get('TRACEROUTE_SIMULATOR_RAW_FACTS')
@@ -736,6 +750,17 @@ Then run netsetup again.
             
     def run_cmd(self, cmd: str, namespace: str = None, check: bool = True, log_cmd: bool = False):
         """Run a command, optionally in a namespace."""
+        # Phase 3: Command deduplication - skip if already executed
+        if self._should_deduplicate_command(cmd):
+            cmd_signature = self._get_command_signature(cmd, namespace)
+            with self.commands_lock:
+                if cmd_signature in self.executed_commands:
+                    if self.verbose >= 3:
+                        self.logger.debug(f"Skipping duplicate command: {cmd}")
+                    # Return success for duplicate commands
+                    return subprocess.CompletedProcess(args=[cmd], returncode=0, stdout='', stderr='')
+                self.executed_commands.add(cmd_signature)
+        
         # Phase 2 optimization: Try to use command list instead of shell=True
         # Check if command contains shell metacharacters that require shell
         shell_required = any(char in cmd for char in ['|', '>', '<', '&', ';', '$', '`', '(', ')', '[', ']', '{', '}', '*', '?', '~'])
@@ -792,6 +817,33 @@ Then run netsetup again.
             raise subprocess.CalledProcessError(result.returncode, full_cmd, result.stderr)
             
         return result
+    
+    def _should_deduplicate_command(self, cmd: str) -> bool:
+        """Determine if a command should be deduplicated.
+        
+        Phase 3: Only deduplicate idempotent commands that don't need to be repeated.
+        """
+        # Commands that should be deduplicated
+        dedupe_prefixes = [
+            'ip link add',      # Creating links multiple times fails
+            'ip netns add',     # Creating namespaces multiple times fails
+            'brctl addbr',      # Creating bridges multiple times fails
+            'ipset create',     # Creating ipsets multiple times fails
+            'tc qdisc add',     # Adding qdiscs multiple times can fail
+        ]
+        
+        # Check if command starts with any deduplicate prefix
+        return any(cmd.startswith(prefix) for prefix in dedupe_prefixes)
+    
+    def _get_command_signature(self, cmd: str, namespace: str = None) -> str:
+        """Generate a unique signature for a command.
+        
+        Phase 3: Create signature that identifies duplicate commands.
+        """
+        # Include namespace in signature to differentiate same command in different namespaces
+        if namespace:
+            return f"{namespace}:{cmd}"
+        return cmd
     
     def _run_cmd_no_shell(self, cmd: str, namespace: str = None, check: bool = True, log_cmd: bool = False):
         """Run a command without shell=True for better performance.
@@ -1871,10 +1923,35 @@ Then run netsetup again.
         if self.verbose >= 1:
             print("\n=== Applying router configurations ===")
         
-        for i, (router_name, router_facts) in enumerate(self.routers.items(), 1):
-            if self.verbose >= 2:
-                print(f"\n[{i}/{len(self.routers)}] Configuring {router_name}")
+        # Phase 3: Use parallel execution for independent router configurations
+        max_workers = min(4, len(self.routers))  # Limit concurrent workers
+        
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+            # Submit all router configurations
+            futures = {}
+            for i, (router_name, router_facts) in enumerate(self.routers.items(), 1):
+                future = executor.submit(self._configure_single_router, router_name, router_facts, i)
+                futures[future] = router_name
             
+            # Wait for all configurations to complete
+            for future in concurrent.futures.as_completed(futures):
+                router_name = futures[future]
+                try:
+                    future.result()
+                except Exception as e:
+                    with self.stats_lock:
+                        self.router_stats[router_name]['errors'].append(f"Configuration thread failed: {e}")
+                    self.logger.error(f"Router {router_name} configuration failed: {e}")
+        
+        # Phase 3: Execute lazy operations after all routers are configured
+        self._execute_lazy_operations()
+    
+    def _configure_single_router(self, router_name: str, router_facts, index: int):
+        """Configure a single router - thread-safe method for parallel execution."""
+        if self.verbose >= 2:
+            print(f"\n[{index}/{len(self.routers)}] Configuring {router_name}")
+        
+        with self.stats_lock:
             stats = self.router_stats[router_name]
             
             # Only proceed if interfaces were 100% successful
@@ -1882,46 +1959,78 @@ Then run netsetup again.
                 if self.verbose >= 2:
                     print(f"  ⚠ Skipping configuration due to interface failures")
                 stats['skipped_sections'] = ['routing', 'ipsets', 'iptables']
-                continue
+                return
+        
+        try:
+            # Apply routing configuration
+            if self.verbose >= 2:
+                print(f"  → Applying routing configuration")
+            self._apply_routing_configuration(router_name, router_facts)
             
-            try:
-                # Apply routing configuration
+            # Check routing success thread-safely
+            with self.stats_lock:
+                routing_success = self.router_stats[router_name]['routing_success']
+            
+            # Only proceed with ipsets if routing was 100% successful
+            if routing_success:
                 if self.verbose >= 2:
-                    print(f"  → Applying routing configuration")
-                self._apply_routing_configuration(router_name, router_facts)
+                    print(f"  → Applying ipsets configuration")
+                self._apply_ipsets_configuration(router_name, router_facts)
                 
-                # Only proceed with ipsets if routing was 100% successful
-                if stats['routing_success']:
+                # Check ipsets success thread-safely
+                with self.stats_lock:
+                    ipsets_success = self.router_stats[router_name]['ipsets_success']
+                
+                # Phase 3: Defer iptables to lazy operations
+                if ipsets_success:
+                    with self.lazy_lock:
+                        self.lazy_operations.append(('iptables', router_name, router_facts))
                     if self.verbose >= 2:
-                        print(f"  → Applying ipsets configuration")
-                    self._apply_ipsets_configuration(router_name, router_facts)
-                    
-                    # Only proceed with iptables if ipsets was 100% successful
-                    if stats['ipsets_success']:
-                        if self.verbose >= 2:
-                            print(f"  → Applying iptables configuration")
-                        self._apply_iptables_configuration(router_name, router_facts)
-                    else:
-                        if self.verbose >= 2:
-                            print(f"  ⚠ Skipping iptables due to ipsets failures")
-                        stats['skipped_sections'].append('iptables')
+                        print(f"  → Deferring iptables configuration (lazy)")
                 else:
+                    with self.stats_lock:
+                        self.router_stats[router_name]['skipped_sections'].append('iptables')
                     if self.verbose >= 2:
-                        print(f"  ⚠ Skipping ipsets and iptables due to routing failures")
-                    stats['skipped_sections'].extend(['ipsets', 'iptables'])
-                
+                        print(f"  ⚠ Skipping iptables due to ipsets failures")
+            else:
+                with self.stats_lock:
+                    self.router_stats[router_name]['skipped_sections'].extend(['ipsets', 'iptables'])
                 if self.verbose >= 2:
-                    print(f"  ✓ Configuration applied")
-                
-            except Exception as e:
-                if self.verbose >= 1:
-                    print(f"  ✗ Configuration failed: {e}")
-                # Continue with other routers
+                    print(f"  ⚠ Skipping ipsets and iptables due to routing failures")
+            
+            if self.verbose >= 2:
+                print(f"  ✓ Configuration applied")
+            
+        except Exception as e:
+            if self.verbose >= 1:
+                print(f"  ✗ Configuration failed: {e}")
+            with self.stats_lock:
+                self.router_stats[router_name]['errors'].append(str(e))
+    
+    def _execute_lazy_operations(self):
+        """Execute deferred operations that don't need immediate execution."""
+        if not self.lazy_operations:
+            return
+        
+        if self.verbose >= 1:
+            print(f"\n=== Executing {len(self.lazy_operations)} deferred operations ===")
+        
+        for op_type, router_name, router_facts in self.lazy_operations:
+            if op_type == 'iptables':
+                if self.verbose >= 2:
+                    print(f"  → Applying iptables for {router_name}")
+                try:
+                    self._apply_iptables_configuration(router_name, router_facts)
+                except Exception as e:
+                    with self.stats_lock:
+                        self.router_stats[router_name]['errors'].append(f"Lazy iptables failed: {e}")
+                    self.logger.error(f"Failed to apply iptables for {router_name}: {e}")
                 
     def _apply_routing_configuration(self, router_name: str, router_facts: RouterRawFacts):
         """Apply routing tables and policy rules (policy routing conditional)."""
-        stats = self.router_stats[router_name]
-        stats['routing_applied'] = True
+        with self.stats_lock:
+            stats = self.router_stats[router_name]
+            stats['routing_applied'] = True
         
         routes_applied = 0
         rules_applied = 0
@@ -2002,9 +2111,10 @@ Then run netsetup again.
                         applied_tables.append(f"{table_name}({table_id})")
             
             # Mark as successful (even if some routes failed)
-            stats['routing_success'] = True
-            if errors:
-                stats['route_errors'] = errors
+            with self.stats_lock:
+                self.router_stats[router_name]['routing_success'] = True
+                if errors:
+                    self.router_stats[router_name]['route_errors'] = errors
             
             if self.verbose >= 1:
                 if errors:
@@ -2020,9 +2130,10 @@ Then run netsetup again.
                 print(summary)
                 
         except Exception as e:
-            stats['routing_success'] = False
-            error_msg = str(e)
-            stats['errors'].append(f"Routing configuration failed: {error_msg}")
+            with self.stats_lock:
+                self.router_stats[router_name]['routing_success'] = False
+                error_msg = str(e)
+                self.router_stats[router_name]['errors'].append(f"Routing configuration failed: {error_msg}")
             
             if self.verbose >= 1:
                 print(f"    ✗ routing: {error_msg}")
@@ -2405,28 +2516,32 @@ Then run netsetup again.
                     
     def _apply_iptables_configuration(self, router_name: str, router_facts: RouterRawFacts):
         """Apply iptables configuration."""
-        stats = self.router_stats[router_name]
-        stats['iptables_applied'] = True
+        with self.stats_lock:
+            self.router_stats[router_name]['iptables_applied'] = True
         
         try:
             iptables_save_section = router_facts.get_section('iptables_save')
             if iptables_save_section:
                 success, rule_count = self._apply_iptables_save(router_name, iptables_save_section.content)
                 if success:
-                    stats['iptables_success'] = True
+                    with self.stats_lock:
+                        self.router_stats[router_name]['iptables_success'] = True
                     if self.verbose >= 1:
                         print(f"    ✓ iptables: {rule_count} rules applied")
                 else:
-                    stats['iptables_success'] = False
+                    with self.stats_lock:
+                        self.router_stats[router_name]['iptables_success'] = False
                     if self.verbose >= 1:
                         print(f"    ✗ iptables: configuration failed")
                     # Don't raise exception - iptables failures are non-critical
             else:
-                stats['iptables_success'] = True  # No iptables to apply
+                with self.stats_lock:
+                    self.router_stats[router_name]['iptables_success'] = True  # No iptables to apply
                 if self.verbose >= 1:
                     print(f"    ✓ iptables: no configuration")
         except Exception as e:
-            stats['iptables_success'] = False
+            with self.stats_lock:
+                self.router_stats[router_name]['iptables_success'] = False
             # Don't add to errors or re-raise - iptables issues are non-critical
             if self.verbose >= 1:
                 print(f"    ✗ iptables: {str(e)}")
@@ -2503,15 +2618,16 @@ Then run netsetup again.
             
     def _apply_ipsets_configuration(self, router_name: str, router_facts: RouterRawFacts):
         """Apply ipsets configuration."""
-        stats = self.router_stats[router_name]
-        stats['ipsets_applied'] = True
+        with self.stats_lock:
+            self.router_stats[router_name]['ipsets_applied'] = True
         
         try:
             ipset_save_section = router_facts.get_section('ipset_save')
             if ipset_save_section:
                 success, set_count, member_count = self._apply_ipset_save(router_name, ipset_save_section.content)
                 if success:
-                    stats['ipsets_success'] = True
+                    with self.stats_lock:
+                        self.router_stats[router_name]['ipsets_success'] = True
                     if self.verbose >= 1:
                         print(f"    ✓ ipsets: {set_count} sets, {member_count} members")
                 else:
@@ -2519,12 +2635,14 @@ Then run netsetup again.
                         print(f"    ✗ ipsets: configuration failed")
                     raise Exception("Ipsets configuration failed")
             else:
-                stats['ipsets_success'] = True  # No ipsets to apply
+                with self.stats_lock:
+                    self.router_stats[router_name]['ipsets_success'] = True  # No ipsets to apply
                 if self.verbose >= 1:
                     print(f"    ✓ ipsets: no configuration")
         except Exception as e:
-            stats['ipsets_success'] = False
-            stats['errors'].append(f"Ipsets configuration failed: {str(e)}")
+            with self.stats_lock:
+                self.router_stats[router_name]['ipsets_success'] = False
+                self.router_stats[router_name]['errors'].append(f"Ipsets configuration failed: {str(e)}")
             raise
             
     def _apply_ipset_save(self, router_name: str, ipset_content: str):

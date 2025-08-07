@@ -43,9 +43,12 @@ import sys
 import os
 import subprocess
 
-# Set matplotlib backend
+# Set matplotlib backend and config directory
 os.environ['MPLBACKEND'] = 'Agg'
 os.environ['DISPLAY'] = ''
+os.environ['MPLCONFIGDIR'] = '/var/www/traceroute-web/matplotlib_cache'
+# Create the cache directory if it doesn't exist
+os.makedirs('/var/www/traceroute-web/matplotlib_cache', exist_ok=True)
 
 # Files from parameters
 trace_file = "${TRACE_FILE}"
@@ -60,14 +63,28 @@ cmd = [sys.executable, "-B", "-u", script_path,
        "--output", output_file]
 
 result = subprocess.run(cmd, capture_output=True, text=True)
-if result.returncode == 0 and os.path.exists(output_file):
+
+# Log the command and result for debugging
+os.makedirs('/var/www/traceroute-web/logs', exist_ok=True)
+with open('/var/www/traceroute-web/logs/pdf_debug.log', 'a') as debug:
+    debug.write(f"Command: {' '.join(cmd)}\n")
+    debug.write(f"Return code: {result.returncode}\n")
+    debug.write(f"Stdout: {result.stdout}\n")
+    debug.write(f"Stderr: {result.stderr}\n")
+    debug.write(f"Output file exists: {os.path.exists(output_file)}\n")
+    if os.path.exists(output_file):
+        debug.write(f"Output file size: {os.path.getsize(output_file)}\n")
+    debug.write("-" * 50 + "\n")
+
+if result.returncode == 0 and os.path.exists(output_file) and os.path.getsize(output_file) > 0:
     # Output the PDF to stdout
     with open(output_file, 'rb') as f:
         sys.stdout.buffer.write(f.read())
 else:
-    # Error - switch to text response
-    print("Content-Type: text/plain", file=sys.stderr)
-    print("", file=sys.stderr)
-    print(f"Error generating PDF: {result.stderr}", file=sys.stderr)
+    # Error - but we already sent PDF headers, so send an empty PDF or error text
+    error_msg = f"Error generating PDF: {result.stderr if result.stderr else result.stdout}"
+    # Since we already sent PDF headers, we can't change them
+    # Best we can do is output the error to stderr for logging
+    print(error_msg, file=sys.stderr)
     sys.exit(1)
 EOF

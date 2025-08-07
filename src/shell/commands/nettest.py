@@ -204,8 +204,8 @@ class NetTestCommands(BaseCommandHandler):
                 for _ in range(args.verbose - 1):
                     cmd_args.append('-v')
             
-            # Run script with sudo (required for namespace operations)
-            returncode = self.run_script_with_output(script_path, cmd_args, use_sudo=True)
+            # Run script without sudo - the script internally uses sudo for ip netns exec
+            returncode = self.run_script_with_output(script_path, cmd_args, use_sudo=False)
             
             return returncode
             

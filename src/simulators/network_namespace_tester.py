@@ -1410,6 +1410,9 @@ class SequentialConnectivityTester:
                         
                         if is_interactive and self.verbose >= 1:
                             # Interactive mode: stream output in real-time
+                            # Need to add sudo if not running as root
+                            if os.geteuid() != 0:
+                                full_cmd = f"sudo {full_cmd}"
                             process = subprocess.Popen(
                                 full_cmd, shell=True, stdout=subprocess.PIPE, 
                                 stderr=subprocess.STDOUT, text=True

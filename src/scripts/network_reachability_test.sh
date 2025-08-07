@@ -94,11 +94,13 @@ tsimsh_exec() {
     echo "$(get_elapsed_time) tsimsh: $command" >&2
     
     if [[ "$capture_output" == "true" ]]; then
-        # Capture stdout, filter out info lines starting with ℹ
+        # Capture stdout directly - no filtering needed since JSON output is clean
         local output
-        output=$(echo "$command" | tsimsh -q 2>&1 | grep -v '^ℹ')
+        # Don't redirect stderr to stdout - keep them separate
+        output=$(echo "$command" | tsimsh -q)
+        local exit_code=$?
         echo "$output"
-        return ${PIPESTATUS[1]:-0}  # Return tsimsh exit code
+        return $exit_code
     else
         # Even when not capturing for return, capture for debug logging
         local output
@@ -521,30 +523,39 @@ phase3_reachability_tests() {
     
     # Run all three tests in parallel
     local ping_file="${TEMP_DIR}/ping_result.json"
-    local mtr_file="${TEMP_DIR}/mtr_result.json"
+    local mtr_file="${TEMP_DIR}/traceroute_result.json"
     local service_file="${TEMP_DIR}/service_result.json"
     
     # Test 1: ICMP Ping (background)
     {
         start_step "ping"
-        tsimsh_exec "ping --source ${SOURCE_IP} --destination ${DEST_IP} --timeout 1 --count 2 --json" true > "$ping_file"
-        echo $? > "${ping_file}.rc"
+        local ping_output
+        ping_output=$(tsimsh_exec "ping --source ${SOURCE_IP} --destination ${DEST_IP} --timeout 1 --count 2 --json" true)
+        local ping_rc=$?
+        echo "$ping_output" > "$ping_file"
+        echo $ping_rc > "${ping_file}.rc"
     } &
     local ping_pid=$!
     
-    # Test 2: MTR (background)
+    # Test 2: Traceroute (background)
     {
-        start_step "mtr"
-        tsimsh_exec "mtr --source ${SOURCE_IP} --destination ${DEST_IP} --timeout 1 --count 2 --json" true > "$mtr_file"
-        echo $? > "${mtr_file}.rc"
+        start_step "traceroute"
+        local traceroute_output
+        traceroute_output=$(tsimsh_exec "traceroute --source ${SOURCE_IP} --destination ${DEST_IP} --json" true)
+        local traceroute_rc=$?
+        echo "$traceroute_output" > "$mtr_file"
+        echo $traceroute_rc > "${mtr_file}.rc"
     } &
     local mtr_pid=$!
     
     # Test 3: Service Test (background)
     {
         start_step "service_test"
-        tsimsh_exec "service test --source ${SOURCE_IP} --destination ${DEST_IP}:${DEST_PORT} --protocol ${PROTOCOL} --timeout 1 --json" true > "$service_file"
-        echo $? > "${service_file}.rc"
+        local service_output
+        service_output=$(tsimsh_exec "service test --source ${SOURCE_IP} --destination ${DEST_IP}:${DEST_PORT} --protocol ${PROTOCOL} --timeout 1 --json" true)
+        local service_rc=$?
+        echo "$service_output" > "$service_file"
+        echo $service_rc > "${service_file}.rc"
     } &
     local service_pid=$!
     
@@ -807,8 +818,8 @@ phase5_compile_results() {
     # Export test results
     export PING_RESULT="${JSON_RESULTS[ping_result]:-}"
     export PING_RETURN_CODE="${JSON_RESULTS[ping_return_code]:-}"
-    export MTR_RESULT="${JSON_RESULTS[mtr_result]:-}"
-    export MTR_RETURN_CODE="${JSON_RESULTS[mtr_return_code]:-}"
+    export TRACEROUTE_RESULT="${JSON_RESULTS[mtr_result]:-}"
+    export TRACEROUTE_RETURN_CODE="${JSON_RESULTS[mtr_return_code]:-}"
     export SERVICE_RESULT="${JSON_RESULTS[service_result]:-}"
     export SERVICE_RETURN_CODE="${JSON_RESULTS[service_return_code]:-}"
     

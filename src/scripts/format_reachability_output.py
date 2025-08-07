@@ -7,6 +7,26 @@ import sys
 import json
 import os
 
+def safe_json_loads(data_str, default=None):
+    """Safely parse JSON, returning default value on error."""
+    if not data_str:
+        return default
+    try:
+        return json.loads(data_str)
+    except (json.JSONDecodeError, ValueError):
+        # Log the error to stderr for debugging
+        print(f"Warning: Failed to parse JSON: {data_str[:100]}...", file=sys.stderr)
+        return default
+
+def safe_int(value_str, default=None):
+    """Safely convert to int, returning default value on error."""
+    if not value_str:
+        return default
+    try:
+        return int(value_str)
+    except (ValueError, TypeError):
+        return default
+
 def main():
     # Read environment variables passed from bash script
     env_data = {}
@@ -23,8 +43,8 @@ def main():
     # Test results
     env_data['ping_result'] = os.environ.get('PING_RESULT', '')
     env_data['ping_return_code'] = os.environ.get('PING_RETURN_CODE', '')
-    env_data['mtr_result'] = os.environ.get('MTR_RESULT', '')
-    env_data['mtr_return_code'] = os.environ.get('MTR_RETURN_CODE', '')
+    env_data['traceroute_result'] = os.environ.get('TRACEROUTE_RESULT', '')
+    env_data['traceroute_return_code'] = os.environ.get('TRACEROUTE_RETURN_CODE', '')
     env_data['service_result'] = os.environ.get('SERVICE_RESULT', '')
     env_data['service_return_code'] = os.environ.get('SERVICE_RETURN_CODE', '')
     
@@ -58,24 +78,24 @@ def main():
         },
         'reachability_tests': {
             'ping': {
-                'result': json.loads(env_data['ping_result']) if env_data['ping_result'] else None,
-                'return_code': int(env_data['ping_return_code']) if env_data['ping_return_code'] else None
+                'result': safe_json_loads(env_data['ping_result'], None),
+                'return_code': safe_int(env_data['ping_return_code'], None)
             },
-            'mtr': {
-                'result': json.loads(env_data['mtr_result']) if env_data['mtr_result'] else None,
-                'return_code': int(env_data['mtr_return_code']) if env_data['mtr_return_code'] else None
+            'traceroute': {
+                'result': safe_json_loads(env_data['traceroute_result'], None),
+                'return_code': safe_int(env_data['traceroute_return_code'], None)
             },
             'service': {
-                'result': json.loads(env_data['service_result']) if env_data['service_result'] else None,
-                'return_code': int(env_data['service_return_code']) if env_data['service_return_code'] else None
+                'result': safe_json_loads(env_data['service_result'], None),
+                'return_code': safe_int(env_data['service_return_code'], None)
             }
         },
-        'packet_count_analysis': json.loads(env_data['packet_count_analysis']) if env_data['packet_count_analysis'] else [],
-        'router_service_results': json.loads(env_data['router_service_results']) if env_data['router_service_results'] else {}
+        'packet_count_analysis': safe_json_loads(env_data['packet_count_analysis'], []),
+        'router_service_results': safe_json_loads(env_data['router_service_results'], {})
     }
     
     # Process execution trace - filter out steps < 0.01s and remove result field
-    raw_trace = json.loads(env_data['execution_trace']) if env_data['execution_trace'] else []
+    raw_trace = safe_json_loads(env_data['execution_trace'], [])
     operational_summary = []
     total_duration = 0.0
     

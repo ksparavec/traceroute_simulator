@@ -363,16 +363,18 @@ def create_networkx_visualization(trace_data: Dict[str, Any], results_data: Dict
     table_rows = 1  # Header row
     
     # Count ping test rows
-    ping_tests = results_data.get('reachability_tests', {}).get('ping', {}).get('result', {}).get('tests', [])
+    ping_result = results_data.get('reachability_tests', {}).get('ping', {}).get('result')
+    ping_tests = ping_result.get('tests', []) if ping_result else []
     if ping_tests:
         table_rows += 1  # Overall summary
         table_rows += len(ping_tests)  # Individual router results
     
-    # Count MTR test rows
-    mtr_tests = results_data.get('reachability_tests', {}).get('mtr', {}).get('result', {}).get('tests', [])
-    if mtr_tests:
+    # Count Traceroute test rows
+    traceroute_result = results_data.get('reachability_tests', {}).get('traceroute', {}).get('result')
+    traceroute_tests = traceroute_result.get('tests', []) if traceroute_result else []
+    if traceroute_tests:
         table_rows += 1  # Overall summary
-        table_rows += len(mtr_tests)  # Individual router results
+        table_rows += len(traceroute_tests)  # Individual router results
     
     # Count service test rows
     packet_analyses = results_data.get('packet_count_analysis', [])
@@ -438,9 +440,10 @@ def create_networkx_visualization(trace_data: Dict[str, Any], results_data: Dict
     wrapped_content.append(1)  # Header is single line
     
     # Add Ping test results - show each router's result
-    ping_tests = results_data.get('reachability_tests', {}).get('ping', {}).get('result', {}).get('tests', [])
+    ping_result = results_data.get('reachability_tests', {}).get('ping', {}).get('result')
+    ping_tests = ping_result.get('tests', []) if ping_result else []
     if ping_tests:
-        ping_summary = results_data.get('reachability_tests', {}).get('ping', {}).get('result', {}).get('summary', {})
+        ping_summary = ping_result.get('summary', {}) if ping_result else {}
         # Overall ping summary
         table_data.append(['PING TEST', 
                           f"Overall: {ping_summary.get('passed', 0)}/{ping_summary.get('total_tests', 0)} passed", 
@@ -459,20 +462,21 @@ def create_networkx_visualization(trace_data: Dict[str, Any], results_data: Dict
             table_colors.append(['white'] * 4)
             wrapped_content.append(1)  # Single line
     
-    # Add MTR test results - show each router's result  
-    mtr_tests = results_data.get('reachability_tests', {}).get('mtr', {}).get('result', {}).get('tests', [])
-    if mtr_tests:
-        mtr_summary = results_data.get('reachability_tests', {}).get('mtr', {}).get('result', {}).get('summary', {})
-        # Overall MTR summary
-        table_data.append(['MTR TEST', 
-                          f"Overall: {mtr_summary.get('passed', 0)}/{mtr_summary.get('total_tests', 0)} passed", 
-                          'PASS' if mtr_summary.get('all_passed', False) else 'FAIL',
-                          ''])  # Empty Analysis for MTR
+    # Add Traceroute test results - show each router's result  
+    traceroute_result = results_data.get('reachability_tests', {}).get('traceroute', {}).get('result')
+    traceroute_tests = traceroute_result.get('tests', []) if traceroute_result else []
+    if traceroute_tests:
+        traceroute_summary = traceroute_result.get('summary', {}) if traceroute_result else {}
+        # Overall Traceroute summary
+        table_data.append(['TRACEROUTE TEST', 
+                          f"Overall: {traceroute_summary.get('passed', 0)}/{traceroute_summary.get('total_tests', 0)} passed", 
+                          'PASS' if traceroute_summary.get('all_passed', False) else 'FAIL',
+                          ''])  # Empty Analysis for TRACEROUTE
         table_colors.append(['lightgray'] * 4)
         wrapped_content.append(1)  # Single line
         
-        # Individual router MTR results
-        for test in mtr_tests:
+        # Individual router Traceroute results
+        for test in traceroute_tests:
             router = test.get('router', 'Unknown')
             table_data.append(['', 
                               f"  → {router}", 
@@ -482,12 +486,13 @@ def create_networkx_visualization(trace_data: Dict[str, Any], results_data: Dict
             wrapped_content.append(1)  # Single line
     
     # Add Service test results with packet analysis for each router
-    service_tests = results_data.get('reachability_tests', {}).get('service', {}).get('result', {}).get('tests', [])
+    service_result = results_data.get('reachability_tests', {}).get('service', {}).get('result')
+    service_tests = service_result.get('tests', []) if service_result else []
     packet_analyses = results_data.get('packet_count_analysis', [])
     
     if service_tests or packet_analyses:
         # Overall service test summary
-        service_summary = results_data.get('reachability_tests', {}).get('service', {}).get('result', {}).get('summary', {})
+        service_summary = service_result.get('summary', {}) if service_result else {}
         table_data.append(['SERVICE TEST', 
                           f"Overall: {service_summary.get('successful', 0)}/{service_summary.get('total_tests', 0)} successful", 
                           service_summary.get('overall_status', 'N/A'),
@@ -663,7 +668,8 @@ def create_networkx_visualization(trace_data: Dict[str, Any], results_data: Dict
                     bbox_inches=None,  # Don't use tight - it changes the page size
                     facecolor='white',
                     format='pdf')
-        print(f"Visualization saved to: {output_file}")
+        # Don't print to stdout - it corrupts PDF output when used in CGI
+        # print(f"Visualization saved to: {output_file}")
     else:
         plt.show()
     

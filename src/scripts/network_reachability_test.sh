@@ -28,21 +28,27 @@ declare -a CREATED_HOSTS=()
 # Get precise start time at script beginning
 SCRIPT_START_TIME=$(python3 -B -u -c "import time; print(time.time())")
 
-# Function to log timing to file
+# Track last checkpoint time for duration calculation
+LAST_CHECKPOINT_TIME=$SCRIPT_START_TIME
+
+# Function to log timing with duration since last checkpoint
 log_timing() {
     local checkpoint="$1"
     local details="${2:-}"
     local current_time=$(python3 -B -u -c "import time; print(time.time())")
-    local elapsed=$(python3 -B -u -c "import sys; print(f'{float(sys.argv[1]) - float(sys.argv[2]):7.2f}')" "$current_time" "$SCRIPT_START_TIME")
+    local duration=$(python3 -B -u -c "import sys; print(f'{float(sys.argv[1]) - float(sys.argv[2]):7.2f}')" "$current_time" "$LAST_CHECKPOINT_TIME")
     local timestamp=$(date +"%Y-%m-%d %H:%M:%S.%3N")
     local log_file="/var/www/traceroute-web/logs/timings.log"
+    
+    # Update last checkpoint time
+    LAST_CHECKPOINT_TIME=$current_time
     
     # Create log directory if it doesn't exist
     mkdir -p "$(dirname "$log_file")" 2>/dev/null || true
     
-    # Log entry format: [timestamp] [session] elapsed_time | checkpoint | details
+    # Log entry format: [timestamp] [session] duration | checkpoint | details
     local session_id="${RUN_ID:-unknown}"
-    local log_entry="[$timestamp] [$session_id] ${elapsed}s | REACHABILITY_${checkpoint}"
+    local log_entry="[$timestamp] [$session_id] ${duration}s | REACHABILITY_${checkpoint}"
     [[ -n "$details" ]] && log_entry="$log_entry | $details"
     
     echo "$log_entry" >> "$log_file" 2>/dev/null || true
@@ -350,6 +356,7 @@ phase2_setup_environment() {
     start_step "environment_setup"
     
     # Get list of existing hosts
+    log_timing "PHASE2_host_list" "Query existing hosts"
     local host_list=$(tsimsh_exec "host list --json" true)
     
     # Check which hosts already exist for each router
@@ -397,11 +404,19 @@ except:
 ")
     fi
     
-    # Add source and destination hosts to EACH router
+    # Add source and destination hosts to EACH router IN PARALLEL
     local router_index=1
     local source_hosts_added=""
     local dest_hosts_added=""
+    local num_routers=$(echo "$routers" | wc -l)
+    log_timing "PHASE2_host_setup_start" "Adding hosts to $num_routers routers in parallel"
     
+    # Create temp files for tracking parallel additions
+    local host_add_dir="${TEMP_DIR}/host_adds"
+    mkdir -p "$host_add_dir"
+    
+    # Launch parallel host additions
+    local add_pids=()
     while IFS= read -r router; do
         [[ -z "$router" ]] && continue
         
@@ -414,25 +429,17 @@ except:
             fi
         done
         
-        # Add source host to this router if needed
+        # Add source host to this router if needed (in background)
         local src_host_name="source-${router_index}"
         if [[ "$source_exists_for_router" == "false" ]]; then
-            if tsimsh_exec "host add --name ${src_host_name} --primary-ip ${SOURCE_IP}/24 --connect-to ${router}" false; then
-                source_hosts_added+="${src_host_name} "
-                SOURCE_HOST_ADDED=true
-                CREATED_HOSTS+=("${src_host_name}")
-            else
-                # Clean up any hosts we've added so far
-                for host in $source_hosts_added; do
-                    tsimsh_exec "host remove --name ${host} --force" false || true
-                done
-                for host in $dest_hosts_added; do
-                    tsimsh_exec "host remove --name ${host} --force" false || true
-                done
-                JSON_RESULTS[source_host_added]="false"
-                end_step "failed"
-                return 1
-            fi
+            {
+                if tsimsh_exec "host add --name ${src_host_name} --primary-ip ${SOURCE_IP}/24 --connect-to ${router}" false; then
+                    echo "${src_host_name}" > "${host_add_dir}/src_${router_index}_success"
+                else
+                    echo "Failed to add ${src_host_name}" > "${host_add_dir}/src_${router_index}_failed"
+                fi
+            } &
+            add_pids+=($!)
         fi
         
         # Check if destination host already exists for THIS router
@@ -444,29 +451,62 @@ except:
             fi
         done
         
-        # Add destination host to this router if needed
+        # Add destination host to this router if needed (in background)
         local dst_host_name="destination-${router_index}"
         if [[ "$dest_exists_for_router" == "false" ]]; then
-            if tsimsh_exec "host add --name ${dst_host_name} --primary-ip ${DEST_IP}/24 --connect-to ${router}" false; then
-                dest_hosts_added+="${dst_host_name} "
-                DEST_HOST_ADDED=true
-                CREATED_HOSTS+=("${dst_host_name}")
-            else
-                # Clean up any hosts we've added so far
-                for host in $source_hosts_added; do
-                    tsimsh_exec "host remove --name ${host} --force" false || true
-                done
-                for host in $dest_hosts_added; do
-                    tsimsh_exec "host remove --name ${host} --force" false || true
-                done
-                JSON_RESULTS[destination_host_added]="false"
-                end_step "failed"
-                return 1
-            fi
+            {
+                if tsimsh_exec "host add --name ${dst_host_name} --primary-ip ${DEST_IP}/24 --connect-to ${router}" false; then
+                    echo "${dst_host_name}" > "${host_add_dir}/dst_${router_index}_success"
+                else
+                    echo "Failed to add ${dst_host_name}" > "${host_add_dir}/dst_${router_index}_failed"
+                fi
+            } &
+            add_pids+=($!)
         fi
         
         ((router_index++))
     done <<< "$routers"
+    
+    # Wait for all parallel host additions to complete
+    for pid in "${add_pids[@]}"; do
+        wait $pid
+    done
+    
+    # Check results and collect added hosts
+    local any_failed=false
+    for result_file in "${host_add_dir}"/*_success; do
+        if [[ -f "$result_file" ]]; then
+            local host_name=$(cat "$result_file")
+            if [[ "$result_file" == *"/src_"* ]]; then
+                source_hosts_added+="${host_name} "
+                SOURCE_HOST_ADDED=true
+            else
+                dest_hosts_added+="${host_name} "
+                DEST_HOST_ADDED=true
+            fi
+            CREATED_HOSTS+=("${host_name}")
+        fi
+    done
+    
+    # Check for failures
+    for result_file in "${host_add_dir}"/*_failed; do
+        if [[ -f "$result_file" ]]; then
+            any_failed=true
+            local error_msg=$(cat "$result_file")
+            echo "Error: $error_msg" >&2
+        fi
+    done
+    
+    if [[ "$any_failed" == "true" ]]; then
+        # Clean up any hosts we've added
+        for host in "${CREATED_HOSTS[@]}"; do
+            tsimsh_exec "host remove --name ${host} --force" false || true
+        done
+        JSON_RESULTS[source_host_added]="false"
+        JSON_RESULTS[destination_host_added]="false"
+        end_step "failed"
+        return 1
+    fi
     
     # Store the list of hosts we added for cleanup later
     JSON_RESULTS[source_hosts_added]="$source_hosts_added"
@@ -493,7 +533,10 @@ except:
         fi
     fi
     
+    log_timing "PHASE2_hosts_complete" "Hosts added: src=$source_hosts_added dst=$dest_hosts_added"
+    
     # Check if service is already running
+    log_timing "PHASE2_service_check" "Checking existing services"
     local service_list=$(tsimsh_exec "service list --json" true)
     local service_exists=false
     
@@ -517,6 +560,7 @@ except:
     
     # Start destination service only if it doesn't exist
     if [[ "$service_exists" != "true" ]]; then
+        log_timing "PHASE2_service_start" "Starting service on ${DEST_IP}:${DEST_PORT}/${PROTOCOL}"
         if tsimsh_exec "service start --ip ${DEST_IP} --port ${DEST_PORT} --protocol ${PROTOCOL}" false; then
             SERVICE_STARTED=true
             JSON_RESULTS[service_started]="true"
@@ -529,6 +573,7 @@ except:
         SERVICE_STARTED=false
         JSON_RESULTS[service_started]="false"
         JSON_RESULTS[service_existed]="true"
+        log_timing "PHASE2_service_exists" "Service already running"
     fi
     
     end_step "completed"
@@ -546,44 +591,38 @@ phase3_reachability_tests() {
     local mtr_file="${TEMP_DIR}/traceroute_result.json"
     local service_file="${TEMP_DIR}/service_result.json"
     
-    log_timing "TESTS_PARALLEL_START" "ping, traceroute, service"
+    log_timing "PHASE3_tests_start" "Starting ping, traceroute, service tests in parallel"
     
     # Test 1: ICMP Ping (background)
     {
-        log_timing "PING_START"
         start_step "ping"
         local ping_output
         ping_output=$(tsimsh_exec "ping --source ${SOURCE_IP} --destination ${DEST_IP} --timeout 1 --count 2 --json" true)
         local ping_rc=$?
         echo "$ping_output" > "$ping_file"
         echo $ping_rc > "${ping_file}.rc"
-        log_timing "PING_END" "rc=$ping_rc"
     } &
     local ping_pid=$!
     
     # Test 2: Traceroute (background)
     {
-        log_timing "TRACEROUTE_START"
         start_step "traceroute"
         local traceroute_output
         traceroute_output=$(tsimsh_exec "traceroute --source ${SOURCE_IP} --destination ${DEST_IP} --json" true)
         local traceroute_rc=$?
         echo "$traceroute_output" > "$mtr_file"
         echo $traceroute_rc > "${mtr_file}.rc"
-        log_timing "TRACEROUTE_END" "rc=$traceroute_rc"
     } &
     local mtr_pid=$!
     
     # Test 3: Service Test (background)
     {
-        log_timing "SERVICE_TEST_START"
         start_step "service_test"
         local service_output
         service_output=$(tsimsh_exec "service test --source ${SOURCE_IP} --destination ${DEST_IP}:${DEST_PORT} --protocol ${PROTOCOL} --timeout 1 --json" true)
         local service_rc=$?
         echo "$service_output" > "$service_file"
         echo $service_rc > "${service_file}.rc"
-        log_timing "SERVICE_TEST_END" "rc=$service_rc"
     } &
     local service_pid=$!
     
@@ -591,7 +630,7 @@ phase3_reachability_tests() {
     wait $ping_pid
     wait $mtr_pid
     wait $service_pid
-    log_timing "TESTS_PARALLEL_END" "all tests complete"
+    log_timing "PHASE3_tests_complete" "All parallel tests finished"
     
     # Collect results
     local ping_result=$(cat "$ping_file" 2>/dev/null || echo "{}")
@@ -873,51 +912,47 @@ phase5_compile_results() {
 
 # Main execution
 main() {
-    log_timing "SCRIPT_START" "$SOURCE_IP -> $DEST_IP:$DEST_PORT"
+    log_timing "START" "$SOURCE_IP -> $DEST_IP:$DEST_PORT"
     
     # Parse and validate arguments
-    log_timing "PARSE_ARGS_START"
     parse_args "$@"
     validate_params
-    log_timing "PARSE_ARGS_END"
+    log_timing "parse_args" "Arguments validated"
     
     # Execute phases
-    log_timing "PHASE1_START" "Path discovery"
     local routers
     routers=$(phase1_path_discovery)
-    log_timing "PHASE1_END" "Found $(echo "$routers" | wc -l) routers"
+    log_timing "PHASE1_path_discovery" "Found $(echo "$routers" | wc -l) routers"
     
     if [[ -z "$routers" ]]; then
         echo "{\"error\": \"No routers found in trace path\"}" | jq .
         exit 1
     fi
     
-    log_timing "PHASE2_START" "Environment setup"
     if ! phase2_setup_environment "$routers"; then
-        log_timing "PHASE2_FAILED"
+        log_timing "PHASE2_FAILED" "Environment setup failed"
         echo "{\"error\": \"Failed to setup simulation environment\"}" | jq .
         exit 1
     fi
-    log_timing "PHASE2_END"
+    log_timing "PHASE2_complete" "Environment setup finished"
     
-    log_timing "PHASE3_START" "Reachability tests (ping/traceroute/service)"
     local service_test_failed=false
     if ! phase3_reachability_tests; then
         service_test_failed=true
     fi
-    log_timing "PHASE3_END"
+    log_timing "PHASE3_complete" "Reachability tests finished"
     
     # Always run packet analysis with appropriate mode
-    log_timing "PHASE4_START" "Packet count analysis"
     phase4_packet_analysis "$routers" "$service_test_failed"
-    log_timing "PHASE4_END"
+    log_timing "PHASE4_packet_analysis" "Packet count analysis complete"
     
     # Compile and output results
-    log_timing "PHASE5_START" "Format output"
     phase5_compile_results
-    log_timing "PHASE5_END"
+    log_timing "PHASE5_format_output" "Results formatted"
     
-    log_timing "SCRIPT_END" "Complete"
+    # Log total time
+    local total_time=$(python3 -B -u -c "import sys; print(f'{float(sys.argv[1]) - float(sys.argv[2]):7.2f}')" "$(python3 -B -u -c 'import time; print(time.time())')" "$SCRIPT_START_TIME")
+    log_timing "TOTAL" "Total execution time: ${total_time}s"
     
     # Exit with appropriate code based on service test result
     if [[ "${JSON_RESULTS[service_return_code]}" == "0" ]]; then

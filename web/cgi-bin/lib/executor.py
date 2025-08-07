@@ -44,8 +44,8 @@ class CommandExecutor:
             'PATH': f"{self.venv_path}/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
             'VIRTUAL_ENV': self.venv_path,
             'PYTHONPATH': self.simulator_path,
-            'HOME': '/var/www/traceroute-web',  # Persistent home directory for www-data
-            'USER': 'www-data',
+            'HOME': '/var/www/traceroute-web',  # Persistent home directory for apache
+            'USER': 'apache',
             'SHELL': '/bin/bash',
             'LANG': 'C.UTF-8',
             'LC_ALL': 'C.UTF-8',
@@ -131,8 +131,8 @@ class CommandExecutor:
             'PATH': f"{self.venv_path}/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
             'VIRTUAL_ENV': self.venv_path,
             'PYTHONPATH': self.simulator_path,
-            'HOME': '/var/www/traceroute-web',  # Persistent home directory for www-data
-            'USER': 'www-data',
+            'HOME': '/var/www/traceroute-web',  # Persistent home directory for apache
+            'USER': 'apache',
             'SHELL': '/bin/bash',
             'LANG': 'C.UTF-8',
             'LC_ALL': 'C.UTF-8',
@@ -320,10 +320,6 @@ class CommandExecutor:
     def execute_reachability_test(self, session_id, username, run_id, trace_file,
                                   source_ip, source_port, dest_ip, dest_port, protocol):
         """Execute network_reachability_test.sh with locking"""
-        from timing import TimingLogger
-        timer = TimingLogger(session_id=run_id, operation_name="reachability_test")
-        
-        timer.log_checkpoint("PREPARE_START")
         results_file = os.path.join(self.data_dir, "results", f"{run_id}_results.json")
         os.makedirs(os.path.dirname(results_file), exist_ok=True)
         
@@ -350,21 +346,17 @@ class CommandExecutor:
         
         if source_port:
             cmd.extend(["-p", str(source_port)])
-        timer.log_checkpoint("PREPARE_END")
         
         # Log that we're attempting to acquire lock
-        timer.log_checkpoint("LOCK_REQUEST", f"{source_ip} -> {dest_ip}:{dest_port}/{protocol}")
         self.logger.log_info(
             f"Session {session_id}: Requesting network test lock for "
             f"{source_ip} -> {dest_ip}:{dest_port}/{protocol}"
         )
         
         # Execute command (will wait for lock if needed)
-        timer.log_checkpoint("SCRIPT_EXEC_START")
         start_time = time.time()
         result = self._activate_venv_and_run(cmd, timeout=420)  # 7 minutes (5 min lock + 2 min execution)
         end_time = time.time()
-        timer.log_checkpoint("SCRIPT_EXEC_END", f"duration={end_time-start_time:.2f}s")
         
         # Log execution
         self.logger.log_command_execution(

@@ -503,7 +503,7 @@ show-sudoers:
 	@echo "---------------------------------------------------"
 	@cat etc/sudoers.d/traceroute-simulator-namespaces
 	@echo ""
-	@echo "2. Web Interface (for www-data - optional):"
+	@echo "2. Web Interface (for apache - optional):"
 	@echo "---------------------------------------------------"
 	@cat web/config/tsimsh-sudoers
 	@echo ""
@@ -1457,7 +1457,6 @@ install-web:
 	@cp web/scripts/create_user.sh "$(WEB_ROOT)/scripts/"
 	@cp src/scripts/network_reachability_test.sh "$(WEB_ROOT)/scripts/"
 	@cp src/scripts/visualize_reachability.py "$(WEB_ROOT)/scripts/"
-	@cp src/scripts/visualize_reachability_wrapper.sh "$(WEB_ROOT)/scripts/"
 	@cp src/scripts/format_reachability_output.py "$(WEB_ROOT)/scripts/"
 	@cp src/scripts/analyze_packet_counts.py "$(WEB_ROOT)/scripts/"
 	@cp web/scripts/test_me.py "$(WEB_ROOT)/scripts/"
@@ -1478,11 +1477,11 @@ install-web:
 	# Set permissions
 	@echo "Setting permissions..."
 	@if [ "$$(id -u)" = "0" ]; then \
-		echo "Setting ownership to www-data..."; \
-		chown -R www-data:www-data "$(WEB_ROOT)"; \
+		echo "Setting ownership to apache..."; \
+		chown -R apache:apache "$(WEB_ROOT)"; \
 	else \
-		echo "Warning: Not running as root, cannot set www-data ownership"; \
-		echo "You may need to run: sudo chown -R www-data:www-data $(WEB_ROOT)"; \
+		echo "Warning: Not running as root, cannot set apache ownership"; \
+		echo "You may need to run: sudo chown -R apache:apache $(WEB_ROOT)"; \
 	fi
 	@chmod 750 "$(WEB_ROOT)/data"
 	@chmod 750 "$(WEB_ROOT)/logs"
@@ -1498,7 +1497,7 @@ install-web:
 	@echo "      sudo cp etc/sudoers.d/traceroute-simulator-namespaces /etc/sudoers.d/"
 	@echo "      sudo chmod 0440 /etc/sudoers.d/traceroute-simulator-namespaces"
 	@echo "      sudo groupadd -f tsim-users"
-	@echo "      sudo usermod -a -G tsim-users www-data"
+	@echo "      sudo usermod -a -G tsim-users apache"
 	@echo "      sudo usermod -a -G tsim-users $(USER)"
 	@echo ""
 	@echo "   b) For web interface (if needed):"
@@ -1506,7 +1505,7 @@ install-web:
 	@echo "      sudo chmod 0440 /etc/sudoers.d/tsimsh-web"
 	@echo ""
 	@echo "2. Create an initial user:"
-	@echo "   cd $(WEB_ROOT) && sudo -u www-data ./scripts/create_user.sh"
+	@echo "   cd $(WEB_ROOT) && sudo -u apache ./scripts/create_user.sh"
 	@echo ""
 	@echo "3. Configure Apache:"
 	@echo "   sudo cp $(WEB_ROOT)/conf/apache-site.conf.template /etc/apache2/sites-available/traceroute-web.conf"
@@ -1515,7 +1514,7 @@ install-web:
 	@echo "   sudo systemctl reload apache2"
 	@echo ""
 	@echo "4. Set up cron jobs:"
-	@echo "   sudo -u www-data crontab -e"
+	@echo "   sudo -u apache crontab -e"
 	@echo "   Add entries from $(WEB_ROOT)/conf/crontab.template"
 	@echo ""
 	@echo "5. Create SSL certificate (for testing):"

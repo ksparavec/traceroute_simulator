@@ -60,7 +60,7 @@ def main():
             'VIRTUAL_ENV': venv_path,
             'PYTHONPATH': simulator_path,
             'HOME': '/tmp',
-            'USER': 'www-data',
+            'USER': 'apache',
             'SHELL': '/bin/bash',
             'LANG': 'C.UTF-8',
             'LC_ALL': 'C.UTF-8',

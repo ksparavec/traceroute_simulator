@@ -59,22 +59,11 @@ def main():
                 if "_" in filename:
                     run_id = filename.split("_")[0]
     
-    # Log timing
-    def log_timing(checkpoint, details=""):
-        elapsed = time.time() - start_time
-        timestamp = time.strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
-        log_file = "/var/www/traceroute-web/logs/timings.log"
-        os.makedirs(os.path.dirname(log_file), exist_ok=True)
-        with open(log_file, 'a') as f:
-            f.write(f"[{timestamp}] [{run_id}] {elapsed:7.2f}s | WRAPPER_{checkpoint} | {details}\n")
-    
-    log_timing("START", "network_reachability_test_wrapper.py")
+    # Timing handled by the bash script itself
     
     try:
         # Acquire lock before running the script
-        log_timing("LOCK_ACQUIRE_START")
         with NetworkLockManager(logger) as lock:
-            log_timing("LOCK_ACQUIRED")
             # Get venv path from config
             venv_path = config.config.get('venv_path')
             if not venv_path:
@@ -118,9 +107,7 @@ def main():
             env['RUN_ID'] = run_id
             
             # Execute the script with environment
-            log_timing("SCRIPT_EXEC_START", actual_script)
             result = subprocess.run(cmd, env=env)
-            log_timing("SCRIPT_EXEC_END", f"return_code={result.returncode}")
             
             # Exit with same code as the script
             sys.exit(result.returncode)

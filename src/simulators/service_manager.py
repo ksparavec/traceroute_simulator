@@ -429,7 +429,7 @@ class ServiceManager:
             raise ServiceStartError(config.name, str(e), cause=e)
     
     def stop_service(self, namespace: str, name: str, port: int, protocol: str = None) -> None:
-        """Stop a running service."""
+        """Stop a running service by finding and killing the process listening on the port."""
         # Try to find service with protocol first, fall back to old format for compatibility
         key = None
         if protocol:
@@ -447,48 +447,58 @@ class ServiceManager:
             
         config = self.services[key]
         
-        # Try to read PID
-        if os.path.exists(config.pid_file):
-            try:
-                with open(config.pid_file, 'r') as f:
-                    pid = int(f.read().strip())
+        # Use lsof to find the process listening on the specific port in this namespace
+        try:
+            # Determine protocol string for lsof (tcp or udp)
+            lsof_protocol = protocol.lower() if protocol else 'tcp'
+            
+            # Use lsof to find PID listening on the port
+            # sudo ip netns exec <namespace> lsof -ti <protocol>:<port>
+            lsof_cmd = ["sudo", "ip", "netns", "exec", namespace, "lsof", "-ti", f"{lsof_protocol}:{port}"]
+            
+            if self.verbose_level >= 2:
+                print(f"[SERVICE] Finding process: {' '.join(lsof_cmd)}")
+            
+            result = subprocess.run(lsof_cmd, capture_output=True, text=True)
+            
+            if result.returncode == 0 and result.stdout.strip():
+                # lsof returns the PID(s) of processes listening on the port
+                pids = result.stdout.strip().split('\n')
                 
-                print(f"[STOP] Service {name} - PID {pid} from {config.pid_file}", file=sys.stderr)
-                
-                # Kill the sudo process directly (this will also kill its children)
-                # Try graceful termination first
-                try:
-                    kill_cmd = ["sudo", "kill", "-TERM", str(pid)]
-                    self.logger.debug(f"Executing kill command: {' '.join(kill_cmd)}")
-                    if self.verbose_level >= 1:
-                        print(f"[SERVICE] Killing process {pid} with SIGTERM")
-                    result = subprocess.run(kill_cmd, check=False, capture_output=True)
-                    if result.returncode != 0:
-                        self.logger.warning(f"Kill TERM failed: {result.stderr}")
+                for pid_str in pids:
+                    if pid_str.strip():
+                        # Kill the process with SIGTERM
+                        self.logger.info(f"Found process {pid_str} listening on {namespace}:{port}/{lsof_protocol}")
                         if self.verbose_level >= 1:
-                            print(f"[SERVICE] Kill TERM failed: {result.stderr.decode() if result.stderr else 'no error'}")
-                    time.sleep(0.5)
-                except (ProcessLookupError, subprocess.CalledProcessError):
-                    pass  # Already dead
+                            print(f"[SERVICE] Killing process {pid_str} in namespace {namespace}")
+                        
+                        # Kill within the namespace context to ensure we get the right process
+                        kill_cmd = ["sudo", "ip", "netns", "exec", namespace, "kill", "-TERM", pid_str.strip()]
+                        kill_result = subprocess.run(kill_cmd, capture_output=True)
+                        
+                        if kill_result.returncode == 0:
+                            self.logger.info(f"Successfully killed process {pid_str}")
+                            if self.verbose_level >= 1:
+                                print(f"[SERVICE] Successfully terminated process {pid_str}")
+                        else:
+                            # Process might have already exited, try regular kill
+                            fallback_kill = ["sudo", "kill", "-TERM", pid_str.strip()] 
+                            fallback_result = subprocess.run(fallback_kill, capture_output=True)
+                            if fallback_result.returncode == 0:
+                                self.logger.info(f"Successfully killed process {pid_str} (fallback)")
+                            else:
+                                self.logger.warning(f"Failed to kill process {pid_str}: {kill_result.stderr}")
+                        
+                        # Give the parent process time to collect exit status
+                        time.sleep(0.2)
+            else:
+                # No process found listening on the port
+                self.logger.info(f"No process found listening on {namespace}:{port}/{lsof_protocol}")
+                if self.verbose_level >= 1:
+                    print(f"[SERVICE] No process found listening on {namespace}:{port}/{lsof_protocol}")
                 
-                # Check if process still exists before force kill
-                check_cmd = ["sudo", "kill", "-0", str(pid)]
-                check_result = subprocess.run(check_cmd, check=False, capture_output=True)
-                if check_result.returncode == 0:
-                    # Process still exists, force kill
-                    self.logger.warning(f"Process {pid} still exists after TERM, using KILL")
-                    try:
-                        kill_cmd = ["sudo", "kill", "-KILL", str(pid)]
-                        result = subprocess.run(kill_cmd, check=False, capture_output=True)
-                        if result.returncode != 0:
-                            self.logger.error(f"Kill KILL failed: {result.stderr}")
-                    except (ProcessLookupError, subprocess.CalledProcessError):
-                        pass
-                    
-                self.logger.info(f"Service {name} stopped", pid=pid)
-                
-            except (ValueError, OSError) as e:
-                self.logger.warning(f"Failed to stop service via PID", error=str(e))
+        except Exception as e:
+            self.logger.error(f"Error finding/killing process: {e}")
         
         # Cleanup files
         cleanup_files = [config.pid_file, config.log_file]

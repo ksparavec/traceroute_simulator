@@ -256,6 +256,9 @@ class NetworkCommands(BaseCommandHandler):
         except SystemExit:
             return 1
         
+        # Store current args for JSON output detection
+        self.current_args = parsed_args
+        
         # Only show info message if not using JSON output
         if not parsed_args.json:
             self.info("Checking network namespace status...")

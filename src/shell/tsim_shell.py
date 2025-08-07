@@ -1091,6 +1091,23 @@ Type 'set' to see all variables.
             return self.nettest_handler.complete_mtr_command(text, line, begidx, endidx)
         return []
     
+    def do_traceroute(self, args):
+        """Test connectivity between IPs using traceroute."""
+        if hasattr(self, 'nettest_handler'):
+            ret = self.nettest_handler.handle_traceroute_command(args)
+            self.variable_manager.set_variable('TSIM_RETURN_VALUE', str(ret if ret is not None else 0))
+            return None  # Never exit shell
+        else:
+            self.poutput(f"{Fore.RED}Traceroute command not available{Style.RESET_ALL}")
+            self.variable_manager.set_variable('TSIM_RETURN_VALUE', '1')
+            return None
+    
+    def complete_traceroute(self, text, line, begidx, endidx):
+        """Provide completion for traceroute command."""
+        if hasattr(self, 'nettest_handler'):
+            return self.nettest_handler.complete_traceroute_command(text, line, begidx, endidx)
+        return []
+    
     def complete_shell(self, text, line, begidx, endidx):
         """Provide file completion for shell command."""
         import glob
@@ -1190,6 +1207,7 @@ Type 'set' to see all variables.
                 'trace': self.help_trace,
                 'ping': self.help_ping,
                 'mtr': self.help_mtr,
+                'traceroute': self.help_traceroute,
                 'completion': self.help_completion
             }
             
@@ -1597,6 +1615,48 @@ Type 'set' to see all variables.
         
         self.poutput("\n  Check return value:")
         self.poutput("    mtr -s 10.1.1.100 -d 10.2.1.200")
+        self.poutput("    echo $TSIM_RETURN_VALUE")
+        self.poutput("")
+    
+    def help_traceroute(self):
+        """Comprehensive help for traceroute command."""
+        self.poutput("\nCOMMAND:")
+        self.poutput("  traceroute - Test connectivity between IPs using traceroute")
+        
+        self.poutput("\nUSAGE:")
+        self.poutput("  traceroute -s SOURCE_IP -d DESTINATION_IP [options]")
+        self.poutput("  traceroute --help | -h")
+        
+        self.poutput("\nMANDATORY OPTIONS:")
+        self.poutput("  -s, --source IP      Source IP address")
+        self.poutput("  -d, --destination IP Destination IP address")
+        
+        self.poutput("\nOPTIONAL OPTIONS:")
+        self.poutput("  -j, --json            Output in JSON format")
+        self.poutput("  -v, --verbose         Increase verbosity (can be used multiple times)")
+        self.poutput("  -h, --help            Show this help message")
+        
+        self.poutput("\nDESCRIPTION:")
+        self.poutput("  Tests connectivity from all namespaces containing the source IP")
+        self.poutput("  to all namespaces containing the destination IP. Uses traceroute to show")
+        self.poutput("  hop-by-hop path and latency information for successful connections.")
+        self.poutput("")
+        self.poutput("  When using -j/--json, the output is structured JSON with summary")
+        self.poutput("  statistics and detailed test results.")
+        
+        self.poutput("\nEXAMPLES:")
+        self.poutput("\n  Basic traceroute:")
+        self.poutput("    traceroute -s 10.1.1.100 -d 10.2.1.200")
+        
+        self.poutput("\n  Verbose output with details:")
+        self.poutput("    traceroute -s 10.1.1.100 -d 10.2.1.200 -vv")
+        
+        self.poutput("\n  JSON output for scripting:")
+        self.poutput("    traceroute -s 10.1.1.100 -d 10.2.1.200 -j")
+        self.poutput("    # Result stored in $TSIM_RESULT as JSON")
+        
+        self.poutput("\n  Check return value:")
+        self.poutput("    traceroute -s 10.1.1.100 -d 10.2.1.200")
         self.poutput("    echo $TSIM_RETURN_VALUE")
         self.poutput("")
 

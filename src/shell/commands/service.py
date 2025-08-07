@@ -182,7 +182,12 @@ class ServiceCommands(BaseCommandHandler):
     
     def _test_service(self, args: argparse.Namespace) -> int:
         """Test service connectivity."""
-        self.info(f"Testing {args.protocol} connectivity from {args.source} to {args.destination}")
+        # Store current args for JSON output detection
+        self.current_args = args
+        
+        # Only show info message if not using JSON output
+        if not hasattr(args, 'json') or not args.json:
+            self.info(f"Testing {args.protocol} connectivity from {args.source} to {args.destination}")
         
         # Run the service tester script
         script_path = self.get_script_path('src/simulators/service_tester.py')
@@ -217,6 +222,8 @@ class ServiceCommands(BaseCommandHandler):
     
     def _list_services(self, args: argparse.Namespace) -> int:
         """List all active services."""
+        # Store current args for JSON output detection
+        self.current_args = args
         
         # Only show info message if not JSON output
         if not args.json:

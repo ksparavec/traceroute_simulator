@@ -75,6 +75,30 @@ class NetTestCommands(BaseCommandHandler):
         
         return parser
     
+    def create_traceroute_parser(self) -> Cmd2ArgumentParser:
+        """Create the argument parser for traceroute command."""
+        parser = Cmd2ArgumentParser(
+            prog='traceroute',
+            description='Test connectivity between IPs using traceroute'
+        )
+        
+        parser.add_argument('-s', '--source', required=True,
+                          choices_provider=self.ip_choices,
+                          help='Source IP address')
+        parser.add_argument('-d', '--destination', required=True,
+                          choices_provider=self.ip_choices,
+                          help='Destination IP address')
+        parser.add_argument('-j', '--json', action='store_true',
+                          help='Output in JSON format')
+        parser.add_argument('-c', '--count', type=int, default=10,
+                          help='Number of packets to send to each hop (default: 10)')
+        parser.add_argument('-t', '--timeout', type=float, default=2.0,
+                          help='Timeout in seconds for each packet (default: 2.0)')
+        parser.add_argument('-v', '--verbose', action='count', default=1,
+                          help='Increase verbosity (default: show traceroute output)')
+        
+        return parser
+    
     def handle_ping_command(self, args: str) -> Optional[int]:
         """Handle ping command."""
         # Check for help flags first
@@ -115,9 +139,32 @@ class NetTestCommands(BaseCommandHandler):
             self.error(f"Error running mtr: {e}")
             return 1
     
+    def handle_traceroute_command(self, args: str) -> Optional[int]:
+        """Handle traceroute command."""
+        # Check for help flags first
+        args_list = args.strip().split() if args.strip() else []
+        if not args or args.strip() == '' or '--help' in args_list or '-h' in args_list:
+            self.shell.help_traceroute()
+            return 0
+            
+        parser = self.create_traceroute_parser()
+        try:
+            parsed_args = parser.parse_args(self._split_args(args))
+            return self._run_nettest(parsed_args, 'traceroute')
+        except SystemExit:
+            # Parser error (e.g., missing required args) - show help instead
+            self.shell.help_traceroute()
+            return 1
+        except Exception as e:
+            self.error(f"Error running traceroute: {e}")
+            return 1
+    
     def _run_nettest(self, args: argparse.Namespace, test_type: str) -> int:
         """Run network test with specified type."""
         try:
+            # Store current args for JSON output detection
+            self.current_args = args
+            
             # Only show info message if not using JSON output
             if not hasattr(args, 'json') or not args.json:
                 self.info(f"Testing connectivity from {args.source} to {args.destination} using {test_type.upper()}")
@@ -157,8 +204,8 @@ class NetTestCommands(BaseCommandHandler):
                 for _ in range(args.verbose - 1):
                     cmd_args.append('-v')
             
-            # Run script (sudo will be added by script for specific commands)
-            returncode = self.run_script_with_output(script_path, cmd_args, use_sudo=False)
+            # Run script with sudo (required for namespace operations)
+            returncode = self.run_script_with_output(script_path, cmd_args, use_sudo=True)
             
             return returncode
             
@@ -218,6 +265,57 @@ class NetTestCommands(BaseCommandHandler):
         # Debug output at -vvv level
         if hasattr(self.shell, 'verbose') and self.shell.verbose >= 3:
             print(f"[DEBUG] complete_mtr_command called: text='{text}', line='{line}'")
+        
+        # Parse the line to understand what we're completing
+        args = line.split()
+        
+        # Get all available IPs for completion
+        ip_choices = self.ip_choices()
+        
+        # Debug output at -vvv level
+        if hasattr(self.shell, 'verbose') and self.shell.verbose >= 3:
+            print(f"[DEBUG] Args: {args}, IP choices count: {len(ip_choices)}")
+        
+        # Check if we're completing a value for -s or -d
+        if len(args) >= 2:
+            if args[-1] in ['-s', '--source']:
+                return [ip for ip in ip_choices if ip.startswith(text)]
+            elif args[-1] in ['-d', '--destination']:
+                return [ip for ip in ip_choices if ip.startswith(text)]
+            elif args[-2] in ['-s', '--source', '-d', '--destination'] and text:
+                # Partial IP typed
+                return [ip for ip in ip_choices if ip.startswith(text)]
+        
+        # Provide argument names that haven't been used yet
+        used_args = set(args)
+        available_args = []
+        
+        # Check which required arguments are missing
+        has_source = any(arg in used_args for arg in ['-s', '--source'])
+        has_dest = any(arg in used_args for arg in ['-d', '--destination'])
+        
+        if not has_source:
+            available_args.extend(['-s', '--source'])
+        if not has_dest:
+            available_args.extend(['-d', '--destination'])
+        
+        # Optional arguments
+        if '-v' not in used_args and '--verbose' not in used_args:
+            available_args.extend(['-v', '--verbose'])
+        if '-j' not in used_args and '--json' not in used_args:
+            available_args.extend(['-j', '--json'])
+        
+        # Debug output at -vvv level
+        if hasattr(self.shell, 'verbose') and self.shell.verbose >= 3:
+            print(f"[DEBUG] Returning completions: {[arg for arg in available_args if arg.startswith(text)]}")
+        
+        return [arg for arg in available_args if arg.startswith(text)]
+    
+    def complete_traceroute_command(self, text: str, line: str, begidx: int, endidx: int) -> List[str]:
+        """Provide completion for traceroute command."""
+        # Debug output at -vvv level
+        if hasattr(self.shell, 'verbose') and self.shell.verbose >= 3:
+            print(f"[DEBUG] complete_traceroute_command called: text='{text}', line='{line}'")
         
         # Parse the line to understand what we're completing
         args = line.split()

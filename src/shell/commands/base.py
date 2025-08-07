@@ -168,7 +168,8 @@ class BaseCommandHandler(ABC):
             if result.stdout:
                 self.shell.poutput(result.stdout)
             if result.stderr:
-                self.shell.poutput(f"{Fore.RED}{result.stderr}{Style.RESET_ALL}")
+                # Always show stderr (errors) even in JSON mode
+                self.shell.perror(result.stderr)
         
         return result.returncode
     
@@ -182,7 +183,7 @@ class BaseCommandHandler(ABC):
             # argparse calls sys.exit on error, catch it
             return None
         except Exception as e:
-            self.shell.poutput(f"{Fore.RED}Error parsing arguments: {e}{Style.RESET_ALL}")
+            self.shell.poutput(f"Error parsing arguments: {e}")
             return None
     
     def _split_args(self, args_str: str) -> List[str]:
@@ -191,7 +192,7 @@ class BaseCommandHandler(ABC):
         try:
             return shlex.split(args_str)
         except ValueError as e:
-            self.shell.poutput(f"{Fore.RED}Error parsing arguments: {e}{Style.RESET_ALL}")
+            self.shell.poutput(f"Error parsing arguments: {e}")
             return []
     
     def _handle_context_exit(self, args_str: str) -> bool:
@@ -209,21 +210,36 @@ class BaseCommandHandler(ABC):
             return f"MODULE:{script_name}"
         return os.path.join(self.project_root, script_name)
     
+    def _is_json_output(self) -> bool:
+        """Check if JSON output is requested."""
+        # Check if we have a current command args with json flag
+        if hasattr(self, 'current_args') and self.current_args:
+            if hasattr(self.current_args, 'json') and self.current_args.json:
+                return True
+        # Check shell variable for JSON mode
+        if hasattr(self.shell, 'json_output') and self.shell.json_output:
+            return True
+        return False
+    
     def success(self, message: str):
         """Print success message."""
-        self.shell.poutput(f"{Fore.GREEN}✓ {message}{Style.RESET_ALL}")
+        if not self._is_json_output():
+            self.shell.poutput(f"[SUCCESS] {message}")
     
     def error(self, message: str):
-        """Print error message."""
-        self.shell.poutput(f"{Fore.RED}✗ {message}{Style.RESET_ALL}")
+        """Print error message to stderr."""
+        # Always print errors to stderr, even in JSON mode
+        self.shell.perror(f"[ERROR] {message}")
     
     def warning(self, message: str):
         """Print warning message."""
-        self.shell.poutput(f"{Fore.YELLOW}⚠ {message}{Style.RESET_ALL}")
+        if not self._is_json_output():
+            self.shell.poutput(f"[WARNING] {message}")
     
     def info(self, message: str):
         """Print info message."""
-        self.shell.poutput(f"{Fore.CYAN}ℹ {message}{Style.RESET_ALL}")
+        if not self._is_json_output():
+            self.shell.poutput(f"[INFO] {message}")
     
     def check_script_exists(self, script_path: str) -> bool:
         """Check if a script exists."""

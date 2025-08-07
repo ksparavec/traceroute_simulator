@@ -180,6 +180,9 @@ class HostCommands(BaseCommandHandler):
     
     def _list_hosts(self, args: argparse.Namespace) -> int:
         """List all hosts."""
+        # Store current args for JSON output detection
+        self.current_args = args
+        
         # Only show info message if not JSON output
         if not args.json:
             self.info("Listing all hosts...")

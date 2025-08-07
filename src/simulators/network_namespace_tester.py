@@ -842,7 +842,181 @@ class SequentialConnectivityTester:
         except Exception as e:
             return False, f"Error: {str(e)}", ""
     
+    def format_traceroute_as_mtr(self, traceroute_output: str, source_ip: str, dest_ip: str) -> str:
+        """Format traceroute output to match MTR-style report format.
+        
+        Converts traceroute output like:
+        1  10.1.1.1  0.207 ms  0.189 ms  0.193 ms
+        
+        To MTR-style format like:
+        HOST: namespace                         Loss%   Snt   Last   Avg  Best  Wrst StDev
+          1.|-- 10.1.1.1                         0.0%     1    0.2   0.2   0.2   0.2   0.0
+        """
+        lines = traceroute_output.strip().split('\n')
+        
+        # Get the source namespace name if available
+        source_namespaces = self.ip_to_namespaces.get(source_ip, [])
+        source_name = source_namespaces[0] if source_namespaces else source_ip
+        
+        # Build MTR-style header
+        import datetime
+        formatted_lines = []
+        formatted_lines.append(f"Start: {datetime.datetime.now().strftime('%Y-%m-%dT%H:%M:%S%z')}")
+        formatted_lines.append(f"HOST: {source_name:<35} Loss%   Snt   Last   Avg  Best  Wrst StDev")
+        
+        # Process each hop
+        for line in lines:
+            line = line.strip()
+            # Skip header line
+            if 'traceroute to' in line:
+                continue
+                
+            # Parse hop lines
+            if line and line[0].isdigit():
+                parts = line.split()
+                if len(parts) >= 2:
+                    hop_num = parts[0]
+                    
+                    # Check if this hop has an IP (not just stars)
+                    if len(parts) > 1 and parts[1] != '*':
+                        hop_ip = parts[1]
+                        
+                        # Try to map IP to namespace/router name
+                        hop_namespaces = self.ip_to_namespaces.get(hop_ip, [])
+                        hop_name = hop_namespaces[0] if hop_namespaces else hop_ip
+                        
+                        # Extract times if available
+                        times = []
+                        for part in parts[2:]:
+                            if part != 'ms':
+                                try:
+                                    times.append(float(part))
+                                except ValueError:
+                                    pass
+                        
+                        if times:
+                            # Calculate statistics
+                            avg_time = sum(times) / len(times)
+                            min_time = min(times)
+                            max_time = max(times)
+                            # Use middle value as "last"
+                            last_time = times[len(times)//2] if times else 0.0
+                            # Simple stdev calculation (not exact but good enough)
+                            if len(times) > 1:
+                                variance = sum((t - avg_time) ** 2 for t in times) / len(times)
+                                stdev = variance ** 0.5
+                            else:
+                                stdev = 0.0
+                            
+                            # Format the hop line in MTR style
+                            formatted_lines.append(
+                                f"  {hop_num:>2}.|-- {hop_name:<30} {0.0:>5.1f}%     1  {last_time:>5.1f} {avg_time:>5.1f} {min_time:>5.1f} {max_time:>5.1f} {stdev:>5.1f}"
+                            )
+                        else:
+                            # No timing data, just show the hop
+                            formatted_lines.append(
+                                f"  {hop_num:>2}.|-- {hop_name:<30} {0.0:>5.1f}%     1    0.0   0.0   0.0   0.0   0.0"
+                            )
+                    else:
+                        # Timeout hop (*** pattern) - show as ??? like MTR does
+                        formatted_lines.append(
+                            f"  {hop_num:>2}.|-- ???                         100.0     1    0.0   0.0   0.0   0.0   0.0"
+                        )
+        
+        return '\n'.join(formatted_lines)
+    
+    def traceroute_test_from_namespace(self, namespace: str, source_ip: str, dest_ip: str, timeout: int = 10, count: int = 10) -> Tuple[bool, str, str]:
+        """Perform traceroute test from a specific namespace using source IP to destination IP.
+        
+        Allows any destination IP - follows routing tables and gateway behavior.
+        
+        Returns:
+            Tuple[bool, str, str]: (success, summary, full_output)
+        """
+        # Verbose level 3: show input variables
+        if self.verbose >= 3:
+            print(f"\nDEBUG: traceroute_test_from_namespace() called with:")
+            print(f"  namespace: {namespace}")
+            print(f"  source_ip: {source_ip}")
+            print(f"  dest_ip: {dest_ip}")
+            print(f"  timeout: {timeout}")
+        
+        # Run traceroute from specified namespace
+        # Use -I for ICMP, -n for no DNS, -w for wait time per hop, -s for source address
+        # Note: count parameter is not used for traceroute as it doesn't have a probe count option
+        cmd = f"ip netns exec {namespace} traceroute -I -n -w {timeout} -s {source_ip} {dest_ip}"
+        
+        # Verbose level 2: show namespace command
+        if self.verbose >= 2:
+            print(f"\nExecuting namespace command: {cmd}")
+        
+        try:
+            result = self.run_command(
+                cmd, shell=True, timeout=timeout*30+5  # traceroute can take longer
+            )
             
+            # Verbose level 2: show command output
+            if self.verbose >= 2:
+                print(f"Command exit code: {result.returncode}")
+                if result.stdout:
+                    print("Command stdout:")
+                    print(result.stdout.rstrip())
+                if result.stderr:
+                    print("Command stderr:")
+                    print(result.stderr.rstrip())
+            
+            if result.returncode == 0:
+                # Parse traceroute output to check if destination was reached
+                lines = result.stdout.strip().split('\n')
+                hop_count = 0
+                reached_dest = False
+                last_hop_ip = None
+                
+                for line in lines:
+                    line = line.strip()
+                    # Skip header line
+                    if 'traceroute to' in line:
+                        continue
+                    
+                    # Parse hop lines: "1  10.1.1.1  0.207 ms  0.189 ms  0.193 ms"
+                    # or with timeouts: "6  * * *"
+                    if line and line[0].isdigit():
+                        parts = line.split()
+                        if len(parts) >= 2:
+                            hop_count += 1
+                            # Check if this hop has an IP (not just stars)
+                            if len(parts) > 1 and parts[1] != '*':
+                                last_hop_ip = parts[1]
+                                if last_hop_ip == dest_ip:
+                                    reached_dest = True
+                
+                # Format output to match MTR style
+                formatted_output = self.format_traceroute_as_mtr(result.stdout, source_ip, dest_ip)
+                
+                # Check success criteria:
+                # Destination must be reached (appear in output with response times)
+                if hop_count == 0:
+                    return False, "No hops found in traceroute output", formatted_output
+                elif reached_dest:
+                    return True, f"Reached in {hop_count} hops", formatted_output
+                else:
+                    # Didn't reach destination
+                    if last_hop_ip:
+                        return False, f"Did not reach destination (last hop: {last_hop_ip})", formatted_output
+                    else:
+                        return False, "Destination unreachable (timeouts)", formatted_output
+            else:
+                # Parse error
+                if "Cannot assign requested address" in result.stderr:
+                    return False, "Invalid source address", result.stdout + result.stderr
+                else:
+                    return False, f"Traceroute failed (code {result.returncode})", result.stdout + result.stderr
+                    
+        except subprocess.TimeoutExpired:
+            return False, f"Command timeout after {timeout*30+5}s", ""
+        except Exception as e:
+            return False, f"Error: {str(e)}", ""
+    
     def _handle_test_result(self, source_router: str, dest_router: str, source_ip: str, dest_ip: str,
                            success: bool, summary: str, full_output: str, test_type: str,
                            router_passed: int, router_failed: int, source_namespace: str = None,
@@ -949,6 +1123,57 @@ class SequentialConnectivityTester:
             
             if hops:
                 test_result["mtr_hops"] = hops
+        
+        # Parse traceroute-specific data from output if it's a traceroute test
+        if test_type.upper() == 'TRACEROUTE' and full_output:
+            # Extract hop information from traceroute output
+            hops = []
+            lines = full_output.strip().split('\n')
+            for line in lines:
+                line = line.strip()
+                # Skip header line
+                if 'traceroute to' in line:
+                    continue
+                # Traceroute output format: "1  10.1.1.1  0.207 ms  0.189 ms  0.193 ms" or "6  * * *"
+                if line and line[0].isdigit():
+                    parts = line.split()
+                    if len(parts) >= 2:
+                        hop_num = parts[0]
+                        # Check if this hop has an IP (not just stars)
+                        if len(parts) > 1 and parts[1] != '*':
+                            hop_ip = parts[1]
+                            # Try to map IP to namespace/router name
+                            hop_namespaces = self.ip_to_namespaces.get(hop_ip, [])
+                            hop_name = hop_namespaces[0] if hop_namespaces else hop_ip
+                            # Get average time from the three measurements if available
+                            avg_time = None
+                            if len(parts) >= 5 and 'ms' in line:
+                                # Take the middle value (parts[3]) as average
+                                try:
+                                    avg_time = float(parts[3])
+                                except ValueError:
+                                    avg_time = None
+                            
+                            hop_data = {
+                                "hop": hop_num,
+                                "ip": hop_ip,
+                                "namespace": hop_name,
+                                "namespace_type": "host" if hop_name in self.host_namespaces else "router" if hop_namespaces else "unknown"
+                            }
+                            if avg_time is not None:
+                                hop_data["avg_ms"] = avg_time
+                            hops.append(hop_data)
+                        else:
+                            # Timeout hop (*** pattern)
+                            hops.append({
+                                "hop": hop_num,
+                                "ip": "***",
+                                "namespace": "???",
+                                "namespace_type": "unknown"
+                            })
+            
+            if hops:
+                test_result["traceroute_hops"] = hops
             
         self.json_results["tests"].append(test_result)
         
@@ -970,9 +1195,9 @@ class SequentialConnectivityTester:
                     
                 # Pass/fail message
                 if success:
-                    print(f"✓ {test_type} PASS: {summary}")
+                    print(f"[PASS] {test_type}: {summary}")
                 else:
-                    print(f"✗ {test_type} FAIL: {summary}")
+                    print(f"[FAIL] {test_type}: {summary}")
                 
         # Update statistics
         self.total_tests += 1
@@ -991,7 +1216,7 @@ class SequentialConnectivityTester:
         
         if not source_ips:
             if self.verbose >= 1 and not self.json_output:
-                print(f"✗ {source_router} has no IP addresses")
+                print(f"[ERROR] {source_router} has no IP addresses")
             return
             
         # Use first available IP as source
@@ -1039,18 +1264,28 @@ class SequentialConnectivityTester:
                     source_namespace=source_router,
                     dest_namespace=dest_router
                 )
+            
+            if self.test_type == 'traceroute':
+                success, summary, full_output = self.traceroute_test_from_namespace(source_router, source_ip, dest_ip, self.mtr_timeout, self.mtr_count)
+                router_passed, router_failed = self._handle_test_result(
+                    source_router, dest_router, source_ip, dest_ip,
+                    success, summary, full_output, 'TRACEROUTE',
+                    router_passed, router_failed,
+                    source_namespace=source_router,
+                    dest_namespace=dest_router
+                )
                 
         # Router summary
         total = router_passed + router_failed
         if total > 0:
             if self.verbose >= 1 and not self.json_output:
                 if router_failed == 0:
-                    print(f"  ✓ {source_router} passed all {router_passed} tests")
+                    print(f"  [SUCCESS] {source_router} passed all {router_passed} tests")
                 else:
-                    print(f"  ⚠ {source_router} passed {router_passed}/{total} tests")
+                    print(f"  [WARNING] {source_router} passed {router_passed}/{total} tests")
             
             if router_failed > 0 and not self.json_output:
-                print(f"  ⚠ {source_router} has {router_failed} failures - CRITICAL ISSUE!")
+                print(f"  [WARNING] {source_router} has {router_failed} failures - CRITICAL ISSUE!")
             
     def test_specific_pair(self, source_ip: str, dest_ip: str):
         """Test specific source to destination from all namespaces that have the source IP."""
@@ -1070,7 +1305,7 @@ class SequentialConnectivityTester:
                     "success": False
                 })
             elif self.verbose >= 1:
-                print(f"✗ Source IP {source_ip} not found in any namespace")
+                print(f"[ERROR] Source IP {source_ip} not found in any namespace")
             return False
             
         # Get all namespaces that have this destination IP
@@ -1145,6 +1380,8 @@ class SequentialConnectivityTester:
                     test_commands = [('ping', f'ping -c {self.ping_count} -W {int(self.ping_timeout)} -i 1 -I {source_ip} {dest_ip}')]
                 elif self.test_type == 'mtr':
                     test_commands = [('mtr', f'mtr --report -c {self.mtr_count} -n -Z {int(self.mtr_timeout)} -G 1 {dest_ip}')]
+                elif self.test_type == 'traceroute':
+                    test_commands = [('traceroute', f'traceroute -I -n -w {int(self.mtr_timeout)} -s {source_ip} {dest_ip}')]
                 else:  # both
                     test_commands = [
                         ('ping', f'ping -c {self.ping_count} -W {int(self.ping_timeout)} -i 1 -I {source_ip} {dest_ip}'),
@@ -1367,7 +1604,7 @@ class SequentialConnectivityTester:
                 
             except Exception as e:
                 if self.verbose >= 1:
-                    print(f"✗ Test failed from {source_namespace}: {e}")
+                    print(f"[ERROR] Test failed from {source_namespace}: {e}")
                 overall_success = False
         
         # Clean up temporary public IP host if we added it
@@ -1422,9 +1659,9 @@ class SequentialConnectivityTester:
             print(f"Pass rate: {pass_rate:.1f}%")
             
             if self.failed_tests == 0:
-                print("\n✓ ALL TESTS PASSED")
+                print("\n[SUCCESS] ALL TESTS PASSED")
             else:
-                print(f"\n⚠ {self.failed_tests} TESTS FAILED")
+                print(f"\n[WARNING] {self.failed_tests} TESTS FAILED")
             
     def run_tests(self, source_ip: str = None, dest_ip: str = None, test_all: bool = False):
         """Run connectivity tests."""
@@ -1496,7 +1733,7 @@ Examples:
                        help='Destination IP address (required with -s)')
     
     # Test type
-    parser.add_argument('--test-type', choices=['ping', 'mtr', 'both'],
+    parser.add_argument('--test-type', choices=['ping', 'mtr', 'traceroute', 'both'],
                        default='ping',
                        help='Type of connectivity test (default: ping)')
     
@@ -1544,6 +1781,11 @@ Examples:
             mtr_count = 10  # default
             mtr_timeout = 10.0  # default
         elif args.test_type == 'mtr':
+            ping_count = 3  # default
+            ping_timeout = 3.0  # default
+            mtr_count = args.count if args.count is not None else 10
+            mtr_timeout = args.timeout if args.timeout is not None else 10.0
+        elif args.test_type == 'traceroute':
             ping_count = 3  # default
             ping_timeout = 3.0  # default
             mtr_count = args.count if args.count is not None else 10

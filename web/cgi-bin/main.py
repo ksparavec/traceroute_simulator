@@ -109,7 +109,14 @@ def main():
         dest_port = validator.sanitize_input(dest_port)
         source_port = validator.sanitize_input(source_port) if source_port else None
         
+        # Import timing module
+        from timing import TimingLogger
+        
+        # Start timing
+        timer = TimingLogger(session_id=session_id, operation_name="web_request")
+        
         # Save form data to session
+        timer.log_checkpoint("SAVE_SESSION_START")
         form_data = {
             'source_ip': source_ip,
             'source_port': source_port,
@@ -118,28 +125,40 @@ def main():
             'protocol': protocol
         }
         session_mgr.update_form_data(session_id, form_data)
+        timer.log_checkpoint("SAVE_SESSION_END")
         
         # Execute commands
         executor = CommandExecutor(config, logger)
         
         # 1. Execute trace
+        timer.log_operation_start("TRACE")
         run_id, trace_file = executor.execute_trace(
             session_id, session['username'], source_ip, dest_ip, user_trace_data
         )
+        timer.log_operation_end("TRACE")
         
         # 2. Execute reachability test
+        timer.log_operation_start("REACHABILITY_TEST")
         results_file = executor.execute_reachability_test(
             session_id, session['username'], run_id, trace_file,
             source_ip, source_port, dest_ip, dest_port, protocol
         )
+        timer.log_operation_end("REACHABILITY_TEST")
         
         # 3. Generate PDF
+        timer.log_operation_start("PDF_GENERATION")
         pdf_file = executor.generate_pdf(
             session_id, session['username'], run_id, trace_file, results_file
         )
+        timer.log_operation_end("PDF_GENERATION")
         
         # Generate shareable link
+        timer.log_checkpoint("SHARE_LINK_START")
         share_link = generate_shareable_link(run_id, config)
+        timer.log_checkpoint("SHARE_LINK_END")
+        
+        # Finish timing
+        timer.finish("success")
         
         # Redirect to PDF viewer HTML page
         print("Status: 302 Found")

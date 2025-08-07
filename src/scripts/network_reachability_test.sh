@@ -28,6 +28,26 @@ declare -a CREATED_HOSTS=()
 # Get precise start time at script beginning
 SCRIPT_START_TIME=$(python3 -B -u -c "import time; print(time.time())")
 
+# Function to log timing to file
+log_timing() {
+    local checkpoint="$1"
+    local details="${2:-}"
+    local current_time=$(python3 -B -u -c "import time; print(time.time())")
+    local elapsed=$(python3 -B -u -c "import sys; print(f'{float(sys.argv[1]) - float(sys.argv[2]):7.2f}')" "$current_time" "$SCRIPT_START_TIME")
+    local timestamp=$(date +"%Y-%m-%d %H:%M:%S.%3N")
+    local log_file="/var/www/traceroute-web/logs/timings.log"
+    
+    # Create log directory if it doesn't exist
+    mkdir -p "$(dirname "$log_file")" 2>/dev/null || true
+    
+    # Log entry format: [timestamp] [session] elapsed_time | checkpoint | details
+    local session_id="${RUN_ID:-unknown}"
+    local log_entry="[$timestamp] [$session_id] ${elapsed}s | REACHABILITY_${checkpoint}"
+    [[ -n "$details" ]] && log_entry="$log_entry | $details"
+    
+    echo "$log_entry" >> "$log_file" 2>/dev/null || true
+}
+
 # Input parameters
 SOURCE_IP=""
 SOURCE_PORT=""
@@ -526,36 +546,44 @@ phase3_reachability_tests() {
     local mtr_file="${TEMP_DIR}/traceroute_result.json"
     local service_file="${TEMP_DIR}/service_result.json"
     
+    log_timing "TESTS_PARALLEL_START" "ping, traceroute, service"
+    
     # Test 1: ICMP Ping (background)
     {
+        log_timing "PING_START"
         start_step "ping"
         local ping_output
         ping_output=$(tsimsh_exec "ping --source ${SOURCE_IP} --destination ${DEST_IP} --timeout 1 --count 2 --json" true)
         local ping_rc=$?
         echo "$ping_output" > "$ping_file"
         echo $ping_rc > "${ping_file}.rc"
+        log_timing "PING_END" "rc=$ping_rc"
     } &
     local ping_pid=$!
     
     # Test 2: Traceroute (background)
     {
+        log_timing "TRACEROUTE_START"
         start_step "traceroute"
         local traceroute_output
         traceroute_output=$(tsimsh_exec "traceroute --source ${SOURCE_IP} --destination ${DEST_IP} --json" true)
         local traceroute_rc=$?
         echo "$traceroute_output" > "$mtr_file"
         echo $traceroute_rc > "${mtr_file}.rc"
+        log_timing "TRACEROUTE_END" "rc=$traceroute_rc"
     } &
     local mtr_pid=$!
     
     # Test 3: Service Test (background)
     {
+        log_timing "SERVICE_TEST_START"
         start_step "service_test"
         local service_output
         service_output=$(tsimsh_exec "service test --source ${SOURCE_IP} --destination ${DEST_IP}:${DEST_PORT} --protocol ${PROTOCOL} --timeout 1 --json" true)
         local service_rc=$?
         echo "$service_output" > "$service_file"
         echo $service_rc > "${service_file}.rc"
+        log_timing "SERVICE_TEST_END" "rc=$service_rc"
     } &
     local service_pid=$!
     
@@ -563,6 +591,7 @@ phase3_reachability_tests() {
     wait $ping_pid
     wait $mtr_pid
     wait $service_pid
+    log_timing "TESTS_PARALLEL_END" "all tests complete"
     
     # Collect results
     local ping_result=$(cat "$ping_file" 2>/dev/null || echo "{}")
@@ -844,34 +873,51 @@ phase5_compile_results() {
 
 # Main execution
 main() {
+    log_timing "SCRIPT_START" "$SOURCE_IP -> $DEST_IP:$DEST_PORT"
+    
     # Parse and validate arguments
+    log_timing "PARSE_ARGS_START"
     parse_args "$@"
     validate_params
+    log_timing "PARSE_ARGS_END"
     
     # Execute phases
+    log_timing "PHASE1_START" "Path discovery"
     local routers
     routers=$(phase1_path_discovery)
+    log_timing "PHASE1_END" "Found $(echo "$routers" | wc -l) routers"
     
     if [[ -z "$routers" ]]; then
         echo "{\"error\": \"No routers found in trace path\"}" | jq .
         exit 1
     fi
     
+    log_timing "PHASE2_START" "Environment setup"
     if ! phase2_setup_environment "$routers"; then
+        log_timing "PHASE2_FAILED"
         echo "{\"error\": \"Failed to setup simulation environment\"}" | jq .
         exit 1
     fi
+    log_timing "PHASE2_END"
     
+    log_timing "PHASE3_START" "Reachability tests (ping/traceroute/service)"
     local service_test_failed=false
     if ! phase3_reachability_tests; then
         service_test_failed=true
     fi
+    log_timing "PHASE3_END"
     
     # Always run packet analysis with appropriate mode
+    log_timing "PHASE4_START" "Packet count analysis"
     phase4_packet_analysis "$routers" "$service_test_failed"
+    log_timing "PHASE4_END"
     
     # Compile and output results
+    log_timing "PHASE5_START" "Format output"
     phase5_compile_results
+    log_timing "PHASE5_END"
+    
+    log_timing "SCRIPT_END" "Complete"
     
     # Exit with appropriate code based on service test result
     if [[ "${JSON_RESULTS[service_return_code]}" == "0" ]]; then

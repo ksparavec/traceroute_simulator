@@ -12,6 +12,27 @@ Usage:
 
 import json
 import sys
+import time
+import os
+from datetime import datetime
+
+# Timing setup
+script_start = time.time()
+run_id = "unknown"
+
+def log_timing(checkpoint, details=""):
+    """Log timing checkpoint to timing log file."""
+    elapsed = time.time() - script_start
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+    log_file = "/var/www/traceroute-web/logs/timings.log"
+    try:
+        os.makedirs(os.path.dirname(log_file), exist_ok=True)
+        with open(log_file, 'a') as f:
+            f.write(f"[{timestamp}] [{run_id}] {elapsed:7.2f}s | VISUALIZE_{checkpoint} | {details}\n")
+    except:
+        pass  # Fail silently if we can't write logs
+
+log_timing("START", "visualize_reachability.py")
 # Set matplotlib to use non-interactive backend before importing pyplot
 import matplotlib
 matplotlib.use('Agg')  # Use Anti-Grain Geometry backend (no display required)
@@ -31,8 +52,11 @@ except ImportError:
 
 def load_json_file(filepath: str) -> Dict[str, Any]:
     """Load JSON data from file."""
+    log_timing(f"LOAD_{os.path.basename(filepath)}_START")
     with open(filepath, 'r') as f:
-        return json.load(f)
+        data = json.load(f)
+    log_timing(f"LOAD_{os.path.basename(filepath)}_END", f"size={len(str(data))} chars")
+    return data
 
 
 def wrap_text(text: str, width: int = 50) -> List[str]:
@@ -142,8 +166,10 @@ def get_packet_analysis(results_data: Dict[str, Any]) -> Dict[str, str]:
 def create_networkx_visualization(trace_data: Dict[str, Any], results_data: Dict[str, Any], output_file: str = None):
     """Create the network path visualization using NetworkX."""
     # Extract information
+    log_timing("EXTRACT_DATA_START")
     path = extract_path_from_trace(trace_data)
     packet_analysis = get_packet_analysis(results_data)
+    log_timing("EXTRACT_DATA_END", f"path_nodes={len(path)} packet_analysis={len(packet_analysis)}")
     
     # Create directed graph
     G = nx.DiGraph()
@@ -175,7 +201,9 @@ def create_networkx_visualization(trace_data: Dict[str, Any], results_data: Dict
         G.add_edge(f"node_{i}", f"node_{i+1}")
     
     # Setup figure - A4 portrait
+    log_timing("FIGURE_SETUP_START")
     fig, ax = plt.subplots(figsize=(8.27, 11.69))
+    log_timing("FIGURE_SETUP_END")
     
     # Calculate hierarchical layout without graphviz
     # Create a simple top-to-bottom layout manually
@@ -663,11 +691,13 @@ def create_networkx_visualization(trace_data: Dict[str, Any], results_data: Dict
     # Save or show
     if output_file:
         # Save with A4 portrait dimensions
+        log_timing("SAVEFIG_START", f"output={os.path.basename(output_file)}")
         plt.savefig(output_file, 
                     dpi=300, 
                     bbox_inches=None,  # Don't use tight - it changes the page size
                     facecolor='white',
                     format='pdf')
+        log_timing("SAVEFIG_END", f"size={os.path.getsize(output_file) if os.path.exists(output_file) else 0} bytes")
         # Don't print to stdout - it corrupts PDF output when used in CGI
         # print(f"Visualization saved to: {output_file}")
     else:
@@ -678,6 +708,8 @@ def create_networkx_visualization(trace_data: Dict[str, Any], results_data: Dict
 
 def main():
     """Main function."""
+    global run_id
+    
     parser = argparse.ArgumentParser(description='Visualize network reachability test results using NetworkX')
     parser.add_argument('-t', '--trace-file', required=True,
                         help='Trace file containing network path')
@@ -688,13 +720,23 @@ def main():
     
     args = parser.parse_args()
     
+    # Extract run ID from output filename if available
+    if args.output and '_report.pdf' in args.output:
+        run_id = os.path.basename(args.output).replace('_report.pdf', '')
+    
+    log_timing("PARSE_ARGS_END", f"trace={args.trace_file} results={args.results_file} output={args.output}")
+    
     try:
         # Load trace and results
+        log_timing("LOAD_FILES_START")
         trace_data = load_json_file(args.trace_file)
         results_data = load_json_file(args.results_file)
+        log_timing("LOAD_FILES_END")
         
         # Create visualization
+        log_timing("CREATE_VIZ_START")
         create_networkx_visualization(trace_data, results_data, args.output)
+        log_timing("CREATE_VIZ_END")
         
     except json.JSONDecodeError as e:
         print(f"Error: Invalid JSON input: {e}", file=sys.stderr)
@@ -712,3 +754,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+    log_timing("END", "visualize_reachability.py complete")

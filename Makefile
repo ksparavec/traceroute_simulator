@@ -986,13 +986,15 @@ hostadd:
 		echo "  --secondary-ips <ips>       Comma-separated secondary IPs with prefixes"; \
 		echo "  --connect-to <router>       Router to connect to (auto-detect if not specified)"; \
 		echo "  --router-interface <iface>  Specific router interface bridge to connect to"; \
-		echo "  -v                          Verbose output (-vv for debug)"; \
+		echo "  --no-delay                  Skip stabilization delays for faster host creation"; \
+		echo "  -v                          Verbose output (-vv for debug, -vvv for command details)"; \
 		echo ""; \
 		echo "Examples:"; \
 		echo "  sudo -E make hostadd ARGS='--host web1 --primary-ip 10.1.1.100/24 --connect-to hq-gw'"; \
 		echo "  sudo -E make hostadd ARGS='--host srv1 --primary-ip 10.1.11.100/24 --connect-to hq-lab --router-interface eth2'"; \
 		echo "  sudo -E make hostadd ARGS='--host db1 --primary-ip 10.2.1.100/24 --secondary-ips 192.168.1.1/24,172.16.1.1/24'"; \
 		echo "  sudo -E make hostadd ARGS='--host client1 --primary-ip 10.3.1.100/24 -v'"; \
+		echo "  sudo -E make hostadd ARGS='--host fast1 --primary-ip 10.1.1.150/24 --no-delay -vv'"; \
 		exit 1; \
 	fi
 	@$(PYTHON) $(PYTHON_OPTIONS) src/simulators/host_namespace_setup.py $(ARGS)

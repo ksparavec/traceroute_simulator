@@ -1289,11 +1289,26 @@ class SequentialConnectivityTester:
             
     def test_specific_pair(self, source_ip: str, dest_ip: str):
         """Test specific source to destination from all namespaces that have the source IP."""
+        # Initialize timing data
+        test_start = time.time()
+        timing_data = {
+            'total_time': 0.0,
+            'operations': [],
+            'source_ip': source_ip,
+            'dest_ip': dest_ip
+        }
+        
         if self.verbose >= 1 and not self.json_output:
             print(f"\n=== Testing {source_ip} → {dest_ip} ===")
         
-        # Get all namespaces that have this source IP
+        # Operation: Get source namespaces
+        op_start = time.time()
         source_namespaces = self.ip_to_namespaces.get(source_ip, [])
+        timing_data['operations'].append({
+            'name': 'get_source_namespaces',
+            'duration_ms': (time.time() - op_start) * 1000,
+            'count': len(source_namespaces)
+        })
         
         if not source_namespaces:
             if self.json_output:
@@ -1308,8 +1323,14 @@ class SequentialConnectivityTester:
                 print(f"[ERROR] Source IP {source_ip} not found in any namespace")
             return False
             
-        # Get all namespaces that have this destination IP
+        # Operation: Get destination namespaces
+        op_start = time.time()
         dest_namespaces = self.ip_to_namespaces.get(dest_ip, [])
+        timing_data['operations'].append({
+            'name': 'get_dest_namespaces',
+            'duration_ms': (time.time() - op_start) * 1000,
+            'count': len(dest_namespaces)
+        })
         
         # Sort namespaces numerically by extracting numbers from names
         def extract_number(name):
@@ -1323,9 +1344,15 @@ class SequentialConnectivityTester:
         source_namespaces = sorted(source_namespaces, key=extract_number)
         dest_namespaces = sorted(dest_namespaces, key=extract_number)
             
-        # Add temporary host with public IP to gateway routers if needed
+        # Operation: Add temporary host with public IP to gateway routers if needed
+        op_start = time.time()
         if self.is_public_routable_ip(dest_ip):
             self.add_public_ip_host_to_gateways(dest_ip)
+            timing_data['operations'].append({
+                'name': 'add_public_ip_host',
+                'duration_ms': (time.time() - op_start) * 1000,
+                'result': 'added'
+            })
             
         # Print source and destination info once (already sorted)
         if self.verbose >= 1 and not self.json_output:
@@ -1346,6 +1373,7 @@ class SequentialConnectivityTester:
         # Test from each source namespace to the destination IP
         for src_idx, source_namespace in enumerate(source_namespaces):
             test_count += 1
+            ns_test_start = time.time()
             
             # Determine router and destination for header
             router_name = "direct"
@@ -1605,14 +1633,62 @@ class SequentialConnectivityTester:
                 
                 overall_success = overall_success and namespace_success
                 
+                # Record namespace test timing
+                timing_data['operations'].append({
+                    'name': f'test_from_{source_namespace}',
+                    'duration_ms': (time.time() - ns_test_start) * 1000,
+                    'result': 'success' if namespace_success else 'failed',
+                    'test_count': len(test_commands)
+                })
+                
             except Exception as e:
                 if self.verbose >= 1:
                     print(f"[ERROR] Test failed from {source_namespace}: {e}")
                 overall_success = False
+                
+                # Record error timing
+                timing_data['operations'].append({
+                    'name': f'test_from_{source_namespace}',
+                    'duration_ms': (time.time() - ns_test_start) * 1000,
+                    'result': 'error',
+                    'error': str(e)
+                })
         
         # Clean up temporary public IP host if we added it
+        cleanup_start = time.time()
         if self.is_public_routable_ip(dest_ip):
             self.remove_public_ip_host_from_gateways(dest_ip)
+            timing_data['operations'].append({
+                'name': 'cleanup_public_ip_host',
+                'duration_ms': (time.time() - cleanup_start) * 1000,
+                'result': 'cleaned'
+            })
+        
+        # Calculate total time
+        timing_data['total_time'] = (time.time() - test_start) * 1000
+        
+        # Print timing summary if verbose >= 2 and not json output
+        if self.verbose >= 2 and not self.json_output:
+            print(f"\n=== Reachability Test Timing Summary ===")
+            print(f"Source: {source_ip} -> Destination: {dest_ip}")
+            print(f"Total time: {timing_data['total_time']:.2f}ms")
+            print(f"\nOperation breakdown:")
+            for op in timing_data['operations']:
+                if 'count' in op:
+                    print(f"  {op['name']}: {op['duration_ms']:.2f}ms (count: {op['count']})")
+                elif 'result' in op:
+                    print(f"  {op['name']}: {op['duration_ms']:.2f}ms (result: {op['result']})")
+                else:
+                    print(f"  {op['name']}: {op['duration_ms']:.2f}ms")
+            
+            # Calculate time spent on tests vs overhead
+            test_time = sum(op['duration_ms'] for op in timing_data['operations'] if 'test_from_' in op.get('name', ''))
+            overhead_time = timing_data['total_time'] - test_time
+            if test_time > 0:
+                print(f"\nTime breakdown:")
+                print(f"  Test execution: {test_time:.2f}ms ({test_time/timing_data['total_time']*100:.1f}%)")
+                print(f"  Overhead: {overhead_time:.2f}ms ({overhead_time/timing_data['total_time']*100:.1f}%)")
+            print()
             
         return overall_success
             

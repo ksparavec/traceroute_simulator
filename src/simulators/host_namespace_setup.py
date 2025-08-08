@@ -40,6 +40,7 @@ import subprocess
 import sys
 import ipaddress
 import re
+import time
 from pathlib import Path
 from typing import Dict, List, Set, Optional, Any, Tuple
 import posix_ipc
@@ -58,8 +59,9 @@ class HostNamespaceManager:
     They can be dynamically added to and removed from the running network simulation.
     """
     
-    def __init__(self, verbose: int = 0):
+    def __init__(self, verbose: int = 0, no_delay: bool = False):
         self.verbose = verbose
+        self.no_delay = no_delay
         self.setup_logging()
         
         # Network state
@@ -325,11 +327,56 @@ class HostNamespaceManager:
         if self.verbose >= 3:
             print(f"[CMD] {full_command}", file=sys.stderr)
         
+        # Track command execution time
+        cmd_start = time.time()
         result = subprocess.run(
             full_command, shell=True, capture_output=True, text=True, check=check
         )
+        cmd_duration = (time.time() - cmd_start) * 1000
         
-        # With -vvv, print the command output
+        # Store timing if we have timing_data available
+        if hasattr(self, '_current_timing_data') and self._current_timing_data:
+            # Categorize command type
+            if 'ip netns add' in full_command:
+                cmd_type = 'netns_add'
+            elif 'ip netns exec' in full_command:
+                if 'ip link add' in command:
+                    cmd_type = 'link_add'
+                elif 'ip link set' in command:
+                    cmd_type = 'link_set'
+                elif 'ip addr add' in command:
+                    cmd_type = 'addr_add'
+                elif 'ip route add' in command:
+                    cmd_type = 'route_add'
+                elif 'tc qdisc' in command:
+                    cmd_type = 'tc_qdisc'
+                else:
+                    cmd_type = 'netns_exec'
+            elif 'ip link add' in full_command:
+                cmd_type = 'link_add'
+            elif 'ip link set' in full_command:
+                cmd_type = 'link_set'
+            elif 'ip addr add' in full_command:
+                cmd_type = 'addr_add'
+            elif 'ip route' in full_command:
+                cmd_type = 'route_cmd'
+            elif 'network_namespace_status.py' in full_command:
+                cmd_type = 'status_script'
+            else:
+                cmd_type = 'other'
+            
+            if 'command_timings' not in self._current_timing_data:
+                self._current_timing_data['command_timings'] = []
+            
+            self._current_timing_data['command_timings'].append({
+                'cmd': full_command[:100] + ('...' if len(full_command) > 100 else ''),
+                'type': cmd_type,
+                'duration_ms': cmd_duration,
+                'returncode': result.returncode,
+                'namespace': namespace if namespace else 'host'
+            })
+        
+        # With -vvv, print the command output and timing
         if self.verbose >= 3:
             # Skip stdout for network_namespace_status.py and host listing to avoid verbose output
             if 'network_namespace_status.py' not in full_command and '--list-hosts' not in full_command:
@@ -337,7 +384,8 @@ class HostNamespaceManager:
                     print(f"[STDOUT]\n{result.stdout}", file=sys.stderr)
             if result.stderr:
                 print(f"[STDERR]\n{result.stderr}", file=sys.stderr)
-            print(f"[RETCODE] {result.returncode}", file=sys.stderr)
+            status = '✓' if result.returncode == 0 else '✗'
+            print(f"[RETCODE] {result.returncode} {status} [{cmd_duration:.1f}ms]", file=sys.stderr)
         
         if result.returncode != 0 and check:
             self.logger.error(f"Command failed: {full_command}")
@@ -535,6 +583,122 @@ class HostNamespaceManager:
         
         self._atomic_json_operation(str(self.bridge_registry_file), update_op)
         
+    def _batch_register_host(self, host_name: str, host_config: Dict, interfaces: List[str], 
+                            bridge_name: str, primary_ip: str) -> bool:
+        """
+        Batch register host in all registries with minimal lock contention.
+        This minimizes the time locks are held by doing all updates quickly.
+        """
+        try:
+            # 1. Update host registry (quick lock)
+            def add_host_op(registry):
+                # Double-check no collision happened while we were creating the host
+                if host_name in registry:
+                    self.logger.error(f"Host name {host_name} already exists (race condition)")
+                    return False, registry
+                
+                # Also check for IP collision on the same router (race condition check)
+                ip_without_prefix = host_config['primary_ip'].split('/')[0]
+                connected_router = host_config['connected_to']
+                
+                for existing_host, existing_config in registry.items():
+                    if existing_host == host_name:
+                        continue
+                    existing_router = existing_config.get('connected_to', '')
+                    if existing_router == connected_router:
+                        # Check primary IP
+                        existing_ip = existing_config.get('primary_ip', '').split('/')[0]
+                        if existing_ip == ip_without_prefix:
+                            self.logger.error(f"IP {ip_without_prefix} already in use by host {existing_host} on router {connected_router} (race condition)")
+                            return False, registry
+                        # Check secondary IPs
+                        for sec_ip in existing_config.get('secondary_ips', []):
+                            if sec_ip.split('/')[0] == ip_without_prefix:
+                                self.logger.error(f"IP {ip_without_prefix} already in use by host {existing_host} on router {connected_router} (race condition)")
+                                return False, registry
+                
+                # Also check secondary IPs for collision
+                for sec_ip in host_config.get('secondary_ips', []):
+                    sec_ip_clean = sec_ip.split('/')[0]
+                    for existing_host, existing_config in registry.items():
+                        if existing_config.get('connected_to') == connected_router:
+                            existing_primary = existing_config.get('primary_ip', '').split('/')[0]
+                            if existing_primary == sec_ip_clean:
+                                self.logger.error(f"Secondary IP {sec_ip_clean} already in use by host {existing_host} on router {connected_router} (race condition)")
+                                return False, registry
+                            for existing_sec in existing_config.get('secondary_ips', []):
+                                if existing_sec.split('/')[0] == sec_ip_clean:
+                                    self.logger.error(f"Secondary IP {sec_ip_clean} already in use by host {existing_host} on router {connected_router} (race condition)")
+                                    return False, registry
+                
+                # All checks passed, safe to add
+                registry[host_name] = host_config
+                return True, registry
+            
+            success, _ = self._atomic_json_operation(self.host_registry_file, add_host_op)
+            if not success:
+                self.logger.error(f"Failed to register host {host_name} in host registry")
+                return False
+            
+            # 2. Update interface registry (quick lock)
+            host_code = self.get_host_code(host_name)
+            
+            def update_interfaces_op(registry):
+                if host_code not in registry:
+                    registry[host_code] = {}
+                for interface_name in interfaces:
+                    # Generate interface code inline to avoid extra operations
+                    existing_codes = set(registry[host_code].values())
+                    for i in range(1000):
+                        interface_code = f"i{i:03d}"
+                        if interface_code not in existing_codes:
+                            registry[host_code][interface_name] = interface_code
+                            break
+                return True, registry
+            
+            success, _ = self._atomic_json_operation(self.interface_registry_file, update_interfaces_op)
+            if not success:
+                self.logger.error(f"Failed to register interfaces for host {host_name}")
+                # Rollback host registry
+                self._remove_host_from_registry(host_name)
+                return False
+            
+            # 3. Update bridge registry if needed (quick lock)
+            if bridge_name:
+                def update_bridge_op(bridge_registry):
+                    if bridge_name in bridge_registry:
+                        if 'hosts' not in bridge_registry[bridge_name]:
+                            bridge_registry[bridge_name]['hosts'] = {}
+                        
+                        bridge_registry[bridge_name]['hosts'][host_name] = {
+                            "interface": "eth0",
+                            "ipv4": primary_ip,
+                            "state": "UP"
+                        }
+                        return True, bridge_registry
+                    else:
+                        self.logger.error(f"Bridge {bridge_name} not found in registry")
+                        return False, bridge_registry
+                
+                success, _ = self._atomic_json_operation(str(self.bridge_registry_file), update_bridge_op)
+                if not success:
+                    self.logger.error(f"Failed to register host {host_name} in bridge registry")
+                    # Note: Not rolling back for bridge registry failure as it's non-critical
+                    
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Failed to batch register host: {e}")
+            return False
+    
+    def _remove_host_from_registry(self, host_name: str):
+        """Helper to remove host from registry during rollback."""
+        def remove_op(registry):
+            if host_name in registry:
+                del registry[host_name]
+            return True, registry
+        self._atomic_json_operation(self.host_registry_file, remove_op)
+    
     def check_command_availability(self, command: str) -> bool:
         """Check if a command is available on the system."""
         try:
@@ -1006,16 +1170,38 @@ class HostNamespaceManager:
     def check_ip_collision(self, ip_address: str, target_router: str = None) -> Tuple[bool, Dict]:
         """Check if an IP address is already in use.
         
-        For router IPs: Always check for collision (routers must have unique IPs)
-        For host IPs: Only check if another host on the same router has this IP
+        Only checks on the target router since each router is independent.
+        Much faster than scanning all routers.
         """
         # Extract IP without prefix if provided
         ip_without_prefix = ip_address.split('/')[0] if '/' in ip_address else ip_address
         
-        # Check active router IPs - routers must always have unique IPs
-        router_ips = self.get_active_router_ips()
-        if ip_without_prefix in router_ips:
-            return True, router_ips[ip_without_prefix]
+        # Only check the target router if specified
+        if target_router and target_router in self.available_namespaces:
+            # Fast check: does this specific router have this IP?
+            result = self.run_command(
+                f"ip addr show | grep -w {ip_without_prefix}",
+                namespace=target_router,
+                check=False
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                # Found the IP on this router - parse which interface has it
+                interface = 'unknown'
+                for line in result.stdout.split('\n'):
+                    if ip_without_prefix in line:
+                        # Extract interface name from ip addr show output
+                        import re
+                        # Format: "inet 10.1.1.1/24 brd 10.1.1.255 scope global eth0"
+                        match = re.search(r'inet\s+' + re.escape(ip_without_prefix) + r'/\d+.*dev\s+(\S+)', line)
+                        if match:
+                            interface = match.group(1)
+                        
+                return True, {
+                    'type': 'router',
+                    'name': target_router,
+                    'interface': interface,
+                    'full_ip': ip_address
+                }
         
         # For hosts, only check collision if target_router is specified
         if target_router:
@@ -1105,13 +1291,15 @@ class HostNamespaceManager:
         
         # Short delay after moving to namespace (reduced from 1.0s)
         import time
-        time.sleep(0.2)
+        if not self.no_delay:
+            time.sleep(0.2)
         
         self.run_command(f"ip link set {mesh_veth} master {mesh_bridge}", namespace="hidden-mesh")
         self.run_command(f"ip link set {mesh_veth} up", namespace="hidden-mesh")
         
         # Short delay after bringing interface up (reduced from 1.0s)
-        time.sleep(0.3)
+        if not self.no_delay:
+            time.sleep(0.3)
         
         # Clean bridge FDB entries to prevent stale MAC issues
         # This is needed when hosts are recreated with same names but different MAC addresses
@@ -1122,7 +1310,8 @@ class HostNamespaceManager:
         self.run_command(f"ip link set {mesh_bridge} type bridge ageing_time 0", namespace="hidden-mesh", check=False)
         
         # Short delay to ensure ageing takes effect (reduced from 1.0s)
-        time.sleep(0.1)
+        if not self.no_delay:
+            time.sleep(0.1)
         
         # Flush specific device entries
         self.logger.info(f"Step 2: Flushing FDB entries for {mesh_veth}")
@@ -1138,27 +1327,31 @@ class HostNamespaceManager:
         self.run_command(f"bridge fdb flush dev {mesh_bridge} self", namespace="hidden-mesh", check=False)
         
         # Short delay before restoring ageing (reduced from 1.0s)
-        time.sleep(0.1)
+        if not self.no_delay:
+            time.sleep(0.1)
         
         # Restore normal ageing time
         self.logger.info(f"Step 5: Restoring bridge ageing time")
         self.run_command(f"ip link set {mesh_bridge} type bridge ageing_time 30000", namespace="hidden-mesh", check=False)
         
         # Short delay to ensure settings are applied (reduced from 1.0s)
-        time.sleep(0.2)
+        if not self.no_delay:
+            time.sleep(0.2)
         
         # Configure host IP
         self.run_command(f"ip addr add {primary_ip} dev eth0", namespace=host_name)
         self.run_command(f"ip link set eth0 up", namespace=host_name)
         
         # Short delay after bringing up interface (reduced from 1.0s)
-        time.sleep(0.3)
+        if not self.no_delay:
+            time.sleep(0.3)
         
         # Add 1ms latency to physical interface for realistic network behavior
         self.configure_host_latency(host_name, "eth0", latency_ms=1.0)
         
         # Short delay to allow everything to stabilize (reduced from 1.0s)
-        time.sleep(0.5)
+        if not self.no_delay:
+            time.sleep(0.5)
         
         # Clear neighbor cache on host to ensure fresh ARP
         self.logger.info(f"Clearing neighbor cache on host {host_name}")
@@ -1170,8 +1363,11 @@ class HostNamespaceManager:
             self.run_command(f"ip neigh flush all", namespace=target_router, check=False)
         
         # Minimal delay to ensure bridge forwarding is ready (reduced from 2.0s)
-        self.logger.info("Waiting for bridge forwarding to stabilize...")
-        time.sleep(0.5)
+        if not self.no_delay:
+            self.logger.info("Waiting for bridge forwarding to stabilize...")
+            time.sleep(0.5)
+        else:
+            self.logger.info("Skipping bridge stabilization delay (--no-delay)")
         
         # Trigger bidirectional traffic to ensure bridge MAC learning
         if gateway_ip and target_router:
@@ -1192,7 +1388,8 @@ class HostNamespaceManager:
             self.run_command(f"ping -c 1 -W 1 {gateway_ip} >/dev/null 2>&1 &", namespace=host_name, check=False)
             
             # Single short delay for all pings to complete (reduced from 1.5s total)
-            time.sleep(0.3)
+            if not self.no_delay:
+                time.sleep(0.3)
         
         connection_info = {
             "connection_type": "sim_mesh_direct",
@@ -1206,15 +1403,52 @@ class HostNamespaceManager:
         
     def add_host(self, host_name: str, primary_ip: str, secondary_ips: List[str], connect_to: str = None, router_interface: str = None) -> bool:
         """Add a new host to the network using unified mesh infrastructure."""
+        # Initialize timing data
+        operation_start = time.time()
+        timing_data = {
+            'total_time': 0.0,
+            'operations': [],
+            'command_timings': [],
+            'host_name': host_name,
+            'primary_ip': primary_ip,
+            'secondary_ip_count': len(secondary_ips)
+        }
+        
+        # Set current timing data for command tracking
+        self._current_timing_data = timing_data
+        
+        # Operation: Check namespace existence
+        op_start = time.time()
         if host_name in self.available_namespaces:
             self.logger.error(f"Namespace {host_name} already exists")
+            timing_data['operations'].append({
+                'name': 'check_namespace_exists',
+                'duration_ms': (time.time() - op_start) * 1000,
+                'result': 'failed'
+            })
             return False
+        timing_data['operations'].append({
+            'name': 'check_namespace_exists',
+            'duration_ms': (time.time() - op_start) * 1000,
+            'result': 'success'
+        })
             
-        # Load host registry
+        # Operation: Quick registry check for host name collision
+        op_start = time.time()
         registry = self.load_host_registry()
         if host_name in registry:
             self.logger.error(f"Host {host_name} already registered")
+            timing_data['operations'].append({
+                'name': 'check_host_registry',
+                'duration_ms': (time.time() - op_start) * 1000,
+                'result': 'failed'
+            })
             return False
+        timing_data['operations'].append({
+            'name': 'check_host_registry',
+            'duration_ms': (time.time() - op_start) * 1000,
+            'result': 'success'
+        })
             
         # Validate primary IP format
         if '/' not in primary_ip:
@@ -1240,8 +1474,15 @@ class HostNamespaceManager:
                 return False
             target_router, _, _ = router_info
             
-        # Check for IP collision on primary IP (only on the same router)
+        # Operation: Check for IP collision on primary IP (only on the same router)
+        op_start = time.time()
         collision_detected, collision_info = self.check_ip_collision(primary_ip, target_router)
+        timing_data['operations'].append({
+            'name': 'check_primary_ip_collision',
+            'duration_ms': (time.time() - op_start) * 1000,
+            'result': 'collision' if collision_detected else 'no_collision',
+            'target_router': target_router
+        })
         if collision_detected:
             entity_type = collision_info.get('type', 'unknown')
             entity_name = collision_info.get('name', 'unknown')
@@ -1254,20 +1495,30 @@ class HostNamespaceManager:
                 error_msg = f"IP address collision detected: {primary_ip.split('/')[0]} is already in use by host '{entity_name}' connected to router '{target_router}'"
             raise ValueError(error_msg)
             
-        # Check for IP collision on secondary IPs
-        for secondary_ip in secondary_ips:
-            collision_detected, collision_info = self.check_ip_collision(secondary_ip, target_router)
-            if collision_detected:
-                entity_type = collision_info.get('type', 'unknown')
-                entity_name = collision_info.get('name', 'unknown')
-                entity_interface = collision_info.get('interface', 'unknown')
-                full_ip = collision_info.get('full_ip', secondary_ip)
-                
-                if entity_type == 'router':
-                    error_msg = f"IP address collision detected: {secondary_ip.split('/')[0]} is already in use by router '{entity_name}' on interface '{entity_interface}'"
-                else:
-                    error_msg = f"IP address collision detected: {secondary_ip.split('/')[0]} is already in use by host '{entity_name}' connected to router '{target_router}'"
-                raise ValueError(error_msg)
+        # Operation: Check for IP collision on secondary IPs
+        if secondary_ips:
+            op_start = time.time()
+            for secondary_ip in secondary_ips:
+                collision_detected, collision_info = self.check_ip_collision(secondary_ip, target_router)
+                if collision_detected:
+                    entity_type = collision_info.get('type', 'unknown')
+                    entity_name = collision_info.get('name', 'unknown')
+                    entity_interface = collision_info.get('interface', 'unknown')
+                    full_ip = collision_info.get('full_ip', secondary_ip)
+                    
+                    if entity_type == 'router':
+                        error_msg = f"IP address collision detected: {secondary_ip.split('/')[0]} is already in use by router '{entity_name}' on interface '{entity_interface}'"
+                    else:
+                        error_msg = f"IP address collision detected: {secondary_ip.split('/')[0]} is already in use by host '{entity_name}' connected to router '{target_router}'"
+                    raise ValueError(error_msg)
+            
+            timing_data['operations'].append({
+                'name': 'check_secondary_ip_collisions',
+                'duration_ms': (time.time() - op_start) * 1000,
+                'result': 'no_collision',
+                'count': len(secondary_ips),
+                'target_router': target_router
+            })
             
         # Validate router interface option
         if router_interface and not connect_to:
@@ -1418,17 +1669,13 @@ class HostNamespaceManager:
             except Exception as e:
                 self.logger.warning(f"Could not add default route: {e}")
             
-            # Register host interfaces in interface registry
+            # Prepare all registry data BEFORE acquiring any locks
             host_interfaces = ["lo", "eth0"]  # Standard interfaces for all hosts
             host_interfaces.extend([f"dummy{i}" for i in range(len(secondary_ips))])  # Add dummy interfaces
-            self.register_host_interfaces(host_name, host_interfaces)
             
-            # Register host in bridge registry
             bridge_name = connection_info.get('mesh_bridge')
-            if bridge_name:
-                self.register_host_in_bridge_registry(host_name, primary_ip, bridge_name)
             
-            # Register host atomically
+            # Prepare host config
             host_config = {
                 "primary_ip": primary_ip,
                 "secondary_ips": secondary_ips,
@@ -1443,14 +1690,72 @@ class HostNamespaceManager:
             # Add connection-specific information
             host_config.update(connection_info)
             
-            # Use atomic operation to add host
-            def add_host_op(registry):
-                registry[host_name] = host_config
-                return True, registry
+            # Now do ALL registry updates in a SINGLE batch operation
+            op_start = time.time()
+            success = self._batch_register_host(host_name, host_config, host_interfaces, bridge_name, primary_ip)
+            timing_data['operations'].append({
+                'name': 'batch_registry_update',
+                'duration_ms': (time.time() - op_start) * 1000,
+                'result': 'success' if success else 'failed'
+            })
             
-            success, _ = self._atomic_json_operation(self.host_registry_file, add_host_op)
             if not success:
-                raise Exception("Failed to register host in registry")
+                raise Exception("Failed to register host in registries")
+            
+            # Calculate total time
+            timing_data['total_time'] = (time.time() - operation_start) * 1000
+            
+            # Clear current timing data
+            self._current_timing_data = None
+            
+            # Print timing summary if verbose >= 2
+            if self.verbose >= 2:
+                print(f"\n=== Host Creation Timing Summary ===")
+                print(f"Host: {host_name}")
+                print(f"Total time: {timing_data['total_time']:.2f}ms")
+                print(f"Total commands executed: {len(timing_data.get('command_timings', []))}")
+                
+                print(f"\nOperation breakdown:")
+                for op in timing_data['operations']:
+                    status = '✓' if op['result'] in ['success', 'no_collision', 'not_exists'] else '✗'
+                    print(f"  {status} {op['name']}: {op['duration_ms']:.2f}ms")
+                    if 'individual_times_ms' in op:
+                        for idx, t in enumerate(op['individual_times_ms']):
+                            print(f"      dummy{idx}: {t:.2f}ms")
+                
+                # Print command timing breakdown
+                if 'command_timings' in timing_data and timing_data['command_timings']:
+                    print(f"\nCommand execution breakdown:")
+                    
+                    # Group by command type
+                    cmd_by_type = {}
+                    for cmd in timing_data['command_timings']:
+                        cmd_type = cmd['type']
+                        if cmd_type not in cmd_by_type:
+                            cmd_by_type[cmd_type] = []
+                        cmd_by_type[cmd_type].append(cmd)
+                    
+                    # Print summary by type
+                    for cmd_type, cmds in sorted(cmd_by_type.items()):
+                        total_ms = sum(c['duration_ms'] for c in cmds)
+                        avg_ms = total_ms / len(cmds) if cmds else 0
+                        print(f"  {cmd_type}: {len(cmds)} cmds, {total_ms:.1f}ms total, {avg_ms:.1f}ms avg")
+                    
+                    # If verbose >= 3, show individual commands
+                    if self.verbose >= 3:
+                        print(f"\nDetailed command list:")
+                        for i, cmd in enumerate(timing_data['command_timings'], 1):
+                            status = '✓' if cmd['returncode'] == 0 else '✗'
+                            ns_info = f" [ns: {cmd['namespace']}]" if cmd['namespace'] != 'host' else ""
+                            print(f"  {i:3d}. {status} [{cmd['duration_ms']:6.1f}ms] {cmd['type']:12s}{ns_info}: {cmd['cmd']}")
+                
+                # Calculate overhead
+                total_cmd_time = sum(cmd['duration_ms'] for cmd in timing_data.get('command_timings', []))
+                overhead = timing_data['total_time'] - total_cmd_time
+                print(f"\nTime distribution:")
+                print(f"  Command execution: {total_cmd_time:.1f}ms ({total_cmd_time/timing_data['total_time']*100:.1f}%)")
+                print(f"  Python overhead: {overhead:.1f}ms ({overhead/timing_data['total_time']*100:.1f}%)")
+                print()
             
             if self.verbose >= 1:
                 print(f"✓ Host {host_name} created successfully")
@@ -1464,12 +1769,18 @@ class HostNamespaceManager:
             
         except ValueError as e:
             # IP collision or other validation error - no cleanup needed since nothing was created
+            self._current_timing_data = None  # Clear timing data
             return False
         except subprocess.CalledProcessError as e:
             self.logger.error(f"Failed to create host {host_name}: {e}")
             # Cleanup on failure
             self.cleanup_host_resources(host_name, host_config if 'host_config' in locals() else {})
+            self._current_timing_data = None  # Clear timing data
             return False
+        except Exception as e:
+            self.logger.error(f"Unexpected error creating host {host_name}: {e}")
+            self._current_timing_data = None  # Clear timing data
+            raise
             
     def remove_host(self, host_name: str) -> bool:
         """Remove a host from the network."""
@@ -1585,7 +1896,8 @@ class HostNamespaceManager:
                 # Flush dynamic entries on the bridge
                 self.run_command(f"ip link set {mesh_bridge} type bridge ageing_time 0", namespace="hidden-mesh", check=False)
                 import time
-                time.sleep(0.1)
+                if not self.no_delay:
+                    time.sleep(0.1)
                 self.run_command(f"ip link set {mesh_bridge} type bridge ageing_time 30000", namespace="hidden-mesh", check=False)
                     
         except Exception as e:
@@ -1726,6 +2038,8 @@ Notes:
                        help='Increase verbosity (-v for info, -vv for debug)')
     parser.add_argument('-j', '--json', action='store_true',
                        help='Output in JSON format (applies to --list-hosts)')
+    parser.add_argument('--no-delay', action='store_true',
+                       help='Skip stabilization delays for faster host creation')
     
     args = parser.parse_args()
     
@@ -1739,7 +2053,7 @@ Notes:
     if args.host and not args.remove and not args.primary_ip:
         parser.error("--primary-ip is required when adding a host")
         
-    manager = HostNamespaceManager(args.verbose)
+    manager = HostNamespaceManager(args.verbose, args.no_delay)
     
     if not manager.check_prerequisites():
         sys.exit(1)

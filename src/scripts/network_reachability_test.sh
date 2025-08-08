@@ -433,7 +433,7 @@ except:
         local src_host_name="source-${router_index}"
         if [[ "$source_exists_for_router" == "false" ]]; then
             {
-                if tsimsh_exec "host add --name ${src_host_name} --primary-ip ${SOURCE_IP}/24 --connect-to ${router}" false; then
+                if tsimsh_exec "host add --name ${src_host_name} --primary-ip ${SOURCE_IP}/24 --connect-to ${router} --no-delay" false; then
                     echo "${src_host_name}" > "${host_add_dir}/src_${router_index}_success"
                 else
                     echo "Failed to add ${src_host_name}" > "${host_add_dir}/src_${router_index}_failed"
@@ -455,7 +455,7 @@ except:
         local dst_host_name="destination-${router_index}"
         if [[ "$dest_exists_for_router" == "false" ]]; then
             {
-                if tsimsh_exec "host add --name ${dst_host_name} --primary-ip ${DEST_IP}/24 --connect-to ${router}" false; then
+                if tsimsh_exec "host add --name ${dst_host_name} --primary-ip ${DEST_IP}/24 --connect-to ${router} --no-delay" false; then
                     echo "${dst_host_name}" > "${host_add_dir}/dst_${router_index}_success"
                 else
                     echo "Failed to add ${dst_host_name}" > "${host_add_dir}/dst_${router_index}_failed"

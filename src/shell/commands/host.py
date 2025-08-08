@@ -73,6 +73,8 @@ class HostCommands(BaseCommandHandler):
                               help='Router to connect to')
         add_parser.add_argument('--secondary-ips', nargs='*',
                               help='Secondary IP addresses')
+        add_parser.add_argument('--no-delay', action='store_true',
+                              help='Skip stabilization delays for faster host creation')
         add_parser.add_argument('-v', '--verbose', action='count', default=0,
                               help='Increase verbosity (-v for info, -vv for debug, -vvv for trace)')
         
@@ -163,6 +165,9 @@ class HostCommands(BaseCommandHandler):
         
         if args.secondary_ips:
             cmd_args.extend(['--secondary-ips'] + args.secondary_ips)
+        
+        if args.no_delay:
+            cmd_args.append('--no-delay')
         
         # Add verbose flags based on count
         for _ in range(args.verbose):
@@ -316,7 +321,7 @@ class HostCommands(BaseCommandHandler):
             
             # Provide argument names that haven't been used yet
             used_args = set(args)
-            available_args = ['--name', '--primary-ip', '--connect-to', '--secondary-ips', '-v', '--verbose']
+            available_args = ['--name', '--primary-ip', '--connect-to', '--secondary-ips', '--no-delay', '-v', '--verbose']
             return [arg for arg in available_args if arg not in used_args and arg.startswith(text)]
         
         elif subcommand == 'remove':

@@ -1371,6 +1371,7 @@ Type 'set' to see all variables.
         self.poutput(f"  {Fore.YELLOW}--primary-ip IP/MASK{Style.RESET_ALL} Primary IP with CIDR (MANDATORY)")
         self.poutput(f"  {Fore.YELLOW}--connect-to ROUTER{Style.RESET_ALL}  Router to connect to (MANDATORY)")
         self.poutput("  --secondary-ips IPS   Secondary IP addresses")
+        self.poutput("  --no-delay            Skip stabilization delays for faster creation")
         self.poutput("  -v, --verbose         Increase verbosity")
         
         self.poutput(f"\n{Fore.CYAN}LIST OPTIONS:{Style.RESET_ALL}")

@@ -475,6 +475,7 @@ facts:
 
 # Clean up generated files and cache
 clean:
+	@make clean-c
 	@echo "Cleaning up generated files and cache"
 	@echo "======================================="
 	@rm -rf __pycache__/
@@ -1523,3 +1524,170 @@ install-web:
 	@echo "   sudo openssl req -x509 -nodes -days 365 -newkey rsa:2048 \\"
 	@echo "     -keyout /etc/ssl/private/traceroute.key \\"
 	@echo "     -out /etc/ssl/certs/traceroute.crt"
+# ============================================================================
+# C COMPONENTS SECTION
+# ============================================================================
+
+# C components build configuration
+C_BUILD_DIR := build
+C_CFLAGS := -Wall -Wextra -O2 -g -std=c11 -D_GNU_SOURCE  
+C_LDFLAGS := -lrt
+C_AR := ar
+C_ARFLAGS := rcs
+
+# C source files
+C_LOADER_SRCS := src/core/router_facts_loader.c
+C_SETUP_SRCS := src/core/network_setup.c
+C_MESH_SRCS := src/core/hidden_mesh_setup.c
+C_TEST_SRCS := src/core/test_facts_loader.c
+
+# C object files in build directory
+C_LOADER_OBJS := $(C_BUILD_DIR)/router_facts_loader.o
+C_SETUP_OBJS := $(C_BUILD_DIR)/network_setup.o
+C_MESH_OBJS := $(C_BUILD_DIR)/hidden_mesh_setup.o
+C_TEST_OBJS := $(C_BUILD_DIR)/test_facts_loader.o
+
+# C targets in build directory
+C_LIB_TARGET := $(C_BUILD_DIR)/librouter_facts.a
+C_SETUP_TARGET := $(C_BUILD_DIR)/tsim-network-setup
+C_MESH_TARGET := $(C_BUILD_DIR)/tsim-mesh-setup
+C_TEST_TARGET := $(C_BUILD_DIR)/tsim-facts-test
+
+.PHONY: build-c install-c clean-c test-c netsetup-c
+
+# Build C components
+build-c: $(C_BUILD_DIR)
+	@echo "Building C components..."
+	@$(CC) $(C_CFLAGS) -c $(C_LOADER_SRCS) -o $(C_LOADER_OBJS)
+	@$(C_AR) $(C_ARFLAGS) $(C_LIB_TARGET) $(C_LOADER_OBJS)
+	@echo "Built library: $(C_LIB_TARGET)"
+	@$(CC) $(C_CFLAGS) -c $(C_SETUP_SRCS) -o $(C_SETUP_OBJS)
+	@$(CC) $(C_CFLAGS) -o $(C_SETUP_TARGET) $(C_SETUP_OBJS) $(C_LIB_TARGET) $(C_LDFLAGS)
+	@echo "Built binary: $(C_SETUP_TARGET)"
+	@$(CC) $(C_CFLAGS) -c $(C_MESH_SRCS) -o $(C_MESH_OBJS)
+	@$(CC) $(C_CFLAGS) -o $(C_MESH_TARGET) $(C_MESH_OBJS) $(C_LIB_TARGET) $(C_LDFLAGS)
+	@echo "Built binary: $(C_MESH_TARGET) (full mesh implementation with shared memory)"
+	@$(CC) $(C_CFLAGS) -c $(C_TEST_SRCS) -o $(C_TEST_OBJS)
+	@$(CC) $(C_CFLAGS) -o $(C_TEST_TARGET) $(C_TEST_OBJS) $(C_LIB_TARGET) $(C_LDFLAGS)
+	@echo "Built test binary: $(C_TEST_TARGET)"
+
+$(C_BUILD_DIR):
+	@mkdir -p $(C_BUILD_DIR)
+
+# Install C components (prefers venv if activated)
+install-c: build-c
+	@if [ -n "$$VIRTUAL_ENV" ]; then \
+		echo "Installing C components to $$VIRTUAL_ENV/bin..."; \
+		install -m 755 $(C_SETUP_TARGET) $$VIRTUAL_ENV/bin/tsim-network-setup; \
+		install -m 755 $(C_MESH_TARGET) $$VIRTUAL_ENV/bin/tsim-mesh-setup; \
+		install -m 755 $(C_TEST_TARGET) $$VIRTUAL_ENV/bin/tsim-facts-test; \
+		echo "C components installed to $$VIRTUAL_ENV/bin"; \
+	else \
+		echo "Warning: No virtual environment activated"; \
+		echo "Installing C components to $(INSTALL_DIR)..."; \
+		install -m 755 $(C_SETUP_TARGET) $(INSTALL_DIR)/tsim-network-setup; \
+		install -m 755 $(C_TEST_TARGET) $(INSTALL_DIR)/tsim-facts-test; \
+		echo "C components installed to $(INSTALL_DIR)"; \
+	fi
+
+# Clean C build artifacts and src/core objects
+clean-c:
+	@echo "Cleaning C build artifacts..."
+	@rm -rf $(C_BUILD_DIR)
+	@rm -f src/core/*.o src/core/*.a src/core/network_setup src/core/test_facts_loader
+	@rm -f src/core/Makefile.facts src/core/Makefile.netsetup src/core/Makefile
+	@echo "C build artifacts cleaned"
+
+# Test C components
+test-c: build-c
+	@echo "Testing C components..."
+	@if [ -z "$$TRACEROUTE_SIMULATOR_RAW_FACTS" ]; then \
+		echo "Error: TRACEROUTE_SIMULATOR_RAW_FACTS not set"; \
+		exit 1; \
+	fi
+	@$(C_TEST_TARGET)
+
+# Set up network using C implementation (simple version)
+netsetup-c:
+	@if [ "$$(id -u)" \!= "0" ]; then \
+		echo "Error: netsetup-c requires root privileges"; \
+		echo "Please run: sudo -E make netsetup-c"; \
+		exit 1; \
+	fi
+	@if [ -z "$$TRACEROUTE_SIMULATOR_RAW_FACTS" ]; then \
+		echo "Error: TRACEROUTE_SIMULATOR_RAW_FACTS environment variable must be set"; \
+		exit 1; \
+	fi
+	@if [ ! -f $(C_SETUP_TARGET) ]; then \
+		echo "Error: $(C_SETUP_TARGET) not found. Run 'make build-c' first"; \
+		exit 1; \
+	fi
+	@echo "Setting up network namespaces using C implementation..."
+	@$(C_SETUP_TARGET) $(ARGS)
+
+# Set up network using full C mesh implementation (feature-complete)
+netsetup-mesh:
+	@if [ "$$(id -u)" \!= "0" ]; then \
+		echo "Error: netsetup-mesh requires root privileges"; \
+		echo "Please run: sudo -E make netsetup-mesh"; \
+		exit 1; \
+	fi
+	@if [ -z "$$TRACEROUTE_SIMULATOR_RAW_FACTS" ]; then \
+		echo "Error: TRACEROUTE_SIMULATOR_RAW_FACTS environment variable must be set"; \
+		exit 1; \
+	fi
+	@if [ ! -f $(C_MESH_TARGET) ]; then \
+		echo "Error: $(C_MESH_TARGET) not found. Run 'make build-c' first"; \
+		exit 1; \
+	fi
+	@echo "Setting up hidden mesh network using full C implementation..."
+	@$(C_MESH_TARGET) $(ARGS)
+
+# Update install-c target to use venv
+install-c-venv: build-c
+	@echo "Installing C components to Python venv..."
+	@if [ -z "$$VIRTUAL_ENV" ]; then \
+		echo "Error: No virtual environment activated"; \
+		echo "Please activate your Python virtual environment first"; \
+		exit 1; \
+	fi
+	@echo "Installing to $$VIRTUAL_ENV/bin..."
+	@install -m 755 $(C_SETUP_TARGET) $$VIRTUAL_ENV/bin/tsim-network-setup
+	@install -m 755 $(C_TEST_TARGET) $$VIRTUAL_ENV/bin/tsim-facts-test
+	@echo "C components installed to $$VIRTUAL_ENV/bin"
+
+# Uninstall C components from venv
+uninstall-c-venv:
+	@if [ -z "$$VIRTUAL_ENV" ]; then \
+		echo "Error: No virtual environment activated"; \
+		exit 1; \
+	fi
+	@rm -f $$VIRTUAL_ENV/bin/tsim-network-setup
+	@rm -f $$VIRTUAL_ENV/bin/tsim-facts-test
+	@echo "C components uninstalled from $$VIRTUAL_ENV/bin"
+
+# Run network setup with sudo (handles venv path automatically)
+netsetup-sudo: build-c
+	@if [ "$$(id -u)" = "0" ]; then \
+		echo "Already running as root, executing directly..."; \
+		if [ -n "$$VIRTUAL_ENV" ]; then \
+			$$VIRTUAL_ENV/bin/tsim-network-setup $(ARGS); \
+		elif [ -f "/home/sparavec/tsim-venv/bin/tsim-network-setup" ]; then \
+			/home/sparavec/tsim-venv/bin/tsim-network-setup $(ARGS); \
+		else \
+			$(C_SETUP_TARGET) $(ARGS); \
+		fi; \
+	else \
+		echo "Executing with sudo..."; \
+		if [ -n "$$VIRTUAL_ENV" ]; then \
+			sudo -E $$VIRTUAL_ENV/bin/tsim-network-setup $(ARGS); \
+		elif [ -f "/home/sparavec/tsim-venv/bin/tsim-network-setup" ]; then \
+			sudo -E /home/sparavec/tsim-venv/bin/tsim-network-setup $(ARGS); \
+		else \
+			sudo -E $(C_SETUP_TARGET) $(ARGS); \
+		fi; \
+	fi
+
+# Shorthand for parallel network setup with sudo
+netsetup-fast: build-c
+	@$(MAKE) netsetup-sudo ARGS="-p $(ARGS)"

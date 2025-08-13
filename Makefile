@@ -20,6 +20,11 @@ WRAPPER_BIN := netns_reader
 # Global environment variables
 export PYTHONDONTWRITEBYTECODE := 1
 
+# Auto-detect web user based on system type
+# Check for www-data (Debian/Ubuntu) first, then apache (RHEL/CentOS/Fedora)
+WEB_USER := $(shell if id www-data >/dev/null 2>&1; then echo "www-data"; elif id apache >/dev/null 2>&1; then echo "apache"; else echo "apache"; fi)
+WEB_GROUP := $(WEB_USER)
+
 # Python modules required by the project
 REQUIRED_MODULES := json sys argparse ipaddress os glob typing subprocess re difflib matplotlib numpy
 
@@ -503,7 +508,7 @@ show-sudoers:
 	@echo "---------------------------------------------------"
 	@cat etc/sudoers.d/traceroute-simulator-namespaces
 	@echo ""
-	@echo "2. Web Interface (for apache - optional):"
+	@echo "2. Web Interface (for $(WEB_USER) - optional):"
 	@echo "---------------------------------------------------"
 	@cat web/config/tsimsh-sudoers
 	@echo ""
@@ -562,6 +567,20 @@ netsetup:
 	@if [ "$$(id -u)" != "0" ]; then \
 		echo "Error: netsetup requires root privileges"; \
 		echo "Please run: sudo -E make netsetup"; \
+		exit 1; \
+	fi
+	@echo "Ensuring /var/opt/traceroute-simulator directory exists with proper permissions..."
+	@mkdir -p /var/opt/traceroute-simulator
+	@chgrp tsim-users /var/opt/traceroute-simulator 2>/dev/null || true
+	@chmod 2775 /var/opt/traceroute-simulator
+	@env TRACEROUTE_SIMULATOR_RAW_FACTS="$(TRACEROUTE_SIMULATOR_RAW_FACTS)" $(PYTHON) $(PYTHON_OPTIONS) src/simulators/batch_command_generator.py --clean --create $(ARGS)
+
+# Setup network namespace simulation using serial/sequential mode (slow, old method)
+# Usage: sudo -E make netsetup-serial ARGS="[--limit pattern] [--verify]"
+netsetup-serial:
+	@if [ "$$(id -u)" != "0" ]; then \
+		echo "Error: netsetup-serial requires root privileges"; \
+		echo "Please run: sudo -E make netsetup-serial"; \
 		exit 1; \
 	fi
 	@echo "Ensuring /var/opt/traceroute-simulator directory exists with proper permissions..."
@@ -708,6 +727,16 @@ netclean:
 	@if [ "$$(id -u)" != "0" ]; then \
 		echo "Error: netclean requires root privileges"; \
 		echo "Please run: sudo -E make netclean"; \
+		exit 1; \
+	fi
+	@$(PYTHON) $(PYTHON_OPTIONS) src/simulators/batch_command_generator.py --clean $(ARGS)
+
+# Clean up network namespaces using serial/sequential mode (slow, old method)
+# Usage: sudo -E make netclean-serial ARGS="[--force] [--limit pattern]"
+netclean-serial:
+	@if [ "$$(id -u)" != "0" ]; then \
+		echo "Error: netclean-serial requires root privileges"; \
+		echo "Please run: sudo -E make netclean-serial"; \
 		exit 1; \
 	fi
 	@$(PYTHON) $(PYTHON_OPTIONS) src/simulators/network_namespace_cleanup.py $(ARGS)
@@ -1046,7 +1075,7 @@ netnsclean:
 		exit 1; \
 	fi
 	@$(PYTHON) $(PYTHON_OPTIONS) src/utils/host_cleanup.py $(ARGS)
-	@$(PYTHON) $(PYTHON_OPTIONS) src/simulators/network_namespace_cleanup.py $(ARGS)
+	@$(PYTHON) $(PYTHON_OPTIONS) src/simulators/batch_command_generator.py --clean $(ARGS)
 
 # Check if we're running in a git repository (for future enhancements)
 .git-check:
@@ -1411,6 +1440,8 @@ list-package:
 install-web:
 	@echo "Installing web service files..."
 	@echo "========================================"
+	@echo "Detected web user: $(WEB_USER)"
+	@echo ""
 	@if [ -z "$(WEB_ROOT)" ]; then \
 		echo "Error: WEB_ROOT not specified"; \
 		echo "Usage: make install-web WEB_ROOT=/var/www/traceroute-web"; \
@@ -1479,11 +1510,11 @@ install-web:
 	# Set permissions
 	@echo "Setting permissions..."
 	@if [ "$$(id -u)" = "0" ]; then \
-		echo "Setting ownership to apache..."; \
-		chown -R apache:apache "$(WEB_ROOT)"; \
+		echo "Setting ownership to $(WEB_USER):$(WEB_GROUP)..."; \
+		chown -R $(WEB_USER):$(WEB_GROUP) "$(WEB_ROOT)"; \
 	else \
-		echo "Warning: Not running as root, cannot set apache ownership"; \
-		echo "You may need to run: sudo chown -R apache:apache $(WEB_ROOT)"; \
+		echo "Warning: Not running as root, cannot set $(WEB_USER) ownership"; \
+		echo "You may need to run: sudo chown -R $(WEB_USER):$(WEB_GROUP) $(WEB_ROOT)"; \
 	fi
 	@chmod 750 "$(WEB_ROOT)/data"
 	@chmod 750 "$(WEB_ROOT)/logs"
@@ -1499,7 +1530,7 @@ install-web:
 	@echo "      sudo cp etc/sudoers.d/traceroute-simulator-namespaces /etc/sudoers.d/"
 	@echo "      sudo chmod 0440 /etc/sudoers.d/traceroute-simulator-namespaces"
 	@echo "      sudo groupadd -f tsim-users"
-	@echo "      sudo usermod -a -G tsim-users apache"
+	@echo "      sudo usermod -a -G tsim-users $(WEB_USER)"
 	@echo "      sudo usermod -a -G tsim-users $(USER)"
 	@echo ""
 	@echo "   b) For web interface (if needed):"
@@ -1507,7 +1538,7 @@ install-web:
 	@echo "      sudo chmod 0440 /etc/sudoers.d/tsimsh-web"
 	@echo ""
 	@echo "2. Create an initial user:"
-	@echo "   cd $(WEB_ROOT) && sudo -u apache ./scripts/create_user.sh"
+	@echo "   cd $(WEB_ROOT) && sudo -u $(WEB_USER) ./scripts/create_user.sh"
 	@echo ""
 	@echo "3. Configure Apache:"
 	@echo "   sudo cp $(WEB_ROOT)/conf/apache-site.conf.template /etc/apache2/sites-available/traceroute-web.conf"
@@ -1516,7 +1547,7 @@ install-web:
 	@echo "   sudo systemctl reload apache2"
 	@echo ""
 	@echo "4. Set up cron jobs:"
-	@echo "   sudo -u apache crontab -e"
+	@echo "   sudo -u $(WEB_USER) crontab -e"
 	@echo "   Add entries from $(WEB_ROOT)/conf/crontab.template"
 	@echo ""
 	@echo "5. Create SSL certificate (for testing):"

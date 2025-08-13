@@ -1313,7 +1313,9 @@ Type 'set' to see all variables.
         self.poutput("  test          - Test network connectivity")
         
         self.poutput("\nSETUP OPTIONS (batch mode):")
-        self.poutput("  --verify              Verify setup after creation")
+        self.poutput("  --create              Create the network setup")
+        self.poutput("  --clean               Clean existing setup")
+        self.poutput("  --verify              Verify network setup")
         self.poutput("  --keep-batch-files    Keep batch files for debugging")
         self.poutput("  -v, --verbose         Increase verbosity")
         
@@ -1345,7 +1347,12 @@ Type 'set' to see all variables.
         
         self.poutput("\nEXAMPLES:")
         self.poutput("\n  Setup network simulation (batch mode):")
-        self.poutput("    network setup")
+        self.poutput("    network setup --create")
+        self.poutput("    network setup --clean --create")
+        self.poutput("    network setup --clean --create --verify")
+        
+        self.poutput("\n  Verify existing setup:")
+        self.poutput("    network setup --verify")
         
         self.poutput("\n  Setup network simulation (serial mode):")
         self.poutput("    network setup-serial")

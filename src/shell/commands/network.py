@@ -140,7 +140,7 @@ class NetworkCommands(BaseCommandHandler):
         
         # Complete with available options based on subcommand
         if subcommand == 'setup':
-            options = ['--verify', '--keep-batch-files', '--verbose', '-v']
+            options = ['--create', '--clean', '--verify', '--keep-batch-files', '--verbose', '-v']
         elif subcommand == 'setup-serial':
             options = ['--limit', '-l', '--verify', '--verbose', '-v']
         elif subcommand == 'status':
@@ -197,8 +197,12 @@ class NetworkCommands(BaseCommandHandler):
         """Setup network namespace simulation using batch command generator."""
         parser = argparse.ArgumentParser(prog='network setup',
                                        description='Setup network namespace simulation (batch mode)')
+        parser.add_argument('--create', action='store_true',
+                          help='Create the network setup')
+        parser.add_argument('--clean', action='store_true',
+                          help='Clean existing setup before creating')
         parser.add_argument('--verify', action='store_true',
-                          help='Verify setup after creation')
+                          help='Verify network setup')
         parser.add_argument('--keep-batch-files', action='store_true',
                           help='Keep batch files for debugging')
         parser.add_argument('--verbose', '-v', action='count', default=0,
@@ -209,20 +213,39 @@ class NetworkCommands(BaseCommandHandler):
         except SystemExit:
             return 1
         
+        # If no action specified, show help
+        if not parsed_args.create and not parsed_args.clean and not parsed_args.verify:
+            parser.print_help()
+            return 1
+        
         # Check if facts directory exists
         if not self.check_facts_directory():
             return 1
         
+        # Build description of what we're doing
+        actions = []
+        if parsed_args.clean:
+            actions.append("clean")
+        if parsed_args.create:
+            actions.append("create")
+        if parsed_args.verify:
+            actions.append("verify")
         
-        self.info("Setting up network namespace simulation (batch mode)...")
+        self.info(f"Network namespace operation: {', '.join(actions)}")
         
         # Run the batch command generator script
         script_path = self.get_script_path('src/simulators/batch_command_generator.py')
         if not self.check_script_exists(script_path):
             return 1
         
-        # Build command arguments - always clean and create
-        cmd_args = ['--clean', '--create']
+        # Build command arguments based on what user wants
+        cmd_args = []
+        
+        if parsed_args.clean:
+            cmd_args.append('--clean')
+        
+        if parsed_args.create:
+            cmd_args.append('--create')
         
         if parsed_args.verify:
             cmd_args.append('--verify')
@@ -237,10 +260,11 @@ class NetworkCommands(BaseCommandHandler):
         returncode = self.run_script_with_output(script_path, cmd_args, use_sudo=False)
         
         if returncode == 0:
-            self.success("Network namespace setup completed successfully")
-            self.info("Use 'network status' to check the setup")
+            self.success("Network operation completed successfully")
+            if parsed_args.create:
+                self.info("Use 'network status' to check the setup")
         else:
-            self.error("Network setup failed")
+            self.error("Network operation failed")
         
         return returncode
     

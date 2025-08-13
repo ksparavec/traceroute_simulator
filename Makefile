@@ -573,7 +573,7 @@ netsetup:
 	@mkdir -p /var/opt/traceroute-simulator
 	@chgrp tsim-users /var/opt/traceroute-simulator 2>/dev/null || true
 	@chmod 2775 /var/opt/traceroute-simulator
-	@env TRACEROUTE_SIMULATOR_RAW_FACTS="$(TRACEROUTE_SIMULATOR_RAW_FACTS)" $(PYTHON) $(PYTHON_OPTIONS) src/simulators/batch_command_generator.py --clean --create $(ARGS)
+	@env TRACEROUTE_SIMULATOR_RAW_FACTS="$(TRACEROUTE_SIMULATOR_RAW_FACTS)" $(PYTHON) $(PYTHON_OPTIONS) src/simulators/batch_command_generator.py --clean --create --verify $(ARGS)
 
 # Setup network namespace simulation using serial/sequential mode (slow, old method)
 # Usage: sudo -E make netsetup-serial ARGS="[--limit pattern] [--verify]"

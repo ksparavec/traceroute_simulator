@@ -13,9 +13,98 @@
 # 2. Configuration file values
 # 3. Hard-coded defaults
 
+# System configuration
+system:
+  # Unix group for file ownership and permissions
+  # Members of this group can access simulator files and shared memory segments
+  unix_group: tsim-users
+  
+  # File permissions (octal strings)
+  file_permissions: "0664"  # rw-rw-r--
+  directory_permissions: "0775"  # rwxrwxr-x
+
+# Logging configuration
+logging:
+  # Base directory for log files (can be overridden by TRACEROUTE_SIMULATOR_LOGS)
+  base_directory: /var/log/tsim
+  
+  # Log format: json or text
+  format: json
+  
+  # Log levels: DEBUG, INFO, WARNING, ERROR, CRITICAL
+  # File logging level (logs everything at this level and above to file)
+  file_level: DEBUG
+  
+  # Console logging level based on verbosity
+  # Maps verbosity levels to log levels
+  console_levels:
+    0: CRITICAL  # -v0 or no -v: Only critical errors
+    1: WARNING   # -v: Warnings and errors
+    2: INFO      # -vv: Info, warnings, and errors  
+    3: DEBUG     # -vvv: Everything including debug
+  
+  # Default log level (when no verbosity specified)
+  default_level: 0
+  
+  # Batch command generator specific settings
+  batch_generator:
+    # Log file name pattern (supports strftime format)
+    log_file_pattern: "batch_generator_%Y%m%d_%H%M%S.json"
+    # Whether to log all command executions
+    log_commands: true
+    # Whether to log command outputs (stdout/stderr)
+    log_outputs: true
+    # Maximum output size to log per command (bytes)
+    max_output_size: 10000
+  
+  # Log compression settings
+  compress: false
+  compression_format: xz
+  compression_level: 9
+  
+  # Session log structure
+  session_logs:
+    network_setup: true
+    host_operations: true
+    service_manager: true
+
+# Shared memory configuration
+shared_memory:
+  # Registry sizes in bytes
+  registries:
+    routers:
+      size: 2097152     # 2MB
+      persist: true
+    interfaces:
+      size: 4194304     # 4MB
+      persist: true
+    bridges:
+      size: 2097152     # 2MB
+      persist: true
+    hosts:
+      size: 1048576     # 1MB
+      persist: true
+  
+  # Batch command segments
+  batch_segments:
+    # Maximum size for batch command segments
+    max_size: 10485760  # 10MB
+    # Cleanup policy: manual, on_exit, never
+    cleanup_policy: manual
+
+# Network setup configuration
+network_setup:
+  # Hidden infrastructure namespace
+  hidden_namespace: tsim-hidden
+  
+  # Performance optimization
+  batch_processing:
+    enabled: true
+    parallel_limit: 50  # Max parallel operations per batch
+
 # Output configuration  
 verbose: false                                  # Enable verbose output (-v flag)
-verbose_level: 1                               # Verbosity level (1=basic, 2=detailed)
+verbose_level: 0                               # Verbosity level (0=critical only, 1=warnings, 2=info, 3=debug)
 quiet: false                                   # Quiet mode (no output, exit codes only)
 json_output: false                             # Output results in JSON format
 
@@ -25,12 +114,4 @@ enable_reverse_trace: true                     # Enable reverse path tracing whe
 
 # Network discovery (required for reverse path tracing)
 controller_ip: "127.0.0.1"                            # Ansible controller IP (required for reverse tracing)
-
-# Registry files for network simulation state
-registry_files:
-  hosts: "/var/opt/traceroute-simulator/traceroute_hosts_registry.json"        # Host namespace registry
-  routers: "/var/opt/traceroute-simulator/traceroute_routers_registry.json"    # Router/host name to code mappings
-  interfaces: "/var/opt/traceroute-simulator/traceroute_interfaces_registry.json"  # Interface name to code mappings
-  bridges: "/var/opt/traceroute-simulator/traceroute_bridges_registry.json"    # Bridge and connection registry
-  services: "/var/opt/traceroute-simulator/traceroute_services_registry.json"  # Network services registry
 

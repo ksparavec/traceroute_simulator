@@ -34,14 +34,7 @@ def load_traceroute_config() -> Dict[str, Any]:
         'enable_reverse_trace': True,
         'force_forward_trace': False,
         'software_simulation_only': False,
-        'controller_ip': None,
-        'registry_files': {
-            'hosts': '/var/opt/traceroute-simulator/traceroute_hosts_registry.json',
-            'routers': '/var/opt/traceroute-simulator/traceroute_routers_registry.json',
-            'interfaces': '/var/opt/traceroute-simulator/traceroute_interfaces_registry.json',
-            'bridges': '/var/opt/traceroute-simulator/traceroute_bridges_registry.json',
-            'services': '/var/opt/traceroute-simulator/traceroute_services_registry.json'
-        }
+        'controller_ip': None
     }
     
     # Configuration file locations in order of precedence
@@ -66,12 +59,6 @@ def load_traceroute_config() -> Dict[str, Any]:
             try:
                 with open(config_file, 'r') as f:
                     file_config = yaml.safe_load(f) or {}
-                    
-                # Deep merge registry_files if present
-                if 'registry_files' in file_config and 'registry_files' in config:
-                    registry_files = config['registry_files'].copy()
-                    registry_files.update(file_config.get('registry_files', {}))
-                    file_config['registry_files'] = registry_files
                 
                 # Update config with file values
                 config.update(file_config)
@@ -84,32 +71,163 @@ def load_traceroute_config() -> Dict[str, Any]:
     return config
 
 
-def get_registry_paths() -> Dict[str, str]:
+
+
+def get_system_config() -> Dict[str, Any]:
     """
-    Get registry file paths from configuration.
+    Get system configuration settings.
     
     Returns:
-        Dictionary with keys: 'hosts', 'routers', 'interfaces', 'bridges', 'services'
+        Dictionary with system configuration including:
+        - unix_group: Group name for file ownership
+        - file_permissions: Octal permissions for files
+        - directory_permissions: Octal permissions for directories
     """
     config = load_traceroute_config()
-    return config.get('registry_files', {
-        'hosts': '/var/opt/traceroute-simulator/traceroute_hosts_registry.json',
-        'routers': '/var/opt/traceroute-simulator/traceroute_routers_registry.json',
-        'interfaces': '/var/opt/traceroute-simulator/traceroute_interfaces_registry.json',
-        'bridges': '/var/opt/traceroute-simulator/traceroute_bridges_registry.json',
-        'services': '/var/opt/traceroute-simulator/traceroute_services_registry.json'
-    })
-
-
-def get_registry_path(registry_type: str) -> Optional[str]:
-    """
-    Get a specific registry file path.
     
-    Args:
-        registry_type: One of 'hosts', 'routers', 'interfaces', 'bridges', 'services'
-        
-    Returns:
-        Path to the registry file, or None if not found
+    # Default system configuration
+    defaults = {
+        'unix_group': 'tsim-users',
+        'file_permissions': '0664',
+        'directory_permissions': '0775'
+    }
+    
+    # Get system config from loaded configuration
+    system_config = config.get('system', {})
+    
+    # Merge with defaults
+    result = defaults.copy()
+    result.update(system_config)
+    
+    return result
+
+
+def get_unix_group() -> Optional[str]:
     """
-    paths = get_registry_paths()
-    return paths.get(registry_type)
+    Get the configured Unix group for file ownership.
+    
+    Returns:
+        Group name or None if not configured
+    """
+    system_config = get_system_config()
+    return system_config.get('unix_group')
+
+
+def get_logging_config() -> Dict[str, Any]:
+    """
+    Get logging configuration settings.
+    
+    Returns:
+        Dictionary with logging configuration
+    """
+    config = load_traceroute_config()
+    
+    # Default logging configuration
+    defaults = {
+        'base_directory': '/var/log/tsim',
+        'compress': True,
+        'compression_format': 'xz',
+        'compression_level': 9,
+        'session_logs': {
+            'network_setup': True,
+            'host_operations': True,
+            'service_manager': True
+        }
+    }
+    
+    # Get logging config from loaded configuration
+    logging_config = config.get('logging', {})
+    
+    # Merge with defaults
+    result = defaults.copy()
+    result.update(logging_config)
+    
+    # Override with environment variable if set
+    log_dir = os.environ.get('TRACEROUTE_SIMULATOR_LOGS')
+    if log_dir:
+        result['base_directory'] = log_dir
+    
+    return result
+
+
+def get_shared_memory_config() -> Dict[str, Any]:
+    """
+    Get shared memory configuration settings.
+    
+    Returns:
+        Dictionary with shared memory configuration
+    """
+    config = load_traceroute_config()
+    
+    # Default shared memory configuration
+    defaults = {
+        'registries': {
+            'routers': {'size': 2097152, 'persist': True},
+            'interfaces': {'size': 4194304, 'persist': True},
+            'bridges': {'size': 2097152, 'persist': True},
+            'hosts': {'size': 1048576, 'persist': True}
+        },
+        'batch_segments': {
+            'max_size': 10485760,
+            'cleanup_policy': 'manual'
+        }
+    }
+    
+    # Get shared memory config from loaded configuration
+    shm_config = config.get('shared_memory', {})
+    
+    # Deep merge
+    result = defaults.copy()
+    if 'registries' in shm_config:
+        result['registries'].update(shm_config['registries'])
+    if 'batch_segments' in shm_config:
+        result['batch_segments'].update(shm_config['batch_segments'])
+    
+    return result
+
+
+def get_registry_paths() -> Dict[str, str]:
+    """
+    Get registry file paths in /dev/shm/tsim/.
+    
+    Returns:
+        Dictionary with registry paths
+    """
+    # All registries are now in shared memory at /dev/shm/tsim/
+    return {
+        'routers': '/dev/shm/tsim/router_registry.json',
+        'interfaces': '/dev/shm/tsim/interface_registry.json', 
+        'bridges': '/dev/shm/tsim/bridge_registry.json',
+        'hosts': '/dev/shm/tsim/host_registry.json'
+    }
+
+
+def get_network_setup_config() -> Dict[str, Any]:
+    """
+    Get network setup configuration settings.
+    
+    Returns:
+        Dictionary with network setup configuration
+    """
+    config = load_traceroute_config()
+    
+    # Default network setup configuration
+    defaults = {
+        'hidden_namespace': 'tsim-hidden',
+        'batch_processing': {
+            'enabled': True,
+            'parallel_limit': 50
+        }
+    }
+    
+    # Get network setup config from loaded configuration
+    network_config = config.get('network_setup', {})
+    
+    # Deep merge
+    result = defaults.copy()
+    if 'batch_processing' in network_config:
+        result['batch_processing'].update(network_config['batch_processing'])
+    if 'hidden_namespace' in network_config:
+        result['hidden_namespace'] = network_config['hidden_namespace']
+    
+    return result

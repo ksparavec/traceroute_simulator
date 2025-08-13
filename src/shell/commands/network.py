@@ -14,7 +14,7 @@ class NetworkCommands(BaseCommandHandler):
     
     def get_subcommand_names(self) -> list:
         """Get list of network subcommands."""
-        return ['setup', 'status', 'clean', 'test']
+        return ['setup', 'setup-serial', 'status', 'clean', 'clean-serial', 'test']
     
     def _handle_command_impl(self, args: str) -> Optional[int]:
         """Handle network command with subcommands."""
@@ -65,10 +65,14 @@ class NetworkCommands(BaseCommandHandler):
         
         if subcommand == 'setup':
             return self._setup_network(args)
+        elif subcommand == 'setup-serial':
+            return self._setup_network_serial(args)
         elif subcommand == 'status':
             return self._network_status(args)
         elif subcommand == 'clean':
             return self._clean_network(args)
+        elif subcommand == 'clean-serial':
+            return self._clean_network_serial(args)
         elif subcommand == 'test':
             return self._test_network(args)
         else:
@@ -136,6 +140,8 @@ class NetworkCommands(BaseCommandHandler):
         
         # Complete with available options based on subcommand
         if subcommand == 'setup':
+            options = ['--verify', '--keep-batch-files', '--verbose', '-v']
+        elif subcommand == 'setup-serial':
             options = ['--limit', '-l', '--verify', '--verbose', '-v']
         elif subcommand == 'status':
             # The function is a positional argument, not an option
@@ -145,6 +151,8 @@ class NetworkCommands(BaseCommandHandler):
                 return [f for f in functions if f.startswith(text)]
             options = ['--limit', '-l', '--json', '-j', '--verbose', '-v']
         elif subcommand == 'clean':
+            options = ['--verbose', '-v']
+        elif subcommand == 'clean-serial':
             options = ['--force', '-f', '--limit', '-l', '--verbose', '-v']
         elif subcommand == 'test':
             options = ['--source', '-s', '--destination', '-d', '--all', '--test-type', '--wait', '--verbose', '-v']
@@ -186,13 +194,13 @@ class NetworkCommands(BaseCommandHandler):
         return []
     
     def _setup_network(self, args: list) -> int:
-        """Setup network namespace simulation."""
+        """Setup network namespace simulation using batch command generator."""
         parser = argparse.ArgumentParser(prog='network setup',
-                                       description='Setup network namespace simulation')
-        parser.add_argument('--limit', '-l',
-                          help='Limit routers to create (supports glob patterns)')
+                                       description='Setup network namespace simulation (batch mode)')
         parser.add_argument('--verify', action='store_true',
                           help='Verify setup after creation')
+        parser.add_argument('--keep-batch-files', action='store_true',
+                          help='Keep batch files for debugging')
         parser.add_argument('--verbose', '-v', action='count', default=0,
                           help='Increase verbosity (-v, -vv, -vvv)')
         
@@ -206,21 +214,21 @@ class NetworkCommands(BaseCommandHandler):
             return 1
         
         
-        self.info("Setting up network namespace simulation...")
+        self.info("Setting up network namespace simulation (batch mode)...")
         
-        # Run the network setup script
-        script_path = self.get_script_path('src/simulators/network_namespace_setup.py')
+        # Run the batch command generator script
+        script_path = self.get_script_path('src/simulators/batch_command_generator.py')
         if not self.check_script_exists(script_path):
             return 1
         
-        # Build command arguments
-        cmd_args = []
-        
-        if parsed_args.limit:
-            cmd_args.extend(['--limit', parsed_args.limit])
+        # Build command arguments - always clean and create
+        cmd_args = ['--clean', '--create']
         
         if parsed_args.verify:
             cmd_args.append('--verify')
+        
+        if parsed_args.keep_batch_files:
+            cmd_args.append('--keep-batch-files')
         
         if parsed_args.verbose:
             cmd_args.append('-' + 'v' * parsed_args.verbose)
@@ -286,13 +294,9 @@ class NetworkCommands(BaseCommandHandler):
         return returncode
     
     def _clean_network(self, args: list) -> int:
-        """Clean up network namespaces."""
+        """Clean up network namespaces using batch command generator."""
         parser = argparse.ArgumentParser(prog='network clean',
-                                       description='Clean up network namespaces')
-        parser.add_argument('--force', '-f', action='store_true',
-                          help='Force removal of stuck resources')
-        parser.add_argument('--limit', '-l',
-                          help='Limit cleanup to specific routers (supports glob patterns)')
+                                       description='Clean up network namespaces (batch mode)')
         parser.add_argument('--verbose', '-v', action='count', default=0,
                           help='Increase verbosity (-v, -vv, -vvv)')
         
@@ -301,32 +305,25 @@ class NetworkCommands(BaseCommandHandler):
         except SystemExit:
             return 1
         
-        # Confirmation if not forced
-        if not parsed_args.force:
-            try:
-                response = input("Are you sure you want to clean up all network namespaces? (y/N): ")
-                if response.lower() not in ['y', 'yes']:
-                    self.info("Cleanup cancelled")
-                    return 0
-            except KeyboardInterrupt:
-                self.info("\nCleanup cancelled")
+        # Confirmation
+        try:
+            response = input("Are you sure you want to clean up all network namespaces? (y/N): ")
+            if response.lower() not in ['y', 'yes']:
+                self.info("Cleanup cancelled")
                 return 0
+        except KeyboardInterrupt:
+            self.info("\nCleanup cancelled")
+            return 0
         
-        self.info("Cleaning up network namespaces...")
+        self.info("Cleaning up network namespaces (batch mode)...")
         
-        # Run the network cleanup script
-        script_path = self.get_script_path('src/simulators/network_namespace_cleanup.py')
+        # Run the batch command generator script with --clean
+        script_path = self.get_script_path('src/simulators/batch_command_generator.py')
         if not self.check_script_exists(script_path):
             return 1
         
         # Build command arguments for cleanup
-        cmd_args = []
-        
-        if parsed_args.force:
-            cmd_args.append('--force')
-        
-        if parsed_args.limit:
-            cmd_args.extend(['--limit', parsed_args.limit])
+        cmd_args = ['--clean']
         
         if parsed_args.verbose:
             cmd_args.append('-' + 'v' * parsed_args.verbose)
@@ -403,5 +400,112 @@ class NetworkCommands(BaseCommandHandler):
             self.success("Network test completed successfully")
         else:
             self.error("Network test failed")
+        
+        return returncode
+    
+    def _setup_network_serial(self, args: list) -> int:
+        """Setup network namespace simulation using serial (old) method."""
+        parser = argparse.ArgumentParser(prog='network setup-serial',
+                                       description='Setup network namespace simulation (serial/sequential mode)')
+        parser.add_argument('--limit', '-l',
+                          help='Limit routers to create (supports glob patterns)')
+        parser.add_argument('--verify', action='store_true',
+                          help='Verify setup after creation')
+        parser.add_argument('--verbose', '-v', action='count', default=0,
+                          help='Increase verbosity (-v, -vv, -vvv)')
+        
+        try:
+            parsed_args = parser.parse_args(args)
+        except SystemExit:
+            return 1
+        
+        # Check if facts directory exists
+        if not self.check_facts_directory():
+            return 1
+        
+        
+        self.info("Setting up network namespace simulation (serial mode)...")
+        
+        # Run the old network setup script
+        script_path = self.get_script_path('src/simulators/network_namespace_setup.py')
+        if not self.check_script_exists(script_path):
+            return 1
+        
+        # Build command arguments
+        cmd_args = []
+        
+        if parsed_args.limit:
+            cmd_args.extend(['--limit', parsed_args.limit])
+        
+        if parsed_args.verify:
+            cmd_args.append('--verify')
+        
+        if parsed_args.verbose:
+            cmd_args.append('-' + 'v' * parsed_args.verbose)
+        
+        # Run script (sudo will be added by script for specific commands)
+        returncode = self.run_script_with_output(script_path, cmd_args, use_sudo=False)
+        
+        if returncode == 0:
+            self.success("Network namespace setup completed successfully")
+            self.info("Use 'network status' to check the setup")
+        else:
+            self.error("Network setup failed")
+        
+        return returncode
+    
+    def _clean_network_serial(self, args: list) -> int:
+        """Clean up network namespaces using serial (old) method."""
+        parser = argparse.ArgumentParser(prog='network clean-serial',
+                                       description='Clean up network namespaces (serial/sequential mode)')
+        parser.add_argument('--force', '-f', action='store_true',
+                          help='Force removal of stuck resources')
+        parser.add_argument('--limit', '-l',
+                          help='Limit cleanup to specific routers (supports glob patterns)')
+        parser.add_argument('--verbose', '-v', action='count', default=0,
+                          help='Increase verbosity (-v, -vv, -vvv)')
+        
+        try:
+            parsed_args = parser.parse_args(args)
+        except SystemExit:
+            return 1
+        
+        # Confirmation if not forced
+        if not parsed_args.force:
+            try:
+                response = input("Are you sure you want to clean up all network namespaces? (y/N): ")
+                if response.lower() not in ['y', 'yes']:
+                    self.info("Cleanup cancelled")
+                    return 0
+            except KeyboardInterrupt:
+                self.info("\nCleanup cancelled")
+                return 0
+        
+        self.info("Cleaning up network namespaces (serial mode)...")
+        
+        # Run the old network cleanup script
+        script_path = self.get_script_path('src/simulators/network_namespace_cleanup.py')
+        if not self.check_script_exists(script_path):
+            return 1
+        
+        # Build command arguments for cleanup
+        cmd_args = []
+        
+        if parsed_args.force:
+            cmd_args.append('--force')
+        
+        if parsed_args.limit:
+            cmd_args.extend(['--limit', parsed_args.limit])
+        
+        if parsed_args.verbose:
+            cmd_args.append('-' + 'v' * parsed_args.verbose)
+        
+        # Run script (sudo will be added by script for specific commands)
+        returncode = self.run_script_with_output(script_path, cmd_args, use_sudo=False)
+        
+        if returncode == 0:
+            self.success("Network cleanup completed successfully")
+        else:
+            self.error("Network cleanup failed")
         
         return returncode

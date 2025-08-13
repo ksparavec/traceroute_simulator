@@ -414,6 +414,7 @@ class CommandExecutor:
         """Generate PDF by calling generate_pdf.sh via curl"""
         import urllib.parse
         import urllib.request
+        import ssl
         
         pdf_file = os.path.join(self.data_dir, "pdfs", f"{run_id}_report.pdf")
         os.makedirs(os.path.dirname(pdf_file), exist_ok=True)
@@ -434,9 +435,14 @@ class CommandExecutor:
         
         self.logger.log_info(f"Calling PDF generation via: {url}")
         
+        # Create SSL context that doesn't verify certificates
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        
         try:
-            # Make the request
-            with urllib.request.urlopen(url, timeout=30) as response:
+            # Make the request with SSL context
+            with urllib.request.urlopen(url, timeout=30, context=ctx) as response:
                 if response.headers.get('content-type') == 'application/pdf':
                     # Save the PDF
                     pdf_data = response.read()

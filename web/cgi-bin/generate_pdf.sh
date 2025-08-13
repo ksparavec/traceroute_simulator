@@ -66,12 +66,31 @@ echo "Content-Type: application/pdf"
 echo "Content-Disposition: attachment; filename=\"$(basename "$OUTPUT_FILE")\""
 echo ""
 
+# Get venv_path from config.json
+CONFIG_FILE="/var/www/traceroute-web/conf/config.json"
+if [ -f "$CONFIG_FILE" ]; then
+    VENV_PATH=$(python3 -B -u -c "import json; config = json.load(open('$CONFIG_FILE')); print(config.get('venv_path', ''))")
+else
+    echo "Error: config.json not found" >&2
+    exit 1
+fi
+
 # Source the virtual environment
-source /home/fxsparavec/tsim/bin/activate
-log_timing "venv_activate" "Virtual environment activated"
+if [ -z "$VENV_PATH" ]; then
+    echo "Error: venv_path not configured in config.json" >&2
+    exit 1
+fi
+
+if [ -f "$VENV_PATH/bin/activate" ]; then
+    source "$VENV_PATH/bin/activate"
+    log_timing "venv_activate" "Virtual environment activated from $VENV_PATH"
+else
+    echo "Error: Virtual environment not found at $VENV_PATH" >&2
+    exit 1
+fi
 
 # Run Python to generate PDF
-/home/fxsparavec/tsim/bin/python -B -u << EOF
+python3 -B -u << EOF
 import sys
 import os
 import subprocess

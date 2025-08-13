@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test in Progress - Network Reachability</title>
+    <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Network Reachability Test in Progress</h1>
+        </header>
+        
+        <div class="progress-container">
+            <div class="progress-bar">
+                <div id="progressBar" class="progress-fill" style="width: 0%"></div>
+            </div>
+            <div class="progress-percentage">
+                <span id="progressPercent">0</span>%
+            </div>
+        </div>
+        
+        <div class="progress-status">
+            <p id="progressStatus">Initializing test...</p>
+            <p id="progressDetails" class="progress-details"></p>
+        </div>
+        
+        <div class="progress-log">
+            <div id="progressLog"></div>
+        </div>
+    </div>
+
+    <script>
+    // Get parameters from URL
+    const urlParams = new URLSearchParams(window.location.search);
+    const runId = urlParams.get('run_id');
+    const sessionId = urlParams.get('session');
+    
+    // Progress phase mapping
+    const PROGRESS_PHASES = {
+        'START': { percent: 5, status: 'Starting test', details: 'Initializing environment' },
+        'parse_args': { percent: 10, status: 'Validating input', details: 'Checking parameters' },
+        'PHASE1_path_discovery': { percent: 20, status: 'Discovering network path', details: 'Tracing route to destination' },
+        'PHASE2_host_list': { percent: 25, status: 'Setting up environment', details: 'Querying existing hosts' },
+        'PHASE2_host_setup_start': { percent: 30, status: 'Setting up hosts', details: 'Adding hosts to routers' },
+        'PHASE2_hosts_complete': { percent: 40, status: 'Hosts configured', details: 'Host setup complete' },
+        'PHASE2_service_check': { percent: 45, status: 'Checking services', details: 'Verifying existing services' },
+        'PHASE2_service_start': { percent: 50, status: 'Starting service', details: 'Initializing target service' },
+        'PHASE2_service_exists': { percent: 50, status: 'Service ready', details: 'Service already running' },
+        'PHASE2_complete': { percent: 55, status: 'Environment ready', details: 'Setup phase complete' },
+        'PHASE3_tests_start': { percent: 60, status: 'Running tests', details: 'Starting connectivity tests' },
+        'PHASE3_tests_complete': { percent: 75, status: 'Tests complete', details: 'All tests finished' },
+        'PHASE3_complete': { percent: 80, status: 'Reachability tested', details: 'Analysis complete' },
+        'PHASE4_packet_analysis': { percent: 85, status: 'Analyzing packets', details: 'Processing network data' },
+        'PHASE5_format_output': { percent: 90, status: 'Formatting results', details: 'Generating report' },
+        'TOTAL': { percent: 95, status: 'Finalizing', details: 'Test complete' },
+        'PDF_GENERATION': { percent: 98, status: 'Generating PDF', details: 'Creating report document' },
+        'COMPLETE': { percent: 100, status: 'Complete', details: 'Redirecting to results...' }
+    };
+    
+    function updateProgress(percent, status, details) {
+        document.getElementById('progressBar').style.width = percent + '%';
+        document.getElementById('progressPercent').textContent = percent;
+        document.getElementById('progressStatus').textContent = status;
+        document.getElementById('progressDetails').textContent = details || '';
+    }
+    
+    function addProgressLogEntry(message, type = 'info') {
+        const logDiv = document.getElementById('progressLog');
+        const entry = document.createElement('div');
+        entry.className = `progress-log-entry ${type}`;
+        entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+        logDiv.appendChild(entry);
+        logDiv.scrollTop = logDiv.scrollHeight;
+    }
+    
+    function checkProgress() {
+        if (!runId) {
+            addProgressLogEntry('Error: No run ID provided', 'error');
+            return;
+        }
+        
+        fetch(`/cgi-bin/get_progress.py?run_id=${runId}`)
+            .then(response => response.json())
+            .then(data => {
+                if (data.phase) {
+                    const phaseInfo = PROGRESS_PHASES[data.phase] || 
+                                    { percent: 50, status: data.phase, details: data.details || '' };
+                    
+                    updateProgress(phaseInfo.percent, phaseInfo.status, phaseInfo.details);
+                    
+                    if (data.message) {
+                        addProgressLogEntry(data.message, data.type || 'info');
+                    }
+                }
+                
+                if (data.complete) {
+                    updateProgress(100, 'Complete', 'Redirecting to results...');
+                    addProgressLogEntry('Test completed successfully!', 'success');
+                    
+                    // Redirect after a short delay
+                    setTimeout(() => {
+                        if (data.redirect_url) {
+                            window.location.href = data.redirect_url;
+                        } else if (runId && sessionId) {
+                            window.location.href = `/pdf_viewer_final.html?id=${runId}&session=${sessionId}`;
+                        }
+                    }, 1500);
+                } else if (data.error) {
+                    addProgressLogEntry(`Error: ${data.error}`, 'error');
+                    updateProgress(0, 'Error', 'Test failed');
+                } else {
+                    // Continue polling
+                    setTimeout(checkProgress, 5000); // Poll every 5 seconds
+                }
+            })
+            .catch(error => {
+                console.error('Progress polling error:', error);
+                // Continue polling on transient errors
+                setTimeout(checkProgress, 5000);
+            });
+    }
+    
+    // Start polling immediately
+    addProgressLogEntry(`Test initiated with ID: ${runId}`, 'success');
+    checkProgress();
+    </script>
+</body>
+</html>

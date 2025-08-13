@@ -319,12 +319,21 @@ class NetworkNamespaceStatus:
     def _is_system_namespace(self, namespace: str) -> bool:
         """Check if a namespace is a truly system namespace that should be hidden."""
         # Hide system namespaces and internal infrastructure
-        system_namespaces = {'default', 'hidden-mesh'}
+        # Get hidden namespace from configuration
+        from core.config_loader import get_network_setup_config
+        network_config = get_network_setup_config()
+        hidden_ns = network_config.get('hidden_namespace', 'tsim-hidden')
+        system_namespaces = {'default', hidden_ns}
         return namespace in system_namespaces
     
     def _get_namespace_type(self, namespace: str) -> str:
         """Determine the type of a namespace using JSON facts and host registry."""
-        if namespace == 'hidden-mesh':
+        # Get hidden namespace from configuration
+        from core.config_loader import get_network_setup_config
+        network_config = get_network_setup_config()
+        hidden_ns = network_config.get('hidden_namespace', 'tsim-hidden')
+        
+        if namespace == hidden_ns:
             return 'INFRASTRUCTURE'
         elif namespace in self.known_routers:
             return 'ROUTER'

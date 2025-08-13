@@ -131,8 +131,10 @@ class HiddenMeshNetworkSetup:
         # Enhanced bridge registry: bridge_name -> {"routers": {router_name: {interface, ipv4, state}}, "hosts": {host_name: {interface, ipv4, state}}}
         self.bridge_registry: Dict[str, Dict[str, Dict[str, Dict[str, str]]]] = {}
         
-        # Hidden infrastructure namespace
-        self.hidden_ns = "hidden-mesh"
+        # Hidden infrastructure namespace - get from config
+        from core.config_loader import get_network_setup_config
+        network_config = get_network_setup_config()
+        self.hidden_ns = network_config.get('hidden_namespace', 'tsim-hidden')
         
     def setup_logging(self):
         """Configure logging based on verbosity level."""
@@ -1223,7 +1225,7 @@ Then run netsetup again.
         # Check if namespace exists first
         result = self.run_cmd(f"ip netns list | grep -w {self.hidden_ns}", check=False)
         if result.returncode == 0:
-            # Namespace exists - this is OK for hidden-mesh as it's a known tsim namespace
+            # Namespace exists - this is OK for hidden namespace as it's a known tsim namespace
             if self.verbose > 0:
                 self.logger.warning(f"Hidden namespace {self.hidden_ns} already exists, continuing...")
             self.created_namespaces.add(self.hidden_ns)

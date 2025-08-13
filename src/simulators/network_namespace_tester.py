@@ -56,7 +56,8 @@ class SequentialConnectivityTester:
     """Sequential network connectivity testing for namespace simulation."""
     
     def __init__(self, verbose: int = 0, wait_time: float = 0.1, test_type: str = 'ping', json_output: bool = False,
-                 ping_count: int = 3, ping_timeout: float = 3.0, mtr_count: int = 10, mtr_timeout: float = 10.0):
+                 ping_count: int = 3, ping_timeout: float = 3.0, mtr_count: int = 10, mtr_timeout: float = 10.0,
+                 max_hops: int = 30):
         facts_path = os.environ.get('TRACEROUTE_SIMULATOR_FACTS')
         if not facts_path:
             raise EnvironmentError("TRACEROUTE_SIMULATOR_FACTS environment variable must be set")
@@ -69,6 +70,7 @@ class SequentialConnectivityTester:
         self.ping_timeout = ping_timeout
         self.mtr_count = mtr_count
         self.mtr_timeout = mtr_timeout
+        self.max_hops = max_hops
         
         self.routers = {}
         self.router_ips = {}  # router_name -> [list of IPs]
@@ -925,7 +927,7 @@ class SequentialConnectivityTester:
         
         return '\n'.join(formatted_lines)
     
-    def traceroute_test_from_namespace(self, namespace: str, source_ip: str, dest_ip: str, timeout: int = 10, count: int = 10) -> Tuple[bool, str, str]:
+    def traceroute_test_from_namespace(self, namespace: str, source_ip: str, dest_ip: str, timeout: int = 10, count: int = 10, max_hops: int = None) -> Tuple[bool, str, str]:
         """Perform traceroute test from a specific namespace using source IP to destination IP.
         
         Allows any destination IP - follows routing tables and gateway behavior.
@@ -942,9 +944,11 @@ class SequentialConnectivityTester:
             print(f"  timeout: {timeout}")
         
         # Run traceroute from specified namespace
-        # Use -I for ICMP, -n for no DNS, -w for wait time per hop, -s for source address
+        # Use -I for ICMP, -n for no DNS, -w for wait time per hop, -s for source address, -m for max hops
         # Note: count parameter is not used for traceroute as it doesn't have a probe count option
-        cmd = f"ip netns exec {namespace} traceroute -I -n -w {timeout} -s {source_ip} {dest_ip}"
+        # Use max_hops if provided, otherwise use self.max_hops (default 30)
+        hops = max_hops if max_hops is not None else self.max_hops
+        cmd = f"ip netns exec {namespace} traceroute -I -n -w {timeout} -m {hops} -s {source_ip} {dest_ip}"
         
         # Verbose level 2: show namespace command
         if self.verbose >= 2:
@@ -1266,7 +1270,7 @@ class SequentialConnectivityTester:
                 )
             
             if self.test_type == 'traceroute':
-                success, summary, full_output = self.traceroute_test_from_namespace(source_router, source_ip, dest_ip, self.mtr_timeout, self.mtr_count)
+                success, summary, full_output = self.traceroute_test_from_namespace(source_router, source_ip, dest_ip, self.mtr_timeout, self.mtr_count, self.max_hops)
                 router_passed, router_failed = self._handle_test_result(
                     source_router, dest_router, source_ip, dest_ip,
                     success, summary, full_output, 'TRACEROUTE',
@@ -1409,7 +1413,7 @@ class SequentialConnectivityTester:
                 elif self.test_type == 'mtr':
                     test_commands = [('mtr', f'mtr --report -c {self.mtr_count} -n -Z {int(self.mtr_timeout)} -G 1 {dest_ip}')]
                 elif self.test_type == 'traceroute':
-                    test_commands = [('traceroute', f'traceroute -I -n -w {int(self.mtr_timeout)} -s {source_ip} {dest_ip}')]
+                    test_commands = [('traceroute', f'traceroute -I -n -w {int(self.mtr_timeout)} -m {self.max_hops} -s {source_ip} {dest_ip}')]
                 else:  # both
                     test_commands = [
                         ('ping', f'ping -c {self.ping_count} -W {int(self.ping_timeout)} -i 1 -I {source_ip} {dest_ip}'),
@@ -1829,6 +1833,8 @@ Examples:
                        help='Number of packets/probes to send (default: 3 for ping, 10 for mtr)')
     parser.add_argument('--timeout', type=float, default=None,
                        help='Timeout in seconds (default: 3.0 for ping, 10.0 for mtr)')
+    parser.add_argument('--max-hops', type=int, default=30,
+                       help='Maximum number of hops for traceroute (default: 30)')
     
     args = parser.parse_args()
     
@@ -1884,7 +1890,8 @@ Examples:
             ping_count=ping_count,
             ping_timeout=ping_timeout,
             mtr_count=mtr_count,
-            mtr_timeout=mtr_timeout
+            mtr_timeout=mtr_timeout,
+            max_hops=args.max_hops
         )
         
         # Load facts

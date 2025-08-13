@@ -198,7 +198,8 @@ def get_registry_paths() -> Dict[str, str]:
         'routers': '/dev/shm/tsim/router_registry.json',
         'interfaces': '/dev/shm/tsim/interface_registry.json', 
         'bridges': '/dev/shm/tsim/bridge_registry.json',
-        'hosts': '/dev/shm/tsim/host_registry.json'
+        'hosts': '/dev/shm/tsim/host_registry.json',
+        'services': '/dev/shm/tsim/services_registry.json'
     }
 
 

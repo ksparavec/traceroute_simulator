@@ -94,6 +94,8 @@ class NetTestCommands(BaseCommandHandler):
                           help='Number of packets to send to each hop (default: 10)')
         parser.add_argument('-t', '--timeout', type=float, default=2.0,
                           help='Timeout in seconds for each packet (default: 2.0)')
+        parser.add_argument('-m', '--max-hops', type=int, default=30,
+                          help='Maximum number of hops to probe (default: 30)')
         parser.add_argument('-v', '--verbose', action='count', default=1,
                           help='Increase verbosity (default: show traceroute output)')
         
@@ -192,8 +194,12 @@ class NetTestCommands(BaseCommandHandler):
             if hasattr(args, 'timeout'):
                 if test_type == 'ping' and args.timeout != 2.0:
                     cmd_args.extend(['--timeout', str(args.timeout)])
-                elif test_type == 'mtr' and args.timeout != 2.0:
+                elif test_type in ['mtr', 'traceroute'] and args.timeout != 2.0:
                     cmd_args.extend(['--timeout', str(args.timeout)])
+            
+            # Add max-hops parameter for traceroute if specified and not default
+            if test_type == 'traceroute' and hasattr(args, 'max_hops') and args.max_hops != 30:
+                cmd_args.extend(['--max-hops', str(args.max_hops)])
             
             # Add JSON flag if requested
             if hasattr(args, 'json') and args.json:

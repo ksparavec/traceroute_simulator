@@ -52,6 +52,13 @@ log_timing() {
     [[ -n "$details" ]] && log_entry="$log_entry | $details"
     
     echo "$log_entry" >> "$log_file" 2>/dev/null || true
+    
+    # Also log to audit.log for AJAX progress tracking
+    local audit_file="/var/www/traceroute-web/logs/audit.log"
+    if [[ -w "$audit_file" ]] || [[ -w "$(dirname "$audit_file")" ]]; then
+        local audit_entry="{\"timestamp\":\"$timestamp\",\"run_id\":\"$session_id\",\"phase\":\"${checkpoint}\",\"message\":\"${details}\"}"
+        echo "$audit_entry" >> "$audit_file" 2>/dev/null || true
+    fi
 }
 
 # Input parameters
@@ -150,7 +157,7 @@ cleanup() {
     
     # Stop service first
     if [[ "$SERVICE_STARTED" == "true" ]]; then
-        tsimsh_exec "service stop --ip ${DEST_IP} --port ${DEST_PORT} --protocol ${PROTOCOL}" false || true
+        tsimsh_exec "service stop --ip ${DEST_IP} --port ${DEST_PORT} --protocol ${PROTOCOL}" false 2>/dev/null || true
     fi
     
     # Remove hosts we created
@@ -355,6 +362,12 @@ phase2_setup_environment() {
     
     start_step "environment_setup"
     
+    # Ensure /dev/shm/tsim directory exists with proper permissions
+    if [[ ! -d "/dev/shm/tsim" ]]; then
+        mkdir -p /dev/shm/tsim 2>/dev/null || true
+        chmod 1777 /dev/shm/tsim 2>/dev/null || true
+    fi
+    
     # Get list of existing hosts
     log_timing "PHASE2_host_list" "Query existing hosts"
     local host_list=$(tsimsh_exec "host list --json" true)
@@ -537,7 +550,7 @@ except:
     
     # Check if service is already running
     log_timing "PHASE2_service_check" "Checking existing services"
-    local service_list=$(tsimsh_exec "service list --json" true)
+    local service_list=$(tsimsh_exec "service list --json" true 2>/dev/null || echo '{"services": []}')
     local service_exists=false
     
     if [[ -n "$service_list" ]]; then
@@ -560,8 +573,8 @@ except:
     
     # Start destination service only if it doesn't exist
     if [[ "$service_exists" != "true" ]]; then
-        log_timing "PHASE2_service_start" "Starting service on ${DEST_IP}:${DEST_PORT}/${PROTOCOL}"
-        if tsimsh_exec "service start --ip ${DEST_IP} --port ${DEST_PORT} --protocol ${PROTOCOL}" false; then
+        log_timing "PHASE2_service_start" "Starting ${PROTOCOL} service on ${DEST_IP}:${DEST_PORT}"
+        if tsimsh_exec "service start --ip ${DEST_IP} --port ${DEST_PORT} --protocol ${PROTOCOL}" false 2>/dev/null; then
             SERVICE_STARTED=true
             JSON_RESULTS[service_started]="true"
         else
@@ -591,7 +604,7 @@ phase3_reachability_tests() {
     local mtr_file="${TEMP_DIR}/traceroute_result.json"
     local service_file="${TEMP_DIR}/service_result.json"
     
-    log_timing "PHASE3_tests_start" "Starting ping, traceroute, service tests in parallel"
+    log_timing "PHASE3_tests_start" "Starting connectivity tests: ping, traceroute, service"
     
     # Test 1: ICMP Ping (background)
     {
@@ -608,7 +621,7 @@ phase3_reachability_tests() {
     {
         start_step "traceroute"
         local traceroute_output
-        traceroute_output=$(tsimsh_exec "traceroute --source ${SOURCE_IP} --destination ${DEST_IP} --json" true)
+        traceroute_output=$(tsimsh_exec "traceroute --source ${SOURCE_IP} --destination ${DEST_IP} --timeout 1 --max-hops 2 --json" true)
         local traceroute_rc=$?
         echo "$traceroute_output" > "$mtr_file"
         echo $traceroute_rc > "${mtr_file}.rc"
@@ -630,7 +643,7 @@ phase3_reachability_tests() {
     wait $ping_pid
     wait $mtr_pid
     wait $service_pid
-    log_timing "PHASE3_tests_complete" "All parallel tests finished"
+    log_timing "PHASE3_tests_complete" "All connectivity tests completed"
     
     # Collect results
     local ping_result=$(cat "$ping_file" 2>/dev/null || echo "{}")

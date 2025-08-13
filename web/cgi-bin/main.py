@@ -6,6 +6,9 @@ import sys
 import json
 import hashlib
 import hmac
+import tempfile
+import subprocess
+import uuid
 from http import cookies
 
 sys.path.append(os.path.join(os.path.dirname(__file__), 'lib'))
@@ -110,8 +113,8 @@ def main():
         dest_port = validator.sanitize_input(dest_port)
         source_port = validator.sanitize_input(source_port) if source_port else None
         
-        # Start timing
-        timer = TimingLogger(session_id=session_id, operation_name="web_request")
+        # Generate run ID first
+        run_id = str(uuid.uuid4())
         
         # Save form data to session
         form_data = {
@@ -119,44 +122,136 @@ def main():
             'source_port': source_port,
             'dest_ip': dest_ip,
             'dest_port': dest_port,
-            'protocol': protocol
+            'protocol': protocol,
+            'user_trace_data': user_trace_data,
+            'run_id': run_id
         }
         session_mgr.update_form_data(session_id, form_data)
-        timer.log_operation("save_session")
         
-        # Execute commands
-        executor = CommandExecutor(config, logger)
+        # Start the test in background using a subprocess
+        worker_script = f"""#!/usr/bin/env -S python3 -B -u
+import sys
+import os
+sys.path.append('{os.path.join(os.path.dirname(__file__), 'lib')}')
+
+from executor import CommandExecutor
+from logger import AuditLogger
+from config import Config
+from timing import TimingLogger
+import json
+import hashlib
+import hmac
+
+# Set RUN_ID environment variable for reachability script
+os.environ['RUN_ID'] = '{run_id}'
+
+session_id = '{session_id}'
+username = '{session['username']}'
+source_ip = '{source_ip}'
+source_port = {f'"{source_port}"' if source_port else 'None'}
+dest_ip = '{dest_ip}'
+dest_port = '{dest_port}'
+protocol = '{protocol}'
+user_trace_data = '''{user_trace_data}'''
+run_id = '{run_id}'
+
+try:
+    config = Config()
+    logger = AuditLogger()
+    executor = CommandExecutor(config, logger)
+    timer = TimingLogger(session_id=session_id, operation_name="web_request")
+    
+    # Log progress
+    logger.log_info(json.dumps({{
+        "run_id": run_id,
+        "phase": "START",
+        "message": "Starting test execution"
+    }}))
+    
+    # 1. Execute trace
+    _, trace_file = executor.execute_trace(
+        session_id, username, source_ip, dest_ip, 
+        user_trace_data if user_trace_data else None
+    )
+    timer.log_operation("execute_trace", f"run_id={{run_id}}")
+    
+    logger.log_info(json.dumps({{
+        "run_id": run_id,
+        "phase": "TRACE_COMPLETE",
+        "message": "Trace execution completed"
+    }}))
+    
+    # 2. Execute reachability test (this will log its own progress)
+    results_file = executor.execute_reachability_test(
+        session_id, username, run_id, trace_file,
+        source_ip, source_port, dest_ip, dest_port, protocol
+    )
+    timer.log_operation("network_reachability_test.sh")
+    
+    logger.log_info(json.dumps({{
+        "run_id": run_id,
+        "phase": "PDF_GENERATION",
+        "message": "Generating PDF report"
+    }}))
+    
+    # 3. Generate PDF
+    pdf_file = executor.generate_pdf(
+        session_id, username, run_id, trace_file, results_file
+    )
+    timer.log_operation("generate_pdf.sh")
+    
+    # Generate shareable link
+    secret = config.config['secret_key']
+    token = hmac.new(
+        key=secret.encode(),
+        msg=run_id.encode(),
+        digestmod=hashlib.sha256
+    ).hexdigest()
+    base_url = os.environ.get('HTTP_HOST', 'localhost')
+    share_link = f"https://{{base_url}}/cgi-bin/pdf_viewer.py?id={{run_id}}&token={{token}}"
+    timer.log_operation("generate_share_link")
+    
+    timer.log_operation("prepare_redirect")
+    timer.finish("success")
+    
+    logger.log_info(json.dumps({{
+        "run_id": run_id,
+        "phase": "COMPLETE",
+        "message": "Test completed successfully",
+        "redirect_url": f"/pdf_viewer_final.html?id={{run_id}}&session={{session_id}}"
+    }}))
+    
+except Exception as e:
+    logger.log_error(
+        error_type=type(e).__name__,
+        error_msg=str(e),
+        session_id=session_id,
+        traceback=True
+    )
+    logger.log_info(json.dumps({{
+        "run_id": run_id,
+        "phase": "ERROR",
+        "error": str(e)
+    }}))
+"""
         
-        # 1. Execute trace
-        run_id, trace_file = executor.execute_trace(
-            session_id, session['username'], source_ip, dest_ip, user_trace_data
-        )
-        timer.log_operation("execute_trace", f"run_id={run_id}")
+        # Write worker script to temp file
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as f:
+            worker_file = f.name
+            f.write(worker_script)
         
-        # 2. Execute reachability test
-        results_file = executor.execute_reachability_test(
-            session_id, session['username'], run_id, trace_file,
-            source_ip, source_port, dest_ip, dest_port, protocol
-        )
-        timer.log_operation("network_reachability_test.sh")
+        # Make it executable
+        os.chmod(worker_file, 0o755)
         
-        # 3. Generate PDF
-        pdf_file = executor.generate_pdf(
-            session_id, session['username'], run_id, trace_file, results_file
-        )
-        timer.log_operation("generate_pdf.sh")
+        # Start the worker as a background process
+        subprocess.Popen([sys.executable, worker_file], 
+                        stdout=subprocess.DEVNULL, 
+                        stderr=subprocess.DEVNULL,
+                        start_new_session=True)
         
-        # Generate shareable link
-        share_link = generate_shareable_link(run_id, config)
-        timer.log_operation("generate_share_link")
-        
-        # Redirect and finish timing
-        timer.log_operation("prepare_redirect")
-        timer.finish("success")
-        
-        # Redirect to PDF viewer HTML page
+        # Redirect to progress page immediately
         print("Status: 302 Found")
-        print(f"Location: /pdf_viewer_final.html?id={run_id}&session={session_id}")
+        print(f"Location: /progress.html?run_id={run_id}&session={session_id}")
         print()
         
     except Exception as e:

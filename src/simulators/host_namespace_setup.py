@@ -64,6 +64,11 @@ class HostNamespaceManager:
         self.no_delay = no_delay
         self.setup_logging()
         
+        # Load network configuration
+        from core.config_loader import get_network_setup_config
+        self.network_config = get_network_setup_config()
+        self.hidden_ns = self.network_config.get('hidden_namespace', 'tsim-hidden')
+        
         # Network state
         self.routers: Dict[str, Dict] = {}
         self.router_subnets: Dict[str, List[tuple]] = {}  # subnet -> [(router, interface, ip)]
@@ -118,12 +123,51 @@ class HostNamespaceManager:
                 finally:
                     os.umask(old_umask)  # Restore original umask
                 self.semaphores[path] = sem
+                
+                # Set group ownership to tsim-users for the semaphore file
+                sem_file = f"/dev/shm/sem.{sem_name[1:]}"  # Remove leading / and add sem. prefix
+                try:
+                    import grp
+                    tsim_gid = grp.getgrnam('tsim-users').gr_gid
+                    os.chown(sem_file, -1, tsim_gid)  # -1 keeps current user, changes group
+                    self.logger.debug(f"Created semaphore {sem_name} with tsim-users group")
+                except (KeyError, OSError) as e:
+                    self.logger.warning(f"Could not set tsim-users group for {sem_file}: {e}")
+                    
                 self.logger.debug(f"Created semaphore {sem_name}")
             except posix_ipc.ExistentialError:
-                # Semaphore exists, open it
-                sem = posix_ipc.Semaphore(sem_name)
-                self.semaphores[path] = sem
-                self.logger.debug(f"Opened existing semaphore {sem_name}")
+                # Semaphore exists, try to open it
+                try:
+                    sem = posix_ipc.Semaphore(sem_name)
+                    self.semaphores[path] = sem
+                    self.logger.debug(f"Opened existing semaphore {sem_name}")
+                except posix_ipc.PermissionsError:
+                    # Permission denied - try to unlink and recreate
+                    # This can happen if semaphore was created by different user
+                    self.logger.warning(f"Permission denied for semaphore {sem_name}, attempting to recreate")
+                    try:
+                        # Try to unlink the old semaphore
+                        posix_ipc.unlink_semaphore(sem_name)
+                        # Create new semaphore with proper group permissions
+                        old_umask = os.umask(0)
+                        try:
+                            sem = posix_ipc.Semaphore(sem_name, flags=posix_ipc.O_CREX, initial_value=1, mode=0o660)
+                        finally:
+                            os.umask(old_umask)
+                        self.semaphores[path] = sem
+                        
+                        # Set group ownership to tsim-users
+                        sem_file = f"/dev/shm/sem.{sem_name[1:]}"
+                        try:
+                            import grp
+                            tsim_gid = grp.getgrnam('tsim-users').gr_gid
+                            os.chown(sem_file, -1, tsim_gid)
+                            self.logger.debug(f"Recreated semaphore {sem_name} with tsim-users group")
+                        except (KeyError, OSError) as e:
+                            self.logger.warning(f"Could not set tsim-users group for {sem_file}: {e}")
+                    except Exception as e:
+                        self.logger.error(f"Failed to recreate semaphore {sem_name}: {e}")
+                        raise
     
     def _atomic_json_operation(self, file_path: str, operation, timeout: float = 5.0):
         """Perform atomic JSON file operation using semaphore locking.
@@ -147,6 +191,16 @@ class HostNamespaceManager:
                     sem = posix_ipc.Semaphore(sem_name, flags=posix_ipc.O_CREX, initial_value=1, mode=0o660)
                 finally:
                     os.umask(old_umask)  # Restore original umask
+                
+                # Set group ownership to tsim-users
+                sem_file = f"/dev/shm/sem.{sem_name[1:]}"
+                try:
+                    import grp
+                    tsim_gid = grp.getgrnam('tsim-users').gr_gid
+                    os.chown(sem_file, -1, tsim_gid)
+                except (KeyError, OSError):
+                    pass  # Ignore if can't set group
+                    
             except posix_ipc.ExistentialError:
                 sem = posix_ipc.Semaphore(sem_name)
             self.semaphores[path_str] = sem
@@ -431,7 +485,7 @@ class HostNamespaceManager:
     def _is_tsim_managed_namespace(self, namespace_name: str) -> bool:
         """Check if a namespace is managed by tsim by checking registries."""
         # Check if it's the hidden namespace
-        if namespace_name == "hidden-mesh":
+        if namespace_name == self.hidden_ns:
             return True
         
         # Check router registry (hosts are stored here too)
@@ -958,8 +1012,8 @@ class HostNamespaceManager:
                         try:
                             router_network = ipaddress.IPv4Network(router_ip, strict=False)
                             if host_network.subnet_of(router_network) or host_network.overlaps(router_network):
-                                # Check if this bridge exists in hidden-mesh namespace
-                                result = self.run_command(f"ip netns exec hidden-mesh ip link show {bridge_name}", check=False)
+                                # Check if this bridge exists in {self.hidden_ns} namespace
+                                result = self.run_command(f"ip netns exec {self.hidden_ns} ip link show {bridge_name}", check=False)
                                 if result.returncode == 0:
                                     return bridge_name
                         except ipaddress.AddressValueError:
@@ -993,8 +1047,8 @@ class HostNamespaceManager:
                 if router_name in routers:
                     router_info = routers[router_name]
                     if router_info.get('interface') == interface_name:
-                        # Check if this bridge exists in hidden-mesh namespace
-                        result = self.run_command(f"ip netns exec hidden-mesh ip link show {bridge_name}", check=False)
+                        # Check if this bridge exists in {self.hidden_ns} namespace
+                        result = self.run_command(f"ip netns exec {self.hidden_ns} ip link show {bridge_name}", check=False)
                         if result.returncode == 0:
                             self.logger.info(f"Found existing bridge {bridge_name} for {router_name}:{interface_name}")
                             return bridge_name
@@ -1246,8 +1300,8 @@ class HostNamespaceManager:
                 
             peer_index = result.stdout.strip()
             
-            # Find the interface with this index in hidden-mesh
-            cmd = f"ip netns exec hidden-mesh ip link show | grep '^{peer_index}:' | cut -d: -f2 | cut -d@ -f1"
+            # Find the interface with this index in hidden namespace
+            cmd = f"ip netns exec {self.hidden_ns} ip link show | grep '^{peer_index}:' | cut -d: -f2 | cut -d@ -f1"
             result = self.run_command(cmd, check=False)
             if result.returncode == 0 and result.stdout.strip():
                 return result.stdout.strip()
@@ -1271,9 +1325,9 @@ class HostNamespaceManager:
                 self.logger.error(f"No shared mesh bridge found for IP {primary_ip}. Run netsetup first.")
                 return False, {}
         
-        self.logger.info(f"Connecting host {host_name} directly to mesh {mesh_bridge} in hidden-mesh namespace")
+        self.logger.info(f"Connecting host {host_name} directly to mesh {mesh_bridge} in {self.hidden_ns} namespace")
         
-        # Create veth pair: host namespace <-> specific mesh bridge in hidden-mesh namespace
+        # Create veth pair: host namespace <-> specific mesh bridge in {self.hidden_ns} namespace
         # Use shorter names to avoid Linux 15-character interface name limit
         import hashlib
         name_hash = hashlib.md5(host_name.encode()).hexdigest()[:6]
@@ -1286,16 +1340,16 @@ class HostNamespaceManager:
         self.run_command(f"ip link set {host_veth} netns {host_name}")
         self.run_command(f"ip link set {host_veth} name eth0", namespace=host_name)
         
-        # Move mesh side to hidden-mesh namespace and connect to specific mesh bridge
-        self.run_command(f"ip link set {mesh_veth} netns hidden-mesh")
+        # Move mesh side to {self.hidden_ns} namespace and connect to specific mesh bridge
+        self.run_command(f"ip link set {mesh_veth} netns {self.hidden_ns}")
         
         # Short delay after moving to namespace (reduced from 1.0s)
         import time
         if not self.no_delay:
             time.sleep(0.2)
         
-        self.run_command(f"ip link set {mesh_veth} master {mesh_bridge}", namespace="hidden-mesh")
-        self.run_command(f"ip link set {mesh_veth} up", namespace="hidden-mesh")
+        self.run_command(f"ip link set {mesh_veth} master {mesh_bridge}", namespace=self.hidden_ns)
+        self.run_command(f"ip link set {mesh_veth} up", namespace=self.hidden_ns)
         
         # Short delay after bringing interface up (reduced from 1.0s)
         if not self.no_delay:
@@ -1307,7 +1361,7 @@ class HostNamespaceManager:
         
         # First, flush all dynamic entries on the bridge by setting ageing to 0
         self.logger.info(f"Step 1: Flushing all learned entries on bridge {mesh_bridge}")
-        self.run_command(f"ip link set {mesh_bridge} type bridge ageing_time 0", namespace="hidden-mesh", check=False)
+        self.run_command(f"ip link set {mesh_bridge} type bridge ageing_time 0", namespace=self.hidden_ns, check=False)
         
         # Short delay to ensure ageing takes effect (reduced from 1.0s)
         if not self.no_delay:
@@ -1315,16 +1369,16 @@ class HostNamespaceManager:
         
         # Flush specific device entries
         self.logger.info(f"Step 2: Flushing FDB entries for {mesh_veth}")
-        self.run_command(f"bridge fdb flush dev {mesh_veth} master", namespace="hidden-mesh", check=False)
+        self.run_command(f"bridge fdb flush dev {mesh_veth} master", namespace=self.hidden_ns, check=False)
         
         # Also clean router interface if provided
         if router_mesh_iface:
             self.logger.info(f"Step 3: Flushing FDB entries for router interface {router_mesh_iface}")
-            self.run_command(f"bridge fdb flush dev {router_mesh_iface} master", namespace="hidden-mesh", check=False)
+            self.run_command(f"bridge fdb flush dev {router_mesh_iface} master", namespace=self.hidden_ns, check=False)
         
         # Flush all bridge FDB entries (more aggressive)
         self.logger.info(f"Step 4: Flushing all bridge FDB entries")
-        self.run_command(f"bridge fdb flush dev {mesh_bridge} self", namespace="hidden-mesh", check=False)
+        self.run_command(f"bridge fdb flush dev {mesh_bridge} self", namespace=self.hidden_ns, check=False)
         
         # Short delay before restoring ageing (reduced from 1.0s)
         if not self.no_delay:
@@ -1332,7 +1386,7 @@ class HostNamespaceManager:
         
         # Restore normal ageing time
         self.logger.info(f"Step 5: Restoring bridge ageing time")
-        self.run_command(f"ip link set {mesh_bridge} type bridge ageing_time 30000", namespace="hidden-mesh", check=False)
+        self.run_command(f"ip link set {mesh_bridge} type bridge ageing_time 30000", namespace=self.hidden_ns, check=False)
         
         # Short delay to ensure settings are applied (reduced from 1.0s)
         if not self.no_delay:
@@ -1884,21 +1938,21 @@ class HostNamespaceManager:
             connection_type = host_config.get("connection_type", "")
             
             if connection_type == "sim_mesh_direct":
-                # Remove mesh veth from hidden-mesh namespace (direct mesh connection)
+                # Remove mesh veth from {self.hidden_ns} namespace (direct mesh connection)
                 mesh_veth = host_config.get("mesh_veth")
                 if mesh_veth:
-                    self.run_command(f"ip netns exec hidden-mesh ip link del {mesh_veth}", check=False)
+                    self.run_command(f"ip netns exec {self.hidden_ns} ip link del {mesh_veth}", check=False)
             
             # Clean bridge FDB entries if we have the mesh bridge info
             mesh_bridge = host_config.get("mesh_bridge")
             if mesh_bridge:
                 self.logger.info(f"Cleaning bridge FDB entries for removed host on bridge {mesh_bridge}")
                 # Flush dynamic entries on the bridge
-                self.run_command(f"ip link set {mesh_bridge} type bridge ageing_time 0", namespace="hidden-mesh", check=False)
+                self.run_command(f"ip link set {mesh_bridge} type bridge ageing_time 0", namespace=self.hidden_ns, check=False)
                 import time
                 if not self.no_delay:
                     time.sleep(0.1)
-                self.run_command(f"ip link set {mesh_bridge} type bridge ageing_time 30000", namespace="hidden-mesh", check=False)
+                self.run_command(f"ip link set {mesh_bridge} type bridge ageing_time 30000", namespace=self.hidden_ns, check=False)
                     
         except Exception as e:
             self.logger.debug(f"Error during cleanup: {e}")

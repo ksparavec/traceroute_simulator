@@ -198,24 +198,62 @@ class ServiceManager:
         except posix_ipc.ExistentialError:
             # Create new semaphore if it doesn't exist
             try:
-                self.semaphore = posix_ipc.Semaphore(self.sem_name, posix_ipc.O_CREAT | posix_ipc.O_EXCL, initial_value=1, mode=0o660)
-                # Ensure correct permissions (override umask)
+                old_umask = os.umask(0)
+                try:
+                    self.semaphore = posix_ipc.Semaphore(self.sem_name, posix_ipc.O_CREAT | posix_ipc.O_EXCL, initial_value=1, mode=0o660)
+                finally:
+                    os.umask(old_umask)
+                    
+                # Set group ownership to tsim-users
                 sem_path = f"/dev/shm/sem.{self.sem_name[1:]}"  # Remove leading slash
-                if os.path.exists(sem_path):
-                    os.chmod(sem_path, 0o660)
+                try:
+                    import grp
+                    tsim_gid = grp.getgrnam('tsim-users').gr_gid
+                    os.chown(sem_path, -1, tsim_gid)
+                except (KeyError, OSError) as e:
+                    self.logger.warning(f"Could not set tsim-users group for {sem_path}: {e}")
+                    
             except posix_ipc.ExistentialError:
                 # Another process created it between our check and create
                 self.semaphore = posix_ipc.Semaphore(self.sem_name)
-        except Exception as e:
-            self.logger.warning(f"Failed to access semaphore, using fallback", error=str(e))
-            # Create with a unique name as fallback
-            unique_suffix = hashlib.md5(str(os.getpid()).encode()).hexdigest()[:8]
-            self.sem_name = f"/tsim_services_reg_{unique_suffix}"
-            self.semaphore = posix_ipc.Semaphore(self.sem_name, posix_ipc.O_CREAT, initial_value=1, mode=0o660)
-            # Ensure correct permissions (override umask)
-            sem_path = f"/dev/shm/sem.{self.sem_name[1:]}"  # Remove leading slash
-            if os.path.exists(sem_path):
-                os.chmod(sem_path, 0o660)
+        except posix_ipc.PermissionsError as e:
+            self.logger.warning(f"Permission denied for semaphore, attempting to recreate", error=str(e))
+            try:
+                # Try to unlink and recreate with proper permissions
+                posix_ipc.unlink_semaphore(self.sem_name)
+                old_umask = os.umask(0)
+                try:
+                    self.semaphore = posix_ipc.Semaphore(self.sem_name, posix_ipc.O_CREAT | posix_ipc.O_EXCL, initial_value=1, mode=0o660)
+                finally:
+                    os.umask(old_umask)
+                    
+                # Set group ownership to tsim-users
+                sem_path = f"/dev/shm/sem.{self.sem_name[1:]}"
+                try:
+                    import grp
+                    tsim_gid = grp.getgrnam('tsim-users').gr_gid
+                    os.chown(sem_path, -1, tsim_gid)
+                except (KeyError, OSError) as e:
+                    self.logger.warning(f"Could not set tsim-users group for {sem_path}: {e}")
+            except Exception as e2:
+                # Fallback to unique name
+                self.logger.warning(f"Failed to recreate semaphore, using fallback", error=str(e2))
+                unique_suffix = hashlib.md5(str(os.getpid()).encode()).hexdigest()[:8]
+                self.sem_name = f"/tsim_services_reg_{unique_suffix}"
+                old_umask = os.umask(0)
+                try:
+                    self.semaphore = posix_ipc.Semaphore(self.sem_name, posix_ipc.O_CREAT, initial_value=1, mode=0o660)
+                finally:
+                    os.umask(old_umask)
+                    
+                # Set group ownership to tsim-users
+                sem_path = f"/dev/shm/sem.{self.sem_name[1:]}"
+                try:
+                    import grp
+                    tsim_gid = grp.getgrnam('tsim-users').gr_gid
+                    os.chown(sem_path, -1, tsim_gid)
+                except (KeyError, OSError):
+                    pass
         
     def _load_registry(self) -> Dict[str, ServiceConfig]:
         """Load service registry from disk with atomic operations."""

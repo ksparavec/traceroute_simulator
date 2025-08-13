@@ -13,11 +13,12 @@
     "traceroute_simulator_raw_facts": "/home/sparavec/raw_facts",
     "traceroute_simulator_conf": "/var/www/traceroute-web/conf/traceroute_simulator.yaml",
     "tsimsh_verbose_level": 0,
+    "base_url": "http://localhost",
     "registry_files": {
-        "hosts": "/var/opt/traceroute-simulator/traceroute_hosts_registry.json",
-        "routers": "/var/opt/traceroute-simulator/traceroute_routers_registry.json",
-        "interfaces": "/var/opt/traceroute-simulator/traceroute_interfaces_registry.json",
-        "bridges": "/var/opt/traceroute-simulator/traceroute_bridges_registry.json",
-        "services": "/var/opt/traceroute-simulator/traceroute_services_registry.json"
+        "hosts": "/dev/shm/tsim/host_registry.json",
+        "routers": "/dev/shm/tsim/router_registry.json",
+        "interfaces": "/dev/shm/tsim/interface_registry.json",
+        "bridges": "/dev/shm/tsim/bridge_registry.json",
+        "services": "/dev/shm/tsim/services_registry.json"
     }
 }

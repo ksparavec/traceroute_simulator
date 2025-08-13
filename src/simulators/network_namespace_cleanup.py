@@ -70,6 +70,11 @@ class NetworkNamespaceCleanup:
         self.host_registry_file = Path(registry_paths['hosts'])
         self.bridge_registry_file = Path(registry_paths['bridges'])
         
+        # Get hidden namespace from config
+        from core.config_loader import get_network_setup_config
+        network_config = get_network_setup_config()
+        self.hidden_ns = network_config.get('hidden_namespace', 'tsim-hidden')
+        
         # Dynamic router discovery from existing registries and namespaces
         self.known_routers: Set[str] = set()
         self.load_router_names_from_registries_and_namespaces()
@@ -77,7 +82,7 @@ class NetworkNamespaceCleanup:
         # General namespace patterns (no hardcoded router names)
         self.namespace_patterns = [
             r'^netsim$',      # Simulation namespace
-            r'^hidden-mesh$', # Hidden mesh infrastructure namespace
+            f'^{re.escape(self.hidden_ns)}$', # Hidden mesh infrastructure namespace
             r'^pub[a-f0-9]+-.*$',  # Temporary public IP hosts (pub{hash}-{router})
             r'^p[a-f0-9]+$',  # Temporary public IP hosts (shortened format)
             r'^h[a-f0-9]+$',  # Temporary dynamic hosts
@@ -173,7 +178,7 @@ class NetworkNamespaceCleanup:
                         namespace = ns_match.group(1)
                         
                         # Skip infrastructure namespaces
-                        if namespace in ['hidden-mesh', 'netsim']:
+                        if namespace in [self.hidden_ns, 'netsim']:
                             continue
                         
                         # Skip generic patterns (these are handled by patterns, not router names)
@@ -797,7 +802,7 @@ class NetworkNamespaceCleanup:
                         
                         # Try to remove the actual bridge from hidden namespace
                         try:
-                            result = self.run_command(f"ip netns exec hidden-mesh ip link del {bridge_name}", check=False)
+                            result = self.run_command(f"ip netns exec {self.hidden_ns} ip link del {bridge_name}", check=False)
                             if result.returncode == 0:
                                 self.logger.debug(f"Removed unused bridge: {bridge_name}")
                             else:
@@ -1032,7 +1037,7 @@ Verbosity Levels:
 Safety:
   This script only removes namespaces matching simulation patterns:
   - Router namespaces discovered from facts files
-  - Simulation infrastructure namespaces (hidden-mesh, netsim)
+  - Simulation infrastructure namespaces (hidden namespace, netsim)
   - Test and temporary host namespaces
   
   System namespaces and other network configuration are preserved.

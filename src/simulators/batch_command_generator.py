@@ -395,7 +395,17 @@ class BatchCommandGenerator:
         self.create_batch(commands, "enable_router_loopback")
         
         # ========================================
-        # BATCH 3: Create hidden namespace
+        # BATCH 3: Enable IP forwarding in all routers
+        # From network_namespace_setup.py line 1516: self.run_cmd(f"sysctl -w net.ipv4.ip_forward=1", router_name)
+        # ========================================
+        commands = []
+        for router_name in router_names:
+            # Enable IP forwarding for routing between subnets
+            commands.append(f"netns exec {router_name} sysctl -w net.ipv4.ip_forward=1")
+        self.create_batch(commands, "enable_ip_forwarding")
+        
+        # ========================================
+        # BATCH 4: Create hidden namespace
         # From network_namespace_setup.py line 1233: self.run_cmd(f"ip netns add {self.hidden_ns}")
         # ========================================
         commands = []
@@ -403,15 +413,16 @@ class BatchCommandGenerator:
         self.create_batch(commands, "create_hidden")
         
         # ========================================
-        # BATCH 4: Enable loopback in hidden namespace
-        # From network_namespace_setup.py line 1253: self.run_cmd(f"ip link set lo up", self.hidden_ns)
+        # BATCH 5: Enable loopback and IP forwarding in hidden namespace
+        # From network_namespace_setup.py lines 1253-1254
         # ========================================
         commands = []
         commands.append(f"netns exec {self.hidden_ns} ip link set lo up")
-        self.create_batch(commands, "enable_hidden_loopback")
+        commands.append(f"netns exec {self.hidden_ns} sysctl -w net.ipv4.ip_forward=1")
+        self.create_batch(commands, "configure_hidden_namespace")
         
         # ========================================
-        # BATCH 5: Extract unique subnets and create bridges
+        # BATCH 6: Extract unique subnets and create bridges
         # From network_namespace_setup.py lines 1328-1329
         # ========================================
         import re
@@ -477,7 +488,7 @@ class BatchCommandGenerator:
         self.create_batch(commands, "create_bridges")
         
         # ========================================
-        # BATCH 6: Bring up all bridges
+        # BATCH 7: Bring up all bridges
         # From network_namespace_setup.py line 1329
         # ========================================
         commands = []
@@ -487,7 +498,7 @@ class BatchCommandGenerator:
         self.create_batch(commands, "enable_bridges")
         
         # ========================================
-        # BATCH 7: Create veth pairs directly in target namespaces with final names
+        # BATCH 8: Create veth pairs directly in target namespaces with final names
         # This avoids the need for separate move and rename operations
         # ========================================
         
@@ -561,7 +572,7 @@ class BatchCommandGenerator:
             self.create_batch(veth_commands, "create_veth_pairs_in_namespaces")
         
         # ========================================
-        # BATCH 8: Configure IP addresses
+        # BATCH 9: Configure IP addresses
         # ========================================
         ip_commands = []
         for info in veth_info:
@@ -576,7 +587,7 @@ class BatchCommandGenerator:
             self.create_batch(ip_commands, "configure_ip_addresses")
         
         # ========================================
-        # BATCH 9: Bring up router interfaces
+        # BATCH 10: Bring up router interfaces
         # ========================================
         up_commands = []
         for info in veth_info:
@@ -587,7 +598,7 @@ class BatchCommandGenerator:
             self.create_batch(up_commands, "bring_up_router_interfaces")
         
         # ========================================
-        # BATCH 10: Attach to bridges
+        # BATCH 11: Attach to bridges
         # ========================================
         bridge_commands = []
         for info in veth_info:
@@ -616,7 +627,7 @@ class BatchCommandGenerator:
             self.create_batch(bridge_commands, "attach_to_bridges")
         
         # ========================================
-        # BATCH 11: Bring up hidden interfaces
+        # BATCH 12: Bring up hidden interfaces
         # ========================================
         hidden_up_commands = []
         for info in veth_info:
@@ -627,7 +638,7 @@ class BatchCommandGenerator:
             self.create_batch(hidden_up_commands, "bring_up_hidden_interfaces")
         
         # ========================================
-        # BATCH 12: Apply policy routing rules FIRST
+        # BATCH 13: Apply policy routing rules FIRST
         # Rules must be created before routes in custom tables
         # ========================================
         rule_commands = []
@@ -700,7 +711,7 @@ class BatchCommandGenerator:
             self.create_batch(rule_commands, "apply_rules")
         
         # ========================================
-        # BATCH 13: Apply routes for each router
+        # BATCH 14: Apply routes for each router
         # Routes in custom tables need rules to be accessible
         # ========================================
         route_commands = []
@@ -950,7 +961,7 @@ class BatchCommandGenerator:
             self.create_batch(route_commands, "apply_routes")
         
         # ========================================
-        # BATCH 14: Apply ipsets
+        # BATCH 15: Apply ipsets
         # ========================================
         # Ipsets need to be created individually per router using ipset restore
         ipset_commands = []
@@ -1047,7 +1058,7 @@ class BatchCommandGenerator:
             self.create_batch(ipset_commands, "apply_ipsets")
         
         # ========================================
-        # BATCH 15: Apply iptables rules
+        # BATCH 16: Apply iptables rules
         # ========================================
         # Iptables rules need to be restored per router using iptables-restore
         iptables_commands = []

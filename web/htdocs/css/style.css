@@ -310,6 +310,112 @@ button[type="button"]:hover {
     justify-content: flex-end;
 }
 
+/* Progress bar styles */
+.progress-container {
+    display: flex;
+    align-items: center;
+    margin-bottom: 20px;
+    gap: 15px;
+}
+
+.progress-bar {
+    flex: 1;
+    height: 30px;
+    background-color: #e0e0e0;
+    border-radius: 15px;
+    overflow: hidden;
+    position: relative;
+}
+
+.progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #3498db, #2980b9);
+    border-radius: 15px;
+    transition: width 0.3s ease;
+    position: relative;
+    overflow: hidden;
+}
+
+.progress-fill::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    right: 0;
+    background: linear-gradient(
+        90deg,
+        transparent,
+        rgba(255, 255, 255, 0.3),
+        transparent
+    );
+    animation: shimmer 2s infinite;
+}
+
+@keyframes shimmer {
+    0% {
+        transform: translateX(-100%);
+    }
+    100% {
+        transform: translateX(100%);
+    }
+}
+
+.progress-percentage {
+    font-size: 18px;
+    font-weight: bold;
+    color: #2c3e50;
+    min-width: 50px;
+}
+
+.progress-status {
+    margin-bottom: 20px;
+}
+
+.progress-status p {
+    margin: 5px 0;
+}
+
+#progressStatus {
+    font-size: 16px;
+    font-weight: 600;
+    color: #2c3e50;
+}
+
+.progress-details {
+    font-size: 14px;
+    color: #7f8c8d;
+    font-style: italic;
+}
+
+.progress-log {
+    max-height: 200px;
+    overflow-y: auto;
+    border: 1px solid #e0e0e0;
+    border-radius: 4px;
+    padding: 10px;
+    background-color: #f8f9fa;
+    font-family: 'Courier New', monospace;
+    font-size: 12px;
+}
+
+.progress-log-entry {
+    margin: 2px 0;
+    color: #555;
+}
+
+.progress-log-entry.error {
+    color: #e74c3c;
+}
+
+.progress-log-entry.success {
+    color: #27ae60;
+}
+
+.progress-log-entry.info {
+    color: #3498db;
+}
+
 .error-message {
     color: #e74c3c;
     padding: 10px;

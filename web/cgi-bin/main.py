@@ -170,7 +170,7 @@ try:
     
     # 1. Execute trace
     _, trace_file = executor.execute_trace(
-        session_id, username, source_ip, dest_ip, 
+        session_id, username, run_id, source_ip, dest_ip, 
         user_trace_data if user_trace_data else None
     )
     timer.log_operation("execute_trace", f"run_id={{run_id}}")

@@ -320,9 +320,9 @@ button[type="button"]:hover {
 
 .progress-bar {
     flex: 1;
-    height: 30px;
-    background-color: #e0e0e0;
-    border-radius: 15px;
+    height: 40px;
+    background-color: #4a4a4a;  /* Much darker background */
+    border-radius: 20px;
     overflow: hidden;
     position: relative;
 }
@@ -330,7 +330,7 @@ button[type="button"]:hover {
 .progress-fill {
     height: 100%;
     background: linear-gradient(90deg, #3498db, #2980b9);
-    border-radius: 15px;
+    border-radius: 20px;
     transition: width 0.3s ease;
     position: relative;
     overflow: hidden;
@@ -365,7 +365,28 @@ button[type="button"]:hover {
     font-size: 18px;
     font-weight: bold;
     color: #2c3e50;
-    min-width: 50px;
+    min-width: 60px;
+    text-align: right;
+}
+
+.progress-text {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    font-weight: 600;
+    color: #fff;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.2);
+    z-index: 10;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    padding: 0 20px;
 }
 
 .progress-status {
@@ -389,19 +410,23 @@ button[type="button"]:hover {
 }
 
 .progress-log {
-    max-height: 200px;
+    min-height: 300px;
+    max-height: 400px;
     overflow-y: auto;
     border: 1px solid #e0e0e0;
     border-radius: 4px;
     padding: 10px;
     background-color: #f8f9fa;
     font-family: 'Courier New', monospace;
-    font-size: 12px;
+    font-size: 14px;
+    scroll-behavior: smooth;
 }
 
 .progress-log-entry {
-    margin: 2px 0;
+    margin: 5px 0;
+    padding: 3px 0;
     color: #555;
+    line-height: 1.4;
 }
 
 .progress-log-entry.error {

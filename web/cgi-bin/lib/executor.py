@@ -194,9 +194,8 @@ class CommandExecutor:
                 'duration': end_time - start_time
             }
     
-    def execute_trace(self, session_id, username, source_ip, dest_ip, user_trace_data=None):
+    def execute_trace(self, session_id, username, run_id, source_ip, dest_ip, user_trace_data=None):
         """Execute tsimsh trace command or use test trace file or user-provided trace data"""
-        run_id = str(uuid.uuid4())
         trace_file = os.path.join(self.data_dir, "traces", f"{run_id}_trace.json")
         
         # Ensure directory exists

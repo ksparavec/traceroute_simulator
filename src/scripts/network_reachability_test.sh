@@ -346,6 +346,8 @@ phase1_path_discovery() {
     # Store trace result
     JSON_RESULTS[trace_result]="$trace_result"
     
+    log_timing "PHASE1_complete" "Path discovery complete"
+    
     # Extract routers from trace
     local routers=$(extract_routers_from_trace "$trace_result")
     # Convert router list to JSON array using Python
@@ -446,6 +448,7 @@ except:
         local src_host_name="source-${router_index}"
         if [[ "$source_exists_for_router" == "false" ]]; then
             {
+                log_timing "host_add_source" "Adding source host ${src_host_name} to router ${router}"
                 if tsimsh_exec "host add --name ${src_host_name} --primary-ip ${SOURCE_IP}/24 --connect-to ${router} --no-delay" false; then
                     echo "${src_host_name}" > "${host_add_dir}/src_${router_index}_success"
                 else
@@ -468,6 +471,7 @@ except:
         local dst_host_name="destination-${router_index}"
         if [[ "$dest_exists_for_router" == "false" ]]; then
             {
+                log_timing "host_add_destination" "Adding destination host ${dst_host_name} to router ${router}"
                 if tsimsh_exec "host add --name ${dst_host_name} --primary-ip ${DEST_IP}/24 --connect-to ${router} --no-delay" false; then
                     echo "${dst_host_name}" > "${host_add_dir}/dst_${router_index}_success"
                 else
@@ -958,10 +962,12 @@ main() {
     # Always run packet analysis with appropriate mode
     phase4_packet_analysis "$routers" "$service_test_failed"
     log_timing "PHASE4_packet_analysis" "Packet count analysis complete"
+    log_timing "PHASE4_complete" "Packet analysis phase complete"
     
     # Compile and output results
     phase5_compile_results
     log_timing "PHASE5_format_output" "Results formatted"
+    log_timing "PHASE5_complete" "Formatting phase complete"
     
     # Log total time
     local total_time=$(python3 -B -u -c "import sys; print(f'{float(sys.argv[1]) - float(sys.argv[2]):7.2f}')" "$(python3 -B -u -c 'import time; print(time.time())')" "$SCRIPT_START_TIME")

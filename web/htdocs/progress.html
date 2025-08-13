@@ -13,19 +13,24 @@
         <div class="progress-container">
             <div class="progress-bar">
                 <div id="progressBar" class="progress-fill" style="width: 0%"></div>
+                <div class="progress-text" id="progressText">Initializing test...</div>
             </div>
             <div class="progress-percentage">
                 <span id="progressPercent">0</span>%
             </div>
         </div>
         
-        <div class="progress-status">
-            <p id="progressStatus">Initializing test...</p>
-            <p id="progressDetails" class="progress-details"></p>
-        </div>
-        
         <div class="progress-log">
             <div id="progressLog"></div>
+        </div>
+        
+        <div style="text-align: center; margin-top: 20px;">
+            <button id="showPdfButton" style="display: none; padding: 12px 24px; font-size: 16px; background-color: #3498db; color: white; border: none; border-radius: 4px; cursor: pointer; transition: background-color 0.3s;" 
+                    onmouseover="this.style.backgroundColor='#2980b9'" 
+                    onmouseout="this.style.backgroundColor='#3498db'" 
+                    disabled>
+                Show PDF Report
+            </button>
         </div>
     </div>
 
@@ -35,42 +40,121 @@
     const runId = urlParams.get('run_id');
     const sessionId = urlParams.get('session');
     
-    // Progress phase mapping
+    // More detailed progress phase mapping
     const PROGRESS_PHASES = {
-        'START': { percent: 5, status: 'Starting test', details: 'Initializing environment' },
-        'parse_args': { percent: 10, status: 'Validating input', details: 'Checking parameters' },
-        'PHASE1_path_discovery': { percent: 20, status: 'Discovering network path', details: 'Tracing route to destination' },
-        'PHASE2_host_list': { percent: 25, status: 'Setting up environment', details: 'Querying existing hosts' },
-        'PHASE2_host_setup_start': { percent: 30, status: 'Setting up hosts', details: 'Adding hosts to routers' },
-        'PHASE2_hosts_complete': { percent: 40, status: 'Hosts configured', details: 'Host setup complete' },
-        'PHASE2_service_check': { percent: 45, status: 'Checking services', details: 'Verifying existing services' },
-        'PHASE2_service_start': { percent: 50, status: 'Starting service', details: 'Initializing target service' },
-        'PHASE2_service_exists': { percent: 50, status: 'Service ready', details: 'Service already running' },
-        'PHASE2_complete': { percent: 55, status: 'Environment ready', details: 'Setup phase complete' },
-        'PHASE3_tests_start': { percent: 60, status: 'Running tests', details: 'Starting connectivity tests' },
-        'PHASE3_tests_complete': { percent: 75, status: 'Tests complete', details: 'All tests finished' },
-        'PHASE3_complete': { percent: 80, status: 'Reachability tested', details: 'Analysis complete' },
-        'PHASE4_packet_analysis': { percent: 85, status: 'Analyzing packets', details: 'Processing network data' },
-        'PHASE5_format_output': { percent: 90, status: 'Formatting results', details: 'Generating report' },
-        'TOTAL': { percent: 95, status: 'Finalizing', details: 'Test complete' },
-        'PDF_GENERATION': { percent: 98, status: 'Generating PDF', details: 'Creating report document' },
-        'COMPLETE': { percent: 100, status: 'Complete', details: 'Redirecting to results...' }
+        'START': 2,
+        'parse_args': 5,
+        'PHASE1_path_discovery': 8,
+        'PHASE1_complete': 12,
+        'PHASE2_host_list': 15,
+        'PHASE2_host_setup_start': 18,
+        'host_add_source': 22,
+        'host_add_destination': 26,
+        'PHASE2_hosts_complete': 30,
+        'PHASE2_service_check': 33,
+        'PHASE2_service_start': 36,
+        'PHASE2_service_exists': 36,
+        'PHASE2_complete': 40,
+        'PHASE3_tests_start': 45,
+        'ping': 50,
+        'traceroute': 55,
+        'service_test': 60,
+        'PHASE3_tests_complete': 65,
+        'PHASE3_complete': 70,
+        'PHASE4_packet_analysis': 75,
+        'PHASE4_complete': 80,
+        'PHASE5_format_output': 85,
+        'PHASE5_complete': 88,
+        'TOTAL': 92,  // Reachability test total time
+        // PDF generation phases (from timing log)
+        'PDF_GEN_PARSE_START': 93,
+        'PDF_GEN_parse_params': 94,
+        'PDF_GEN_validate_params': 95,
+        'PDF_GEN_venv_activate': 96,
+        'PDF_GEN_visualize_reachability.py': 97,
+        'PDF_GEN_TOTAL': 98,
+        // Web request phases
+        'web_request_network_reachability_test.sh': 90,
+        'web_request_generate_pdf.sh': 98,
+        'web_request_generate_share_link': 99,
+        'web_request_prepare_redirect': 99,
+        'web_request_TOTAL': 99,
+        // Main completion phases
+        'PDF_GENERATION': 95,
+        'PDF_COMPLETE': 98,
+        'COMPLETE': 100
     };
     
-    function updateProgress(percent, status, details) {
-        document.getElementById('progressBar').style.width = percent + '%';
-        document.getElementById('progressPercent').textContent = percent;
-        document.getElementById('progressStatus').textContent = status;
-        document.getElementById('progressDetails').textContent = details || '';
+    // Track progress
+    let currentProgress = 0;
+    let processedPhases = new Set();
+    let firstCheckDone = false;
+    let pdfRedirectUrl = null;
+    let lastMilestoneMessage = 'Initializing...';  // Keep track of last milestone
+    
+    function updateProgress(percent, status) {
+        // Always move forward, never backward
+        if (percent > currentProgress) {
+            currentProgress = percent;
+            document.getElementById('progressBar').style.width = percent + '%';
+            document.getElementById('progressPercent').textContent = Math.round(percent);
+        }
+        
+        // Only update text if status is provided
+        if (status !== null && status !== undefined) {
+            document.getElementById('progressText').textContent = status;
+        }
     }
     
     function addProgressLogEntry(message, type = 'info') {
         const logDiv = document.getElementById('progressLog');
         const entry = document.createElement('div');
         entry.className = `progress-log-entry ${type}`;
-        entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+        const timestamp = new Date().toLocaleTimeString();
+        entry.textContent = `[${timestamp}] ${message}`;
         logDiv.appendChild(entry);
         logDiv.scrollTop = logDiv.scrollHeight;
+    }
+    
+    function getPhaseStatus(phase) {
+        // Generate human-readable status from phase name
+        const statusMap = {
+            'START': 'Starting test',
+            'parse_args': 'Validating parameters',
+            'PHASE1_path_discovery': 'Discovering network path',
+            'PHASE1_complete': 'Path discovery complete',
+            'PHASE2_host_list': 'Checking existing hosts',
+            'PHASE2_host_setup_start': 'Setting up test hosts',
+            'host_add_source': 'Adding source host',
+            'host_add_destination': 'Adding destination host',
+            'PHASE2_hosts_complete': 'Hosts configured',
+            'PHASE2_service_check': 'Checking services',
+            'PHASE2_service_start': 'Starting service',
+            'PHASE2_service_exists': 'Service ready',
+            'PHASE2_complete': 'Environment ready',
+            'PHASE3_tests_start': 'Starting connectivity tests',
+            'ping': 'Running ping test',
+            'traceroute': 'Running traceroute',
+            'service_test': 'Testing service',
+            'PHASE3_tests_complete': 'Tests completed',
+            'PHASE3_complete': 'Test analysis complete',
+            'PHASE4_packet_analysis': 'Analyzing packets',
+            'PHASE4_complete': 'Packet analysis complete',
+            'PHASE5_format_output': 'Formatting results',
+            'PHASE5_complete': 'Report ready',
+            'TOTAL': 'Reachability test complete',
+            'PDF_GEN_PARSE_START': 'Starting PDF generation',
+            'PDF_GEN_parse_params': 'Processing parameters',
+            'PDF_GEN_validate_params': 'Validating parameters',
+            'PDF_GEN_venv_activate': 'Activating environment',
+            'PDF_GEN_visualize_reachability.py': 'Generating PDF report',
+            'PDF_GEN_TOTAL': 'PDF generation complete',
+            'PDF_GENERATION': 'Generating PDF report',
+            'PDF_COMPLETE': 'PDF ready',
+            'COMPLETE': 'Test complete!'
+        };
+        
+        return statusMap[phase] || phase.replace(/_/g, ' ');
     }
     
     function checkProgress() {
@@ -79,50 +163,126 @@
             return;
         }
         
-        fetch(`/cgi-bin/get_progress.py?run_id=${runId}`)
+        fetch(`/cgi-bin/get_progress.py?run_id=${runId}&session=${sessionId}`)
             .then(response => response.json())
             .then(data => {
-                if (data.phase) {
-                    const phaseInfo = PROGRESS_PHASES[data.phase] || 
-                                    { percent: 50, status: data.phase, details: data.details || '' };
-                    
-                    updateProgress(phaseInfo.percent, phaseInfo.status, phaseInfo.details);
-                    
-                    if (data.message) {
-                        addProgressLogEntry(data.message, data.type || 'info');
+                // Debug logging - but suppress "No entries found" for the first 3 seconds
+                if (data.debug_error) {
+                    if (!firstCheckDone && data.debug_error.includes('No entries found')) {
+                        // Suppress this error for initial checks
+                        console.log('Waiting for test to start...');
+                    } else {
+                        console.error('Progress tracking error:', data.debug_error);
+                        addProgressLogEntry('Debug: ' + data.debug_error, 'error');
                     }
                 }
+                firstCheckDone = true;
                 
+                if (data.all_phases && data.all_phases.length > 0) {
+                    console.log('Received phases:', data.all_phases);
+                } else if (firstCheckDone) {
+                    console.log('No phases received yet. Run ID:', runId);
+                }
+                
+                // Process all phases that have been seen
+                if (data.all_phases && data.all_phases.length > 0) {
+                    data.all_phases.forEach(phaseInfo => {
+                        // Handle both old format (string) and new format (object)
+                        const phase = typeof phaseInfo === 'string' ? phaseInfo : phaseInfo.phase;
+                        const details = typeof phaseInfo === 'object' ? phaseInfo.details : '';
+                        
+                        // Phases are already filtered on server side
+                        
+                        const phaseKey = `${phase}|${details}`; // Unique key including details
+                        if (!processedPhases.has(phaseKey)) {
+                            processedPhases.add(phaseKey);
+                            
+                            // Get progress percentage for this phase
+                            const percent = PROGRESS_PHASES[phase];
+                            if (percent !== undefined) {
+                                // Show only 6 important milestone messages
+                                let messageToShow = null;
+                                
+                                // 1. Path discovery completed with number of routers
+                                if (phase === 'PHASE1_path_discovery' && details.includes('routers')) {
+                                    messageToShow = `Path discovery completed: ${details}`;
+                                }
+                                // 2. All Hosts have been added
+                                else if (phase === 'PHASE2_hosts_complete' && details) {
+                                    messageToShow = `Hosts configured: ${details}`;
+                                }
+                                // 3. Service added
+                                else if (phase === 'PHASE2_service_start' && details) {
+                                    messageToShow = `Service started: ${details}`;
+                                }
+                                // 4. All Tests completed
+                                else if (phase === 'PHASE3_tests_complete' && details) {
+                                    messageToShow = `Connectivity tests completed`;
+                                }
+                                // 5. Firewall Rules Analysis completed
+                                else if (phase === 'PHASE4_complete' && details) {
+                                    messageToShow = `Firewall rules analysis completed`;
+                                }
+                                // 6. PDF generation completed (only show once for PDF_GEN_TOTAL)
+                                else if (phase === 'PDF_GEN_TOTAL') {
+                                    messageToShow = 'PDF generation completed';
+                                }
+                                
+                                // Update progress bar with the milestone message if we have one
+                                if (messageToShow) {
+                                    lastMilestoneMessage = messageToShow;  // Store the milestone
+                                    updateProgress(percent, messageToShow);
+                                    addProgressLogEntry(messageToShow, 'success');
+                                } else {
+                                    // For other phases, update progress but keep showing last milestone
+                                    updateProgress(percent, lastMilestoneMessage);
+                                }
+                            } else {
+                                // Log unmapped phases for debugging
+                                console.warn(`Unmapped phase: "${phase}" - skipping`);
+                            }
+                        }
+                    });
+                }
+                
+                // Handle current phase - but don't override milestone messages
+                // This is handled above in all_phases processing
+                
+                // Handle completion
                 if (data.complete) {
-                    updateProgress(100, 'Complete', 'Redirecting to results...');
+                    lastMilestoneMessage = 'Test complete!';
+                    updateProgress(100, lastMilestoneMessage);
                     addProgressLogEntry('Test completed successfully!', 'success');
                     
-                    // Redirect after a short delay
-                    setTimeout(() => {
-                        if (data.redirect_url) {
-                            window.location.href = data.redirect_url;
-                        } else if (runId && sessionId) {
-                            window.location.href = `/pdf_viewer_final.html?id=${runId}&session=${sessionId}`;
-                        }
-                    }, 1500);
-                } else if (data.error) {
-                    addProgressLogEntry(`Error: ${data.error}`, 'error');
-                    updateProgress(0, 'Error', 'Test failed');
-                } else {
-                    // Continue polling
-                    setTimeout(checkProgress, 5000); // Poll every 5 seconds
+                    // Clear the interval
+                    clearInterval(progressInterval);
+                    
+                    // Store redirect URL and show button
+                    if (data.redirect_url) {
+                        pdfRedirectUrl = data.redirect_url;
+                        const button = document.getElementById('showPdfButton');
+                        button.style.display = 'inline-block';
+                        button.disabled = false;
+                        button.onclick = function() {
+                            window.location.href = pdfRedirectUrl;
+                        };
+                        addProgressLogEntry('PDF report is ready. Click the button below to view it.', 'success');
+                    }
                 }
             })
             .catch(error => {
-                console.error('Progress polling error:', error);
-                // Continue polling on transient errors
-                setTimeout(checkProgress, 5000);
+                console.error('Progress check error:', error);
             });
     }
     
-    // Start polling immediately
-    addProgressLogEntry(`Test initiated with ID: ${runId}`, 'success');
-    checkProgress();
+    // Initial update
+    updateProgress(0, 'Initializing...');
+    
+    // Check progress every 2 seconds
+    const progressInterval = setInterval(checkProgress, 2000);
+    
+    // First check after 2 seconds (give test time to start)
+    setTimeout(checkProgress, 2000);
     </script>
 </body>
 </html>

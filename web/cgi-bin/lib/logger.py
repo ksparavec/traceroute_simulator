@@ -30,7 +30,7 @@ class AuditLogger:
                             start_time, end_time, return_code, output, error):
         """Log detailed command execution for debugging"""
         audit_entry = {
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now().isoformat(),
             "session_id": session_id,
             "username": username,
             "command": command,
@@ -51,7 +51,7 @@ class AuditLogger:
     def log_access(self, username, action, ip_address, user_agent):
         """Log user access"""
         access_entry = {
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now().isoformat(),
             "username": username,
             "action": action,
             "ip_address": ip_address,
@@ -63,7 +63,7 @@ class AuditLogger:
     def log_info(self, message):
         """Log informational message"""
         self.audit_logger.info(json.dumps({
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now().isoformat(),
             "type": "info",
             "message": message
         }))
@@ -71,7 +71,7 @@ class AuditLogger:
     def log_warning(self, message):
         """Log warning message"""
         self.audit_logger.warning(json.dumps({
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now().isoformat(),
             "type": "warning",
             "message": message
         }))

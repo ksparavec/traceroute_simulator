@@ -1,0 +1,14 @@
+#%PAM-1.0
+# PAM service for SSSD proxy target
+# This service is used by SSSD when proxy_pam_target = sssd-proxy-target
+# It uses unix authentication without conversation/prompts
+
+# Use unix authentication - let SSSD proxy handle password passing
+auth       required     pam_unix.so nullok nodelay
+
+# Account management
+account    required     pam_unix.so
+
+# No session or password needed for proxy
+session    required     pam_permit.so
+password   required     pam_permit.so

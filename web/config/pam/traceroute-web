@@ -1,0 +1,15 @@
+#%PAM-1.0
+# PAM configuration for traceroute-web with no delay on failure
+# This prevents hanging on wrong passwords
+
+# Authentication with nodelay to prevent hanging
+auth       required     pam_sss.so nodelay
+
+# Account management  
+account    required     pam_sss.so
+
+# Session management
+session    required     pam_sss.so
+
+# Password management
+password   required     pam_sss.so

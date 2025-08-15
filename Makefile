@@ -48,6 +48,7 @@ help:
 	@echo "uninstall-package - Uninstall tsim package (use USER=1 for user uninstall, BREAK_SYSTEM=1 to force)"
 	@echo "uninstall-pipx    - Uninstall tsim package from pipx"
 	@echo "list-package      - List all files included in the built package"
+	@echo "pam-config        - Configure PAM for SSSD authentication fallback (requires sudo)"
 	@echo "tsim              - Run traceroute simulator with command line arguments (e.g., make tsim ARGS='-s 10.1.1.1 -d 10.2.1.1')"
 	@echo "ifa               - Run iptables forward analyzer with command line arguments (e.g., make ifa ARGS='--router hq-gw -s 10.1.1.1 -d 8.8.8.8')"
 	@echo "netlog            - Analyze iptables logs with filtering and correlation (e.g., make netlog ARGS='--source 10.1.1.1 --dest 10.2.1.1')"
@@ -1554,3 +1555,31 @@ install-web:
 	@echo "   sudo openssl req -x509 -nodes -days 365 -newkey rsa:2048 \\"
 	@echo "     -keyout /etc/ssl/private/traceroute.key \\"
 	@echo "     -out /etc/ssl/certs/traceroute.crt"
+
+# PAM configuration for SSSD authentication
+pam-config:
+	@echo "Installing PAM configuration for SSSD authentication..."
+	@echo "======================================================="
+	@echo ""
+	
+	# Check for root privileges
+	@if [ "$$(id -u)" != "0" ]; then \
+		echo "Error: Root privileges required"; \
+		echo "Please run: sudo make pam-config"; \
+		exit 1; \
+	fi
+	
+	# Install PAM configuration file
+	@cp web/config/pam/traceroute-web /etc/pam.d/traceroute-web
+	@chmod 644 /etc/pam.d/traceroute-web
+	@echo "✓ PAM configuration installed to /etc/pam.d/traceroute-web"
+	
+	@echo ""
+	@echo "PAM configuration complete!"
+	@echo ""
+	@echo "Prerequisites:"
+	@echo "  - Python PAM module: sudo pip3 install --break-system-packages python-pam"
+	@echo "  - SSSD configured and running"
+	@echo "  - Web user in shadow group: sudo usermod -a -G shadow $(WEB_USER)"
+	@echo ""
+	@echo "SSSD users can now authenticate to the web application."

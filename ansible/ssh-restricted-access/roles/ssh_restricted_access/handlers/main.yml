@@ -1,0 +1,26 @@
+---
+# Handlers for ssh_restricted_access role
+
+- name: restart sshd
+  service:
+    name: "{{ sshd_service_name | default('sshd') }}"
+    state: restarted
+  listen: "restart ssh"
+
+- name: reload sshd
+  service:
+    name: "{{ sshd_service_name | default('sshd') }}"
+    state: reloaded
+  listen: "reload ssh"
+
+- name: validate sshd config
+  command: sshd -t
+  register: sshd_config_test
+  failed_when: sshd_config_test.rc != 0
+  listen: "validate ssh config"
+
+- name: restart rsyslog
+  service:
+    name: rsyslog
+    state: restarted
+  listen: "restart logging"

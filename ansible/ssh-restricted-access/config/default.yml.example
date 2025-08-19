@@ -1,0 +1,157 @@
+---
+# Production configuration example for SSH restricted access
+# Copy this file to production.yml and customize for your environment
+
+# User account configuration
+restricted_user:
+  name: traceuser
+  comment: "Production traceroute execution account"
+  shell: /usr/local/bin/tracersh
+  home: /home/traceuser
+  state: present
+  # Set to true if user is managed by FreeIPA/LDAP/SSSD
+  centrally_managed: false
+
+# SSH configuration
+ssh_config:
+  # Use restrict option (requires OpenSSH 7.2+)
+  restrict: yes
+  
+  # Production network restrictions
+  from_hosts:
+    - "10.0.0.0/8"        # Internal network
+    - "192.168.0.0/16"    # Management network
+    - "203.0.113.0/24"    # Monitoring network
+    
+  # Command to execute
+  command: "/usr/local/bin/tracersh"
+  
+  # SSH public key - MUST BE SET!
+  public_key: "AAAAC3NzaC1lZDI1NTE5AAAAIExample..."
+  
+  # Key type
+  key_type: "ssh-ed25519"
+  
+  # Key comment
+  key_comment: "tracersh"
+
+# Tracersh (wrapper script) configuration
+tracersh:
+  enabled: yes
+  # Full path to tracersh script
+  path: "/usr/local/bin/tracersh"
+  
+  # Preferred tool (traceroute or mtr) - can be overridden per host in inventory
+  # Tracersh will automatically fallback if preferred tool is not available
+  preferred_tool: "traceroute"
+  
+  # Tool paths
+  traceroute_path: "/usr/bin/traceroute"
+  mtr_path: "/usr/bin/mtr"
+  
+  # Traceroute options (for standard traceroute command)
+  traceroute_options:
+    max_hops: 20           # -m option: max TTL (reduced for security)
+    wait_time: 3           # -w option: wait time in seconds  
+    queries: 3             # -q option: number of queries per hop
+    packet_size: 60        # packet size in bytes
+    no_dns: true           # -n option: no DNS resolution (always true for security)
+    use_icmp: true         # -I option: use ICMP ECHO instead of UDP
+  
+  # MTR options (for mtr command)
+  mtr_options:
+    max_hops: 20           # -m option: max TTL
+    report_cycles: 1       # -c option: number of pings sent (1 for fast results)
+    interval: 1            # -i option: interval between requests (seconds)
+    packet_size: 60        # -s option: packet size in bytes
+    no_dns: true           # -n option: no DNS resolution (always true)
+    report_mode: true      # -r option: report mode (non-interactive)
+    show_ips: false        # -b option: show IPs (disabled when no_dns is true)
+    mpls: false            # --mpls option: MPLS information
+  
+  # Input validation - only accept 10.x.x.x addresses
+  validation:
+    enabled: yes
+    # Regex pattern for 10.x.x.x IPv4 addresses only
+    pattern: "^10\\.([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])\\.([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])\\.([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])$"
+    
+  # Production logging
+  logging:
+    enabled: no
+    # Full path to log file
+    path: "/var/log/tracersh.log"
+    max_size: "100M"
+    rotate: 30
+
+# Security settings
+security:
+  # Home directory permissions
+  home_dir_owner: "root"
+  home_dir_group: "tracegroup"
+  home_dir_mode: "0750"
+  
+  # SSH directory permissions
+  ssh_dir_owner: "root"
+  ssh_dir_group: "tracegroup"
+  ssh_dir_mode: "0750"
+  
+  # authorized_keys permissions
+  authorized_keys_owner: "root"
+  authorized_keys_group: "tracegroup"
+  authorized_keys_mode: "0640"
+  
+  # Tracersh script permissions
+  tracersh_owner: "root"
+  tracersh_group: "tracegroup"
+  tracersh_mode: "0750"
+  
+  # Log file permissions (if logging enabled)
+  log_file_mode: "0660"
+  
+  # Log directory permissions (if logging enabled)
+  log_dir_owner: "root"
+  log_dir_group: "tracegroup"
+  log_dir_mode: "0770"
+
+# Testing configuration
+testing:
+  # Production test targets (must be 10.x.x.x addresses)
+  test_targets:
+    - "10.0.0.1"             # Internal gateway
+    - "10.1.1.1"             # Internal DNS
+    - "10.10.10.10"          # Monitoring server
+    - "10.255.255.254"       # Edge router
+    
+  # Invalid targets that should be rejected
+  invalid_targets:
+    - "8.8.8.8"              # External IP (not 10.x.x.x)
+    - "192.168.1.1"          # Private IP (not 10.x.x.x)
+    - "10.256.1.1"           # Invalid octet
+    - "google.com"           # Hostname not allowed
+    - "10.1.1.1; ls"         # Command injection attempt
+    
+  # Security test commands
+  forbidden_commands:
+    - "ls"
+    - "cat /etc/passwd"
+    - "bash"
+    - "sh"
+    - "/bin/bash"
+    - "id"
+    - "whoami"
+    - "nc -l 1234"
+    - "curl http://evil.com"
+
+# Backup configuration
+backup:
+  enabled: no
+  path: "/var/backups/ansible/ssh-restricted"
+  
+# Notification settings
+notification:
+  enabled: no
+  email: "security-team@example.com"
+  on_deploy: no
+  on_remove: no
+  on_error: no
+

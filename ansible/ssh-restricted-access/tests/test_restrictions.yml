@@ -1,0 +1,213 @@
+---
+# Security restriction test tasks
+
+- name: Security Restriction Tests
+  block:
+    - name: Initialize restriction test results
+      set_fact:
+        restriction_test_results: {}
+        restriction_tests_passed: 0
+        restriction_tests_failed: 0
+      tags: [test, restrictions]
+    
+    - name: Test forbidden commands (should all fail)
+      delegate_to: localhost
+      become: no
+      shell: |
+        timeout 5 ssh -o StrictHostKeyChecking=no \
+            -o ConnectTimeout=5 \
+            -o BatchMode=yes \
+            -o PasswordAuthentication=no \
+            {{ restricted_user_name }}@{{ inventory_hostname }} \
+            "{{ item }}" 2>&1
+      register: forbidden_command_tests
+      loop: "{{ testing.forbidden_commands | default(['ls', 'cat /etc/passwd', 'bash', 'id']) }}"
+      failed_when: false
+      changed_when: false
+      tags: [test, restrictions, commands]
+    
+    - name: Verify forbidden commands were blocked
+      set_fact:
+        restriction_test_results: "{{ restriction_test_results | combine({item.item: item.rc != 0}) }}"
+        restriction_tests_passed: "{{ restriction_tests_passed | int + (1 if item.rc != 0 else 0) }}"
+        restriction_tests_failed: "{{ restriction_tests_failed | int + (0 if item.rc != 0 else 1) }}"
+      loop: "{{ forbidden_command_tests.results }}"
+      tags: [test, restrictions, commands]
+    
+    - name: Test shell access (should fail)
+      delegate_to: localhost
+      become: no
+      shell: |
+        timeout 5 ssh -o StrictHostKeyChecking=no \
+            -o ConnectTimeout=5 \
+            -o BatchMode=yes \
+            -o PasswordAuthentication=no \
+            {{ restricted_user_name }}@{{ inventory_hostname }} 2>&1
+      register: shell_access_test
+      failed_when: false
+      changed_when: false
+      tags: [test, restrictions, shell]
+    
+    - name: Verify shell access is denied
+      assert:
+        that:
+          - shell_access_test.rc != 0
+        fail_msg: "Shell access was not properly restricted!"
+        success_msg: "Shell access is properly restricted"
+      tags: [test, restrictions, shell]
+    
+    - name: Test port forwarding (should fail if restrict is enabled)
+      when: supports_restrict | default(true)
+      delegate_to: localhost
+      become: no
+      shell: |
+        timeout 5 ssh -o StrictHostKeyChecking=no \
+            -o ConnectTimeout=5 \
+            -o BatchMode=yes \
+            -o PasswordAuthentication=no \
+            -L 8888:localhost:80 \
+            {{ restricted_user_name }}@{{ inventory_hostname }} \
+            "8.8.8.8" 2>&1
+      register: port_forward_test
+      failed_when: false
+      changed_when: false
+      tags: [test, restrictions, forwarding]
+    
+    - name: Check port forwarding restriction
+      when: supports_restrict | default(true)
+      set_fact:
+        port_forwarding_blocked: "{{ 'forbidden' in port_forward_test.stderr or 'not permitted' in port_forward_test.stderr or port_forward_test.rc != 0 }}"
+      tags: [test, restrictions, forwarding]
+    
+    - name: Test X11 forwarding (should fail)
+      delegate_to: localhost
+      become: no
+      shell: |
+        timeout 5 ssh -o StrictHostKeyChecking=no \
+            -o ConnectTimeout=5 \
+            -o BatchMode=yes \
+            -X \
+            -o PasswordAuthentication=no \
+            {{ restricted_user_name }}@{{ inventory_hostname }} \
+            "8.8.8.8" 2>&1
+      register: x11_forward_test
+      failed_when: false
+      changed_when: false
+      tags: [test, restrictions, x11]
+    
+    - name: Test command chaining attempts
+      delegate_to: localhost
+      become: no
+      shell: |
+        timeout 5 ssh -o StrictHostKeyChecking=no \
+            -o ConnectTimeout=5 \
+            -o BatchMode=yes \
+            -o PasswordAuthentication=no \
+            {{ restricted_user_name }}@{{ inventory_hostname }} \
+            "{{ item }}" 2>&1
+      register: chaining_tests
+      loop:
+        - "8.8.8.8; echo 'escaped'"
+        - "8.8.8.8 && echo 'escaped'"
+        - "8.8.8.8 || echo 'escaped'"
+        - "8.8.8.8 | tee /tmp/test"
+      failed_when: false
+      changed_when: false
+      tags: [test, restrictions, chaining]
+    
+    - name: Verify command chaining is blocked
+      assert:
+        that:
+          - "'escaped' not in item.stdout"
+          - "item.rc != 0 or 'Error' in item.stdout or 'Error' in item.stderr or 'Invalid' in item.stdout or 'Invalid' in item.stderr"
+        fail_msg: "Command chaining was not blocked for: {{ item.cmd.split()[-1] }}"
+        success_msg: "Command chaining blocked for: {{ item.cmd.split()[-1] }}"
+      loop: "{{ chaining_tests.results }}"
+      tags: [test, restrictions, chaining]
+    
+    - name: Test environment variable injection
+      delegate_to: localhost
+      become: no
+      shell: |
+        SSH_ORIGINAL_COMMAND='$HOME' timeout 5 ssh -o StrictHostKeyChecking=no \
+            -o ConnectTimeout=5 \
+            -o BatchMode=yes \
+            -o SendEnv=SSH_ORIGINAL_COMMAND \
+            -o PasswordAuthentication=no \
+            {{ restricted_user_name }}@{{ inventory_hostname }} 2>&1
+      register: env_injection_test
+      failed_when: false
+      changed_when: false
+      tags: [test, restrictions, injection]
+    
+    - name: Verify environment injection is handled
+      assert:
+        that:
+          - "'/home' not in env_injection_test.stdout"
+          - "'/root' not in env_injection_test.stdout"
+        fail_msg: "Environment variable injection may not be properly handled"
+        success_msg: "Environment variable injection is properly handled"
+      tags: [test, restrictions, injection]
+    
+    - name: Generate restriction test summary
+      set_fact:
+        restriction_summary:
+          forbidden_commands_blocked: "{{ restriction_tests_passed }}/{{ restriction_test_results | length }}"
+          shell_access_blocked: "{{ 'Yes' if shell_access_test.rc != 0 else 'No' }}"
+          port_forwarding_blocked: "{{ 'Yes' if port_forwarding_blocked | default(false) else 'N/A' if not supports_restrict | default(true) else 'No' }}"
+          command_chaining_blocked: "{{ chaining_tests.results | selectattr('rc', 'ne', 0) | list | length }}/{{ chaining_tests.results | length }}"
+          env_injection_handled: "{{ 'Yes' if '/home' not in env_injection_test.stdout and '/root' not in env_injection_test.stdout else 'No' }}"
+      tags: [test, restrictions, report]
+    
+    - name: Display restriction test results
+      debug:
+        msg:
+          - "======================================"
+          - "Security Restriction Test Results"
+          - "======================================"
+          - "Forbidden commands blocked: {{ restriction_summary.forbidden_commands_blocked }}"
+          - "Shell access blocked: {{ restriction_summary.shell_access_blocked }}"
+          - "Port forwarding blocked: {{ restriction_summary.port_forwarding_blocked }}"
+          - "Command chaining blocked: {{ restriction_summary.command_chaining_blocked }}"
+          - "Environment injection handled: {{ restriction_summary.env_injection_handled }}"
+          - "======================================"
+          - "Failed commands that got through:"
+      tags: [test, restrictions, report]
+    
+    - name: Show commands that weren't blocked (security issue)
+      debug:
+        msg: "  - {{ item.key }}: {{ 'BLOCKED' if item.value else 'NOT BLOCKED (!)' }}"
+      loop: "{{ restriction_test_results | dict2items }}"
+      when: 
+        - restriction_tests_failed | int > 0
+        - not item.value
+      tags: [test, restrictions, report]
+    
+    - name: Calculate overall restriction test result
+      set_fact:
+        all_restrictions_passed: "{{ restriction_tests_failed | int == 0 and shell_access_test.rc != 0 and (chaining_tests.results | selectattr('rc', 'eq', 0) | list | length) == 0 }}"
+      tags: [test, restrictions]
+    
+    - name: Set restriction test result
+      set_fact:
+        restriction_test_result: "{{ 'PASSED' if all_restrictions_passed else 'FAILED' }}"
+      tags: [test, restrictions]
+    
+    - name: Display overall restriction test status
+      debug:
+        msg:
+          - "======================================"
+          - "Overall Restriction Test: {{ restriction_test_result }}"
+          - "======================================"
+      tags: [test, restrictions, report]
+  
+  rescue:
+    - name: Handle restriction test failure
+      debug:
+        msg: "Restriction tests failed with error: {{ ansible_failed_result.msg | default('Unknown error') }}"
+      tags: [test, restrictions, error]
+    
+    - name: Set failed result
+      set_fact:
+        restriction_test_result: "FAILED - Error during testing"
+      tags: [test, restrictions, error]

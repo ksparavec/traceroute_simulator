@@ -1,0 +1,120 @@
+---
+# Test playbook for SSH restricted access
+- name: Test SSH restricted access deployment
+  hosts: all
+  gather_facts: yes
+  become: no
+  
+  vars_files:
+    - "{{ config_file | default('config/default.yml') }}"
+    - roles/ssh_restricted_access/defaults/main.yml
+  
+  vars:
+    run_quick_test: false
+  
+  pre_tasks:
+    - name: Check if configuration file exists
+      stat:
+        path: "{{ config_file | default('config/default.yml') }}"
+      register: config_check
+      delegate_to: localhost
+      run_once: true
+
+    - name: Fail if configuration file is missing
+      fail:
+        msg: |
+          Configuration file not found: {{ config_file | default('config/default.yml') }}
+          
+          Please create your configuration file:
+          1. Copy the example: cp config/default.yml.example config/default.yml
+          2. Edit config/default.yml with your settings
+          3. Run this playbook again
+      when: not config_check.stat.exists
+      delegate_to: localhost
+      run_once: true
+  
+  tasks:
+    - name: Run quick connectivity test only
+      include_tasks: tests/test_connectivity.yml
+      when: run_quick_test | bool
+      tags: [quick]
+    
+    - name: Run full test suite
+      when: not run_quick_test | bool
+      block:
+        - name: Display test plan
+          debug:
+            msg:
+              - "======================================"
+              - "Starting SSH Restricted Access Tests"
+              - "======================================"
+              - "Target: {{ inventory_hostname }}"
+              - "User: {{ restricted_user.name }}"
+              - "Tests to run:"
+              - "  1. Connectivity tests"
+              - "  2. Command execution tests"
+              - "  3. Security restriction tests"
+              - "======================================"
+          tags: [always]
+        
+        - name: Run connectivity tests
+          include_tasks: tests/test_connectivity.yml
+          tags: [connectivity]
+        
+        - name: Run command execution tests
+          include_tasks: tests/test_commands.yml
+          tags: [commands]
+        
+        - name: Run security restriction tests
+          include_tasks: tests/test_restrictions.yml
+          tags: [restrictions]
+        
+        - name: Calculate overall test status
+          set_fact:
+            overall_test_status: >-
+              {%- if connectivity_test_result | default('') == 'PASSED' and 
+                     command_test_result | default('') == 'PASSED' and 
+                     restriction_test_result | default('') == 'PASSED' -%}
+                PASSED
+              {%- elif 'FAILED' in (connectivity_test_result | default('')) or 
+                       'FAILED' in (command_test_result | default('')) or 
+                       'FAILED' in (restriction_test_result | default('')) -%}
+                FAILED
+              {%- else -%}
+                UNKNOWN
+              {%- endif -%}
+          tags: [report]
+        
+        - name: Generate test report
+          set_fact:
+            test_report: |
+              ======================================
+              SSH Restricted Access Test Report
+              ======================================
+              Date: {{ ansible_date_time.iso8601 }}
+              Host: {{ inventory_hostname }}
+              User: {{ restricted_user.name }}
+              
+              Test Results:
+              -------------
+              Connectivity: {{ connectivity_test_result | default('Not run') }}
+              Command Execution: {{ command_test_result | default('Not run') }}
+              Security Restrictions: {{ restriction_test_result | default('Not run') }}
+              
+              Summary:
+              --------
+              Overall Status: {{ overall_test_status | default('UNKNOWN') }}
+              ======================================
+          tags: [report]
+        
+        - name: Display test report
+          debug:
+            msg: "{{ test_report.split('\n') }}"
+          tags: [report]
+        
+        - name: Save test report to file
+          copy:
+            content: "{{ test_report }}"
+            dest: "/tmp/ssh-restricted-test-{{ inventory_hostname }}-{{ ansible_date_time.epoch }}.txt"
+          delegate_to: localhost
+          tags: [report]

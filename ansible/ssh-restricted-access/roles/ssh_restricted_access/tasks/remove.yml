@@ -1,0 +1,100 @@
+---
+# Removal tasks for SSH restricted access
+
+- name: Check if user exists before removal
+  getent:
+    database: passwd
+    key: "{{ restricted_user_name }}"
+  register: user_check
+  failed_when: false
+  changed_when: false
+  tags: [remove]
+
+- name: Remove components if user exists
+  when: user_check.ansible_facts is defined and user_check.ansible_facts.getent_passwd is defined and restricted_user_name in user_check.ansible_facts.getent_passwd
+  block:
+    - name: Remove tracersh script
+      file:
+        path: "/usr/local/bin/tracersh"
+        state: absent
+      when: tracersh_enabled
+      become: yes
+      tags: [remove, tracersh]
+    
+    - name: Remove tracersh from /etc/shells
+      lineinfile:
+        path: /etc/shells
+        line: "/usr/local/bin/tracersh"
+        state: absent
+      when: tracersh_enabled
+      become: yes
+      tags: [remove, tracersh]
+    
+    - name: Remove tracersh script log file
+      file:
+        path: "{{ restricted_user_home }}/{{ tracersh_logging_path | default('log/tracersh.log') }}"
+        state: absent
+      when: 
+        - tracersh_enabled
+        - tracersh_logging_enabled
+      become: yes
+      tags: [remove, logging]
+    
+    - name: Remove log rotation configuration
+      file:
+        path: "/etc/logrotate.d/tracersh-{{ restricted_user.name }}"
+        state: absent
+      when:
+        - tracersh_enabled
+        - tracersh_logging_enabled
+      become: yes
+      tags: [remove, logging]
+    
+    - name: Remove immutable attribute from authorized_keys if set
+      command: chattr -i "{{ restricted_user_home }}/.ssh/authorized_keys"
+      ignore_errors: yes
+      become: yes
+      tags: [remove, security]
+    
+    - name: Remove user home directory
+      file:
+        path: "{{ restricted_user_home }}"
+        state: absent
+      become: yes
+      tags: [remove, user]
+    
+    - name: Remove restricted user account
+      user:
+        name: "{{ restricted_user_name }}"
+        state: absent
+        remove: yes
+        force: yes
+      become: yes
+      tags: [remove, user]
+    
+    - name: Verify user removal
+      getent:
+        database: passwd
+        key: "{{ restricted_user_name }}"
+      register: final_check
+      failed_when: false
+      changed_when: false
+      tags: [remove, verify]
+    
+    - name: Report removal status
+      debug:
+        msg: "User {{ restricted_user_name }} has been successfully removed"
+      when: final_check.rc != 0
+      tags: [remove, verify]
+    
+    - name: Warn if user still exists
+      debug:
+        msg: "WARNING: User {{ restricted_user_name }} still exists in the system"
+      when: final_check.rc == 0
+      tags: [remove, verify]
+
+- name: Report if user doesn't exist
+  debug:
+    msg: "User {{ restricted_user_name }} does not exist on this system"
+  when: user_check.ansible_facts is not defined or user_check.ansible_facts.getent_passwd is not defined or restricted_user_name not in user_check.ansible_facts.getent_passwd
+  tags: [remove]

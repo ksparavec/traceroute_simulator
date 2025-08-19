@@ -1,0 +1,379 @@
+#!/bin/bash
+# {{ ansible_managed | comment }}
+# tracersh - Traceroute Restricted Shell
+# Combined shell and wrapper script for restricted traceroute/mtr execution
+# This script serves as both:
+#   1. Login shell that blocks interactive access
+#   2. SSH forced command executor for traceroute/mtr
+# Outputs results in canonical CSV format for reverse path tracer
+# User: {{ restricted_user_name }}
+# Home: {{ user_home | default(restricted_user_home) }}
+# Preferred tool: {{ tracersh.preferred_tool | default('traceroute') }}
+
+# Check if this is being used as a login shell or SSH forced command
+if [ -z "$SSH_CLIENT" ]; then
+    # Local login attempt - deny
+    echo "This account is restricted to SSH access only."
+    exit 1
+elif [ -n "$SSH_TTY" ] && [ -z "$SSH_ORIGINAL_COMMAND" ]; then
+    # Interactive SSH session without forced command - deny
+    echo "This account is restricted to traceroute execution only."
+    exit 1
+elif [ -z "$SSH_ORIGINAL_COMMAND" ]; then
+    # SSH without command (shouldn't happen with command= in authorized_keys)
+    echo "This account is restricted to traceroute execution only."
+    exit 1
+fi
+
+# If we get here, we're in SSH with forced command - proceed with traceroute wrapper
+set -euo pipefail
+
+# Configuration
+readonly TRACEROUTE_PATH="{{ tracersh_traceroute_path }}"
+readonly MTR_PATH="{{ tracersh.mtr_path | default('/usr/bin/mtr') }}"
+readonly PREFERRED_TOOL="{{ tracersh.preferred_tool | default('traceroute') }}"
+
+{% if tracersh_validation_enabled %}
+# Validation pattern: Only accept 10.x.x.x IPv4 addresses
+readonly VALIDATION_PATTERN="{{ tracersh_validation_pattern }}"
+{% endif %}
+{% if tracersh_logging_enabled %}
+readonly LOG_FILE="{{ user_home | default(restricted_user_home) }}/{{ tracersh.logging.path | default('log/tracersh.log') }}"
+readonly ENABLE_LOGGING=true
+{% else %}
+readonly ENABLE_LOGGING=false
+{% endif %}
+
+# Traceroute options (configured via Ansible, not changeable via SSH)
+{% if tracersh.traceroute_options is defined %}
+readonly TR_MAX_HOPS="{{ tracersh.traceroute_options.max_hops | default(20) }}"
+readonly TR_WAIT_TIME="{{ tracersh.traceroute_options.wait_time | default(3) }}"
+readonly TR_QUERIES="{{ tracersh.traceroute_options.queries | default(3) }}"
+readonly TR_PACKET_SIZE="{{ tracersh.traceroute_options.packet_size | default(60) }}"
+readonly TR_NO_DNS="{{ tracersh.traceroute_options.no_dns | default(true) | lower }}"
+readonly TR_USE_ICMP="{{ tracersh.traceroute_options.use_icmp | default(true) | lower }}"
+{% else %}
+# Default traceroute options
+readonly TR_MAX_HOPS="20"
+readonly TR_WAIT_TIME="3"
+readonly TR_QUERIES="3"
+readonly TR_PACKET_SIZE="60"
+readonly TR_NO_DNS="true"
+readonly TR_USE_ICMP="true"
+{% endif %}
+
+# MTR options (configured via Ansible, not changeable via SSH)
+{% if tracersh.mtr_options is defined %}
+readonly MTR_MAX_HOPS="{{ tracersh.mtr_options.max_hops | default(20) }}"
+readonly MTR_REPORT_CYCLES="{{ tracersh.mtr_options.report_cycles | default(1) }}"
+readonly MTR_INTERVAL="{{ tracersh.mtr_options.interval | default(1) }}"
+readonly MTR_PACKET_SIZE="{{ tracersh.mtr_options.packet_size | default(60) }}"
+readonly MTR_NO_DNS="{{ tracersh.mtr_options.no_dns | default(true) | lower }}"
+readonly MTR_REPORT_MODE="{{ tracersh.mtr_options.report_mode | default(true) | lower }}"
+readonly MTR_SHOW_IPS="{{ tracersh.mtr_options.show_ips | default(true) | lower }}"
+readonly MTR_MPLS="{{ tracersh.mtr_options.mpls | default(false) | lower }}"
+{% else %}
+# Default MTR options
+readonly MTR_MAX_HOPS="20"
+readonly MTR_REPORT_CYCLES="1"
+readonly MTR_INTERVAL="1"
+readonly MTR_PACKET_SIZE="60"
+readonly MTR_NO_DNS="true"
+readonly MTR_REPORT_MODE="true"
+readonly MTR_SHOW_IPS="true"
+readonly MTR_MPLS="false"
+{% endif %}
+
+# Logging function
+log_message() {
+    local level="$1"
+    local message="$2"
+    
+    if [[ "$ENABLE_LOGGING" == "true" ]]; then
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] [${level}] [${SSH_CLIENT:-unknown}] ${message}" >> "$LOG_FILE"
+    fi
+}
+
+# Error handling
+error_exit() {
+    local message="$1"
+    local exit_code="${2:-1}"
+    
+    echo "Error: ${message}" >&2
+    log_message "ERROR" "${message}"
+    exit "${exit_code}"
+}
+
+# Invalid input handler - returns specific comment format
+invalid_input_exit() {
+    local input="$1"
+    echo "# input invalid: ${input} - must be valid 10.x.x.x IPv4 address"
+    log_message "ERROR" "Invalid input: ${input}"
+    exit 2
+}
+
+# Detect which tool to use
+detect_tool() {
+    local tool_to_use=""
+    
+    # Check preferred tool first
+    if [[ "$PREFERRED_TOOL" == "mtr" ]]; then
+        if [[ -x "$MTR_PATH" ]]; then
+            tool_to_use="mtr"
+        elif [[ -x "$TRACEROUTE_PATH" ]]; then
+            log_message "WARN" "Preferred tool mtr not found, falling back to traceroute"
+            tool_to_use="traceroute"
+        fi
+    else
+        # Default preference is traceroute
+        if [[ -x "$TRACEROUTE_PATH" ]]; then
+            tool_to_use="traceroute"
+        elif [[ -x "$MTR_PATH" ]]; then
+            log_message "WARN" "Preferred tool traceroute not found, falling back to mtr"
+            tool_to_use="mtr"
+        fi
+    fi
+    
+    if [[ -z "$tool_to_use" ]]; then
+        error_exit "Neither traceroute nor mtr is available on this system" 5
+    fi
+    
+    echo "$tool_to_use"
+}
+
+# Parse traceroute output to CSV format
+parse_traceroute_output() {
+    local first_line=true
+    local hop_num=0
+    
+    while IFS= read -r line; do
+        # Preserve header comment
+        if [[ "$line" =~ ^traceroute[[:space:]]to ]]; then
+            echo "# $line"
+            continue
+        fi
+        
+        # Skip empty lines
+        if [[ -z "$line" ]]; then
+            continue
+        fi
+        
+        # Parse hop lines (e.g., " 1  192.168.122.1  0.727 ms  0.680 ms  0.660 ms")
+        if [[ "$line" =~ ^[[:space:]]*([0-9]+)[[:space:]]+ ]]; then
+            hop_num="${BASH_REMATCH[1]}"
+            
+            # Check for no response (* * *)
+            if [[ "$line" =~ \*[[:space:]]+\*[[:space:]]+\* ]]; then
+                echo "${hop_num},,,1"
+            else
+                # Extract IP and times
+                # Match IP address and response times
+                if [[ "$line" =~ ([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)[[:space:]]+(([0-9]+\.?[0-9]*)[[:space:]]+ms[[:space:]]+)?([0-9]+\.?[0-9]*)[[:space:]]+ms[[:space:]]+([0-9]+\.?[0-9]*)[[:space:]]+ms ]]; then
+                    local ip="${BASH_REMATCH[1]}"
+                    # Use middle response time (2nd of 3)
+                    local time="${BASH_REMATCH[4]}"
+                    echo "${hop_num},${ip},${time},0"
+                elif [[ "$line" =~ ([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)[[:space:]]+([0-9]+\.?[0-9]*)[[:space:]]+ms ]]; then
+                    # Single time response
+                    local ip="${BASH_REMATCH[1]}"
+                    local time="${BASH_REMATCH[2]}"
+                    echo "${hop_num},${ip},${time},0"
+                fi
+            fi
+        fi
+    done
+}
+
+# Parse mtr output to CSV format
+parse_mtr_output() {
+    local in_data=false
+    local first_line=true
+    
+    while IFS= read -r line; do
+        # MTR header
+        if [[ "$line" =~ ^HOST:[[:space:]] ]]; then
+            # Extract target from HOST line
+            if [[ "$line" =~ ([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+) ]]; then
+                echo "# mtr to ${BASH_REMATCH[1]}, ${MTR_MAX_HOPS} hops max, ${MTR_PACKET_SIZE} byte packets"
+            fi
+            in_data=true
+            continue
+        fi
+        
+        # Skip empty lines and non-data lines
+        if [[ -z "$line" ]] || [[ "$line" =~ ^[[:space:]]*$ ]]; then
+            continue
+        fi
+        
+        # Parse MTR data lines
+        # Format: "  1.|-- 192.168.122.1   0.0%     1    0.7   0.7   0.7   0.7   0.0"
+        # Or:     "  2.|-- ???            100.0     1    0.0   0.0   0.0   0.0   0.0"
+        if [[ "$in_data" == true ]] && [[ "$line" =~ ^[[:space:]]*([0-9]+)\.\|-- ]]; then
+            local hop_num="${BASH_REMATCH[1]}"
+            
+            # Check for no response (???)
+            if [[ "$line" =~ \?\?\? ]] || [[ "$line" =~ 100\.0[[:space:]]+[0-9] ]]; then
+                echo "${hop_num},,,1"
+            else
+                # Extract IP and average time
+                # Format: hop.|-- IP  loss% sent avg ...
+                if [[ "$line" =~ ([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)[[:space:]]+([0-9]+\.?[0-9]*)\%[[:space:]]+[0-9]+[[:space:]]+([0-9]+\.?[0-9]*) ]]; then
+                    local ip="${BASH_REMATCH[1]}"
+                    local loss_pct="${BASH_REMATCH[2]}"
+                    local avg_time="${BASH_REMATCH[3]}"
+                    
+                    # Convert loss percentage to 0 or 1
+                    local loss="0"
+                    if [[ $(echo "$loss_pct >= 100" | bc -l) -eq 1 ]]; then
+                        loss="1"
+                    fi
+                    
+                    echo "${hop_num},${ip},${avg_time},${loss}"
+                fi
+            fi
+        fi
+    done
+}
+
+# Build traceroute command
+build_traceroute_command() {
+    local target="$1"
+    local cmd_args=""
+    
+    # ICMP mode (requires root/sudo/setuid)
+    if [[ "$TR_USE_ICMP" == "true" ]]; then
+        cmd_args="${cmd_args} -I"
+    fi
+    
+    # No DNS resolution
+    if [[ "$TR_NO_DNS" == "true" ]]; then
+        cmd_args="${cmd_args} -n"
+    fi
+    
+    # Max hops
+    cmd_args="${cmd_args} -m ${TR_MAX_HOPS}"
+    
+    # Wait time
+    cmd_args="${cmd_args} -w ${TR_WAIT_TIME}"
+    
+    # Number of queries
+    cmd_args="${cmd_args} -q ${TR_QUERIES}"
+    
+    # Target and packet size
+    cmd_args="${cmd_args} ${target} ${TR_PACKET_SIZE}"
+    
+    echo "$cmd_args"
+}
+
+# Build mtr command
+build_mtr_command() {
+    local target="$1"
+    local cmd_args=""
+    
+    # Report mode (non-interactive)
+    if [[ "$MTR_REPORT_MODE" == "true" ]]; then
+        cmd_args="${cmd_args} -r"
+    fi
+    
+    # No DNS resolution
+    if [[ "$MTR_NO_DNS" == "true" ]]; then
+        cmd_args="${cmd_args} -n"
+    fi
+    
+    # Show both IPs and hostnames (when DNS is enabled)
+    if [[ "$MTR_SHOW_IPS" == "true" ]] && [[ "$MTR_NO_DNS" != "true" ]]; then
+        cmd_args="${cmd_args} -b"
+    fi
+    
+    # Max hops
+    cmd_args="${cmd_args} -m ${MTR_MAX_HOPS}"
+    
+    # Report cycles (number of pings)
+    cmd_args="${cmd_args} -c ${MTR_REPORT_CYCLES}"
+    
+    # Interval between pings
+    cmd_args="${cmd_args} -i ${MTR_INTERVAL}"
+    
+    # Packet size
+    cmd_args="${cmd_args} -s ${MTR_PACKET_SIZE}"
+    
+    # MPLS information
+    if [[ "$MTR_MPLS" == "true" ]]; then
+        cmd_args="${cmd_args} --mpls"
+    fi
+    
+    # Target (must be last for mtr)
+    cmd_args="${cmd_args} ${target}"
+    
+    echo "$cmd_args"
+}
+
+# Main execution
+main() {
+    # Check for dry run mode (used for testing)
+    if [[ "${DRY_RUN:-false}" == "true" ]]; then
+        local tool=$(detect_tool)
+        echo "Dry run mode - would execute: ${tool} with configured options to 10.x.x.x target"
+        exit 0
+    fi
+    
+    # Get the original command from SSH (should be a single IPv4 address)
+    local ssh_command="${SSH_ORIGINAL_COMMAND:-}"
+    
+    # Log the attempt
+    log_message "INFO" "Trace attempt with command: '${ssh_command}'"
+    
+    # Extract only the first positional parameter (target IP)
+    # Discard everything else that might have been provided
+    local target=""
+    if [[ -n "$ssh_command" ]]; then
+        # Get first word only, ignore any additional parameters or command injection attempts
+        target=$(echo "$ssh_command" | awk '{print $1}')
+    fi
+    
+    # Validate that a target was provided
+    if [[ -z "$target" ]]; then
+        error_exit "No target specified. Usage: ssh {{ restricted_user_name }}@host <10.x.x.x>" 1
+    fi
+    
+{% if tracersh_validation_enabled %}
+    # Validate target format - must be 10.x.x.x IPv4 address
+    if ! [[ "$target" =~ $VALIDATION_PATTERN ]]; then
+        invalid_input_exit "$target"
+    fi
+    
+    # Additional validation: ensure it's a valid IPv4 address in 10.0.0.0/8
+    if ! [[ "$target" =~ ^10\. ]]; then
+        invalid_input_exit "$target"
+    fi
+{% endif %}
+    
+    # Detect which tool to use
+    local tool=$(detect_tool)
+    log_message "INFO" "Using tool: ${tool}"
+    
+    # Execute appropriate command and parse output
+    case "$tool" in
+        traceroute)
+            local cmd_args=$(build_traceroute_command "$target")
+            log_message "INFO" "Executing: ${TRACEROUTE_PATH} ${cmd_args}"
+            # Execute and parse to CSV format
+            "$TRACEROUTE_PATH" $cmd_args 2>&1 | parse_traceroute_output
+            ;;
+        mtr)
+            local cmd_args=$(build_mtr_command "$target")
+            log_message "INFO" "Executing: ${MTR_PATH} ${cmd_args}"
+            # Execute and parse to CSV format
+            "$MTR_PATH" $cmd_args 2>&1 | parse_mtr_output
+            ;;
+        *)
+            error_exit "Unknown tool: ${tool}" 6
+            ;;
+    esac
+}
+
+# Handle signals
+trap 'error_exit "Interrupted" 130' INT TERM
+
+# Run main function
+main "$@"

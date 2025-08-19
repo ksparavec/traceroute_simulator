@@ -1,0 +1,419 @@
+---
+# Deployment tasks for SSH restricted access
+
+- name: Create backup directory if enabled
+  file:
+    path: "{{ backup_path }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0700'
+  when: backup_enabled
+  become: yes
+  tags: [backup]
+
+- name: Check if user already exists
+  getent:
+    database: passwd
+    key: "{{ restricted_user_name }}"
+  register: user_exists
+  failed_when: false
+  changed_when: false
+  tags: [user]
+
+- name: Detect if user is centrally managed
+  block:
+    - name: Check for IPA/SSSD management
+      shell: |
+        # Check if user comes from SSSD/IPA
+        if command -v sss_cache >/dev/null 2>&1; then
+          sss_cache -u {{ restricted_user_name }} 2>/dev/null && echo "sssd" || echo "local"
+        elif getent passwd {{ restricted_user_name }} | grep -q ':x:' && \
+             ! grep -q "^{{ restricted_user_name }}:" /etc/passwd; then
+          echo "centralized"
+        else
+          echo "local"
+        fi
+      register: user_management_check
+      changed_when: false
+      when: user_exists.ansible_facts is defined and user_exists.ansible_facts.getent_passwd is defined and restricted_user_name in user_exists.ansible_facts.getent_passwd
+      
+    - name: Set centrally managed fact
+      set_fact:
+        user_is_centrally_managed: "{{ restricted_user.centrally_managed | default(false) or (user_management_check.stdout | default('local')) != 'local' }}"
+        user_already_exists: "{{ user_exists.ansible_facts is defined and user_exists.ansible_facts.getent_passwd is defined and restricted_user_name in user_exists.ansible_facts.getent_passwd }}"
+  tags: [user, detect]
+
+- name: Display user management status
+  debug:
+    msg: "User {{ restricted_user_name }} is {{ 'centrally managed (skipping user creation)' if user_is_centrally_managed else 'locally managed' }}"
+  tags: [user, debug]
+
+- name: Create or verify user account
+  block:
+    - name: Create tracegroup if it doesn't exist
+      group:
+        name: "{{ security_home_dir_group }}"
+        state: present
+        system: yes
+      become: yes
+      tags: [user, group]
+    
+    - name: Create restricted user account (local management)
+      user:
+        name: "{{ restricted_user_name }}"
+        comment: "{{ restricted_user_comment }}"
+        shell: "{{ restricted_user_shell }}"  # Use the configured shell directly
+        home: "{{ restricted_user_home }}"
+        create_home: no  # Always no - we create it manually with proper ownership
+        system: yes  # Always yes - this is a service account, not a human user
+        state: present
+        groups: "{{ security_home_dir_group }}"
+        append: yes
+      register: user_created
+      when: 
+        - not user_is_centrally_managed
+        - not user_already_exists
+      become: yes
+      tags: [user]
+    
+    - name: Get user info for centrally managed user
+      getent:
+        database: passwd
+        key: "{{ restricted_user_name }}"
+      register: central_user_info
+      when: user_is_centrally_managed
+      tags: [user]
+    
+    - name: Set user home directory fact
+      set_fact:
+        actual_user_home: "{{ user_created.home | default(central_user_info.ansible_facts.getent_passwd[restricted_user_name][4] if user_is_centrally_managed else restricted_user_home) }}"
+      tags: [user]
+  tags: [user]
+
+- name: Ensure directory structure exists
+  block:
+    - name: Ensure user home directory exists
+      file:
+        path: "{{ actual_user_home }}"
+        state: directory
+        owner: "{{ security_home_dir_owner }}"
+        group: "{{ security_home_dir_group }}"
+        mode: "{{ security_home_dir_mode }}"
+      become: yes
+      tags: [directories]
+    
+    - name: Create .ssh directory
+      file:
+        path: "{{ actual_user_home }}/.ssh"
+        state: directory
+        owner: "{{ security_ssh_dir_owner }}"
+        group: "{{ security_ssh_dir_group }}"
+        mode: "{{ security_ssh_dir_mode }}"
+      become: yes
+      tags: [ssh, directories]
+    
+    - name: Ensure .ssh directory has correct permissions
+      file:
+        path: "{{ actual_user_home }}/.ssh"
+        state: directory
+        owner: "{{ security_ssh_dir_owner }}"
+        group: "{{ security_ssh_dir_group }}"
+        mode: "{{ security_ssh_dir_mode }}"
+        recurse: no
+      become: yes
+      tags: [ssh, directories, fix-permissions]
+    
+    
+    - name: Create log directory if logging enabled
+      file:
+        path: "{{ actual_user_home }}/log"
+        state: directory
+        owner: "{{ security_log_dir_owner | default(restricted_user_name) }}"
+        group: "{{ security_log_dir_group | default(restricted_user_name) }}"
+        mode: "{{ security_log_dir_mode | default('0750') }}"
+      when:
+        - tracersh_enabled
+        - tracersh_logging_enabled
+      become: yes
+      tags: [tracersh, logging, directories]
+  tags: [directories]
+
+- name: Handle authorized_keys file
+  block:
+    - name: Check if authorized_keys exists
+      stat:
+        path: "{{ actual_user_home }}/.ssh/authorized_keys"
+      register: existing_auth_keys
+      become: yes
+      tags: [ssh]
+    
+    - name: Read existing authorized_keys if present
+      slurp:
+        src: "{{ actual_user_home }}/.ssh/authorized_keys"
+      register: auth_keys_content
+      when: existing_auth_keys.stat.exists
+      become: yes
+      tags: [ssh]
+    
+    - name: Check if authorized_keys is managed by Ansible
+      set_fact:
+        auth_keys_ansible_managed: "{{ existing_auth_keys.stat.exists and (ansible_managed is defined and (ansible_managed.split('\n')[0] in (auth_keys_content.content | b64decode)) or ('Ansible' in (auth_keys_content.content | b64decode) and 'managed' in (auth_keys_content.content | b64decode))) }}"
+      tags: [ssh]
+    
+    - name: Backup existing authorized_keys if needed
+      copy:
+        src: "{{ actual_user_home }}/.ssh/authorized_keys"
+        dest: "{{ backup_path }}/authorized_keys.{{ inventory_hostname }}.{{ ansible_date_time.epoch }}.bak"
+        remote_src: yes
+        mode: '0600'
+      when:
+        - backup_enabled
+        - existing_auth_keys.stat.exists
+        - auth_keys_ansible_managed
+      become: yes
+      tags: [backup, ssh]
+    
+    - name: Configure authorized_keys
+      template:
+        src: authorized_keys.j2
+        dest: "{{ actual_user_home }}/.ssh/authorized_keys"
+        owner: "{{ security_authorized_keys_owner }}"
+        group: "{{ security_authorized_keys_group }}"
+        mode: "{{ security_authorized_keys_mode }}"
+      when: not existing_auth_keys.stat.exists or auth_keys_ansible_managed
+      vars:
+        user_home: "{{ actual_user_home }}"
+      register: auth_keys_deployed
+      become: yes
+      tags: [ssh]
+    
+    - name: Ensure authorized_keys has correct permissions
+      file:
+        path: "{{ actual_user_home }}/.ssh/authorized_keys"
+        state: file
+        owner: "{{ security_authorized_keys_owner }}"
+        group: "{{ security_authorized_keys_group }}"
+        mode: "{{ security_authorized_keys_mode }}"
+      become: yes
+      tags: [ssh, fix-permissions]
+    
+    - name: Display authorized_keys status
+      debug:
+        msg: |
+          authorized_keys status:
+          - Exists: {{ existing_auth_keys.stat.exists }}
+          - Ansible managed: {{ auth_keys_ansible_managed }}
+          - Action: {{ 'Updated' if (auth_keys_deployed is defined and auth_keys_deployed.changed) else ('Created' if (auth_keys_deployed is defined and not existing_auth_keys.stat.exists) else 'Skipped (not managed by Ansible or no changes)') }}
+      tags: [ssh, debug]
+  tags: [ssh]
+
+- name: Install tracersh script
+  when: tracersh_enabled
+  block:
+    - name: Set tracersh script paths
+      set_fact:
+        # Single location for both shell and command
+        tracersh_full_path: "/usr/local/bin/tracersh"
+        tracersh_log_full_path: "{{ actual_user_home }}/{{ tracersh.logging.path | default('log/tracersh.log') }}"
+      tags: [tracersh]
+    
+    - name: Check if tracersh script exists
+      stat:
+        path: "{{ tracersh_full_path }}"
+      register: existing_tracersh
+      become: yes
+      tags: [tracersh]
+    
+    - name: Read existing tracersh script if present
+      slurp:
+        src: "{{ tracersh_full_path }}"
+      register: tracersh_content
+      when: existing_tracersh.stat.exists
+      become: yes
+      tags: [tracersh]
+    
+    - name: Check if tracersh script is managed by Ansible
+      set_fact:
+        tracersh_ansible_managed: "{{ existing_tracersh.stat.exists and (ansible_managed is defined and (ansible_managed.split('\n')[0] in (tracersh_content.content | b64decode)) or ('Ansible' in (tracersh_content.content | b64decode) and 'managed' in (tracersh_content.content | b64decode))) }}"
+      tags: [tracersh]
+    
+    - name: Check if traceroute exists
+      stat:
+        path: "{{ tracersh_traceroute_path }}"
+      register: traceroute_binary
+      tags: [tracersh, validate]
+    
+    - name: Check if mtr exists
+      stat:
+        path: "{{ tracersh_mtr_path }}"
+      register: mtr_binary
+      tags: [tracersh, validate]
+    
+    - name: Verify at least one tool is available
+      assert:
+        that:
+          - traceroute_binary.stat.exists or mtr_binary.stat.exists
+        fail_msg: "Neither traceroute nor mtr is available on this system"
+        success_msg: "Available tools: {{ 'traceroute' if traceroute_binary.stat.exists else '' }} {{ 'mtr' if mtr_binary.stat.exists else '' }}"
+      tags: [tracersh, validate]
+    
+    - name: Deploy tracersh script
+      template:
+        src: tracersh.j2
+        dest: "{{ tracersh_full_path }}"
+        owner: root
+        group: root
+        mode: "0755"
+      when: not existing_tracersh.stat.exists or tracersh_ansible_managed
+      vars:
+        user_home: "{{ actual_user_home }}"
+      become: yes
+      tags: [tracersh]
+    
+    - name: Add tracersh to /etc/shells
+      lineinfile:
+        path: /etc/shells
+        line: "{{ tracersh_full_path }}"
+        state: present
+      become: yes
+      tags: [tracersh, shell]
+    
+    - name: Set tracersh as user shell
+      user:
+        name: "{{ restricted_user_name }}"
+        shell: "{{ tracersh_full_path }}"
+      when: not user_is_centrally_managed
+      become: yes
+      tags: [tracersh, shell]
+    
+    - name: Display tracersh script status
+      debug:
+        msg: |
+          Tracersh script status:
+          - Path: {{ tracersh_full_path }}
+          - Exists: {{ existing_tracersh.stat.exists }}
+          - Ansible managed: {{ tracersh_ansible_managed }}
+          - Action: {{ 'Updated' if (not existing_tracersh.stat.exists or tracersh_ansible_managed) else 'Skipped (not managed by Ansible)' }}
+      tags: [tracersh, debug]
+    
+    - name: Configure log rotation if logging enabled
+      copy:
+        content: |
+          {{ tracersh_log_full_path }} {
+              weekly
+              rotate {{ tracersh.logging.rotate | default(7) }}
+              maxsize {{ tracersh.logging.max_size | default('10M') }}
+              compress
+              delaycompress
+              missingok
+              notifempty
+              create 0640 {{ restricted_user_name }} {{ restricted_user_name }}
+          }
+        dest: "/etc/logrotate.d/tracersh-{{ restricted_user_name }}"
+        owner: root
+        group: root
+        mode: '0644'
+      when: tracersh_logging_enabled
+      become: yes
+      tags: [tracersh, logging]
+  tags: [tracersh]
+
+- name: Test tracersh script syntax
+  when: tracersh_enabled and (not existing_tracersh.stat.exists or tracersh_ansible_managed)
+  block:
+    - name: Check bash syntax of tracersh script
+      shell: bash -n {{ tracersh_full_path }}
+      changed_when: false
+      tags: [tracersh, validate]
+    
+    - name: Test tracersh script execution (dry run)
+      command: "{{ tracersh_full_path }}"
+      environment:
+        SSH_ORIGINAL_COMMAND: "10.0.0.1"
+        DRY_RUN: "true"
+      register: tracersh_test
+      failed_when: false
+      changed_when: false
+      tags: [tracersh, validate]
+    
+    - name: Display tracersh test result
+      debug:
+        msg: "Tracersh script test: {{ 'PASSED' if tracersh_test.rc == 0 else 'FAILED' }}"
+      tags: [tracersh, validate]
+  tags: [validate]
+
+- name: FORCE CORRECT PERMISSIONS - ALWAYS RUN
+  block:
+    - name: Debug permission variables
+      debug:
+        msg:
+          - "Home: {{ security_home_dir_owner }}:{{ security_home_dir_group }} {{ security_home_dir_mode }}"
+          - "SSH: {{ security_ssh_dir_owner }}:{{ security_ssh_dir_group }} {{ security_ssh_dir_mode }}"
+          - "Keys: {{ security_authorized_keys_owner }}:{{ security_authorized_keys_group }} {{ security_authorized_keys_mode }}"
+          - "User name: {{ restricted_user_name }}"
+      tags: [always]
+    - name: Ensure home directory permissions
+      file:
+        path: "{{ actual_user_home }}"
+        state: directory
+        owner: "{{ security_home_dir_owner }}"
+        group: "{{ security_home_dir_group }}"
+        mode: "{{ security_home_dir_mode }}"
+      become: yes
+      tags: [always]
+    
+    - name: Ensure .ssh directory permissions
+      file:
+        path: "{{ actual_user_home }}/.ssh"
+        state: directory
+        owner: "{{ security_ssh_dir_owner }}"
+        group: "{{ security_ssh_dir_group }}"
+        mode: "{{ security_ssh_dir_mode }}"
+      become: yes
+      tags: [always]
+    
+    - name: Ensure authorized_keys permissions
+      file:
+        path: "{{ actual_user_home }}/.ssh/authorized_keys"
+        state: file
+        owner: "{{ security_authorized_keys_owner }}"
+        group: "{{ security_authorized_keys_group }}"
+        mode: "{{ security_authorized_keys_mode }}"
+      become: yes
+      tags: [always]
+    
+    - name: Ensure tracersh script permissions
+      file:
+        path: "/usr/local/bin/tracersh"
+        state: file
+        owner: root
+        group: root
+        mode: "0755"
+      when: tracersh_enabled
+      become: yes
+      tags: [always]
+  tags: [always]
+
+- name: Create deployment summary
+  set_fact:
+    deployment_summary:
+      user: "{{ restricted_user_name }}"
+      user_management: "{{ 'centrally managed' if user_is_centrally_managed else 'locally managed' }}"
+      home: "{{ actual_user_home }}"
+      ssh_key_configured: "{{ 'yes' if (not existing_auth_keys.stat.exists or auth_keys_ansible_managed) else 'skipped (not ansible managed)' }}"
+      tracersh: "{{ 'enabled' if tracersh_enabled else 'disabled' }}"
+      tracersh_location: "{{ tracersh_full_path | default('N/A') }}"
+      preferred_tool: "{{ tracersh_preferred_tool }}"
+      available_tools: "{{ 'traceroute' if traceroute_binary.stat.exists else '' }} {{ 'mtr' if mtr_binary.stat.exists else '' }}"
+      restrict_option: "{{ 'enabled' if (supports_restrict | default(false)) and ssh_restrict_option else 'disabled' }}"
+      from_restrictions: "{{ ssh_from_hosts | length > 0 }}"
+      logging: "{{ 'enabled' if tracersh_logging_enabled else 'disabled' }}"
+      target_validation: "10.x.x.x addresses only (ICMP mode)"
+      output_format: "Canonical CSV (hop,ip,rtt,loss)"
+  tags: [summary]
+
+- name: Display deployment summary
+  debug:
+    var: deployment_summary
+  tags: [summary]

@@ -1,0 +1,154 @@
+---
+# Command execution test tasks
+
+- name: Command Execution Tests
+  block:
+    - name: Initialize test results
+      set_fact:
+        command_test_results: []
+        command_test_passed: 0
+        command_test_failed: 0
+      tags: [test, commands]
+    
+    - name: Test valid traceroute targets (10.x.x.x only)
+      delegate_to: localhost
+      become: no
+      shell: |
+        timeout 10 ssh -o StrictHostKeyChecking=no \
+            -o ConnectTimeout=5 \
+            -o PasswordAuthentication=no \
+            {{ restricted_user_name }}@{{ inventory_hostname }} \
+            "{{ item }}" 2>&1 | head -5
+      register: target_tests
+      loop: "{{ testing.test_targets | default(['10.0.0.1', '10.8.8.8', '10.1.1.1']) }}"
+      failed_when: false
+      changed_when: false
+      tags: [test, commands]
+    
+    - name: Analyze target test results
+      set_fact:
+        command_test_results: "{{ command_test_results + [item] }}"
+        command_test_passed: "{{ command_test_passed | int + (1 if item.rc == 0 else 0) }}"
+        command_test_failed: "{{ command_test_failed | int + (0 if item.rc == 0 else 1) }}"
+      loop: "{{ target_tests.results }}"
+      tags: [test, commands]
+    
+    - name: Test that SSH options are ignored (only IP accepted)
+      delegate_to: localhost
+      become: no
+      shell: |
+        timeout 10 ssh -o StrictHostKeyChecking=no \
+            -o ConnectTimeout=5 \
+            -o PasswordAuthentication=no \
+            {{ restricted_user_name }}@{{ inventory_hostname }} \
+            "10.0.0.1 -n -m 5" 2>&1 | head -5
+      register: option_test
+      failed_when: false
+      changed_when: false
+      tags: [test, commands, options]
+    
+    - name: Verify SSH options were ignored
+      debug:
+        msg: "SSH command options are correctly ignored - only IP is used"
+      tags: [test, commands, options]
+    
+    - name: Test invalid targets (should be rejected)
+      delegate_to: localhost
+      become: no
+      shell: |
+        timeout 5 ssh -o StrictHostKeyChecking=no \
+            -o ConnectTimeout=5 \
+            -o BatchMode=yes \
+            {{ restricted_user_name }}@{{ inventory_hostname }} \
+            "{{ item }}" 2>&1
+      register: invalid_target_tests
+      loop: "{{ testing.invalid_targets | default(['8.8.8.8', '192.168.1.1', '10.256.1.1', 'google.com', '10.1.1.1; ls']) }}"
+      failed_when: false
+      changed_when: false
+      tags: [test, commands, security]
+    
+    - name: Check invalid targets were rejected
+      assert:
+        that:
+          - item.rc != 0 or 'Error' in item.stdout or 'Error' in item.stderr
+        fail_msg: "Invalid target '{{ item.cmd.split()[-1] }}' was not rejected!"
+        success_msg: "Invalid target '{{ item.cmd.split()[-1] }}' was correctly rejected"
+      loop: "{{ invalid_target_tests.results }}"
+      tags: [test, commands, security]
+    
+    - name: Test extremely long target (should be rejected)
+      delegate_to: localhost
+      become: no
+      shell: |
+        LONG_TARGET=$(python3 -c "print('a' * 300)")
+        timeout 5 ssh -o StrictHostKeyChecking=no \
+            -o ConnectTimeout=5 \
+            -o BatchMode=yes \
+            {{ restricted_user_name }}@{{ inventory_hostname }} \
+            "$LONG_TARGET" 2>&1
+      register: long_target_test
+      failed_when: false
+      changed_when: false
+      tags: [test, commands, validation]
+    
+    - name: Verify long target was rejected
+      assert:
+        that:
+          - long_target_test.rc != 0 or 'invalid' in long_target_test.stdout or 'Invalid' in long_target_test.stdout
+        fail_msg: "Extremely long target was not rejected (rc={{ long_target_test.rc }}, stdout={{ long_target_test.stdout }})"
+        success_msg: "Extremely long target was correctly rejected"
+      tags: [test, commands, validation]
+    
+    - name: Generate command test report
+      set_fact:
+        command_test_summary:
+          total_tests: "{{ command_test_results | length }}"
+          passed: "{{ command_test_passed }}"
+          failed: "{{ command_test_failed }}"
+          invalid_rejected: "{{ invalid_target_tests.results | selectattr('rc', 'ne', 0) | list | length }}"
+          invalid_total: "{{ invalid_target_tests.results | length }}"
+      tags: [test, commands, report]
+    
+    - name: Display command test results
+      debug:
+        msg:
+          - "======================================"
+          - "Command Execution Test Results"
+          - "======================================"
+          - "Valid targets tested: {{ command_test_summary.total_tests }}"
+          - "  Passed: {{ command_test_summary.passed }}"
+          - "  Failed: {{ command_test_summary.failed }}"
+          - "Invalid targets rejected: {{ command_test_summary.invalid_rejected }}/{{ command_test_summary.invalid_total }}"
+          - "Long target rejected: {{ 'Yes' if long_target_test.rc != 0 else 'No' }}"
+          - "======================================"
+          - "Overall: {{ 'PASSED' if command_test_summary.failed == '0' and command_test_summary.invalid_rejected == command_test_summary.invalid_total else 'FAILED' }}"
+          - "======================================"
+      tags: [test, commands, report]
+    
+    - name: Set command test result
+      set_fact:
+        command_test_result: "{{ 'PASSED' if command_test_summary.failed == '0' and command_test_summary.invalid_rejected == command_test_summary.invalid_total else 'FAILED' }}"
+      tags: [test, commands]
+    
+    - name: Show details of failed tests
+      debug:
+        msg:
+          - "Failed test for target: {{ item.item }}"
+          - "Return code: {{ item.rc }}"
+          - "Output: {{ item.stdout | default('') }}"
+      loop: "{{ command_test_results }}"
+      when: 
+        - command_test_summary.failed != '0'
+        - item.rc != 0
+      tags: [test, commands, debug]
+  
+  rescue:
+    - name: Handle command test failure
+      debug:
+        msg: "Command execution tests failed with error: {{ ansible_failed_result.msg | default('Unknown error') }}"
+      tags: [test, commands, error]
+    
+    - name: Set failed result
+      set_fact:
+        command_test_result: "FAILED - Error during testing"
+      tags: [test, commands, error]

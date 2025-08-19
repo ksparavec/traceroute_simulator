@@ -1,0 +1,10 @@
+---
+# Main tasks for ssh_restricted_access role
+
+- name: Include deployment tasks
+  include_tasks: deploy.yml
+  when: restricted_user_state == 'present'
+
+- name: Include removal tasks
+  include_tasks: remove.yml
+  when: restricted_user_state == 'absent'

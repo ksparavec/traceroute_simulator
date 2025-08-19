@@ -1,0 +1,97 @@
+---
+# Connectivity test tasks
+
+- name: Connectivity Test Block
+  block:
+    - name: Test SSH connectivity to restricted user
+      become: no
+      delegate_to: localhost
+      shell: |
+        ssh -o StrictHostKeyChecking=no \
+            -o ConnectTimeout=5 \
+            -o PasswordAuthentication=no \
+            {{ restricted_user_name }}@{{ inventory_hostname }} \
+            "8.8.8.8" 2>&1 | head -5
+      register: connectivity_test
+      failed_when: false
+      changed_when: false
+      tags: [test, connectivity]
+    
+    - name: Analyze connectivity test result
+      set_fact:
+        connectivity_status: |
+          {% if connectivity_test.rc == 0 %}
+            SUCCESS - Connected and executed command
+          {% elif 'Permission denied' in connectivity_test.stdout or 'Permission denied' in connectivity_test.stderr %}
+            FAILED - Authentication failed (check SSH key)
+          {% elif 'Connection refused' in connectivity_test.stdout or 'Connection refused' in connectivity_test.stderr %}
+            FAILED - SSH service not accessible
+          {% elif 'No route to host' in connectivity_test.stdout or 'No route to host' in connectivity_test.stderr %}
+            FAILED - Network unreachable
+          {% elif 'traceroute to' in connectivity_test.stdout %}
+            SUCCESS - Command executed
+          {% else %}
+            UNKNOWN - Unexpected response
+          {% endif %}
+      tags: [test, connectivity]
+    
+    - name: Check if traceroute output is present
+      set_fact:
+        has_traceroute_output: "{{ 'traceroute to' in connectivity_test.stdout or '1' in connectivity_test.stdout }}"
+      tags: [test, connectivity]
+    
+    - name: Display connectivity test results
+      debug:
+        msg:
+          - "======================================"
+          - "Connectivity Test Results"
+          - "======================================"
+          - "Host: {{ inventory_hostname }} ({{ ansible_host }})"
+          - "User: {{ restricted_user_name }}"
+          - "Status: {{ connectivity_status | trim }}"
+          - "Has traceroute output: {{ has_traceroute_output }}"
+          - "Return code: {{ connectivity_test.rc }}"
+          - "======================================"
+      tags: [test, connectivity, report]
+    
+    - name: Show raw output for debugging (if failed)
+      debug:
+        msg:
+          - "STDOUT: {{ connectivity_test.stdout }}"
+          - "STDERR: {{ connectivity_test.stderr }}"
+      when: connectivity_test.rc != 0
+      tags: [test, connectivity, debug]
+    
+    - name: Set connectivity test result
+      set_fact:
+        connectivity_test_result: "{{ 'PASSED' if connectivity_test.rc == 0 and has_traceroute_output else 'FAILED' }}"
+      tags: [test, connectivity]
+    
+    - name: Test connectivity from different source IPs (if configured)
+      when: ssh_from_hosts | length > 0
+      block:
+        - name: Test from allowed IP
+          delegate_to: localhost
+          become: no
+          shell: |
+            # This would need to be run from an allowed source IP
+            echo "Testing from allowed source would require running from: {{ ssh_from_hosts | join(', ') }}"
+          register: source_ip_test
+          changed_when: false
+          tags: [test, connectivity, source_ip]
+        
+        - name: Note about source IP testing
+          debug:
+            msg: "Note: Full source IP testing requires running tests from machines in allowed networks: {{ ssh_from_hosts | join(', ') }}"
+          tags: [test, connectivity, source_ip]
+  
+  rescue:
+    - name: Handle connectivity test failure
+      debug:
+        msg: "Connectivity test failed with error: {{ ansible_failed_result.msg | default('Unknown error') }}"
+      tags: [test, connectivity, error]
+    
+    - name: Set failed result
+      set_fact:
+        connectivity_test_result: "FAILED - Error during testing"
+      tags: [test, connectivity, error]

@@ -26,14 +26,10 @@ ssh_config:
   # Command to execute
   command: "/usr/local/bin/tracersh"
   
-  # SSH public key - MUST BE SET!
-  public_key: "AAAAC3NzaC1lZDI1NTE5AAAAIExample..."
-  
-  # Key type
-  key_type: "ssh-ed25519"
-  
-  # Key comment
-  key_comment: "tracersh"
+  # Path to SSH public key file (compatible with ssh-keygen output format)
+  # File should contain: <key-type> <base64-key> <comment>
+  # Example: ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExample... tracersh@example.com
+  pkey_file: "/tmp/id_traceuser.pub"
 
 # Tracersh (wrapper script) configuration
 tracersh:

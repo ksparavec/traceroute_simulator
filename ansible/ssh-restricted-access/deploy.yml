@@ -27,13 +27,74 @@
       when: not config_check.stat.exists
       delegate_to: localhost
       run_once: true
+
+    - name: Override pkey_file from environment variable if set
+      set_fact:
+        ssh_config: "{{ ssh_config | combine({'pkey_file': lookup('env', 'TRACEROUTE_SIMULATOR_TRACEUSER_PKEY_FILE')}) }}"
+      when: lookup('env', 'TRACEROUTE_SIMULATOR_TRACEUSER_PKEY_FILE') != ''
+      tags: [always]
+
+    - name: Override from_hosts from environment variable if set
+      set_fact:
+        ssh_config: "{{ ssh_config | combine({'from_hosts': lookup('env', 'TRACEROUTE_SIMULATOR_TRACEUSER_FROM_HOSTS').split(',')}) }}"
+      when: lookup('env', 'TRACEROUTE_SIMULATOR_TRACEUSER_FROM_HOSTS') != ''
+      tags: [always]
+
+    - name: Check if public key file exists
+      stat:
+        path: "{{ ssh_config.pkey_file | default('/tmp/id_traceuser.pub') }}"
+      register: pkey_file_check
+      delegate_to: localhost
+      run_once: true
+
+    - name: Fail if public key file is missing
+      fail:
+        msg: |
+          Public key file not found: {{ ssh_config.pkey_file | default('/tmp/id_traceuser.pub') }}
+          
+          Please ensure the public key file exists at the specified location.
+          You can set it via:
+          - config file: ssh_config.pkey_file
+          - environment: TRACEROUTE_SIMULATOR_TRACEUSER_PKEY_FILE
+      when: not pkey_file_check.stat.exists
+      delegate_to: localhost
+      run_once: true
+
+    - name: Read public key file
+      slurp:
+        src: "{{ ssh_config.pkey_file | default('/tmp/id_traceuser.pub') }}"
+      register: pkey_content
+      delegate_to: localhost
+      run_once: true
+
+    - name: Parse public key components
+      set_fact:
+        parsed_key: "{{ (pkey_content.content | b64decode).strip().split() }}"
+      delegate_to: localhost
+      run_once: true
+
+    - name: Extract key components
+      set_fact:
+        ssh_key_type: "{{ parsed_key[0] }}"
+        ssh_key_data: "{{ parsed_key[1] }}"
+        ssh_key_comment: "{{ parsed_key[2] | default('tracersh') }}"
+      delegate_to: localhost
+      run_once: true
+
+    - name: Update ssh_config with parsed key data
+      set_fact:
+        ssh_config: "{{ ssh_config | combine({'key_type': ssh_key_type, 'public_key': ssh_key_data, 'key_comment': ssh_key_comment}) }}"
+      delegate_to: localhost
+      run_once: true
+
     - name: Debug SSH configuration
       debug:
         msg:
-          - "ssh_config.public_key is defined: {{ ssh_config.public_key is defined }}"
-          - "ssh_config.public_key value: {{ ssh_config.public_key | default('NOT SET') }}"
-          - "ssh_config.key_type: {{ ssh_config.key_type | default('NOT SET') }}"
-          - "ssh_config.key_comment: {{ ssh_config.key_comment | default('NOT SET') }}"
+          - "ssh_config.pkey_file: {{ ssh_config.pkey_file | default('NOT SET') }}"
+          - "Parsed key_type: {{ ssh_config.key_type | default('NOT SET') }}"
+          - "Parsed public_key: {{ ssh_config.public_key | default('NOT SET') | truncate(50) }}..."
+          - "Parsed key_comment: {{ ssh_config.key_comment | default('NOT SET') }}"
+          - "from_hosts: {{ ssh_config.from_hosts | default([]) | join(', ') }}"
       tags: [debug, always]
       when: ssh_config is defined
 

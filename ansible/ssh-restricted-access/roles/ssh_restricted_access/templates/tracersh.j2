@@ -10,6 +10,16 @@
 # Home: {{ user_home | default(restricted_user_home) }}
 # Preferred tool: {{ tracersh.preferred_tool | default('traceroute') }}
 
+# ---- HARDENING BLOCK (must be first) ----
+# Sanitize environment to prevent poisoning attacks
+umask 077
+export LC_ALL=C LANG=C
+IFS=$'\n\t'
+PATH='/usr/sbin:/usr/bin:/sbin:/bin'
+unset BASH_ENV ENV CDPATH GLOBIGNORE
+unalias -a 2>/dev/null || true
+# ----------------------------------------
+
 # Check if this is being used as a login shell or SSH forced command
 if [ -z "$SSH_CLIENT" ]; then
     # Local login attempt - deny
@@ -38,9 +48,12 @@ readonly PREFERRED_TOOL="{{ tracersh.preferred_tool | default('traceroute') }}"
 readonly VALIDATION_PATTERN="{{ tracersh_validation_pattern }}"
 {% endif %}
 {% if tracersh_logging_enabled %}
-readonly LOG_FILE="{{ user_home | default(restricted_user_home) }}/{{ tracersh.logging.path | default('log/tracersh.log') }}"
+# Ensure log file path is defined and secure
+readonly LOG_FILE="{{ tracersh.logging.path | default('/var/log/tracersh.log') }}"
 readonly ENABLE_LOGGING=true
 {% else %}
+# Logging disabled - define LOG_FILE to avoid undefined variable errors
+readonly LOG_FILE="/var/log/tracersh.log"
 readonly ENABLE_LOGGING=false
 {% endif %}
 
@@ -235,77 +248,77 @@ parse_mtr_output() {
     done
 }
 
-# Build traceroute command
+# Build traceroute command array
 build_traceroute_command() {
     local target="$1"
-    local cmd_args=""
+    local -n cmd_array=$2  # nameref to return array
+    
+    cmd_array=("$TRACEROUTE_PATH")
     
     # ICMP mode (requires root/sudo/setuid)
     if [[ "$TR_USE_ICMP" == "true" ]]; then
-        cmd_args="${cmd_args} -I"
+        cmd_array+=("-I")
     fi
     
     # No DNS resolution
     if [[ "$TR_NO_DNS" == "true" ]]; then
-        cmd_args="${cmd_args} -n"
+        cmd_array+=("-n")
     fi
     
     # Max hops
-    cmd_args="${cmd_args} -m ${TR_MAX_HOPS}"
+    cmd_array+=("-m" "$TR_MAX_HOPS")
     
     # Wait time
-    cmd_args="${cmd_args} -w ${TR_WAIT_TIME}"
+    cmd_array+=("-w" "$TR_WAIT_TIME")
     
     # Number of queries
-    cmd_args="${cmd_args} -q ${TR_QUERIES}"
+    cmd_array+=("-q" "$TR_QUERIES")
     
     # Target and packet size
-    cmd_args="${cmd_args} ${target} ${TR_PACKET_SIZE}"
-    
-    echo "$cmd_args"
+    cmd_array+=("$target" "$TR_PACKET_SIZE")
 }
 
-# Build mtr command
+# Build mtr command array
 build_mtr_command() {
     local target="$1"
-    local cmd_args=""
+    local -n cmd_array=$2  # nameref to return array
+    
+    cmd_array=("$MTR_PATH")
     
     # Report mode (non-interactive)
     if [[ "$MTR_REPORT_MODE" == "true" ]]; then
-        cmd_args="${cmd_args} -r"
+        cmd_array+=("-r")
     fi
     
     # No DNS resolution
     if [[ "$MTR_NO_DNS" == "true" ]]; then
-        cmd_args="${cmd_args} -n"
+        cmd_array+=("-n")
     fi
     
     # Show both IPs and hostnames (when DNS is enabled)
     if [[ "$MTR_SHOW_IPS" == "true" ]] && [[ "$MTR_NO_DNS" != "true" ]]; then
-        cmd_args="${cmd_args} -b"
+        cmd_array+=("-b")
     fi
     
     # Max hops
-    cmd_args="${cmd_args} -m ${MTR_MAX_HOPS}"
+    cmd_array+=("-m" "$MTR_MAX_HOPS")
     
     # Report cycles (number of pings)
-    cmd_args="${cmd_args} -c ${MTR_REPORT_CYCLES}"
+    cmd_array+=("-c" "$MTR_REPORT_CYCLES")
     
     # Interval between pings
-    cmd_args="${cmd_args} -i ${MTR_INTERVAL}"
+    cmd_array+=("-i" "$MTR_INTERVAL")
     
     # Packet size
-    cmd_args="${cmd_args} -s ${MTR_PACKET_SIZE}"
+    cmd_array+=("-s" "$MTR_PACKET_SIZE")
     
     # MPLS information
     if [[ "$MTR_MPLS" == "true" ]]; then
-        cmd_args="${cmd_args} --mpls"
+        cmd_array+=("--mpls")
     fi
     
     # Target (must be last for mtr)
-    cmd_args="${cmd_args} ${target}"
-    
-    echo "$cmd_args"
+    cmd_array+=("$target")
 }
 
 # Main execution
@@ -355,16 +368,18 @@ main() {
     # Execute appropriate command and parse output
     case "$tool" in
         traceroute)
-            local cmd_args=$(build_traceroute_command "$target")
-            log_message "INFO" "Executing: ${TRACEROUTE_PATH} ${cmd_args}"
-            # Execute and parse to CSV format
-            "$TRACEROUTE_PATH" $cmd_args 2>&1 | parse_traceroute_output
+            local tr_cmd
+            build_traceroute_command "$target" tr_cmd
+            log_message "INFO" "Executing: ${tr_cmd[*]}"
+            # Execute with timeout and parse to CSV format
+            /usr/bin/timeout --kill-after=5s 60s "${tr_cmd[@]}" 2>&1 | parse_traceroute_output
             ;;
         mtr)
-            local cmd_args=$(build_mtr_command "$target")
-            log_message "INFO" "Executing: ${MTR_PATH} ${cmd_args}"
-            # Execute and parse to CSV format
-            "$MTR_PATH" $cmd_args 2>&1 | parse_mtr_output
+            local mtr_cmd
+            build_mtr_command "$target" mtr_cmd
+            log_message "INFO" "Executing: ${mtr_cmd[*]}"
+            # Execute with timeout and parse to CSV format
+            /usr/bin/timeout --kill-after=5s 60s "${mtr_cmd[@]}" 2>&1 | parse_mtr_output
             ;;
         *)
             error_exit "Unknown tool: ${tool}" 6
@@ -373,6 +388,7 @@ main() {
 }
 
 # Handle signals
+trap 'error_exit "Interrupted" 129' HUP
 trap 'error_exit "Interrupted" 130' INT TERM
 
 # Run main function

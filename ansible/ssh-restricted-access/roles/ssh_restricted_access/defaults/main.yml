@@ -13,7 +13,9 @@ restricted_user_centrally_managed: "{{ restricted_user.centrally_managed | defau
 ssh_restrict_option: "{{ ssh_config.restrict | default(true) }}"
 ssh_from_hosts: "{{ ssh_config.from_hosts | default([]) }}"
 ssh_command: "{{ ssh_config.command | default('/usr/local/bin/tracersh') }}"
-# Construct full SSH public key from components
+# Public key file path (can be overridden by TRACEROUTE_SIMULATOR_TRACEUSER_PKEY_FILE env var)
+ssh_pkey_file: "{{ ssh_config.pkey_file | default('/tmp/id_traceuser.pub') }}"
+# Construct full SSH public key from components (extracted from pkey_file in deploy.yml)
 ssh_public_key: "{{ ssh_config.key_type | default('ssh-ed25519') }} {{ ssh_config.public_key }} {{ ssh_config.key_comment | default('tracersh') }}"
 ssh_key_type: "{{ ssh_config.key_type | default('ssh-ed25519') }}"
 ssh_key_comment: "{{ ssh_config.key_comment | default('tracersh') }}"

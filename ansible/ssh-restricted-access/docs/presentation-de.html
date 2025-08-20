@@ -1,0 +1,500 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SSH Restricted Access - Sicherheitsanalyse</title>
+    <style>
+        @page {
+            size: A4;
+            margin: 2cm;
+        }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 210mm;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .page {
+            page-break-after: always;
+            min-height: 297mm;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+        h1 {
+            color: #003366;
+            border-bottom: 3px solid #003366;
+            padding-bottom: 10px;
+            margin-bottom: 20px;
+        }
+        h2 {
+            color: #003366;
+            margin-top: 25px;
+            margin-bottom: 15px;
+            font-size: 1.4em;
+        }
+        h3 {
+            color: #003366;
+            margin-top: 20px;
+            margin-bottom: 10px;
+            font-size: 1.2em;
+        }
+        .code, pre.code {
+            background-color: #f4f4f4;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            padding: 10px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9em;
+            overflow-x: auto;
+            margin: 10px 0;
+            white-space: pre;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 15px 0;
+            font-size: 0.9em;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+        }
+        th {
+            background-color: #003366;
+            color: white;
+        }
+        tr:nth-child(even) {
+            background-color: #f9f9f9;
+        }
+        ul, ol {
+            margin: 10px 0;
+            padding-left: 25px;
+        }
+        li {
+            margin: 5px 0;
+        }
+        .highlight {
+            background-color: #ffffcc;
+            padding: 2px 4px;
+            border-radius: 3px;
+        }
+        .security-box {
+            border: 2px solid #28a745;
+            background-color: #d4edda;
+            padding: 10px;
+            border-radius: 5px;
+            margin: 15px 0;
+        }
+        .warning-box {
+            border: 2px solid #ffc107;
+            background-color: #fff3cd;
+            padding: 10px;
+            border-radius: 5px;
+            margin: 15px 0;
+        }
+        .architecture {
+            background-color: #e8f4f8;
+            border: 1px solid #003366;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 20px 0;
+        }
+        .check {
+            color: #28a745;
+            font-weight: bold;
+        }
+        @media print {
+            body {
+                font-size: 11pt;
+            }
+            .page {
+                page-break-after: always;
+            }
+        }
+    </style>
+</head>
+<body>
+
+<!-- Page 1 -->
+<div class="page">
+    <h1>SSH Restricted Access - Sicherheitsanalyse und Implementierung</h1>
+    <p><strong>Traceroute-Simulator Projekt</strong><br>
+    Ansible SSH-Restricted-Access Lösung</p>
+
+    <h2>1. Höchste OS-Sicherheitsstufe mit authorized_keys</h2>
+
+    <h3>OpenSSH 7.2+ restrict Option</h3>
+    <ul>
+        <li><strong>Modernste Sicherheit</strong>: Nutzt <code>restrict</code> Option (ab OpenSSH 7.2)</li>
+        <li><strong>Vollständige Einschränkungen</strong>: Deaktiviert ALLE gefährlichen SSH-Features</li>
+        <li><strong>Defense-in-Depth</strong>: Zusätzliche explizite Einschränkungen trotz <code>restrict</code></li>
+    </ul>
+
+    <div class="code">
+# authorized_keys Konfiguration (NUR Ansible Controller erlaubt!)
+restrict,no-port-forwarding,no-X11-forwarding,no-agent-forwarding,
+no-pty,from="10.1.2.3",command="/usr/local/bin/tracersh" &lt;public-key&gt;
+    </div>
+
+    <h3>Mehrschichtige Sicherheitsarchitektur</h3>
+    <ul>
+        <li><strong>Netzwerk-Ebene</strong>: <code>from="10.1.2.3"</code> - <span style="color: red; font-weight: bold;">NUR der Ansible Controller darf verbinden!</span></li>
+        <li><strong>Authentifizierung</strong>: Nur Public-Key, kein Passwort</li>
+        <li><strong>Befehlsebene</strong>: Erzwungene Ausführung von <code>tracersh</code></li>
+        <li><strong>Shell-Ebene</strong>: Benutzerdefinierte Shell verhindert interaktiven Zugriff</li>
+    </ul>
+
+    <h3>Dateisystem-Sicherheit</h3>
+    <table>
+        <tr>
+            <th>Datei/Verzeichnis</th>
+            <th>Besitzer:Gruppe</th>
+            <th>Rechte</th>
+            <th>Sicherheitsvorteil</th>
+        </tr>
+        <tr>
+            <td><code>/home/traceuser</code></td>
+            <td>root:tracegroup</td>
+            <td>750</td>
+            <td>Keine Benutzeränderung</td>
+        </tr>
+        <tr>
+            <td><code>~/.ssh</code></td>
+            <td>root:tracegroup</td>
+            <td>750</td>
+            <td>Geschützte SSH-Konfiguration</td>
+        </tr>
+        <tr>
+            <td><code>authorized_keys</code></td>
+            <td>root:tracegroup</td>
+            <td>640</td>
+            <td>Nur lesbar via Gruppe</td>
+        </tr>
+        <tr>
+            <td><code>/usr/local/bin/tracersh</code></td>
+            <td>root:root</td>
+            <td>755</td>
+            <td>Systemweit, unveränderlich</td>
+        </tr>
+    </table>
+
+    <div class="security-box">
+        <strong>Sicherheitsprinzipien:</strong>
+        <ul>
+            <li>Root-Besitz verhindert Privilege Escalation</li>
+            <li>Gruppenbasierte Zugriffskontrolle</li>
+            <li>Principle of Least Privilege durchgängig angewendet</li>
+        </ul>
+    </div>
+</div>
+
+<!-- Page 2 -->
+<div class="page">
+    <h2>2. Moderne Bash-Script Sicherheitsanforderungen</h2>
+
+    <h3>Implementierte Sicherheitsmaßnahmen</h3>
+    <pre class="code">
+# ---- HARDENING BLOCK (must be first) ----
+umask 077                              # Restriktive Dateierstellung
+export LC_ALL=C LANG=C                 # Vorhersehbare Locale
+IFS=$'\n\t'                           # Sicherer Feldtrenner
+PATH='/usr/sbin:/usr/bin:/sbin:/bin'  # Fester PATH
+unset BASH_ENV ENV CDPATH GLOBIGNORE  # Gefährliche Vars entfernen
+unalias -a 2>/dev/null || true        # Alle Aliase entfernen
+# ----------------------------------------
+set -euo pipefail                      # Strict Mode
+    </pre>
+
+    <h3>Vollständige Sicherheitsanforderungen</h3>
+    <table>
+        <tr>
+            <th>Anforderung</th>
+            <th>Implementierung</th>
+            <th>Status</th>
+        </tr>
+        <tr>
+            <td>Umgebungssäuberung</td>
+            <td><code>LC_ALL=C LANG=C</code></td>
+            <td class="check">✓</td>
+        </tr>
+        <tr>
+            <td>Sicheres IFS</td>
+            <td><code>IFS=$'\n\t'</code></td>
+            <td class="check">✓</td>
+        </tr>
+        <tr>
+            <td>Fester PATH</td>
+            <td><code>PATH='/usr/sbin:/usr/bin:/sbin:/bin'</code></td>
+            <td class="check">✓</td>
+        </tr>
+        <tr>
+            <td>Variablen-Bereinigung</td>
+            <td><code>unset BASH_ENV ENV CDPATH</code></td>
+            <td class="check">✓</td>
+        </tr>
+        <tr>
+            <td>Alias-Entfernung</td>
+            <td><code>unalias -a</code></td>
+            <td class="check">✓</td>
+        </tr>
+        <tr>
+            <td>Strict Mode</td>
+            <td><code>set -euo pipefail</code></td>
+            <td class="check">✓</td>
+        </tr>
+        <tr>
+            <td>Input-Validierung</td>
+            <td>Regex <code>^10\.\d+\.\d+\.\d+$</code></td>
+            <td class="check">✓</td>
+        </tr>
+        <tr>
+            <td>Command Injection Schutz</td>
+            <td><code>awk '{print $1}'</code> Extraktion</td>
+            <td class="check">✓</td>
+        </tr>
+        <tr>
+            <td>Timeout-Schutz</td>
+            <td><code>timeout --kill-after=5s 60s</code></td>
+            <td class="check">✓</td>
+        </tr>
+        <tr>
+            <td>Signal-Behandlung</td>
+            <td><code>trap</code> für HUP, INT, TERM</td>
+            <td class="check">✓</td>
+        </tr>
+        <tr>
+            <td>Read-only Variablen</td>
+            <td><code>readonly</code> Deklarationen</td>
+            <td class="check">✓</td>
+        </tr>
+        <tr>
+            <td>Fehlerbehandlung</td>
+            <td>Dedizierte <code>error_exit</code> Funktion</td>
+            <td class="check">✓</td>
+        </tr>
+    </table>
+
+    <h3>Zugriffskontroll-Logik</h3>
+    <ol>
+        <li><strong>Keine SSH-Verbindung</strong>: „Nur SSH-Zugriff erlaubt"</li>
+        <li><strong>SSH mit TTY ohne Befehl</strong>: „Nur Traceroute-Ausführung erlaubt"</li>
+        <li><strong>SSH ohne Original-Befehl</strong>: „Nur Traceroute-Ausführung erlaubt"</li>
+        <li><strong>Ungültige IP-Adresse</strong>: „# input invalid: &lt;input&gt; - must be valid 10.x.x.x IPv4 address"</li>
+    </ol>
+
+    <h3>Input-Sanitierung</h3>
+    <ul>
+        <li>Nur erstes Wort des SSH-Befehls wird verarbeitet</li>
+        <li>Strikte Regex-Validierung für 10.x.x.x Adressen</li>
+        <li>Alle weiteren Parameter werden ignoriert</li>
+        <li>Keine Shell-Expansion oder Variablen-Substitution</li>
+    </ul>
+</div>
+
+<!-- Page 3 -->
+<div class="page">
+    <h2>3. Dokumentation und Erweiterbarkeit</h2>
+
+    <h3>Umfassende Dokumentationsstruktur</h3>
+    <ul>
+        <li><strong>README.md</strong>: 430+ Zeilen Benutzerdokumentation</li>
+        <li><strong>SECURITY-ANALYSIS.md</strong>: Detaillierte Sicherheitsanalyse</li>
+        <li><strong>Inline-Kommentare</strong>: Jede Funktion dokumentiert</li>
+        <li><strong>Jinja2-Header</strong>: Deployment-Kontext in Templates</li>
+        <li><strong>YAML-Kommentare</strong>: Konfigurationsbeispiele mit Erklärungen</li>
+    </ul>
+
+    <h3>Code-Organisation für einfache Wartung</h3>
+    <pre class="code">
+ssh-restricted-access/
+├── config/default.yml         # Zentrale Konfiguration
+├── deploy.yml                 # Ein-Befehl-Deployment
+├── remove.yml                 # Saubere Entfernung
+├── test.yml                   # Automatisierte Tests
+└── roles/ssh_restricted_access/
+    ├── defaults/main.yml      # Dokumentierte Defaults
+    ├── tasks/                 # Modulare Aufgaben
+    └── templates/             # Anpassbare Templates
+    </pre>
+
+    <h3>Erweiterungspunkte</h3>
+    <ul>
+        <li><strong>Tool-Unterstützung</strong>: Einfaches Hinzufügen neuer Netzwerk-Tools</li>
+        <li><strong>Validierungsmuster</strong>: Anpassbare Regex für andere IP-Bereiche</li>
+        <li><strong>Logging</strong>: Optional mit Rotation und SIEM-Integration</li>
+        <li><strong>Zentrale Benutzerverwaltung</strong>: FreeIPA/LDAP-Support integriert</li>
+    </ul>
+
+    <h3>Testabdeckung</h3>
+    <table>
+        <tr>
+            <th>Testbereich</th>
+            <th>Abdeckung</th>
+        </tr>
+        <tr>
+            <td>Konnektivität</td>
+            <td>SSH-Verbindung, Schlüssel-Authentifizierung</td>
+        </tr>
+        <tr>
+            <td>Befehlsausführung</td>
+            <td>Gültige/ungültige Targets</td>
+        </tr>
+        <tr>
+            <td>Sicherheitsrestriktionen</td>
+            <td>Verbotene Befehle, Shell-Zugriff</td>
+        </tr>
+        <tr>
+            <td>Fehlerbehandlung</td>
+            <td>Timeouts, fehlende Tools</td>
+        </tr>
+        <tr>
+            <td>Idempotenz</td>
+            <td>Mehrfache Ausführungen</td>
+        </tr>
+    </table>
+
+    <div class="security-box">
+        <strong>Vorteile für verschiedene Nutzergruppen:</strong>
+        <ul>
+            <li><strong>Entwickler</strong>: Klare Struktur, Template-basiert, erweiterbar</li>
+            <li><strong>Administratoren</strong>: YAML-Konfiguration, keine Programmierung nötig</li>
+            <li><strong>Security-Teams</strong>: Vollständige Dokumentation, Audit-Logs</li>
+            <li><strong>Management</strong>: Compliance-ready, wartbar, skalierbar</li>
+        </ul>
+    </div>
+</div>
+
+<!-- Page 4 -->
+<div class="page">
+    <h2>4. Einfache Wartung für Systemadministratoren</h2>
+
+    <h3>Keine Programmierkenntnisse erforderlich</h3>
+    <p><strong>Einfache Befehle für tägliche Aufgaben:</strong></p>
+    <pre class="code">
+# Deployment mit Inline-Inventory (empfohlen)
+ansible-playbook -i "192.168.122.230," deploy.yml
+
+# Test der Installation (Quick-Test)
+ansible-playbook -i "host," test.yml -e "run_quick_test=true"
+
+# Test der Installation (Vollständig)
+ansible-playbook -i "host," test.yml
+
+# Saubere Entfernung
+ansible-playbook -i "host," remove.yml
+
+# Mit Umgebungsvariablen (keine Config-Änderung nötig)
+export TRACEROUTE_SIMULATOR_TRACEUSER_PKEY_FILE="/tmp/id_traceuser.pub"
+export TRACEROUTE_SIMULATOR_FROM_HOSTS="10.1.2.3"  # NUR Ansible Controller!
+ansible-playbook -i "host," deploy.yml
+    </pre>
+
+    <h3>YAML-basierte Konfiguration</h3>
+    <ul>
+        <li>Alle Einstellungen in <code>config/default.yml</code></li>
+        <li>Klare Variablennamen mit Beschreibungen</li>
+        <li>Beispielwerte für alle Parameter</li>
+        <li>Keine Code-Änderungen notwendig</li>
+    </ul>
+
+    <h3>Sicherheitsarchitektur-Diagramm</h3>
+    <div class="architecture">
+        <strong>Ablauf einer SSH-Verbindung:</strong><br><br>
+        
+        <strong>1. SSH Client: Ansible Controller (10.1.2.3)</strong><br>
+        → <code>ssh traceuser@router 10.8.8.8</code><br>
+        <span style="color: red; font-weight: bold;">STRIKTE ANFORDERUNG: NUR der Ansible Controller (10.1.2.3) ist als SSH-Client erlaubt!</span><br><br>
+        
+        <strong>2. OpenSSH Server (Zielknoten/Router)</strong><br>
+        • Netzwerk-Check: from="10.1.2.3" (EXAKTE IP-Prüfung, keine anderen IPs erlaubt!)<br>
+        • Schlüssel-Authentifizierung: authorized_keys<br>
+        • Restriktionen: restrict, no-pty, no-*-forwarding<br>
+        • Erzwungener Befehl: command="/usr/local/bin/tracersh"<br><br>
+        
+        <strong>3. tracersh (Restricted Shell)</strong><br>
+        • Umgebungs-Härtung<br>
+        • SSH-Kontext-Validierung<br>
+        • Input-Extraktion (nur erstes Wort)<br>
+        • Regex-Validierung (nur 10.x.x.x)<br>
+        • Tool-Auswahl und Timeout-Ausführung<br><br>
+        
+        <strong>4. System-Tools (traceroute/mtr)</strong><br>
+        • ICMP-Modus<br>
+        • Keine DNS-Auflösung<br>
+        • CSV-Output Format<br>
+    </div>
+
+    <h3>Berechtigungsanforderungen</h3>
+    <table>
+        <tr>
+            <th>Aufgabe</th>
+            <th>Ansible-Playbook Ausführung</th>
+            <th>Traceroute-Ausführung auf Zielknoten</th>
+        </tr>
+        <tr>
+            <td><strong>Benutzer</strong></td>
+            <td>Admin mit sudo-Zugriff</td>
+            <td>Eingeschränkter Benutzer (traceuser)</td>
+        </tr>
+        <tr>
+            <td><strong>Rechte</strong></td>
+            <td>Volle sudo (root) Privilegien</td>
+            <td><span style="color: green; font-weight: bold;">KEINE Admin-Rechte erforderlich</span></td>
+        </tr>
+        <tr>
+            <td><strong>SSH-Zugriff</strong></td>
+            <td>Passwort oder Schlüssel</td>
+            <td>Nur Schlüssel (forced command)</td>
+        </tr>
+        <tr>
+            <td><strong>Zweck</strong></td>
+            <td>Deployment/Konfiguration</td>
+            <td>Nur traceroute/mtr Ausführung</td>
+        </tr>
+    </table>
+
+    <h3>Wartungsaufgaben</h3>
+    <table>
+        <tr>
+            <th>Frequenz</th>
+            <th>Aufgabe</th>
+            <th>Befehl/Aktion</th>
+        </tr>
+        <tr>
+            <td>Täglich</td>
+            <td>Log-Prüfung</td>
+            <td><code>tail -f /var/log/tracersh.log</code></td>
+        </tr>
+        <tr>
+            <td>Wöchentlich</td>
+            <td>Verbindungstests</td>
+            <td><code>ansible-playbook -i "host," test.yml</code></td>
+        </tr>
+        <tr>
+            <td>Monatlich</td>
+            <td>Berechtigungen prüfen</td>
+            <td><code>ls -la /home/traceuser/.ssh</code></td>
+        </tr>
+        <tr>
+            <td>Quartal</td>
+            <td>Schlüssel-Rotation</td>
+            <td>Config anpassen, deploy.yml</td>
+        </tr>
+        <tr>
+            <td>Jährlich</td>
+            <td>Sicherheitsaudit</td>
+            <td>Externe Prüfung</td>
+        </tr>
+    </table>
+
+    <div class="security-box">
+        <strong>Fazit:</strong> Die Lösung erfüllt alle Anforderungen mit höchster Sicherheit bei gleichzeitiger Wartbarkeit durch Administratoren ohne Programmierkenntnisse.
+    </div>
+</div>
+
+</body>
+</html>

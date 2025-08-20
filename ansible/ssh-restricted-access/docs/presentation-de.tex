@@ -1,0 +1,300 @@
+\documentclass[10pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[ngerman]{babel}
+\usepackage[margin=2cm]{geometry}
+\usepackage{graphicx}
+\usepackage{tikz}
+% \usepackage{enumitem}  % Not available
+% \usepackage{fancyhdr}  % Not available
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{hyperref}
+% \usepackage{courier}  % Not available
+
+% Color definitions
+\definecolor{darkblue}{RGB}{0,51,102}
+\definecolor{lightgray}{RGB}{240,240,240}
+\definecolor{darkgreen}{RGB}{0,128,0}
+
+% Page style - commented out as fancyhdr is not available
+% \pagestyle{fancy}
+% \fancyhf{}
+% \fancyhead[L]{\textbf{SSH Restricted Access} - Sicherheitsimplementierung}
+% \fancyfoot[C]{\thepage}
+% \renewcommand{\headrulewidth}{0.4pt}
+
+% Code listing style
+\lstset{
+    basicstyle=\ttfamily\scriptsize,
+    backgroundcolor=\color{lightgray},
+    breaklines=true,
+    frame=single,
+    frameround=tttt,
+    numbers=left,
+    numberstyle=\tiny\color{gray},
+    keywordstyle=\color{darkblue}\bfseries,
+    commentstyle=\color{darkgreen},
+    stringstyle=\color{red}
+}
+
+\title{\textbf{SSH Restricted Access}\\
+\large Sicherheitsanalyse und Implementierung\\
+\normalsize Traceroute-Simulator Projekt}
+\author{Ansible SSH-Restricted-Access Lösung}
+\date{\today}
+
+\begin{document}
+
+% Page 1: Übersicht und OS-Sicherheit
+\maketitle
+% \thispagestyle{fancy}  % Commented out as fancyhdr not available
+
+\section*{1. Höchste OS-Sicherheitsstufe mit authorized\_keys}
+
+\subsection*{OpenSSH 7.2+ \texttt{restrict} Option}
+\begin{itemize}
+    \item \textbf{Modernste Sicherheit}: Nutzt \texttt{restrict} Option (ab OpenSSH 7.2)
+    \item \textbf{Vollständige Einschränkungen}: Deaktiviert ALLE gefährlichen SSH-Features
+    \item \textbf{Defense-in-Depth}: Zusätzliche explizite Einschränkungen trotz \texttt{restrict}
+\end{itemize}
+
+\begin{lstlisting}[language=bash,title=authorized\_keys Konfiguration (NUR Ansible Controller erlaubt!)]
+restrict,no-port-forwarding,no-X11-forwarding,no-agent-forwarding,
+no-pty,from="10.1.2.3",command="/usr/local/bin/tracersh" <key>
+\end{lstlisting}
+
+\subsection*{Mehrschichtige Sicherheitsarchitektur}
+\begin{itemize}    \item \textbf{Netzwerk-Ebene}: \texttt{from="10.1.2.3"} - \textcolor{red}{\textbf{NUR der Ansible Controller darf verbinden!}}
+    \item \textbf{Authentifizierung}: Nur Public-Key, kein Passwort
+    \item \textbf{Befehlsebene}: Erzwungene Ausführung von \texttt{tracersh}
+    \item \textbf{Shell-Ebene}: Benutzerdefinierte Shell verhindert interaktiven Zugriff
+\end{itemize}
+
+\subsection*{Dateisystem-Sicherheit}
+\begin{center}
+\begin{tabular}{|l|c|c|l|}
+\hline
+\textbf{Datei/Verzeichnis} & \textbf{Besitzer:Gruppe} & \textbf{Rechte} & \textbf{Sicherheitsvorteil} \\
+\hline
+\texttt{/home/traceuser} & root:tracegroup & 750 & Keine Benutzeränderung \\
+\texttt{\textasciitilde/.ssh} & root:tracegroup & 750 & Geschützte SSH-Konfig \\
+\texttt{authorized\_keys} & root:tracegroup & 640 & Nur lesbar via Gruppe \\
+\texttt{/usr/local/bin/tracersh} & root:root & 755 & Systemweit, unveränderlich \\
+\hline
+\end{tabular}
+\end{center}
+
+\textbf{Sicherheitsprinzipien:}
+\begin{itemize}    \item Root-Besitz verhindert Privilege Escalation
+    \item Gruppenbasierte Zugriffskontrolle
+    \item Principle of Least Privilege durchgängig angewendet
+\end{itemize}
+
+\newpage
+
+% Page 2: Bash Script Sicherheit
+\section*{2. Moderne Bash-Script Sicherheitsanforderungen}
+
+\subsection*{Implementierte Sicherheitsmaßnahmen}
+
+\begin{lstlisting}[language=bash,title=Härtungsblock (MUSS zuerst kommen)]
+# ---- HARDENING BLOCK (must be first) ----
+umask 077                              # Restriktive Dateierstellung
+export LC_ALL=C LANG=C                 # Vorhersehbare Locale
+IFS=$'\n\t'                           # Sicherer Feldtrenner
+PATH='/usr/sbin:/usr/bin:/sbin:/bin'  # Fester PATH
+unset BASH_ENV ENV CDPATH GLOBIGNORE  # Gefaehrliche Vars entfernen
+unalias -a 2>/dev/null || true        # Alle Aliase entfernen
+# ----------------------------------------
+set -euo pipefail                      # Strict Mode
+\end{lstlisting}
+
+\subsection*{Vollständige Sicherheitsanforderungen}
+
+\begin{center}
+\begin{tabular}{|l|l|c|}
+\hline
+\textbf{Anforderung} & \textbf{Implementierung} & \textbf{Status} \\
+\hline
+Umgebungssäuberung & \texttt{LC\_ALL=C LANG=C} & OK \\
+Sicheres IFS & \texttt{IFS=\$'\\n\\t'} & OK \\
+Fester PATH & \texttt{PATH='/usr/sbin:/usr/bin:/sbin:/bin'} & OK \\
+Variablen-Bereinigung & \texttt{unset BASH\_ENV ENV CDPATH} & OK \\
+Alias-Entfernung & \texttt{unalias -a} & OK \\
+Strict Mode & \texttt{set -euo pipefail} & OK \\
+Input-Validierung & Regex \texttt{\^{}10\textbackslash.\textbackslash d+\textbackslash.\textbackslash d+\textbackslash.\textbackslash d+\$} & OK \\
+Command Injection Schutz & \texttt{awk '\{print \$1\}'} Extraktion & OK \\
+Timeout-Schutz & \texttt{timeout --kill-after=5s 60s} & OK \\
+Signal-Behandlung & \texttt{trap} für HUP, INT, TERM & OK \\
+Read-only Variablen & \texttt{readonly} Deklarationen & OK \\
+Fehlerbehandlung & Dedizierte \texttt{error\_exit} Funktion & OK \\
+\hline
+\end{tabular}
+\end{center}
+
+\subsection*{Zugriffskontroll-Logik}
+
+\begin{enumerate}[leftmargin=*]
+    \item \textbf{Keine SSH-Verbindung}: „Nur SSH-Zugriff erlaubt"
+    \item \textbf{SSH mit TTY ohne Befehl}: „Nur Traceroute-Ausführung erlaubt"
+    \item \textbf{SSH ohne Original-Befehl}: „Nur Traceroute-Ausführung erlaubt"
+    \item \textbf{Ungültige IP-Adresse}: „\# input invalid: <input> - must be valid 10.x.x.x IPv4 address"
+\end{enumerate}
+
+\subsection*{Input-Sanitierung}
+\begin{itemize}    \item Nur erstes Wort des SSH-Befehls wird verarbeitet
+    \item Strikte Regex-Validierung für 10.x.x.x Adressen
+    \item Alle weiteren Parameter werden ignoriert
+    \item Keine Shell-Expansion oder Variablen-Substitution
+\end{itemize}
+
+\newpage
+
+% Page 3: Dokumentation und Wartbarkeit
+\section*{3. Dokumentation und Erweiterbarkeit}
+
+\subsection*{Umfassende Dokumentationsstruktur}
+
+\begin{itemize}    \item \textbf{README.md}: 430+ Zeilen Benutzerdokumentation
+    \item \textbf{SECURITY-ANALYSIS.md}: Detaillierte Sicherheitsanalyse
+    \item \textbf{Inline-Kommentare}: Jede Funktion dokumentiert
+    \item \textbf{Jinja2-Header}: Deployment-Kontext in Templates
+    \item \textbf{YAML-Kommentare}: Konfigurationsbeispiele mit Erklärungen
+\end{itemize}
+
+\subsection*{Code-Organisation für einfache Wartung}
+
+\begin{lstlisting}[title=Verzeichnisstruktur]
+ssh-restricted-access/
+|- config/default.yml         # Zentrale Konfiguration
+|- deploy.yml                 # Ein-Befehl-Deployment
+|- remove.yml                 # Saubere Entfernung
+|- test.yml                   # Automatisierte Tests
+|- roles/ssh_restricted_access/
+   |- defaults/main.yml       # Dokumentierte Defaults
+   |- tasks/                  # Modulare Aufgaben
+   |- templates/              # Anpassbare Templates
+\end{lstlisting}
+
+\subsection*{Erweiterungspunkte}
+
+\begin{itemize}    \item \textbf{Tool-Unterstützung}: Einfaches Hinzufügen neuer Netzwerk-Tools
+    \item \textbf{Validierungsmuster}: Anpassbare Regex für andere IP-Bereiche  
+    \item \textbf{Logging}: Optional mit Rotation und SIEM-Integration
+    \item \textbf{Zentrale Benutzerverwaltung}: FreeIPA/LDAP-Support integriert
+\end{itemize}
+
+\subsection*{Testabdeckung}
+
+\begin{center}
+\begin{tabular}{|l|l|}
+\hline
+\textbf{Testbereich} & \textbf{Abdeckung} \\
+\hline
+Konnektivität & SSH-Verbindung, Schlüssel-Auth \\
+Befehlsausführung & Gültige/ungültige Targets \\
+Sicherheitsrestriktionen & Verbotene Befehle, Shell-Zugriff \\
+Fehlerbehandlung & Timeouts, fehlende Tools \\
+Idempotenz & Mehrfache Ausführungen \\
+\hline
+\end{tabular}
+\end{center}
+
+\textbf{Vorteile für verschiedene Nutzergruppen:}
+\begin{itemize}    \item \textbf{Entwickler}: Klare Struktur, Template-basiert, erweiterbar
+    \item \textbf{Administratoren}: YAML-Konfiguration, keine Programmierung nötig
+    \item \textbf{Security-Teams}: Vollständige Dokumentation, Audit-Logs
+    \item \textbf{Management}: Compliance-ready, wartbar, skalierbar
+\end{itemize}
+
+\newpage
+
+% Page 4: Wartbarkeit für Administratoren und Architektur
+\section*{4. Einfache Wartung für Systemadministratoren}
+
+\subsection*{Keine Programmierkenntnisse erforderlich}
+
+\textbf{Einfache Befehle für tägliche Aufgaben:}
+\begin{lstlisting}[language=bash]
+# Deployment mit Inline-Inventory (empfohlen)
+ansible-playbook -i "192.168.122.230," deploy.yml
+
+# Test der Installation (Quick-Test)
+ansible-playbook -i "host," test.yml -e "run_quick_test=true"
+
+# Test der Installation (Vollständig)
+ansible-playbook -i "host," test.yml
+
+# Saubere Entfernung
+ansible-playbook -i "host," remove.yml
+
+# Mit Umgebungsvariablen (keine Config-Änderung nötig)
+export TRACEROUTE_SIMULATOR_TRACEUSER_PKEY_FILE="/tmp/id_traceuser.pub"
+export TRACEROUTE_SIMULATOR_FROM_HOSTS="10.1.2.3"  # NUR Ansible Controller!
+ansible-playbook -i "host," deploy.yml
+\end{lstlisting}
+
+\subsection*{YAML-basierte Konfiguration}
+\begin{itemize}    \item Alle Einstellungen in \texttt{config/default.yml}
+    \item Klare Variablennamen mit Beschreibungen
+    \item Beispielwerte für alle Parameter
+    \item Keine Code-Änderungen notwendig
+\end{itemize}
+
+\subsection*{Sicherheitsarchitektur-Diagramm}
+
+\begin{center}
+\tikzstyle{block} = [rectangle, draw, fill=blue!10, text width=10cm, text centered, rounded corners, minimum height=1.2em, font=\small]
+\tikzstyle{check} = [rectangle, draw, fill=green!10, text width=9cm, text centered, font=\footnotesize]
+\tikzstyle{arrow} = [thick,->,>=stealth]
+
+\begin{tikzpicture}[node distance=0.7cm]
+\node [block] (client) {\textbf{SSH Client: Ansible Controller (10.1.2.3)}\\ssh traceuser@router 10.8.8.8\\\textcolor{red}{\textbf{STRIKTE ANFORDERUNG: NUR diese IP erlaubt!}}};
+\node [block, below=of client] (openssh) {\textbf{OpenSSH Server} (Zielknoten/Router)};
+\node [check, below=0.3cm of openssh] (check1) {1. Netzwerk-Check: from="10.1.2.3" (EXAKTE IP-Prüfung!)\\2. Schlüssel-Auth: authorized\_keys\\3. Restriktionen: restrict, no-pty, no-*-forwarding\\4. Erzwungener Befehl: command="/usr/local/bin/tracersh"};
+\node [block, below=1.3cm of check1] (tracersh) {\textbf{tracersh (Restricted Shell)}};
+\node [check, below=0.3cm of tracersh] (check2) {1. Umgebungs-Härtung\\2. SSH-Kontext-Validierung\\3. Input-Extraktion (nur erstes Wort)\\4. Regex-Validierung (nur 10.x.x.x)\\5. Tool-Auswahl und Timeout-Ausführung};
+\node [block, below=1.3cm of check2] (tools) {\textbf{System-Tools} (traceroute/mtr)\\ICMP-Modus, keine DNS-Auflösung, CSV-Output};
+
+\draw [arrow] (client) -- (openssh);
+\draw [arrow] (openssh) -- (check1);
+\draw [arrow] (check1) -- (tracersh);
+\draw [arrow] (tracersh) -- (check2);
+\draw [arrow] (check2) -- (tools);
+\end{tikzpicture}
+\end{center}
+
+\subsection*{Berechtigungsanforderungen}
+\begin{center}
+\begin{tabular}{|l|l|l|}
+\hline
+\textbf{Aufgabe} & \textbf{Ansible-Playbook} & \textbf{Traceroute-Ausführung} \\
+\hline
+Benutzer & Admin mit sudo & Eingeschränkter Benutzer \\
+Rechte & Volle sudo (root) & \textbf{KEINE Admin-Rechte} \\
+SSH-Zugriff & Passwort oder Schlüssel & Nur Schlüssel (forced cmd) \\
+Zweck & Deployment/Config & Nur traceroute/mtr \\
+\hline
+\end{tabular}
+\end{center}
+
+\textcolor{red}{\textbf{STRIKTE ANFORDERUNG:}} Der SSH-Client ist AUSSCHLIESSLICH der Ansible Controller (10.1.2.3). Keine anderen IPs sind erlaubt!
+
+\subsection*{Wartungsaufgaben}
+\begin{center}
+\begin{tabular}{|l|l|l|}
+\hline
+\textbf{Frequenz} & \textbf{Aufgabe} & \textbf{Befehl/Aktion} \\
+\hline
+Täglich & Log-Prüfung & \texttt{tail -f /var/log/tracersh.log} \\
+Wöchentlich & Verbindungstests & \texttt{ansible-playbook -i "host," test.yml} \\
+Monatlich & Berechtigungen prüfen & \texttt{ls -la /home/traceuser/.ssh} \\
+Quartal & Schlüssel-Rotation & Config anpassen, deploy.yml \\
+Jährlich & Sicherheitsaudit & Externe Prüfung \\
+\hline
+\end{tabular}
+\end{center}
+
+\textbf{Fazit:} Die Lösung erfüllt alle Anforderungen mit höchster Sicherheit bei gleichzeitiger Wartbarkeit durch Administratoren ohne Programmierkenntnisse.
+
+\end{document}

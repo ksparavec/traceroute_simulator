@@ -6,14 +6,14 @@ This Ansible playbook automates the deployment and management of SSH restricted 
 
 ## Features
 
-- **Custom Shell (`tracersh`)**: Combined login shell and command wrapper in one script
+- **Custom Shell (`tracersh`)**: Combined login shell and command executor in one script
 - **Secure Implementation**: Uses OpenSSH 7.2+ `restrict` option for maximum security
 - **Dual Tool Support**: Supports both `traceroute` and `mtr` with automatic fallback
 - **Canonical CSV Output**: Converts both tools' output to unified CSV format
 - **Input Validation**: Returns `# input invalid: <input> - must be valid 10.x.x.x IPv4 address` for invalid inputs
 - **10.x.x.x Only**: Restricts targets to internal network (10.0.0.0/8)
 - **Centralized User Support**: Works with FreeIPA/LDAP managed users
-- **Fully Configurable**: All parameters configurable via YAML
+- **Fully Configurable**: All parameters configurable via YAML or environment variables
 - **Idempotent Operations**: Safe to run multiple times
 - **Clean Removal**: Ability to completely remove the restricted user setup
 - **Comprehensive Testing**: Built-in test suite for connectivity, commands, and security
@@ -32,40 +32,55 @@ This Ansible playbook automates the deployment and management of SSH restricted 
 - bc calculator (for MTR output parsing) - usually pre-installed
 - traceroute and/or mtr installed
 
+## Rights and Permissions Requirements
+
+| Task | Ansible Playbook Execution | Traceroute Execution on Target |
+|------|----------------------------|----------------------------------|
+| **User Requirements** | Admin user with sudo access | Restricted user (traceuser) |
+| **Privileges Needed** | Full sudo (root) privileges | NO admin rights required |
+| **SSH Access** | Password or key-based SSH | Key-based only (forced command) |
+| **File Access** | Write to /usr/local/bin, /home | Read-only via group membership |
+| **Network Access** | Any source IP | Restricted by from= in authorized_keys |
+| **Command Execution** | Full shell access | Only tracersh (no shell) |
+| **Purpose** | Deploy/configure the solution | Execute traceroute/mtr only |
+
 ## Quick Start
 
-### Prerequisites
+### Using Default Configuration
 
-1. **Create configuration file:**
-```bash
-cp config/default.yml.example config/default.yml
-```
-
-2. **Edit `config/default.yml` and set your SSH public key:**
-```yaml
-ssh_config:
-  public_key: "YOUR_SSH_PUBLIC_KEY_HERE"  # REQUIRED!
-```
-
-3. **Create or update inventory (`inventory/hosts.yml`):**
-```yaml
-all:
-  hosts:
-    192.168.122.230:
-      ansible_user: your_admin_user  # User with sudo access
-```
-
-### Deployment
+The playbook can be used without modifying `config/default.yml` by using environment variables:
 
 ```bash
-# Deploy to all hosts
-ansible-playbook deploy.yml
+# Set environment variables for configuration
+export TRACEROUTE_SIMULATOR_TRACEUSER_PKEY_FILE="/path/to/your/id_traceuser.pub"
+export TRACEROUTE_SIMULATOR_FROM_HOSTS="10.0.0.0/8,192.168.0.0/16"
 
-# Deploy to specific host
-ansible-playbook deploy.yml -l 192.168.122.230
+# Generate SSH key pair if needed
+ssh-keygen -t ed25519 -f /tmp/id_traceuser -C "tracersh@example.com"
+export TRACEROUTE_SIMULATOR_TRACEUSER_PKEY_FILE="/tmp/id_traceuser.pub"
 
-# Test the deployment
-ansible-playbook test.yml
+# Deploy with inline inventory (no inventory file needed)
+ansible-playbook -i "192.168.122.230," deploy.yml -u admin_user
+
+# Deploy to multiple hosts
+ansible-playbook -i "router1.example.com,router2.example.com," deploy.yml
+
+# With custom SSH port
+ansible-playbook -i "192.168.122.230:2222," deploy.yml
+```
+
+### Alternative: Modifying Configuration File
+
+If you prefer to modify the configuration file instead of using environment variables:
+
+```bash
+# Edit config/default.yml directly
+vim config/default.yml
+# Set pkey_file: "/path/to/your/id_traceuser.pub"
+# Set from_hosts as needed
+
+# Deploy
+ansible-playbook -i "192.168.122.230," deploy.yml
 ```
 
 ## Directory Structure
@@ -76,8 +91,14 @@ ansible/ssh-restricted-access/
 ├── deploy.yml                  # Main deployment playbook  
 ├── remove.yml                  # Removal playbook
 ├── test.yml                    # Test playbook
-├── inventory/
-│   └── hosts.yml              # Inventory file
+├── config/
+│   └── default.yml            # Production configuration
+├── docs/                      # Documentation
+│   ├── CHANGES.md             # Change log
+│   ├── CSV-OUTPUT-FORMAT.md   # Output format specification
+│   ├── SECURITY-ANALYSIS.md   # Security analysis
+│   ├── TOOL-CONFIGURATION.md  # Tool configuration guide
+│   └── presentation-de.*      # German presentation files
 ├── roles/
 │   └── ssh_restricted_access/
 │       ├── defaults/
@@ -88,12 +109,10 @@ ansible/ssh-restricted-access/
 │       │   ├── remove.yml     # Removal tasks
 │       │   └── validate.yml   # Validation tasks
 │       ├── templates/
-│       │   ├── authorized_keys.j2
+│       │   ├── authorized_keys.j2  # SSH authorized_keys template
 │       │   └── tracersh.j2    # Combined shell/wrapper script
 │       └── handlers/
 │           └── main.yml       # Handlers
-├── config/
-│   └── default.yml.example    # Example configuration (COPY THIS!)
 └── tests/
     ├── test_connectivity.yml  # Connectivity tests
     ├── test_restrictions.yml  # Security restriction tests
@@ -102,136 +121,191 @@ ansible/ssh-restricted-access/
 
 ## Configuration
 
-### Configuration File (config/default.yml.example)
+### Configuration File (config/default.yml)
 
 ```yaml
 # User account configuration
 restricted_user:
   name: traceuser
-  comment: "Restricted user for traceroute execution"
-  shell: /usr/local/bin/tracersh  # Custom shell that handles both login and command execution
+  comment: "Production traceroute execution account"
+  shell: /usr/local/bin/tracersh  # Custom shell
   home: /home/traceuser
-  state: present  # Set to 'absent' to remove
+  state: present
+  centrally_managed: false  # Set to true for FreeIPA/LDAP users
 
 # SSH configuration
 ssh_config:
-  # authorized_keys options
-  restrict: yes
+  restrict: yes  # Use OpenSSH 7.2+ restrict option
+  
+  # Network restrictions (can be overridden by env var)
   from_hosts:
-    - "192.168.1.0/24"
     - "10.0.0.0/8"
+    - "192.168.0.0/16"
+    - "203.0.113.0/24"
+  
   command: "/usr/local/bin/tracersh"
   
-  # SSH key (required)
-  public_key: ""  # Must be provided
-  key_type: "ssh-ed25519"  # or ssh-rsa
-  key_comment: "traceroute-restricted@example.com"
+  # SSH public key file path (can be overridden by env var)
+  pkey_file: "/tmp/id_traceuser.pub"
 
-# Tracersh (wrapper script) configuration
+# Tracersh configuration
 tracersh:
   enabled: yes
   path: "/usr/local/bin/tracersh"
+  preferred_tool: "traceroute"  # or "mtr"
+  
+  # Tool paths
   traceroute_path: "/usr/bin/traceroute"
   mtr_path: "/usr/bin/mtr"
-  preferred_tool: "traceroute"
+  
+  # Validation
   validation:
     enabled: yes
-    # Regex pattern for 10.x.x.x IPv4 addresses only
     pattern: "^10\\.([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])\\.([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])\\.([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])$"
+  
+  # Logging configuration
   logging:
     enabled: no
-    path: "log/tracersh.log"
+    path: "/var/log/tracersh.log"  # Full path to log file
+    max_size: "100M"
+    rotate: 30
 
 # Security settings
 security:
+  home_dir_owner: "root"
+  home_dir_group: "tracegroup"
+  home_dir_mode: "0750"
   ssh_dir_owner: "root"
-  ssh_dir_group: "root"
-  ssh_dir_mode: "0700"
+  ssh_dir_group: "tracegroup"
+  ssh_dir_mode: "0750"
   authorized_keys_owner: "root"
-  authorized_keys_group: "root"
-  authorized_keys_mode: "0644"
+  authorized_keys_group: "tracegroup"
+  authorized_keys_mode: "0640"
   tracersh_owner: "root"
-  tracersh_group: "root"
-  tracersh_mode: "0755"
-
-# Testing configuration
-testing:
-  test_targets:
-    - "10.0.0.1"
-    - "10.8.8.8"
-    - "10.1.1.1"
-  forbidden_commands:
-    - "ls"
-    - "cat /etc/passwd"
-    - "bash"
+  tracersh_group: "tracegroup"
+  tracersh_mode: "0750"
 ```
 
-### Host-Specific Configuration (inventory/host_vars/router1.yml)
+### Environment Variables
 
-```yaml
-# Override default settings for specific host
-restricted_user:
-  name: traceroute-router1
+Override configuration without modifying files:
 
-ssh_config:
-  from_hosts:
-    - "192.168.100.0/24"
-  public_key: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI... user@admin"
-```
+| Environment Variable | Description | Example |
+|---------------------|-------------|---------|
+| `TRACEROUTE_SIMULATOR_TRACEUSER_PKEY_FILE` | Path to SSH public key file | `/tmp/id_traceuser.pub` |
+| `TRACEROUTE_SIMULATOR_FROM_HOSTS` | Comma-separated list of allowed networks | `10.0.0.0/8,192.168.0.0/16` |
 
 ## Usage
 
-### 1. Initial Setup
+### 1. Deployment
 
 ```bash
-# Clone or create the directory structure
-mkdir -p ansible/ssh-restricted-access
-cd ansible/ssh-restricted-access
+# Deploy with inline inventory (recommended)
+ansible-playbook -i "192.168.122.230," deploy.yml
 
-# Copy your configuration
-cp config/default.yml.example config/production.yml
-# Edit config/production.yml with your settings
+# Deploy to multiple hosts
+ansible-playbook -i "host1,host2,host3," deploy.yml
 
-# Set up inventory
-vim inventory/hosts.yml
-```
-
-### 2. Deploy Restricted Access
-
-```bash
-# Deploy to all hosts (uses inventory/hosts.yml by default)
-ansible-playbook deploy.yml
-
-# Deploy to specific host
-ansible-playbook deploy.yml -l 192.168.122.230
+# With specific user
+ansible-playbook -i "192.168.122.230," deploy.yml -u admin_user
 
 # Dry run (check mode)
-ansible-playbook deploy.yml --check
+ansible-playbook -i "192.168.122.230," deploy.yml --check
+
+# Deploy specific components
+ansible-playbook -i "192.168.122.230," deploy.yml --tags ssh
+ansible-playbook -i "192.168.122.230," deploy.yml --tags tracersh
 ```
 
-### 3. Test the Setup
+### 2. Testing
+
+The test playbook supports two modes:
+
+#### Quick Test (connectivity only)
+Tests basic SSH connectivity and authentication:
+```bash
+ansible-playbook -i "192.168.122.230," test.yml -e "run_quick_test=true"
+```
+
+#### Full Test Suite (default)
+Runs comprehensive tests including:
+1. **Connectivity tests**: SSH key authentication, basic command execution
+2. **Command tests**: Valid/invalid traceroute targets, output format verification
+3. **Security tests**: Forbidden commands, shell access prevention, escape attempts
 
 ```bash
-# Run all tests
-ansible-playbook test.yml
+# Run full test suite
+ansible-playbook -i "192.168.122.230," test.yml
 
-# Test SSH access manually (should return error for invalid IPs)
-ssh traceuser@192.168.122.230 8.8.8.8
+# Run specific test categories
+ansible-playbook -i "192.168.122.230," test.yml --tags connectivity
+ansible-playbook -i "192.168.122.230," test.yml --tags commands
+ansible-playbook -i "192.168.122.230," test.yml --tags restrictions
+```
+
+Test results are saved to `/tmp/ssh-restricted-test-<hostname>-<timestamp>.txt`
+
+### 3. Manual Testing
+
+```bash
+# Test with valid target (returns CSV)
+ssh -i /tmp/id_traceuser traceuser@192.168.122.230 10.0.0.1
+
+# Example output:
+# # traceroute to 10.0.0.1 (10.0.0.1), 20 hops max, 60 byte packets
+# 1,192.168.122.1,0.680,0
+# 2,10.0.0.1,3.584,0
+
+# Test with invalid target (returns error)
+ssh -i /tmp/id_traceuser traceuser@192.168.122.230 8.8.8.8
 # Output: # input invalid: 8.8.8.8 - must be valid 10.x.x.x IPv4 address
 
-# Test with valid IP
-ssh traceuser@192.168.122.230 10.0.0.1
-# Output: CSV format traceroute results
+# Test shell access (should fail)
+ssh -i /tmp/id_traceuser traceuser@192.168.122.230
+# Output: This account is restricted to traceroute execution only.
 ```
 
-### 4. Remove Restricted Access
+### 4. Removal
 
 ```bash
-# Remove from all hosts
-ansible-playbook remove.yml
+# Remove from all specified hosts
+ansible-playbook -i "192.168.122.230," remove.yml
 
 # Remove from specific host
-ansible-playbook remove.yml -l 192.168.122.230
+ansible-playbook -i "host1,host2," remove.yml --limit host1
+```
+
+## Logging Configuration
+
+If logging is enabled in the configuration, the tracersh script will write to `/var/log/tracersh.log`. However, proper permissions must be set up for logging to work:
+
+### Manual Log File Setup
+```bash
+# Create log file with correct permissions
+sudo touch /var/log/tracersh.log
+sudo chown root:tracegroup /var/log/tracersh.log
+sudo chmod 660 /var/log/tracersh.log
+```
+
+### Automatic Setup with Logrotate
+When logging is enabled, the playbook creates `/etc/logrotate.d/tracersh-traceuser` with:
+
+```
+/var/log/tracersh.log {
+    weekly
+    rotate 30
+    maxsize 100M
+    compress
+    delaycompress
+    missingok
+    notifempty
+    create 0660 root tracegroup  # Creates file with correct permissions
+}
+```
+
+To initialize the log file immediately:
+```bash
+sudo logrotate -f /etc/logrotate.d/tracersh-traceuser
 ```
 
 ## Playbook Variables
@@ -240,24 +314,22 @@ ansible-playbook remove.yml -l 192.168.122.230
 
 | Variable | Description | Example |
 |----------|-------------|---------|
-| `ssh_config.public_key` | SSH public key for authentication | `ssh-ed25519 AAAAC3...` |
+| `ssh_config.pkey_file` | Path to SSH public key file | `/tmp/id_traceuser.pub` |
 
 ### Optional Variables
 
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `restricted_user.name` | `traceuser` | Username for restricted account |
-| `restricted_user.shell` | `/usr/local/bin/tracersh` | Custom shell that handles SSH commands |
+| `restricted_user.shell` | `/usr/local/bin/tracersh` | Custom shell path |
 | `restricted_user.home` | `/home/traceuser` | Home directory path |
 | `restricted_user.centrally_managed` | `false` | Skip user creation for FreeIPA/LDAP users |
-| `ssh_config.from_hosts` | `[]` | List of allowed source IPs/networks |
-| `ssh_config.command` | `bin/traceroute-wrapper` | Command to execute (relative to home) |
-| `wrapper_script.enabled` | `yes` | Whether to install wrapper script |
-| `wrapper_script.preferred_tool` | `traceroute` | Preferred tool (`traceroute` or `mtr`) |
-| `wrapper_script.traceroute_options.max_hops` | `20` | Maximum TTL for traceroute |
-| `wrapper_script.traceroute_options.no_dns` | `true` | Disable DNS resolution |
-| `wrapper_script.traceroute_options.use_icmp` | `true` | Use ICMP instead of UDP |
-| `wrapper_script.mtr_options.report_cycles` | `1` | Number of pings for mtr (1 for fast results) |
+| `ssh_config.from_hosts` | `["10.0.0.0/8", "192.168.0.0/16", "203.0.113.0/24"]` | Allowed source networks |
+| `ssh_config.command` | `/usr/local/bin/tracersh` | Forced command in authorized_keys |
+| `tracersh.enabled` | `yes` | Whether to install tracersh script |
+| `tracersh.preferred_tool` | `traceroute` | Preferred tool (`traceroute` or `mtr`) |
+| `tracersh.logging.enabled` | `no` | Enable execution logging |
+| `tracersh.logging.path` | `/var/log/tracersh.log` | Log file path |
 
 ## Security Features
 
@@ -271,80 +343,53 @@ ansible-playbook remove.yml -l 192.168.122.230
 
 ### 2. Network Restrictions
 - `from=` option limits connections to specific IP addresses/networks
-- Configurable per host or globally
+- Configurable per deployment or via environment variables
 
-### 3. Command Restrictions
-- Forces execution of specific command only
-- Wrapper script validates only `10.x.x.x` IPv4 addresses
+### 3. Command Restrictions  
+- Forces execution of `/usr/local/bin/tracersh` via `command=` in authorized_keys
+- Tracersh serves as both login shell and command executor
+- Validates only `10.x.x.x` IPv4 addresses (hardcoded regex pattern)
+- Returns standardized error: `# input invalid: <input> - must be valid 10.x.x.x IPv4 address`
 - Uses ICMP for probing (more reliable than UDP)
 - No DNS resolution (security and performance)
-- No shell access (`/bin/false` shell)
+- Blocks interactive SSH sessions and local logins
 
 ### 4. File Permissions
-- Root ownership of all configuration files
-- Restrictive permissions (644 for authorized_keys)
-- Immutable by restricted user
+- Root ownership of critical files (authorized_keys, tracersh)
+- Group-based access control via `tracegroup`
+- Restrictive permissions:
+  - Home directory: 750 (root:tracegroup)
+  - .ssh directory: 750 (root:tracegroup)
+  - authorized_keys: 640 (root:tracegroup)
+  - tracersh script: 750 (root:tracegroup)
+- Files immutable by restricted user
 
-### 5. Input Validation
-- Wrapper script validates command arguments
-- Regex pattern matching for targets
-- Length limitations
-
-## Testing
-
-### Automated Tests
-
-The playbook includes comprehensive test cases:
-
-1. **Connectivity Tests** (`tests/test_connectivity.yml`)
-   - Verifies SSH key authentication works
-   - Tests command execution
-   - Validates output format
-
-2. **Restriction Tests** (`tests/test_restrictions.yml`)
-   - Ensures forbidden commands are blocked
-   - Verifies no shell access
-   - Tests escape attempt prevention
-
-3. **Command Tests** (`tests/test_commands.yml`)
-   - Tests valid traceroute targets
-   - Verifies invalid targets are rejected
-   - Checks error handling
-
-### Manual Testing
-
-```bash
-# Test successful traceroute (returns CSV format)
-ssh -i ~/.ssh/traceroute_key traceroute-user@router1 10.0.0.1
-
-# Example output:
-# # traceroute to 10.0.0.1 (10.0.0.1), 20 hops max, 60 byte packets
-# 1,192.168.122.1,0.680,0
-# 2,10.0.0.1,3.584,0
-
-# Test invalid target (should fail)
-ssh -i ~/.ssh/traceroute_key traceroute-user@router1 8.8.8.8
-
-# Test command restriction (should fail)
-ssh -i ~/.ssh/traceroute_key traceroute-user@router1 ls
-
-# Test shell access (should fail)
-ssh -i ~/.ssh/traceroute_key traceroute-user@router1
-```
+### 5. Input Validation & Hardening
+- Bash script hardening block (must be first):
+  - Environment sanitization (`LC_ALL=C`, `LANG=C`)
+  - Secure IFS setting (`$'\n\t'`)
+  - Fixed PATH (`/usr/sbin:/usr/bin:/sbin:/bin`)
+  - Unset dangerous variables (`BASH_ENV`, `ENV`, `CDPATH`)
+  - Remove all aliases
+- Input validation:
+  - Only first word of SSH_ORIGINAL_COMMAND processed
+  - Regex pattern for 10.x.x.x addresses
+  - Command injection prevention via parameter extraction
+- Execution timeout (60s with 5s kill timeout)
 
 ## Troubleshooting
 
 ### Common Issues
 
 1. **"Permission denied (publickey)"**
-   - Verify public key is correctly configured
-   - Check file permissions (should be 644 for authorized_keys)
+   - Verify public key file exists and is readable
+   - Check file permissions on target system
    - Ensure key format is correct
 
 2. **"Command not found"**
-   - Verify traceroute is installed on target system
-   - Check wrapper script path is correct
-   - Ensure wrapper script has execute permissions
+   - Verify traceroute or mtr is installed on target
+   - Check tracersh script exists at `/usr/local/bin/tracersh`
+   - Ensure script has execute permissions
 
 3. **"This account is restricted"**
    - This is expected behavior when trying to get a shell
@@ -353,7 +398,7 @@ ssh -i ~/.ssh/traceroute_key traceroute-user@router1
 4. **No output from traceroute**
    - Check if traceroute requires sudo on the target system
    - Verify network connectivity
-   - Check wrapper script logs if enabled
+   - Check logs if logging is enabled
 
 ### Debug Mode
 
@@ -361,18 +406,18 @@ Enable verbose output for troubleshooting:
 
 ```bash
 # Ansible verbose mode
-ansible-playbook -i inventory/hosts.yml playbooks/deploy.yml -vvv
+ansible-playbook -i "192.168.122.230," deploy.yml -vvv
 
 # SSH verbose mode
-ssh -vvv -i ~/.ssh/traceroute_key traceroute-user@router1 8.8.8.8
+ssh -vvv -i /tmp/id_traceuser traceuser@192.168.122.230 10.0.0.1
 ```
 
 ### Log Files
 
-If logging is enabled in wrapper script:
+If logging is enabled and properly configured:
 ```bash
 # On target router
-sudo tail -f /var/log/traceroute-wrapper.log
+sudo tail -f /var/log/tracersh.log
 ```
 
 ## Maintenance
@@ -382,25 +427,16 @@ sudo tail -f /var/log/traceroute-wrapper.log
 To rotate SSH keys:
 
 1. Generate new key pair
-2. Update `ssh_config.public_key` in configuration
+2. Update `TRACEROUTE_SIMULATOR_TRACEUSER_PKEY_FILE` environment variable or `pkey_file` in config
 3. Run deployment playbook
 4. Test with new key
 5. Remove old key from clients
 
 ### Updating Allowed Networks
 
-1. Modify `ssh_config.from_hosts` in configuration
+1. Set `TRACEROUTE_SIMULATOR_FROM_HOSTS` environment variable or modify `ssh_config.from_hosts`
 2. Run deployment playbook
 3. Test from new networks
-
-### Adding/Removing Commands
-
-To allow additional commands:
-
-1. Modify wrapper script template
-2. Update validation patterns
-3. Run deployment playbook
-4. Test new commands
 
 ## Security Considerations
 
@@ -428,11 +464,9 @@ Note: This provides less security than the `restrict` option.
 
 This playbook is provided as-is for use in managing SSH restricted access.
 
-## Contributing
+## Additional Documentation
 
-To contribute improvements:
-
-1. Test changes thoroughly
-2. Update documentation
-3. Ensure idempotency
-4. Add test cases for new features
+- [Security Analysis](docs/SECURITY-ANALYSIS.md) - Comprehensive security assessment
+- [CSV Output Format](docs/CSV-OUTPUT-FORMAT.md) - Output format specification
+- [Tool Configuration](docs/TOOL-CONFIGURATION.md) - Detailed tool configuration guide
+- [Changes](docs/CHANGES.md) - Version history and changes

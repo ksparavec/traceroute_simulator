@@ -1,0 +1,79 @@
+
+    digraph Architecture {
+        rankdir=TB;
+        node [shape=box, style=rounded];
+        
+        // User Interface Layer
+        subgraph cluster_ui {
+            label="User Interfaces";
+            style=filled;
+            color=lightgrey;
+            
+            web [label="Web Interface\n(Apache + CGI)"];
+            tsimsh [label="tsimsh\n(Interactive Shell)"];
+            cli [label="Command Line\n(Direct Scripts)"];
+            ansible [label="Ansible\n(Remote Collection)"];
+        }
+        
+        // Core Engine Layer
+        subgraph cluster_core {
+            label="Core Python Engine";
+            style=filled;
+            color=lightblue;
+            
+            simulator [label="TracerouteSimulator\n(Path Calculation)"];
+            analyzer [label="IptablesAnalyzer\n(Firewall Rules)"];
+            namespace [label="NamespaceManager\n(Virtual Networks)"];
+            service [label="ServiceManager\n(TCP/UDP Testing)"];
+            packet [label="PacketTracer\n(Packet Flow)"];
+        }
+        
+        // Data Layer
+        subgraph cluster_data {
+            label="Data Storage";
+            style=filled;
+            color=lightyellow;
+            
+            facts [label="Router Facts\n(JSON Files)"];
+            raw [label="Raw Facts\n(Text Files)"];
+            topology [label="Network Topology\n(Connections)"];
+            registry [label="Host Registry\n(Dynamic Hosts)"];
+        }
+        
+        // Infrastructure Layer
+        subgraph cluster_infra {
+            label="Linux Infrastructure";
+            style=filled;
+            color=lightgreen;
+            
+            netns [label="Network Namespaces"];
+            iptables [label="iptables/netfilter"];
+            iproute [label="iproute2"];
+            processes [label="Process Management"];
+        }
+        
+        // Connections
+        web -> simulator;
+        tsimsh -> simulator;
+        tsimsh -> namespace;
+        tsimsh -> service;
+        cli -> simulator;
+        cli -> analyzer;
+        ansible -> facts;
+        
+        simulator -> analyzer;
+        simulator -> packet;
+        simulator -> facts;
+        analyzer -> facts;
+        analyzer -> raw;
+        
+        namespace -> netns;
+        namespace -> iptables;
+        namespace -> iproute;
+        service -> processes;
+        service -> registry;
+        
+        packet -> topology;
+        packet -> facts;
+    }
+    

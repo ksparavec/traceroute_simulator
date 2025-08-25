@@ -1,0 +1,39 @@
+
+    digraph DataFlow {
+        rankdir=LR;
+        node [shape=box, style=rounded];
+        
+        // Start
+        user [label="User Request\n(Source + Dest IP)", shape=ellipse, style=filled, fillcolor=lightgreen];
+        
+        // Processing steps
+        input [label="Input Validation"];
+        load [label="Load Router Facts"];
+        source [label="Find Source Router"];
+        calc [label="Calculate Path"];
+        firewall [label="Analyze Firewall Rules"];
+        mtr [label="Execute MTR\n(Optional)"];
+        format [label="Format Output"];
+        
+        // End
+        result [label="Result\n(Path + Status)", shape=ellipse, style=filled, fillcolor=lightcoral];
+        
+        // Flow
+        user -> input;
+        input -> load;
+        load -> source;
+        source -> calc;
+        calc -> firewall;
+        firewall -> mtr [label="if external"];
+        firewall -> format [label="if internal"];
+        mtr -> format;
+        format -> result;
+        
+        // Data stores
+        facts_db [label="Facts Directory", shape=cylinder];
+        raw_db [label="Raw Facts", shape=cylinder];
+        
+        load -> facts_db [style=dashed];
+        firewall -> raw_db [style=dashed, label="packet counts"];
+    }
+    

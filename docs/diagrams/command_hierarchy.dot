@@ -1,0 +1,69 @@
+
+    digraph Commands {
+        rankdir=TB;
+        node [shape=box, style=rounded];
+        
+        tsimsh [label="tsimsh", shape=ellipse, style=filled, fillcolor=lightblue];
+        
+        // Command categories
+        trace_cat [label="trace", style=filled, fillcolor=lightyellow];
+        network_cat [label="network", style=filled, fillcolor=lightyellow];
+        service_cat [label="service", style=filled, fillcolor=lightyellow];
+        host_cat [label="host", style=filled, fillcolor=lightyellow];
+        facts_cat [label="facts", style=filled, fillcolor=lightyellow];
+        
+        // Trace commands
+        trace_basic [label="trace -s IP -d IP"];
+        trace_port [label="trace ... -p tcp -dp PORT"];
+        trace_json [label="trace ... -j"];
+        
+        // Network commands
+        net_setup [label="network setup"];
+        net_status [label="network status"];
+        net_clean [label="network clean"];
+        
+        // Service commands
+        svc_start [label="service start"];
+        svc_test [label="service test"];
+        svc_stop [label="service stop"];
+        svc_list [label="service list"];
+        
+        // Host commands
+        host_add [label="host add"];
+        host_del [label="host del"];
+        host_list [label="host list"];
+        
+        // Facts commands
+        facts_process [label="facts process"];
+        facts_update [label="facts update"];
+        facts_show [label="facts show"];
+        
+        // Hierarchy
+        tsimsh -> trace_cat;
+        tsimsh -> network_cat;
+        tsimsh -> service_cat;
+        tsimsh -> host_cat;
+        tsimsh -> facts_cat;
+        
+        trace_cat -> trace_basic;
+        trace_cat -> trace_port;
+        trace_cat -> trace_json;
+        
+        network_cat -> net_setup;
+        network_cat -> net_status;
+        network_cat -> net_clean;
+        
+        service_cat -> svc_start;
+        service_cat -> svc_test;
+        service_cat -> svc_stop;
+        service_cat -> svc_list;
+        
+        host_cat -> host_add;
+        host_cat -> host_del;
+        host_cat -> host_list;
+        
+        facts_cat -> facts_process;
+        facts_cat -> facts_update;
+        facts_cat -> facts_show;
+    }
+    

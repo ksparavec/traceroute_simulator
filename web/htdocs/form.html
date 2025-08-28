@@ -34,15 +34,46 @@
             </div>
             
             <div class="form-group">
-                <label for="dest_port">Destination Port *</label>
-                <input type="number" id="dest_port" name="dest_port" 
-                       min="1" max="65535" required placeholder="e.g., 80">
+                <label for="port_mode">Port Selection Mode *</label>
+                <div class="radio-group">
+                    <label class="radio-label">
+                        <input type="radio" name="port_mode" value="quick" checked onchange="togglePortMode()">
+                        Quick Select (Common Services)
+                    </label>
+                    <label class="radio-label">
+                        <input type="radio" name="port_mode" value="manual" onchange="togglePortMode()">
+                        Manual Entry (Advanced)
+                    </label>
+                </div>
+            </div>
+            
+            <!-- Quick Select Mode -->
+            <div id="quick_select_group" class="form-group">
+                <label for="quick_ports">Select Services</label>
+                <select id="quick_ports" name="quick_ports" multiple size="10" class="service-select">
+                    <!-- Options will be loaded dynamically from config -->
+                </select>
+                <div class="help-text">Hold Ctrl/Cmd to select multiple services</div>
+            </div>
+            
+            <!-- Manual Entry Mode -->
+            <div id="manual_entry_group" class="form-group" style="display: none;">
+                <label for="dest_ports">Destination Ports</label>
+                <input type="text" id="dest_ports" name="dest_ports" 
+                       placeholder="e.g., 22/tcp,80,443/tcp,1000-2000/udp"
+                       title="Enter ports as: 22/tcp, 80, 443/tcp, 1000-2000/udp"
+                       pattern="^[0-9,/a-z\-\s]+$"
+                       oninput="this.setCustomValidity('')">
+                <div class="help-text">
+                    Format: port[/protocol], port-range[/protocol], comma-separated<br>
+                    Examples: 22/tcp, 80, 443/tcp, 1000-2000/udp, 53/tcp,53/udp
+                </div>
             </div>
             
             <div class="form-group">
-                <label for="protocol">Protocol *</label>
-                <select id="protocol" name="protocol" required>
-                    <option value="tcp">TCP</option>
+                <label for="default_protocol">Default Protocol (for unspecified ports) *</label>
+                <select id="default_protocol" name="default_protocol" required>
+                    <option value="tcp" selected>TCP</option>
                     <option value="udp">UDP</option>
                 </select>
             </div>

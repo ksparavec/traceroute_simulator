@@ -19,6 +19,7 @@ from executor import CommandExecutor
 from logger import AuditLogger
 from config import Config
 from timing import TimingLogger
+from port_parser import PortParser
 
 # Enable error logging but not display
 cgitb.enable(display=0, logdir="/var/www/traceroute-web/logs")
@@ -84,8 +85,30 @@ def main():
         source_ip = form.getvalue('source_ip', '').strip()
         source_port = form.getvalue('source_port', '').strip()
         dest_ip = form.getvalue('dest_ip', '').strip()
-        dest_port = form.getvalue('dest_port', '').strip()
-        protocol = form.getvalue('protocol', 'tcp').lower()
+        
+        # Handle port selection modes
+        port_mode = form.getvalue('port_mode', 'quick')
+        port_parser = PortParser()
+        
+        # Debug logging
+        logger.log_info(f"Port mode: {port_mode}")
+        
+        if port_mode == 'quick':
+            # Get selected services from quick select
+            quick_ports = form.getlist('quick_ports')
+            logger.log_info(f"Quick ports selected: {quick_ports}")
+            if not quick_ports:
+                raise ValueError("No services selected")
+            # Join selected ports
+            dest_port_spec = ','.join(quick_ports)
+        else:
+            # Manual entry mode
+            dest_port_spec = form.getvalue('dest_ports', '').strip()
+            logger.log_info(f"Manual port spec: {dest_port_spec}")
+            if not dest_port_spec:
+                raise ValueError("No destination ports specified")
+        
+        default_protocol = form.getvalue('default_protocol', 'tcp').lower()
         user_trace_data = form.getvalue('user_trace_data', '').strip()
         
         # Validate inputs
@@ -93,12 +116,25 @@ def main():
             raise ValueError("Invalid source IP")
         if not validator.validate_ip(dest_ip):
             raise ValueError("Invalid destination IP")
-        if not validator.validate_port(dest_port):
-            raise ValueError("Invalid destination port")
         if source_port and not validator.validate_port(source_port):
             raise ValueError("Invalid source port")
-        if not validator.validate_protocol(protocol):
-            raise ValueError("Invalid protocol")
+        if not validator.validate_protocol(default_protocol):
+            raise ValueError("Invalid default protocol")
+        
+        # Parse port specifications with service limit
+        try:
+            logger.log_info(f"Parsing port spec: {dest_port_spec} with default protocol: {default_protocol}")
+            port_protocol_list = port_parser.parse_port_spec(dest_port_spec, default_protocol, max_services=10)
+            logger.log_info(f"Parsed port list: {port_protocol_list}, count: {len(port_protocol_list)}")
+            if not port_protocol_list:
+                raise ValueError("No valid port/protocol combinations")
+        except ValueError as e:
+            logger.log_error("Port parsing failed", f"Spec: {dest_port_spec}, Error: {str(e)}")
+            # Check if it's a service limit error
+            if "Too many services" in str(e):
+                show_error(str(e) + "\n\nPlease go back and reduce the number of services to 10 or less.")
+                return
+            raise ValueError(f"Invalid port specification: {str(e)}")
         
         # Validate user trace data if provided
         if user_trace_data:
@@ -110,8 +146,10 @@ def main():
         # Sanitize inputs
         source_ip = validator.sanitize_input(source_ip)
         dest_ip = validator.sanitize_input(dest_ip)
-        dest_port = validator.sanitize_input(dest_port)
         source_port = validator.sanitize_input(source_port) if source_port else None
+        
+        # Format port list for display
+        port_list_str = port_parser.format_port_list(port_protocol_list)
         
         # Generate run ID first
         run_id = str(uuid.uuid4())
@@ -121,8 +159,8 @@ def main():
             'source_ip': source_ip,
             'source_port': source_port,
             'dest_ip': dest_ip,
-            'dest_port': dest_port,
-            'protocol': protocol,
+            'port_protocol_list': port_protocol_list,  # List of (port, protocol) tuples
+            'port_list_str': port_list_str,  # Formatted string for display
             'user_trace_data': user_trace_data,
             'run_id': run_id
         }
@@ -150,8 +188,8 @@ username = '{session['username']}'
 source_ip = '{source_ip}'
 source_port = {f'"{source_port}"' if source_port else 'None'}
 dest_ip = '{dest_ip}'
-dest_port = '{dest_port}'
-protocol = '{protocol}'
+port_protocol_list = {repr(port_protocol_list)}
+port_list_str = '{port_list_str}'
 user_trace_data = '''{user_trace_data}'''
 run_id = '{run_id}'
 
@@ -181,12 +219,18 @@ try:
         "message": "Trace execution completed"
     }}))
     
-    # 2. Execute reachability test (this will log its own progress)
-    results_file = executor.execute_reachability_test(
+    # 2. Execute optimized multi-service reachability test
+    logger.log_info(json.dumps({{
+        "run_id": run_id,
+        "phase": "SERVICE_TESTS",
+        "message": f"Testing {{len(port_protocol_list)}} services"
+    }}))
+    
+    results_files = executor.execute_reachability_multi(
         session_id, username, run_id, trace_file,
-        source_ip, source_port, dest_ip, dest_port, protocol
+        source_ip, source_port, dest_ip, port_protocol_list
     )
-    timer.log_operation("network_reachability_test.sh")
+    timer.log_operation(f"network_reachability_test_multi_{{len(port_protocol_list)}}_services")
     
     logger.log_info(json.dumps({{
         "run_id": run_id,
@@ -194,11 +238,11 @@ try:
         "message": "Generating PDF report"
     }}))
     
-    # 3. Generate PDF
-    pdf_file = executor.generate_pdf(
-        session_id, username, run_id, trace_file, results_file
+    # 3. Generate multi-page PDF with all results
+    pdf_file = executor.generate_multi_page_pdf(
+        session_id, username, run_id, trace_file, results_files
     )
-    timer.log_operation("generate_pdf.sh")
+    timer.log_operation("generate_multi_page_pdf")
     
     # Generate shareable link
     secret = config.config['secret_key']

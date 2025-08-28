@@ -1,3 +1,64 @@
+// Load quick select services from config
+function loadQuickSelectServices() {
+    fetch('/cgi-bin/get_services_config.py')
+        .then(response => response.json())
+        .then(data => {
+            const quickPorts = document.getElementById('quick_ports');
+            if (quickPorts && data.services) {
+                // Clear existing options
+                quickPorts.innerHTML = '';
+                
+                // Add options from config
+                data.services.forEach(service => {
+                    const option = document.createElement('option');
+                    option.value = `${service.port}/${service.protocol}`;
+                    option.text = `${service.name} (${service.port}/${service.protocol}) - ${service.description}`;
+                    quickPorts.appendChild(option);
+                });
+                
+                // After loading services, restore saved selections
+                restoreSavedSelections();
+            }
+        })
+        .catch(error => {
+            console.error('Failed to load services config:', error);
+            // Fall back to some default services
+            const quickPorts = document.getElementById('quick_ports');
+            if (quickPorts) {
+                const defaults = [
+                    {value: '22/tcp', text: 'SSH (22/tcp) - Secure Shell'},
+                    {value: '80/tcp', text: 'HTTP (80/tcp) - Web Traffic'},
+                    {value: '443/tcp', text: 'HTTPS (443/tcp) - Secure Web'},
+                    {value: '3389/tcp', text: 'RDP (3389/tcp) - Remote Desktop'}
+                ];
+                defaults.forEach(service => {
+                    const option = document.createElement('option');
+                    option.value = service.value;
+                    option.text = service.text;
+                    quickPorts.appendChild(option);
+                });
+                restoreSavedSelections();
+            }
+        });
+}
+
+// Function to restore saved quick port selections
+function restoreSavedSelections() {
+    const savedData = localStorage.getItem('reachability_form_data');
+    if (savedData) {
+        const data = JSON.parse(savedData);
+        if (data.quick_ports) {
+            const quickPorts = document.getElementById('quick_ports');
+            const selectedValues = Array.isArray(data.quick_ports) ? data.quick_ports : [];
+            if (quickPorts) {
+                for (let option of quickPorts.options) {
+                    option.selected = selectedValues.includes(option.value);
+                }
+            }
+        }
+    }
+}
+
 // Function to save form data to localStorage
 function saveFormData() {
     const form = document.getElementById('reachability-form');
@@ -5,7 +66,26 @@ function saveFormData() {
     const data = {};
     
     for (const [key, value] of formData.entries()) {
-        data[key] = value;
+        // Skip quick_ports as we'll handle it separately
+        if (key !== 'quick_ports') {
+            data[key] = value;
+        }
+    }
+    
+    // Handle multi-select quick_ports specially
+    const quickPorts = document.getElementById('quick_ports');
+    const selectedPorts = [];
+    for (let option of quickPorts.options) {
+        if (option.selected) {
+            selectedPorts.push(option.value);
+        }
+    }
+    data.quick_ports = selectedPorts;
+    
+    // Explicitly save the port mode radio button value
+    const portModeRadio = document.querySelector('input[name="port_mode"]:checked');
+    if (portModeRadio) {
+        data.port_mode = portModeRadio.value;
     }
     
     localStorage.setItem('reachability_form_data', JSON.stringify(data));
@@ -14,6 +94,9 @@ function saveFormData() {
 // Restore form data from localStorage
 window.addEventListener('DOMContentLoaded', function() {
     const form = document.getElementById('reachability-form');
+    
+    // Load quick select services first
+    loadQuickSelectServices();
     
     // First check for test mode configuration
     fetch('/cgi-bin/get_test_config.py')
@@ -34,9 +117,22 @@ window.addEventListener('DOMContentLoaded', function() {
                     for (const [key, value] of Object.entries(data)) {
                         const field = form.elements[key];
                         if (field) {
-                            field.value = value;
+                            // Handle different field types
+                            if (key === 'quick_ports') {
+                                // Skip - will be handled by restoreSavedSelections() after services are loaded
+                            } else if (field.type === 'radio-button' || (field[0] && field[0].type === 'radio')) {
+                                // Handle radio buttons
+                                const radios = form.querySelectorAll(`input[name="${key}"]`);
+                                radios.forEach(radio => {
+                                    radio.checked = (radio.value === value);
+                                });
+                            } else {
+                                field.value = value;
+                            }
                         }
                     }
+                    
+                    // Ensure port group visibility is already set above
                 } else {
                     // No saved data - prefill from test config
                     const sourceField = form.elements['source_ip'];
@@ -53,10 +149,32 @@ window.addEventListener('DOMContentLoaded', function() {
                 const savedData = localStorage.getItem('reachability_form_data');
                 if (savedData) {
                     const data = JSON.parse(savedData);
+                    // FIRST: Set the visibility of port groups based on saved mode
+                    const portMode = data.port_mode || 'quick';
+                    if (portMode === 'manual') {
+                        document.getElementById('quick_select_group').style.display = 'none';
+                        document.getElementById('manual_entry_group').style.display = 'block';
+                    } else {
+                        document.getElementById('quick_select_group').style.display = 'block';
+                        document.getElementById('manual_entry_group').style.display = 'none';
+                    }
+                    
+                    // THEN: Restore all form values
                     for (const [key, value] of Object.entries(data)) {
                         const field = form.elements[key];
                         if (field) {
-                            field.value = value;
+                            // Handle different field types
+                            if (key === 'quick_ports') {
+                                // Skip - will be handled by restoreSavedSelections() after services are loaded
+                            } else if (field.type === 'radio-button' || (field[0] && field[0].type === 'radio')) {
+                                // Handle radio buttons
+                                const radios = form.querySelectorAll(`input[name="${key}"]`);
+                                radios.forEach(radio => {
+                                    radio.checked = (radio.value === value);
+                                });
+                            } else if (field) {
+                                field.value = value;
+                            }
                         }
                     }
                 }
@@ -71,8 +189,26 @@ window.addEventListener('DOMContentLoaded', function() {
                 for (const [key, value] of Object.entries(data)) {
                     const field = form.elements[key];
                     if (field) {
-                        field.value = value;
+                        // Handle different field types
+                        if (key === 'quick_ports') {
+                            // Skip - will be handled by restoreSavedSelections() after services are loaded
+                        } else if (field.type === 'radio-button' || (field[0] && field[0].type === 'radio')) {
+                            // Handle radio buttons
+                            const radios = form.querySelectorAll(`input[name="${key}"]`);
+                            radios.forEach(radio => {
+                                radio.checked = (radio.value === value);
+                            });
+                        } else {
+                            field.value = value;
+                        }
                     }
+                }
+                
+                // After restoring, make sure the correct port input group is visible
+                const portMode = data.port_mode || 'quick';
+                if (portMode === 'manual') {
+                    document.getElementById('quick_select_group').style.display = 'none';
+                    document.getElementById('manual_entry_group').style.display = 'block';
                 }
             }
         });
@@ -93,6 +229,30 @@ window.addEventListener('DOMContentLoaded', function() {
 });
 
 // Removed - combined with the main submit handler below
+
+// Toggle between quick select and manual entry modes
+window.togglePortMode = function() {
+    const portMode = document.querySelector('input[name="port_mode"]:checked').value;
+    const quickGroup = document.getElementById('quick_select_group');
+    const manualGroup = document.getElementById('manual_entry_group');
+    const destPorts = document.getElementById('dest_ports');
+    const quickPorts = document.getElementById('quick_ports');
+    
+    if (portMode === 'quick') {
+        quickGroup.style.display = 'block';
+        manualGroup.style.display = 'none';
+        // Clear manual entry and remove any validation
+        destPorts.value = '';
+        destPorts.setCustomValidity('');
+    } else {
+        quickGroup.style.display = 'none';
+        manualGroup.style.display = 'block';
+        // Clear quick select
+        for (let option of quickPorts.options) {
+            option.selected = false;
+        }
+    }
+}
 
 // Clear form and localStorage - made globally accessible
 window.clearForm = function() {
@@ -203,8 +363,89 @@ window.addEventListener('click', function(event) {
     }
 });
 
+// Function to count services from port specification
+function countServicesFromPortSpec(portSpec, defaultProtocol) {
+    let totalServices = 0;
+    const parts = portSpec.split(',').map(p => p.trim()).filter(p => p);
+    
+    for (const part of parts) {
+        // Check if it's a range
+        const rangeParts = part.split('-');
+        if (rangeParts.length === 2) {
+            // It's a range
+            let startPort, endPort;
+            
+            // Handle protocol in first part of range
+            const firstPart = rangeParts[0].trim();
+            const firstPortMatch = firstPart.match(/^(\d+)/);
+            if (firstPortMatch) {
+                startPort = parseInt(firstPortMatch[1]);
+            } else {
+                continue; // Invalid format
+            }
+            
+            // Handle second part of range (might have protocol)
+            const secondPart = rangeParts[1].trim();
+            const secondPortMatch = secondPart.match(/^(\d+)/);
+            if (secondPortMatch) {
+                endPort = parseInt(secondPortMatch[1]);
+            } else {
+                continue; // Invalid format
+            }
+            
+            if (startPort && endPort && startPort <= endPort) {
+                // Count each port in the range
+                totalServices += (endPort - startPort + 1);
+            }
+        } else {
+            // Single port (might have multiple protocols)
+            const portProto = part.split('/')[0].trim();
+            if (portProto && !isNaN(parseInt(portProto))) {
+                totalServices += 1;
+            }
+        }
+    }
+    
+    return totalServices;
+}
+
 // Handle form submission - restore user trace data to hidden field
 document.getElementById('reachability-form').addEventListener('submit', function(e) {
+    // First validate the number of services
+    const portMode = document.querySelector('input[name="port_mode"]:checked').value;
+    let serviceCount = 0;
+    
+    if (portMode === 'quick') {
+        // Count selected services in quick mode
+        const quickPorts = document.getElementById('quick_ports');
+        serviceCount = quickPorts.selectedOptions.length;
+    } else {
+        // Count services from manual entry (including ranges)
+        const destPorts = document.getElementById('dest_ports').value.trim();
+        const defaultProtocol = document.getElementById('default_protocol').value;
+        if (destPorts) {
+            serviceCount = countServicesFromPortSpec(destPorts, defaultProtocol);
+        }
+    }
+    
+    // Check if service count exceeds limit
+    if (serviceCount > 10) {
+        e.preventDefault(); // Stop form submission
+        
+        // Show error message
+        alert(`Too many services selected (${serviceCount} services).\n\n` +
+              `Please reduce the number of services to 10 or less.\n` +
+              `Note: Each port in a range counts as a separate service.\n\n` +
+              `Current selection: ${serviceCount} services`);
+        return;
+    }
+    
+    if (serviceCount === 0) {
+        e.preventDefault(); // Stop form submission
+        alert('Please select at least one service to test.');
+        return;
+    }
+    
     // Save form data
     saveFormData();
     

@@ -46,6 +46,9 @@ if [ "$REQUEST_METHOD" = "GET" ]; then
                     RUN_ID="${BASH_REMATCH[1]}"
                 fi
                 ;;
+            service)
+                SERVICE_INFO=$(echo "${KV[1]}" | sed 's/%2F/\//g' | sed 's/%20/ /g')
+                ;;
         esac
     done
 fi
@@ -110,6 +113,7 @@ os.makedirs('/var/www/traceroute-web/matplotlib_cache', exist_ok=True)
 trace_file = "${TRACE_FILE}"
 results_file = "${RESULTS_FILE}"
 output_file = "${OUTPUT_FILE}"
+service_info = "${SERVICE_INFO}"
 
 # Run visualization
 script_path = "/var/www/traceroute-web/scripts/visualize_reachability.py"
@@ -117,6 +121,10 @@ cmd = [sys.executable, "-B", "-u", script_path,
        "--trace", trace_file,
        "--results", results_file,
        "--output", output_file]
+
+# Add service info if provided
+if service_info:
+    cmd.extend(["--service", service_info])
 
 result = subprocess.run(cmd, capture_output=True, text=True)
 

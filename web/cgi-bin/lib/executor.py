@@ -8,6 +8,7 @@ import json
 import time
 import shutil
 from datetime import datetime, timedelta
+from pathlib import Path
 
 class CommandExecutor:
     def __init__(self, config, logger):
@@ -22,14 +23,14 @@ class CommandExecutor:
         self.mode = config.config.get('traceroute_simulator_mode', 'live')
         self.test_trace_file = config.config.get('test_trace_file', '')
         
-        
     def _activate_venv_and_run(self, cmd, timeout=60, capture_output=True):
         """Run command with virtual environment activated (same as test_me.py)"""
         # Build bash command to source venv and run the actual command
         venv_activate = os.path.join(self.venv_path, 'bin', 'activate')
         
-        # Convert cmd list to string
-        cmd_str = ' '.join(cmd)
+        # Convert cmd list to string - handle if elements are already quoted
+        import shlex
+        cmd_str = ' '.join([str(c) for c in cmd])
         bash_cmd = f'source {venv_activate} && {cmd_str}'
         
         # Debug logging
@@ -316,10 +317,113 @@ class CommandExecutor:
         else:
             raise Exception(f"Trace execution failed: {result['error']}")
     
+    def execute_reachability_multi(self, session_id, username, run_id, trace_file,
+                                   source_ip, source_port, dest_ip, port_protocol_list):
+        """Execute optimized multi-service reachability test"""
+        # Create output directory for results
+        output_dir = os.path.join(self.data_dir, "results", run_id)
+        os.makedirs(output_dir, exist_ok=True)
+        
+        # Use the multi-service wrapper with locking
+        wrapper_path = os.path.join(self.simulator_path, "network_reachability_test_wrapper_multi.py")
+        
+        # Log the wrapper path for debugging
+        self.logger.log_info(f"Looking for multi-service wrapper at: {wrapper_path}")
+        
+        if not os.path.exists(wrapper_path):
+            self.logger.log_error("Wrapper not found", f"network_reachability_test_wrapper_multi.py not found at {wrapper_path}")
+            raise Exception(f"Multi-service wrapper script not found at {wrapper_path}")
+        
+        # Write services to a JSON file instead of passing via command line
+        services_file = os.path.join(output_dir, "services.json")
+        with open(services_file, 'w') as f:
+            json.dump(port_protocol_list, f)
+        
+        cmd = [
+            os.path.join(self.venv_path, "bin", "python"),
+            "-B", "-u",
+            wrapper_path,
+            "-s", source_ip,
+            "-d", dest_ip,
+            "-p", services_file,  # Now passing the file path instead of JSON string
+            "-o", output_dir,
+            "-f", trace_file
+        ]
+        
+        if source_port:
+            cmd.extend(["-S", str(source_port)])
+        
+        # Add verbose flags if configured
+        verbose_level = self.config.config.get('tsimsh_verbose_level', 0)
+        for _ in range(verbose_level):
+            cmd.append("-v")
+        
+        # Log that we're starting the multi-service test
+        self.logger.log_info(
+            f"Session {session_id}: Starting multi-service test for "
+            f"{len(port_protocol_list)} services from {source_ip} to {dest_ip}"
+        )
+        
+        # Execute command (will wait for lock if needed)
+        start_time = time.time()
+        result = self._activate_venv_and_run(cmd, timeout=420)  # 7 minutes (5 min lock + execution)
+        end_time = time.time()
+        
+        # Log execution
+        self.logger.log_command_execution(
+            session_id=session_id,
+            username=username,
+            command="network_reachability_test_wrapper_multi.py",
+            args={
+                'source_ip': source_ip,
+                'source_port': source_port,
+                'dest_ip': dest_ip,
+                'services': port_protocol_list,
+                'trace_file': trace_file,
+                'output_dir': output_dir
+            },
+            start_time=start_time,
+            end_time=end_time,
+            return_code=result['return_code'],
+            output=result['output'][:1000] if result['output'] else "",
+            error=result['error'][:1000] if result['error'] else ""
+        )
+        
+        if not result['success']:
+            self.logger.log_error("Multi-service test failed", result['error'])
+            raise Exception(f"Multi-service reachability test failed: {result['error']}")
+        
+        # Parse the output to get status
+        try:
+            output_data = json.loads(result['output'])
+            self.logger.log_info(
+                f"Multi-service test completed: {output_data.get('services_reachable', 0)}/"
+                f"{output_data.get('services_tested', 0)} services reachable"
+            )
+        except:
+            pass
+        
+        # Collect result files that were generated
+        result_files = []
+        for port, protocol in port_protocol_list:
+            result_file = os.path.join(output_dir, f"{port}_{protocol}_results.json")
+            if os.path.exists(result_file):
+                result_files.append((port, protocol, result_file))
+            else:
+                self.logger.log_warning(f"Result file not found for {port}/{protocol}")
+        
+        if not result_files:
+            raise Exception("No service result files were generated")
+        
+        self.logger.log_info(f"Collected {len(result_files)} result files for PDF generation")
+        
+        return result_files
+    
     def execute_reachability_test(self, session_id, username, run_id, trace_file,
                                   source_ip, source_port, dest_ip, dest_port, protocol):
         """Execute network_reachability_test.sh with locking"""
-        results_file = os.path.join(self.data_dir, "results", f"{run_id}_results.json")
+        # Make filename unique for each port/protocol combination
+        results_file = os.path.join(self.data_dir, "results", f"{run_id}_{dest_port}_{protocol}_results.json")
         os.makedirs(os.path.dirname(results_file), exist_ok=True)
         
         # Use the Python wrapper that handles locking
@@ -417,11 +521,100 @@ class CommandExecutor:
         
         pdf_file = os.path.join(self.data_dir, "pdfs", f"{run_id}_report.pdf")
         os.makedirs(os.path.dirname(pdf_file), exist_ok=True)
+    
+    def generate_multi_page_pdf(self, session_id, username, run_id, trace_file, results_files):
+        """Generate multi-page PDF with results for each port/protocol combination"""
+        import urllib.parse
+        import urllib.request
+        import ssl
+        import tempfile
+        from PyPDF2 import PdfMerger
+        
+        pdf_file = os.path.join(self.data_dir, "pdfs", f"{run_id}_report.pdf")
+        os.makedirs(os.path.dirname(pdf_file), exist_ok=True)
         
         # Get base URL from config (required)
         base_url = self.config.config.get('base_url')
         if not base_url:
             raise Exception("base_url not configured in config.json")
+        
+        # Generate individual PDFs for each service
+        individual_pdfs = []
+        
+        for port, protocol, result_file in results_files:
+            try:
+                # Generate PDF for this service
+                service_pdf = os.path.join(self.data_dir, "pdfs", f"{run_id}_{port}_{protocol}.pdf")
+                
+                # Build URL with parameters
+                params = {
+                    'trace': trace_file,
+                    'results': result_file,
+                    'output': service_pdf,
+                    'service': f"{port}/{protocol}"  # Add service identifier
+                }
+                query_string = urllib.parse.urlencode(params)
+                url = f"{base_url}/cgi-bin/generate_pdf.sh?{query_string}"
+                
+                self.logger.log_info(f"Generating PDF for {port}/{protocol}: {url}")
+                
+                # Create SSL context that doesn't verify certificates
+                ctx = ssl.create_default_context()
+                ctx.check_hostname = False
+                ctx.verify_mode = ssl.CERT_NONE
+                
+                # Make the request with SSL context
+                with urllib.request.urlopen(url, timeout=30, context=ctx) as response:
+                    if response.headers.get('content-type') == 'application/pdf':
+                        # Save the PDF
+                        pdf_data = response.read()
+                        with open(service_pdf, 'wb') as f:
+                            f.write(pdf_data)
+                        individual_pdfs.append(service_pdf)
+                        self.logger.log_info(f"PDF for {port}/{protocol} generated, size: {len(pdf_data)} bytes")
+                    else:
+                        # Read error message
+                        error_msg = response.read().decode('utf-8')
+                        self.logger.log_error(f"PDF generation failed for {port}/{protocol}", error_msg)
+                        # Continue with other services
+                        
+            except Exception as e:
+                self.logger.log_error(f"Error generating PDF for {port}/{protocol}", str(e))
+                # Continue with other services
+        
+        # Merge all PDFs into one
+        if individual_pdfs:
+            try:
+                merger = PdfMerger()
+                
+                # Add each PDF to the merger
+                for pdf in individual_pdfs:
+                    merger.append(pdf)
+                
+                # Write the merged PDF
+                merger.write(pdf_file)
+                merger.close()
+                
+                self.logger.log_info(f"Merged {len(individual_pdfs)} PDFs into {pdf_file}")
+                
+                # Clean up individual PDFs
+                for pdf in individual_pdfs:
+                    try:
+                        os.remove(pdf)
+                    except:
+                        pass
+                
+                return pdf_file
+                
+            except Exception as e:
+                self.logger.log_error("Failed to merge PDFs", str(e))
+                # Fall back to returning the first PDF if merge fails
+                if individual_pdfs:
+                    shutil.copy(individual_pdfs[0], pdf_file)
+                    return pdf_file
+                raise Exception(f"PDF merge failed: {str(e)}")
+        else:
+            raise Exception("No PDFs were generated successfully")
         
         # Build URL with parameters
         params = {

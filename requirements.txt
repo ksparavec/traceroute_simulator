@@ -17,6 +17,7 @@ pycurl
 pyhyphen
 pyparsing
 pyperclip
+PyPDF2
 PySimpleSOAP
 PyYAML
 reportbug

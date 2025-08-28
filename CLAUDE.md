@@ -17,3 +17,4 @@ This file provides guidance for Claude Code (claude.ai/code) when working with c
 - you shall never execute any python script with sudo from command line
 - YOU SHALL NEVER DO 2>&1 when executing scripts
 - never try to use 'ls' outside of your working directory. use 'find' with filtering and -exec option instead.
+- always use tsimsh from PATH, never from repository

@@ -570,10 +570,11 @@ netsetup:
 		echo "Please run: sudo -E make netsetup"; \
 		exit 1; \
 	fi
-	@echo "Ensuring /var/opt/traceroute-simulator directory exists with proper permissions..."
-	@mkdir -p /var/opt/traceroute-simulator
-	@chgrp tsim-users /var/opt/traceroute-simulator 2>/dev/null || true
-	@chmod 2775 /var/opt/traceroute-simulator
+	@echo "Checking for tsim-users group..."
+	@if ! getent group tsim-users > /dev/null 2>&1; then \
+		echo "Creating tsim-users group..."; \
+		groupadd tsim-users || true; \
+	fi
 	@env TRACEROUTE_SIMULATOR_RAW_FACTS="$(TRACEROUTE_SIMULATOR_RAW_FACTS)" $(PYTHON) $(PYTHON_OPTIONS) src/simulators/batch_command_generator.py --clean --create --verify $(ARGS)
 
 # Setup network namespace simulation using serial/sequential mode (slow, old method)
@@ -584,10 +585,6 @@ netsetup-serial:
 		echo "Please run: sudo -E make netsetup-serial"; \
 		exit 1; \
 	fi
-	@echo "Ensuring /var/opt/traceroute-simulator directory exists with proper permissions..."
-	@mkdir -p /var/opt/traceroute-simulator
-	@chgrp tsim-users /var/opt/traceroute-simulator 2>/dev/null || true
-	@chmod 2775 /var/opt/traceroute-simulator
 	@env TRACEROUTE_SIMULATOR_RAW_FACTS="$(TRACEROUTE_SIMULATOR_RAW_FACTS)" $(PYTHON) $(PYTHON_OPTIONS) src/simulators/network_namespace_setup.py $(ARGS)
 
 # Test network connectivity in namespace simulation (requires sudo)  
@@ -1469,12 +1466,6 @@ install-web:
 	@mkdir -p "$(WEB_ROOT)/conf"
 	@mkdir -p "$(WEB_ROOT)/scripts"
 	
-	# Create shared registry directory
-	@echo "Creating shared registry directory..."
-	@mkdir -p /var/opt/traceroute-simulator
-	@chgrp tsim-users /var/opt/traceroute-simulator 2>/dev/null || true
-	@chmod 2775 /var/opt/traceroute-simulator
-	
 	# Copy CGI scripts
 	@echo "Installing CGI scripts..."
 	@cp -r web/cgi-bin/* "$(WEB_ROOT)/cgi-bin/"
@@ -1488,9 +1479,11 @@ install-web:
 	# Copy scripts
 	@echo "Installing utility scripts..."
 	@cp web/scripts/network_reachability_test_wrapper.py "$(WEB_ROOT)/scripts/"
+	@cp web/scripts/network_reachability_test_wrapper_multi.py "$(WEB_ROOT)/scripts/"
 	@cp web/scripts/create_user.sh "$(WEB_ROOT)/scripts/"
 	@cp web/scripts/change_password.sh "$(WEB_ROOT)/scripts/"
 	@cp src/scripts/network_reachability_test.sh "$(WEB_ROOT)/scripts/"
+	@cp src/scripts/network_reachability_test_multi.py "$(WEB_ROOT)/scripts/"
 	@cp src/scripts/visualize_reachability.py "$(WEB_ROOT)/scripts/"
 	@cp src/scripts/format_reachability_output.py "$(WEB_ROOT)/scripts/"
 	@cp src/scripts/analyze_packet_counts.py "$(WEB_ROOT)/scripts/"

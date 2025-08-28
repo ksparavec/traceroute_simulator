@@ -20,5 +20,31 @@
         "interfaces": "/dev/shm/tsim/interface_registry.json",
         "bridges": "/dev/shm/tsim/bridge_registry.json",
         "services": "/dev/shm/tsim/services_registry.json"
-    }
+    },
+    "quick_select_services": [
+        {"port": 22, "protocol": "tcp", "name": "SSH", "description": "Secure Shell"},
+        {"port": 53, "protocol": "tcp", "name": "DNS", "description": "Domain Name System (TCP)"},
+        {"port": 53, "protocol": "udp", "name": "DNS", "description": "Domain Name System (UDP)"},
+        {"port": 80, "protocol": "tcp", "name": "HTTP", "description": "Web Traffic"},
+        {"port": 88, "protocol": "tcp", "name": "Kerberos", "description": "AD Authentication (TCP)"},
+        {"port": 88, "protocol": "udp", "name": "Kerberos", "description": "AD Authentication (UDP)"},
+        {"port": 135, "protocol": "tcp", "name": "RPC", "description": "Microsoft RPC Endpoint Mapper"},
+        {"port": 139, "protocol": "tcp", "name": "NetBIOS", "description": "NetBIOS Session Service"},
+        {"port": 389, "protocol": "tcp", "name": "LDAP", "description": "Lightweight Directory Access"},
+        {"port": 389, "protocol": "udp", "name": "LDAP", "description": "Lightweight Directory Access (UDP)"},
+        {"port": 443, "protocol": "tcp", "name": "HTTPS", "description": "Secure Web"},
+        {"port": 445, "protocol": "tcp", "name": "SMB", "description": "Server Message Block (File Sharing)"},
+        {"port": 464, "protocol": "tcp", "name": "Kpasswd", "description": "Kerberos Password Change"},
+        {"port": 636, "protocol": "tcp", "name": "LDAPS", "description": "Secure LDAP"},
+        {"port": 3268, "protocol": "tcp", "name": "GC", "description": "AD Global Catalog"},
+        {"port": 3269, "protocol": "tcp", "name": "GC-SSL", "description": "AD Global Catalog (SSL)"},
+        {"port": 3306, "protocol": "tcp", "name": "MySQL", "description": "MySQL Database"},
+        {"port": 3389, "protocol": "tcp", "name": "RDP", "description": "Remote Desktop"},
+        {"port": 5432, "protocol": "tcp", "name": "PostgreSQL", "description": "PostgreSQL Database"},
+        {"port": 5985, "protocol": "tcp", "name": "WinRM", "description": "Windows Remote Management (HTTP)"},
+        {"port": 5986, "protocol": "tcp", "name": "WinRM-SSL", "description": "Windows Remote Management (HTTPS)"},
+        {"port": 8080, "protocol": "tcp", "name": "HTTP-Alt", "description": "Alternate Web"},
+        {"port": 8443, "protocol": "tcp", "name": "HTTPS-Alt", "description": "Alternate Secure Web"},
+        {"port": 9389, "protocol": "tcp", "name": "AD-WS", "description": "AD Web Services"}
+    ]
 }

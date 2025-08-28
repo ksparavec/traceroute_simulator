@@ -325,7 +325,13 @@ def create_networkx_visualization(trace_data: Dict[str, Any], results_data: Dict
     
     # Add title and description
     summary = results_data.get('summary', {})
-    title_text = 'Network Service Reachability Report'
+    
+    # Check if this is a specific service test
+    service_tested = results_data.get('service_tested', '')
+    if service_tested:
+        title_text = f'Network Service Reachability Report - {service_tested}'
+    else:
+        title_text = 'Network Service Reachability Report'
     
     # Build source part of description
     source_text = f"Source: {summary.get('source_ip', 'N/A')}"
@@ -685,6 +691,8 @@ def main():
                         help='Results file containing test results')
     parser.add_argument('-o', '--output', type=str,
                         help='Output image file (PNG, PDF, etc.)')
+    parser.add_argument('-s', '--service', type=str,
+                        help='Service being tested (e.g., 80/tcp)')
     
     args = parser.parse_args()
     
@@ -692,6 +700,10 @@ def main():
         # Load trace and results
         trace_data = load_json_file(args.trace_file)
         results_data = load_json_file(args.results_file)
+        
+        # Add service info to results if provided
+        if args.service:
+            results_data['service_tested'] = args.service
         
         # Create visualization
         create_networkx_visualization(trace_data, results_data, args.output)

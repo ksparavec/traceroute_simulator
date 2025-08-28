@@ -433,9 +433,10 @@ class ServiceManager:
             with open(config.log_file, 'w') as log_file:
                 process = subprocess.Popen(
                     cmd,
+                    stdin=subprocess.DEVNULL,  # Detach stdin to prevent TTY issues
                     stdout=log_file,
                     stderr=log_file
-                    # Removed start_new_session=True to keep process in same group
+                    # Keep in same process group for proper cleanup
                 )
             
             # Give it a moment to start

@@ -50,7 +50,10 @@ def parse_timing_log(run_id):
                     details = parts[2] if len(parts) > 2 else ''
                     
                     # Handle different phase prefixes
-                    if checkpoint.startswith('REACHABILITY_'):
+                    if checkpoint.startswith('MULTI_REACHABILITY_'):
+                        # Remove MULTI_REACHABILITY_ prefix for multi-service tests
+                        phase = checkpoint.replace('MULTI_REACHABILITY_', '')
+                    elif checkpoint.startswith('REACHABILITY_'):
                         # Remove REACHABILITY_ prefix for standard phases
                         phase = checkpoint.replace('REACHABILITY_', '')
                     elif checkpoint.startswith('web_request_'):

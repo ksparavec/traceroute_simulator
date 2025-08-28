@@ -1482,6 +1482,7 @@ install-web:
 	@cp web/scripts/network_reachability_test_wrapper_multi.py "$(WEB_ROOT)/scripts/"
 	@cp web/scripts/create_user.sh "$(WEB_ROOT)/scripts/"
 	@cp web/scripts/change_password.sh "$(WEB_ROOT)/scripts/"
+	@cp web/scripts/generate_summary_page.py "$(WEB_ROOT)/scripts/"
 	@cp src/scripts/network_reachability_test.sh "$(WEB_ROOT)/scripts/"
 	@cp src/scripts/network_reachability_test_multi.py "$(WEB_ROOT)/scripts/"
 	@cp src/scripts/visualize_reachability.py "$(WEB_ROOT)/scripts/"
@@ -1511,8 +1512,8 @@ install-web:
 		echo "Warning: Not running as root, cannot set $(WEB_USER) ownership"; \
 		echo "You may need to run: sudo chown -R $(WEB_USER):$(WEB_GROUP) $(WEB_ROOT)"; \
 	fi
-	@chmod 750 "$(WEB_ROOT)/data"
-	@chmod 750 "$(WEB_ROOT)/logs"
+	@chmod 775 "$(WEB_ROOT)/data"
+	@chmod 775 "$(WEB_ROOT)/logs"
 	@chmod 755 "$(WEB_ROOT)/htdocs"
 	@chmod 755 "$(WEB_ROOT)/cgi-bin"
 	

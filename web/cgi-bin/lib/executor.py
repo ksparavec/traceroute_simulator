@@ -200,7 +200,7 @@ class CommandExecutor:
         trace_file = os.path.join(self.data_dir, "traces", f"{run_id}_trace.json")
         
         # Ensure directory exists
-        os.makedirs(os.path.dirname(trace_file), exist_ok=True)
+        os.makedirs(os.path.dirname(trace_file), exist_ok=True, mode=0o775)
         
         # Check if user provided trace data
         if user_trace_data:
@@ -320,9 +320,13 @@ class CommandExecutor:
     def execute_reachability_multi(self, session_id, username, run_id, trace_file,
                                    source_ip, source_port, dest_ip, port_protocol_list):
         """Execute optimized multi-service reachability test"""
+        # Store IPs for summary page generation
+        self.last_source_ip = source_ip
+        self.last_dest_ip = dest_ip
+        
         # Create output directory for results
         output_dir = os.path.join(self.data_dir, "results", run_id)
-        os.makedirs(output_dir, exist_ok=True)
+        os.makedirs(output_dir, exist_ok=True, mode=0o775)
         
         # Use the multi-service wrapper with locking
         wrapper_path = os.path.join(self.simulator_path, "network_reachability_test_wrapper_multi.py")
@@ -424,7 +428,7 @@ class CommandExecutor:
         """Execute network_reachability_test.sh with locking"""
         # Make filename unique for each port/protocol combination
         results_file = os.path.join(self.data_dir, "results", f"{run_id}_{dest_port}_{protocol}_results.json")
-        os.makedirs(os.path.dirname(results_file), exist_ok=True)
+        os.makedirs(os.path.dirname(results_file), exist_ok=True, mode=0o775)
         
         # Use the Python wrapper that handles locking
         wrapper_path = os.path.join(self.simulator_path, "network_reachability_test_wrapper.py")
@@ -520,7 +524,7 @@ class CommandExecutor:
         import ssl
         
         pdf_file = os.path.join(self.data_dir, "pdfs", f"{run_id}_report.pdf")
-        os.makedirs(os.path.dirname(pdf_file), exist_ok=True)
+        os.makedirs(os.path.dirname(pdf_file), exist_ok=True, mode=0o775)
     
     def generate_multi_page_pdf(self, session_id, username, run_id, trace_file, results_files):
         """Generate multi-page PDF with results for each port/protocol combination"""
@@ -531,15 +535,72 @@ class CommandExecutor:
         from PyPDF2 import PdfMerger
         
         pdf_file = os.path.join(self.data_dir, "pdfs", f"{run_id}_report.pdf")
-        os.makedirs(os.path.dirname(pdf_file), exist_ok=True)
+        os.makedirs(os.path.dirname(pdf_file), exist_ok=True, mode=0o775)
         
         # Get base URL from config (required)
         base_url = self.config.config.get('base_url')
         if not base_url:
             raise Exception("base_url not configured in config.json")
         
-        # Generate individual PDFs for each service
+        # Step 1: Generate summary page
+        summary_pdf = os.path.join(self.data_dir, "pdfs", f"{run_id}_summary.pdf")
+        try:
+            self.logger.log_info("Generating summary page")
+            
+            # Prepare form data for summary page
+            sessions_dir = os.path.join(self.data_dir, "sessions", session_id)
+            os.makedirs(sessions_dir, exist_ok=True, mode=0o775)  # Ensure directory exists
+            form_data_file = os.path.join(sessions_dir, f"{run_id}_form.json")
+            form_data = {
+                'source_ip': self.last_source_ip if hasattr(self, 'last_source_ip') else 'N/A',
+                'dest_ip': self.last_dest_ip if hasattr(self, 'last_dest_ip') else 'N/A',
+                'timestamp': time.strftime('%Y-%m-%d %H:%M:%S'),
+                'run_id': run_id,  # Add the run_id/session_id
+                'session_id': run_id  # Same as run_id for tracking
+            }
+            with open(form_data_file, 'w') as f:
+                json.dump(form_data, f)
+            
+            # Prepare results list for summary page
+            results_list_file = os.path.join(self.data_dir, "sessions", session_id, f"{run_id}_results_list.json")
+            results_list = []
+            for port, protocol, result_file in results_files:
+                results_list.append({
+                    'port': port,
+                    'protocol': protocol,
+                    'file': result_file
+                })
+            with open(results_list_file, 'w') as f:
+                json.dump(results_list, f)
+            
+            # Run summary page generator with virtual environment
+            summary_script = "/var/www/traceroute-web/scripts/generate_summary_page.py"
+            cmd = [
+                os.path.join(self.venv_path, "bin", "python"),
+                "-B", "-u", summary_script,
+                "--form-data", form_data_file,
+                "--results", results_list_file,
+                "--output", summary_pdf
+            ]
+            
+            # Use the same venv activation method as other scripts
+            result = self._activate_venv_and_run(cmd, timeout=30)
+            if result['success'] and os.path.exists(summary_pdf):
+                self.logger.log_info(f"Summary page generated: {summary_pdf}")
+            else:
+                self.logger.log_warning(f"Summary page generation failed: {result.get('error', result.get('output', ''))}")
+                summary_pdf = None
+                
+        except Exception as e:
+            self.logger.log_warning(f"Failed to generate summary page: {str(e)}")
+            summary_pdf = None
+        
+        # Step 2: Generate individual PDFs for each service using existing single-page generator
         individual_pdfs = []
+        
+        # Add summary page as first PDF if it was generated
+        if summary_pdf and os.path.exists(summary_pdf):
+            individual_pdfs.append(summary_pdf)
         
         for port, protocol, result_file in results_files:
             try:
@@ -565,16 +626,29 @@ class CommandExecutor:
                 
                 # Make the request with SSL context
                 with urllib.request.urlopen(url, timeout=30, context=ctx) as response:
-                    if response.headers.get('content-type') == 'application/pdf':
+                    # Check content type and read response
+                    content_type = response.headers.get('content-type', '')
+                    pdf_data = response.read()
+                    
+                    # Log what we received
+                    self.logger.log_info(f"Response for {port}/{protocol}: content-type={content_type}, size={len(pdf_data)} bytes")
+                    
+                    if 'application/pdf' in content_type and len(pdf_data) > 0:
                         # Save the PDF
-                        pdf_data = response.read()
                         with open(service_pdf, 'wb') as f:
                             f.write(pdf_data)
                         individual_pdfs.append(service_pdf)
-                        self.logger.log_info(f"PDF for {port}/{protocol} generated, size: {len(pdf_data)} bytes")
+                        self.logger.log_info(f"PDF for {port}/{protocol} saved successfully")
+                    elif len(pdf_data) == 0:
+                        self.logger.log_error(f"PDF generation for {port}/{protocol}", "Received empty response")
+                        # Try to diagnose the issue
+                        self.logger.log_info(f"Response headers: {dict(response.headers)}")
                     else:
-                        # Read error message
-                        error_msg = response.read().decode('utf-8')
+                        # Response was not PDF - treat as error
+                        try:
+                            error_msg = pdf_data.decode('utf-8')[:500]  # First 500 chars of error
+                        except:
+                            error_msg = f"Non-PDF response with content-type: {content_type}"
                         self.logger.log_error(f"PDF generation failed for {port}/{protocol}", error_msg)
                         # Continue with other services
                         
@@ -615,42 +689,6 @@ class CommandExecutor:
                 raise Exception(f"PDF merge failed: {str(e)}")
         else:
             raise Exception("No PDFs were generated successfully")
-        
-        # Build URL with parameters
-        params = {
-            'trace': trace_file,
-            'results': results_file,
-            'output': pdf_file
-        }
-        query_string = urllib.parse.urlencode(params)
-        url = f"{base_url}/cgi-bin/generate_pdf.sh?{query_string}"
-        
-        self.logger.log_info(f"Calling PDF generation via: {url}")
-        
-        # Create SSL context that doesn't verify certificates
-        ctx = ssl.create_default_context()
-        ctx.check_hostname = False
-        ctx.verify_mode = ssl.CERT_NONE
-        
-        try:
-            # Make the request with SSL context
-            with urllib.request.urlopen(url, timeout=30, context=ctx) as response:
-                if response.headers.get('content-type') == 'application/pdf':
-                    # Save the PDF
-                    pdf_data = response.read()
-                    with open(pdf_file, 'wb') as f:
-                        f.write(pdf_data)
-                    self.logger.log_info(f"PDF generated successfully, size: {len(pdf_data)} bytes")
-                    return pdf_file
-                else:
-                    # Read error message
-                    error_msg = response.read().decode('utf-8')
-                    self.logger.log_error("PDF generation failed", error_msg)
-                    raise Exception(f"PDF generation failed: {error_msg}")
-                    
-        except urllib.error.URLError as e:
-            self.logger.log_error("PDF generation failed", str(e))
-            raise Exception(f"PDF generation failed: {str(e)}")
     
     def cleanup_old_data(self):
         """Remove data older than retention period"""

@@ -12,7 +12,7 @@ class SessionManager:
                  timeout=3600):
         self.session_dir = session_dir
         self.timeout = timeout
-        os.makedirs(session_dir, exist_ok=True)
+        os.makedirs(session_dir, exist_ok=True, mode=0o775)
     
     def create_session(self, username):
         session_id = secrets.token_urlsafe(32)

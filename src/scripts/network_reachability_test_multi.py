@@ -118,8 +118,8 @@ class MultiServiceTester:
         self.trace_file = trace_file
         self.verbose = verbose
         
-        # Create output directory
-        self.output_dir.mkdir(parents=True, exist_ok=True)
+        # Create output directory with proper permissions
+        self.output_dir.mkdir(parents=True, exist_ok=True, mode=0o775)
         
         # Track created resources for cleanup
         self.created_hosts = []
@@ -437,18 +437,34 @@ class MultiServiceTester:
             print(f"[DEBUG] Router modes for {port}/{protocol}: {router_modes}", file=sys.stderr)
         
         # Step 5: Analyze packet counts for each router
-        result["packet_analysis"] = self.analyze_packet_counts(
+        packet_analysis = self.analyze_packet_counts(
             iptables_before,
             iptables_after,
             port,
             protocol,
             router_modes
         )
+        # Store with both names for compatibility
+        result["packet_analysis"] = packet_analysis
+        result["packet_count_analysis"] = packet_analysis  # Expected by visualize_reachability.py
         
         # Step 6: Determine overall reachability
         result["reachable"] = self.determine_reachability(result)
         
-        # Step 7: Store iptables_after for potential reuse in next test
+        # Step 7: Add router_service_results for use in formatting
+        router_service_results = {}
+        if "connectivity_test" in result:
+            for test in result["connectivity_test"].get("tests", []):
+                if "via_router" in test:
+                    router = test["via_router"]
+                    status = test.get("status", "")
+                    if status == "OK":
+                        router_service_results[router] = "ALLOWED"
+                    elif status in ["FAIL", "TIMEOUT", "ERROR"]:
+                        router_service_results[router] = "BLOCKED"
+        result["router_service_results"] = router_service_results
+        
+        # Step 8: Store iptables_after for potential reuse in next test
         result["iptables_after"] = iptables_after
         
         log_timing(f"test_{port}_{protocol}_complete", f"Service test completed: {result['reachable']}")
@@ -547,6 +563,27 @@ class MultiServiceTester:
             "routers": analysis_results
         }
     
+    def convert_packet_analysis_to_list(self, packet_analysis: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Convert packet_count_analysis from dict format to list format expected by visualizer."""
+        if not packet_analysis or not isinstance(packet_analysis, dict):
+            return []
+        
+        # If it already looks like a list, return it
+        if isinstance(packet_analysis, list):
+            return packet_analysis
+        
+        # Convert from {routers: {router1: {...}, router2: {...}}} to [{router: ..., ...}, {...}]
+        result_list = []
+        routers_data = packet_analysis.get("routers", {})
+        
+        if routers_data:
+            for router_name, router_data in routers_data.items():
+                # Each router_data should already have the right structure
+                if isinstance(router_data, dict):
+                    result_list.append(router_data)
+        
+        return result_list
+    
     def determine_reachability(self, result: Dict[str, Any]) -> bool:
         """Determine if service is reachable based on test results."""
         # Check connectivity test result
@@ -572,6 +609,7 @@ class MultiServiceTester:
             
             # Phase 1: Path Discovery
             trace_data = self.phase1_path_discovery()
+            self.trace_data = trace_data  # Store for later use in formatting
             
             # Extract routers from trace
             routers = []
@@ -591,6 +629,7 @@ class MultiServiceTester:
             
             # Phase 3: Initial Tests (traceroute only, no ping)
             traceroute_result = self.phase3_initial_tests()
+            self.traceroute_result = traceroute_result  # Store for use in formatting
             
             # Phase 4: Test each service SEQUENTIALLY with packet analysis
             log_timing("PHASE4_start", f"Testing {len(self.services)} services sequentially")
@@ -609,21 +648,7 @@ class MultiServiceTester:
                 # Save "after" snapshot for next iteration
                 last_iptables_snapshot = service_result.pop("iptables_after", None)
                 
-                # Add traceroute result to the first service only
-                if i == 1:
-                    service_result["traceroute"] = traceroute_result
-                
-                # Save individual result file for this service (for PDF generation)
-                result_file = self.output_dir / f"{port}_{protocol}_results.json"
-                with open(result_file, 'w') as f:
-                    json.dump(service_result, f, indent=2)
-                
-                # Track the filename for later PDF generation
-                self.service_result_files.append(str(result_file))
-                
                 all_results.append(service_result)
-                
-                log_timing(f"service_{i}_saved", f"Saved results for {port}/{protocol} to {result_file}")
                 
                 # Brief pause between service tests to ensure clean separation
                 if i < len(self.services):
@@ -631,20 +656,91 @@ class MultiServiceTester:
             
             log_timing("PHASE4_complete", "All service tests completed")
             
-            # Phase 5: Generate summary
+            # Phase 5: Generate individual result files in EXACT shell script format
+            self.service_result_files = []
+            
+            for i, (service_result, (port, protocol)) in enumerate(zip(all_results, self.services)):
+                # Build result in EXACT format that shell script produces via format_reachability_output.py
+                formatted_result = {
+                    "timestamp": service_result.get("timestamp", time.strftime("%Y-%m-%d %H:%M:%S")),
+                    "version": "1.0.0",
+                    "summary": {
+                        "source_ip": self.source_ip,
+                        "source_port": str(self.source_port) if self.source_port else "ephemeral",
+                        "destination_ip": self.dest_ip,
+                        "destination_port": str(port),
+                        "protocol": protocol
+                    },
+                    "setup_status": {
+                        "source_host_added": True,
+                        "destination_host_added": True,
+                        "service_started": True
+                    },
+                    "reachability_tests": {
+                        "ping": {
+                            "result": None,  # Shell script has None when ping not run
+                            "return_code": None
+                        },
+                        "traceroute": {
+                            "result": traceroute_result,
+                            "return_code": 0
+                        },
+                        "service": {
+                            "result": service_result.get("connectivity_test", None),
+                            "return_code": 0 if service_result.get("reachable", False) else 1
+                        }
+                    },
+                    # Convert packet_count_analysis from dict format to list format expected by visualizer
+                    "packet_count_analysis": self.convert_packet_analysis_to_list(
+                        service_result.get("packet_count_analysis", service_result.get("packet_analysis", {}))
+                    ),
+                    "router_service_results": service_result.get("router_service_results", {})
+                }
+                
+                # Add operational summary (required by visualizer)
+                formatted_result["operational_summary"] = []
+                formatted_result["total_duration_seconds"] = 0.0
+                
+                # Add reachability summary based on router service results
+                router_results = formatted_result["router_service_results"]
+                if router_results:
+                    reachable_via = []
+                    blocked_by = []
+                    total_routers = len(router_results)
+                    
+                    for router, status in router_results.items():
+                        if status == "ALLOWED" or status == "OK":
+                            reachable_via.append(router)
+                        else:
+                            blocked_by.append(router)
+                    
+                    # Service is only reachable if ALL routers allow it
+                    service_reachable = len(reachable_via) == total_routers and total_routers > 0
+                    
+                    formatted_result["reachability_summary"] = {
+                        "service_reachable": service_reachable,
+                        "reachable_via_routers": reachable_via,
+                        "blocked_by_routers": blocked_by
+                    }
+                
+                # Save individual result file in EXACT shell script format
+                result_file = self.output_dir / f"{port}_{protocol}_results.json"
+                with open(result_file, 'w') as f:
+                    json.dump(formatted_result, f, indent=2)
+                
+                self.service_result_files.append(str(result_file))
+                log_timing(f"service_{i+1}_file_created", f"Created result file for {port}/{protocol}")
+            
+            # Save summary file for reference
             summary = {
                 "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
                 "source_ip": self.source_ip,
                 "destination_ip": self.dest_ip,
                 "services_tested": len(self.services),
                 "services_reachable": sum(1 for r in all_results if r.get("reachable", False)),
-                "trace_data": trace_data,
-                "traceroute": traceroute_result,
-                "service_results": all_results,
-                "result_files": self.service_result_files  # For PDF generation
+                "result_files": self.service_result_files
             }
             
-            # Save summary file
             summary_file = self.output_dir / "summary.json"
             with open(summary_file, 'w') as f:
                 json.dump(summary, f, indent=2)

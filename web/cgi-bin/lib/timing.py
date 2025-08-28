@@ -26,7 +26,7 @@ class TimingLogger:
         self.log_file = "/var/www/traceroute-web/logs/timings.log"
         
         # Ensure log directory exists
-        os.makedirs(os.path.dirname(self.log_file), exist_ok=True)
+        os.makedirs(os.path.dirname(self.log_file), exist_ok=True, mode=0o775)
         
         # Log start
         self._log_raw("START", 0.0, f"{operation_name} begin")

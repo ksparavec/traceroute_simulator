@@ -37,8 +37,8 @@ class AuthManager:
         self.enable_sssd = enable_sssd and PAM_AVAILABLE
         self.pam_service = pam_service
         self.log_dir = log_dir
-        os.makedirs(self.users_dir, exist_ok=True)
-        os.makedirs(self.log_dir, exist_ok=True)
+        os.makedirs(self.users_dir, exist_ok=True, mode=0o775)
+        os.makedirs(self.log_dir, exist_ok=True, mode=0o775)
         
         # Log initialization status
         if enable_sssd and not PAM_AVAILABLE:

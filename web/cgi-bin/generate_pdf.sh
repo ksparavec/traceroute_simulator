@@ -107,7 +107,7 @@ os.environ['MPLBACKEND'] = 'Agg'
 os.environ['DISPLAY'] = ''
 os.environ['MPLCONFIGDIR'] = '/var/www/traceroute-web/matplotlib_cache'
 # Create the cache directory if it doesn't exist
-os.makedirs('/var/www/traceroute-web/matplotlib_cache', exist_ok=True)
+os.makedirs('/var/www/traceroute-web/matplotlib_cache', exist_ok=True, mode=0o775)
 
 # Files from parameters
 trace_file = "${TRACE_FILE}"
@@ -129,7 +129,7 @@ if service_info:
 result = subprocess.run(cmd, capture_output=True, text=True)
 
 # Log the command and result for debugging
-os.makedirs('/var/www/traceroute-web/logs', exist_ok=True)
+os.makedirs('/var/www/traceroute-web/logs', exist_ok=True, mode=0o775)
 with open('/var/www/traceroute-web/logs/pdf_debug.log', 'a') as debug:
     debug.write(f"Command: {' '.join(cmd)}\n")
     debug.write(f"Return code: {result.returncode}\n")

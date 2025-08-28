@@ -40,50 +40,8 @@
     const runId = urlParams.get('run_id');
     const sessionId = urlParams.get('session');
     
-    // More detailed progress phase mapping
-    const PROGRESS_PHASES = {
-        'START': 2,
-        'parse_args': 5,
-        'PHASE1_path_discovery': 8,
-        'PHASE1_complete': 12,
-        'PHASE2_host_list': 15,
-        'PHASE2_host_setup_start': 18,
-        'host_add_source': 22,
-        'host_add_destination': 26,
-        'PHASE2_hosts_complete': 30,
-        'PHASE2_service_check': 33,
-        'PHASE2_service_start': 36,
-        'PHASE2_service_exists': 36,
-        'PHASE2_complete': 40,
-        'PHASE3_tests_start': 45,
-        'ping': 50,
-        'traceroute': 55,
-        'service_test': 60,
-        'PHASE3_tests_complete': 65,
-        'PHASE3_complete': 70,
-        'PHASE4_packet_analysis': 75,
-        'PHASE4_complete': 80,
-        'PHASE5_format_output': 85,
-        'PHASE5_complete': 88,
-        'TOTAL': 92,  // Reachability test total time
-        // PDF generation phases (from timing log)
-        'PDF_GEN_PARSE_START': 93,
-        'PDF_GEN_parse_params': 94,
-        'PDF_GEN_validate_params': 95,
-        'PDF_GEN_venv_activate': 96,
-        'PDF_GEN_visualize_reachability.py': 97,
-        'PDF_GEN_TOTAL': 98,
-        // Web request phases
-        'web_request_network_reachability_test.sh': 90,
-        'web_request_generate_pdf.sh': 98,
-        'web_request_generate_share_link': 99,
-        'web_request_prepare_redirect': 99,
-        'web_request_TOTAL': 99,
-        // Main completion phases
-        'PDF_GENERATION': 95,
-        'PDF_COMPLETE': 98,
-        'COMPLETE': 100
-    };
+    // Simple progress tracking - just increment by 2% for each new entry
+    const PROGRESS_INCREMENT = 2;
     
     // Track progress
     let currentProgress = 0;
@@ -93,12 +51,9 @@
     let lastMilestoneMessage = 'Initializing...';  // Keep track of last milestone
     
     function updateProgress(percent, status) {
-        // Always move forward, never backward
-        if (percent > currentProgress) {
-            currentProgress = percent;
-            document.getElementById('progressBar').style.width = percent + '%';
-            document.getElementById('progressPercent').textContent = Math.round(percent);
-        }
+        // Update progress bar - always use the provided percent value
+        document.getElementById('progressBar').style.width = percent + '%';
+        document.getElementById('progressPercent').textContent = Math.round(percent);
         
         // Only update text if status is provided
         if (status !== null && status !== undefined) {
@@ -197,50 +152,28 @@
                         if (!processedPhases.has(phaseKey)) {
                             processedPhases.add(phaseKey);
                             
-                            // Get progress percentage for this phase
-                            const percent = PROGRESS_PHASES[phase];
-                            if (percent !== undefined) {
-                                // Show only 6 important milestone messages
-                                let messageToShow = null;
-                                
-                                // 1. Path discovery completed with number of routers
-                                if (phase === 'PHASE1_path_discovery' && details.includes('routers')) {
-                                    messageToShow = `Path discovery completed: ${details}`;
-                                }
-                                // 2. All Hosts have been added
-                                else if (phase === 'PHASE2_hosts_complete' && details) {
-                                    messageToShow = `Hosts configured: ${details}`;
-                                }
-                                // 3. Service added
-                                else if (phase === 'PHASE2_service_start' && details) {
-                                    messageToShow = `Service started: ${details}`;
-                                }
-                                // 4. All Tests completed
-                                else if (phase === 'PHASE3_tests_complete' && details) {
-                                    messageToShow = `Connectivity tests completed`;
-                                }
-                                // 5. Firewall Rules Analysis completed
-                                else if (phase === 'PHASE4_complete' && details) {
-                                    messageToShow = `Firewall rules analysis completed`;
-                                }
-                                // 6. PDF generation completed (only show once for PDF_GEN_TOTAL)
-                                else if (phase === 'PDF_GEN_TOTAL') {
-                                    messageToShow = 'PDF generation completed';
-                                }
-                                
-                                // Update progress bar with the milestone message if we have one
-                                if (messageToShow) {
-                                    lastMilestoneMessage = messageToShow;  // Store the milestone
-                                    updateProgress(percent, messageToShow);
-                                    addProgressLogEntry(messageToShow, 'success');
-                                } else {
-                                    // For other phases, update progress but keep showing last milestone
-                                    updateProgress(percent, lastMilestoneMessage);
-                                }
-                            } else {
-                                // Log unmapped phases for debugging
-                                console.warn(`Unmapped phase: "${phase}" - skipping`);
+                            // Increment progress by 2% for each new entry (cap at 100%)
+                            currentProgress = Math.min(currentProgress + PROGRESS_INCREMENT, 100);
+                            
+                            // Show ALL progress entries with details
+                            let messageToShow = getPhaseStatus(phase);
+                            if (details && details.trim()) {
+                                messageToShow += `: ${details}`;
                             }
+                            
+                            // Update progress bar and log
+                            updateProgress(currentProgress, messageToShow);
+                            
+                            // Determine log type based on phase
+                            let logType = 'info';
+                            if (phase === 'COMPLETE' || phase === 'PDF_GEN_TOTAL' || phase === 'TOTAL') {
+                                logType = 'success';
+                                currentProgress = 100; // Force to 100% on completion
+                            } else if (phase.includes('ERROR') || phase.includes('FAIL')) {
+                                logType = 'error';
+                            }
+                            
+                            addProgressLogEntry(messageToShow, logType);
                         }
                     });
                 }

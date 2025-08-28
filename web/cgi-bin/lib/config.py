@@ -42,6 +42,6 @@ class Config:
         return config
     
     def save_config(self, config):
-        os.makedirs(os.path.dirname(self.config_file), exist_ok=True)
+        os.makedirs(os.path.dirname(self.config_file), exist_ok=True, mode=0o775)
         with open(self.config_file, 'w') as f:
             json.dump(config, f, indent=2)

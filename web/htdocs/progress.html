@@ -68,7 +68,12 @@
         const timestamp = new Date().toLocaleTimeString();
         entry.textContent = `[${timestamp}] ${message}`;
         logDiv.appendChild(entry);
-        logDiv.scrollTop = logDiv.scrollHeight;
+        // Auto-scroll to bottom to show latest entry
+        // Need to scroll the parent container that has the scrollbar
+        const scrollContainer = logDiv.parentElement;
+        setTimeout(function() {
+            scrollContainer.scrollTop = scrollContainer.scrollHeight;
+        }, 10);
     }
     
     function getPhaseStatus(phase) {
@@ -77,6 +82,9 @@
             // Main test phases
             'START': 'Starting test',
             'parse_args': 'Validating parameters',
+            'TRACE_COMPLETE': 'Trace execution completed',
+            'SERVICE_TESTS': 'Testing services',
+            'PDF_GENERATION': 'Generating PDF report',
             'PHASE1_start': 'Initializing path discovery',
             'PHASE1_path_discovery': 'Discovering network path',
             'PHASE1_trace_load': 'Loading trace data',
@@ -156,41 +164,25 @@
         return statusMap[phase] || phase.replace(/_/g, ' ');
     }
     
-    function checkProgress() {
+    // Use Server-Sent Events for real-time progress
+    function startProgressStream() {
         if (!runId) {
             addProgressLogEntry('Error: No run ID provided', 'error');
             return;
         }
         
-        fetch(`/cgi-bin/get_progress.py?run_id=${runId}&session=${sessionId}`)
-            .then(response => response.json())
-            .then(data => {
-                // Debug logging - but suppress "No entries found" for the first 3 seconds
-                if (data.debug_error) {
-                    if (!firstCheckDone && data.debug_error.includes('No entries found')) {
-                        // Suppress this error for initial checks
-                        console.log('Waiting for test to start...');
-                    } else {
-                        console.error('Progress tracking error:', data.debug_error);
-                        addProgressLogEntry('Debug: ' + data.debug_error, 'error');
-                    }
-                }
-                firstCheckDone = true;
-                
-                if (data.all_phases && data.all_phases.length > 0) {
-                    console.log('Received phases:', data.all_phases);
-                } else if (firstCheckDone) {
-                    console.log('No phases received yet. Run ID:', runId);
-                }
+        // Create EventSource connection with both run_id and session
+        const eventSource = new EventSource(`/cgi-bin/progress_stream.py?run_id=${runId}&session=${sessionId}`);
+        
+        eventSource.onmessage = function(event) {
+            try {
+                const data = JSON.parse(event.data);
                 
                 // Process all phases that have been seen
                 if (data.all_phases && data.all_phases.length > 0) {
                     data.all_phases.forEach(phaseInfo => {
-                        // Handle both old format (string) and new format (object)
-                        const phase = typeof phaseInfo === 'string' ? phaseInfo : phaseInfo.phase;
-                        const details = typeof phaseInfo === 'object' ? phaseInfo.details : '';
-                        
-                        // Phases are already filtered on server side
+                        const phase = phaseInfo.phase;
+                        const details = phaseInfo.details || '';
                         
                         const phaseKey = `${phase}|${details}`; // Unique key including details
                         if (!processedPhases.has(phaseKey)) {
@@ -226,17 +218,14 @@
                     });
                 }
                 
-                // Handle current phase - but don't override milestone messages
-                // This is handled above in all_phases processing
-                
                 // Handle completion
                 if (data.complete) {
                     lastMilestoneMessage = 'Test complete!';
                     updateProgress(100, lastMilestoneMessage);
                     addProgressLogEntry('Test completed successfully!', 'success');
                     
-                    // Clear the interval
-                    clearInterval(progressInterval);
+                    // Close EventSource
+                    eventSource.close();
                     
                     // Store redirect URL and show button
                     if (data.redirect_url) {
@@ -250,20 +239,40 @@
                         addProgressLogEntry('PDF report is ready. Click the button below to view it.', 'success');
                     }
                 }
-            })
-            .catch(error => {
-                console.error('Progress check error:', error);
-            });
+            } catch (error) {
+                console.error('Error parsing SSE data:', error);
+            }
+        };
+        
+        eventSource.onerror = function(error) {
+            console.error('SSE connection error:', error);
+            addProgressLogEntry('Connection lost. Retrying...', 'warning');
+            
+            // EventSource will automatically reconnect
+            // But if we're complete, close it
+            if (currentProgress >= 100) {
+                eventSource.close();
+            }
+        };
+        
+        eventSource.addEventListener('error', function(event) {
+            if (event.data) {
+                try {
+                    const data = JSON.parse(event.data);
+                    addProgressLogEntry('Error: ' + data.error, 'error');
+                } catch (e) {
+                    console.error('Error parsing error event:', e);
+                }
+            }
+            eventSource.close();
+        });
     }
     
     // Initial update
     updateProgress(0, 'Initializing...');
     
-    // Check progress every 2 seconds
-    const progressInterval = setInterval(checkProgress, 2000);
-    
-    // First check after 2 seconds (give test time to start)
-    setTimeout(checkProgress, 2000);
+    // Start SSE stream after a short delay to let the test start
+    setTimeout(startProgressStream, 1000);
     </script>
 </body>
 </html>

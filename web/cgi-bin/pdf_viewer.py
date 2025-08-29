@@ -1,4 +1,7 @@
 #!/usr/bin/env -S python3 -B -u
+import warnings
+warnings.filterwarnings("ignore", message="'cgi' is deprecated")
+warnings.filterwarnings("ignore", message="'cgitb' is deprecated")
 import cgi
 import cgitb
 import os

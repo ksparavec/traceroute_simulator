@@ -197,7 +197,8 @@ try:
     config = Config()
     logger = AuditLogger()
     executor = CommandExecutor(config, logger)
-    timer = TimingLogger(session_id=session_id, operation_name="web_request")
+    # Use run_id for timing logger to match what the progress page expects
+    timer = TimingLogger(session_id=run_id, operation_name="web_request")
     
     # Log progress
     logger.log_info(json.dumps({{

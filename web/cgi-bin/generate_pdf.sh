@@ -41,8 +41,8 @@ if [ "$REQUEST_METHOD" = "GET" ]; then
                 ;;
             output)
                 OUTPUT_FILE=$(echo "${KV[1]}" | sed 's/%2F/\//g' | sed 's/%20/ /g')
-                # Extract run ID from output filename
-                if [[ "$OUTPUT_FILE" =~ ([a-f0-9-]+)_report\.pdf ]]; then
+                # Extract run ID from output filename (handles both _report.pdf and _<port>_<protocol>.pdf)
+                if [[ "$OUTPUT_FILE" =~ ([a-f0-9-]+)(_report\.pdf|_[0-9]+_[a-z]+\.pdf) ]]; then
                     RUN_ID="${BASH_REMATCH[1]}"
                 fi
                 ;;

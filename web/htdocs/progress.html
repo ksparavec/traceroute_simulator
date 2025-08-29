@@ -74,40 +74,84 @@
     function getPhaseStatus(phase) {
         // Generate human-readable status from phase name
         const statusMap = {
+            // Main test phases
             'START': 'Starting test',
             'parse_args': 'Validating parameters',
+            'PHASE1_start': 'Initializing path discovery',
             'PHASE1_path_discovery': 'Discovering network path',
+            'PHASE1_trace_load': 'Loading trace data',
+            'PHASE1_trace_complete': 'Trace completed',
             'PHASE1_complete': 'Path discovery complete',
+            'PHASE2_start': 'Setting up environment',
             'PHASE2_host_list': 'Checking existing hosts',
             'PHASE2_host_setup_start': 'Setting up test hosts',
-            'host_add_source': 'Adding source host',
-            'host_add_destination': 'Adding destination host',
             'PHASE2_hosts_complete': 'Hosts configured',
             'PHASE2_service_check': 'Checking services',
-            'PHASE2_service_start': 'Starting service',
-            'PHASE2_service_exists': 'Service ready',
+            'PHASE2_services_start': 'Starting services',
             'PHASE2_complete': 'Environment ready',
-            'PHASE3_tests_start': 'Starting connectivity tests',
-            'ping': 'Running ping test',
-            'traceroute': 'Running traceroute',
-            'service_test': 'Testing service',
-            'PHASE3_tests_complete': 'Tests completed',
-            'PHASE3_complete': 'Test analysis complete',
-            'PHASE4_packet_analysis': 'Analyzing packets',
-            'PHASE4_complete': 'Packet analysis complete',
+            'PHASE3_start': 'Starting reachability tests',
+            'PHASE3_complete': 'Initial tests complete',
+            'PHASE4_start': 'Testing services',
+            'PHASE4_complete': 'Service tests complete',
             'PHASE5_format_output': 'Formatting results',
-            'PHASE5_complete': 'Report ready',
-            'TOTAL': 'Reachability test complete',
-            'PDF_GEN_PARSE_START': 'Starting PDF generation',
-            'PDF_GEN_parse_params': 'Processing parameters',
-            'PDF_GEN_validate_params': 'Validating parameters',
-            'PDF_GEN_venv_activate': 'Activating environment',
-            'PDF_GEN_visualize_reachability.py': 'Generating PDF report',
-            'PDF_GEN_TOTAL': 'PDF generation complete',
-            'PDF_GENERATION': 'Generating PDF report',
-            'PDF_COMPLETE': 'PDF ready',
-            'COMPLETE': 'Test complete!'
+            'PHASE5_complete': 'Results formatted',
+            'TOTAL': 'Test execution complete',
+            
+            // Cleanup phases
+            'cleanup_start': 'Starting cleanup',
+            'cleanup_complete': 'Cleanup complete',
+            
+            // Web request phases
+            'web_request_START': 'Initializing request',
+            'web_request_execute_trace': 'Executing trace',
+            'web_request_network_reachability_test_multi_2_services': 'Testing services',
+            'web_request_network_reachability_test_multi_3_services': 'Testing services',
+            'web_request_generate_multi_page_pdf': 'Generating PDF report',
+            'web_request_generate_share_link': 'Creating share link',
+            'web_request_prepare_redirect': 'Preparing results',
+            'web_request_TOTAL': 'Request complete',
+            
+            // PDF generation phases
+            'PDF_GEN_PARSE_START': 'Parsing PDF parameters',
+            'PDF_GEN_parse_params': 'Processing PDF settings',
+            'PDF_GEN_validate_params': 'Validating PDF parameters',
+            'PDF_GEN_venv_activate': 'Preparing PDF environment',
+            'PDF_GEN_visualize_reachability.py': 'Rendering PDF',
+            'PDF_GEN_TOTAL': 'PDF complete',
+            
+            // Generic phases
+            'COMPLETE': 'Test complete!',
+            'ERROR': 'Error occurred',
+            'FAIL': 'Test failed'
         };
+        
+        // For dynamic phases like host_add_source_1, service_22_tcp_started, etc.
+        if (phase.startsWith('host_add_source')) {
+            return 'Adding source host';
+        } else if (phase.startsWith('host_add_dest')) {
+            return 'Adding destination host';
+        } else if (phase.startsWith('service_') && phase.includes('_started')) {
+            return 'Starting service';
+        } else if (phase.startsWith('service_') && phase.includes('_exists')) {
+            return 'Service exists';
+        } else if (phase.startsWith('test_') && phase.includes('_start')) {
+            return 'Testing service';
+        } else if (phase.startsWith('test_') && phase.includes('_complete')) {
+            return 'Service test complete';
+        } else if (phase.startsWith('iptables_')) {
+            return 'Analyzing firewall rules';
+        } else if (phase.startsWith('service_test_')) {
+            return 'Running service test';
+        } else if (phase.startsWith('service_') && phase.includes('_file_created')) {
+            return 'Creating result file';
+        } else if (phase.includes('network_reachability_test_multi_')) {
+            // Extract number of services
+            const match = phase.match(/(\d+)_services/);
+            if (match) {
+                return `Testing ${match[1]} services`;
+            }
+            return 'Testing services';
+        }
         
         return statusMap[phase] || phase.replace(/_/g, ' ');
     }
@@ -155,14 +199,17 @@
                             // Increment progress by 2% for each new entry (cap at 100%)
                             currentProgress = Math.min(currentProgress + PROGRESS_INCREMENT, 100);
                             
-                            // Show ALL progress entries with details
-                            let messageToShow = getPhaseStatus(phase);
+                            // Get clean phase name for progress bar
+                            let cleanPhaseName = getPhaseStatus(phase);
+                            
+                            // Create detailed message for log window
+                            let logMessage = cleanPhaseName;
                             if (details && details.trim()) {
-                                messageToShow += `: ${details}`;
+                                logMessage += `: ${details}`;
                             }
                             
-                            // Update progress bar and log
-                            updateProgress(currentProgress, messageToShow);
+                            // Update progress bar with clean name only
+                            updateProgress(currentProgress, cleanPhaseName);
                             
                             // Determine log type based on phase
                             let logType = 'info';
@@ -173,7 +220,8 @@
                                 logType = 'error';
                             }
                             
-                            addProgressLogEntry(messageToShow, logType);
+                            // Add full details to log window
+                            addProgressLogEntry(logMessage, logType);
                         }
                     });
                 }

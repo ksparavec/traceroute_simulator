@@ -114,11 +114,11 @@ def create_summary_page(output_file: str, form_data: Dict[str, Any],
                 fontsize=16, fontweight='bold', ha='center', color='#34495E')
     
     # Test Information Section with better spacing (adjusted for new title position)
-    y_pos = 0.82
+    y_pos = 0.80  # Moved up from 0.82
     section_x = left_margin + 0.05
     
     plt.figtext(section_x, y_pos, 'Test Information', fontsize=14, fontweight='bold', color='#2C3E50')
-    y_pos -= 0.03
+    y_pos -= 0.025  # Reduced from 0.03
     
     # Display test metadata with better formatting
     source_ip = form_data.get('source_ip', 'N/A')
@@ -161,11 +161,11 @@ def create_summary_page(output_file: str, form_data: Dict[str, Any],
     firewall_names = ', '.join([router.split('.')[0] for router in routers])
     plt.figtext(info_x, y_pos, 'Firewalls:', fontsize=11, fontweight='bold', color='#555')
     plt.figtext(info_x + label_x_offset, y_pos, firewall_names, fontsize=11, color='#333')
-    y_pos -= 0.035
+    y_pos -= 0.05  # Increased spacing before Test Results section
     
     # Results Summary Section
     plt.figtext(section_x, y_pos, 'Test Results', fontsize=14, fontweight='bold', color='#2C3E50')
-    y_pos -= 0.015
+    y_pos -= 0.025  # Match the spacing used after Test Information title
     
     # Create table data with headers as first row (like service pages do)
     table_headers = ['Service']
@@ -198,7 +198,7 @@ def create_summary_page(output_file: str, form_data: Dict[str, Any],
     # Base width plus additional width per router
     table_width = min(0.35 + num_routers * 0.10, 0.55)  # Back to original width
     table_height = 0.08 + len(table_data) * 0.05  # Regular height since no two-line text
-    table_y = y_pos - table_height - 0.01
+    table_y = y_pos - table_height  # Position table directly below "Test Results" without extra gap
     table_x = info_x - 0.02  # Align with actual text start position (same as info_x)
     
     ax = fig.add_axes([table_x, table_y, table_width, table_height])
@@ -230,8 +230,8 @@ def create_summary_page(output_file: str, form_data: Dict[str, Any],
     
     # Create the table with better styling (headers included in cellText like service pages)
     table = ax.table(cellText=table_data,
-                     cellLoc='center',
-                     loc='center',
+                     cellLoc='left',  # Left alignment for text
+                     loc='top',  # Changed from 'center' to 'top' for top vertical alignment
                      cellColours=cell_colors)
     
     table.auto_set_font_size(False)
@@ -251,15 +251,19 @@ def create_summary_page(output_file: str, form_data: Dict[str, Any],
             cell.set_edgecolor('gray')
             cell.set_linewidth(0.5)
             # Set text properties for header cells
-            cell.set_text_props(weight='bold', color='white')
+            cell.set_text_props(weight='bold', color='white', va='top')
+            if j > 0:  # Center-align router columns
+                cell.set_text_props(ha='center')
         elif j == 0:  # Service column data cells (non-header)
-            cell.set_text_props(weight='bold')
+            cell.set_text_props(weight='bold', ha='left', va='top')
             cell.set_facecolor('lightgray')
         else:
             # Style router status cells based on content - match service pages exactly
             text = cell.get_text().get_text()
             if text in ['ALLOWED', 'BLOCKED', 'PASS', 'FAIL']:
-                cell.set_text_props(weight='bold')
+                cell.set_text_props(weight='bold', ha='center', va='top')
+            else:
+                cell.set_text_props(va='top')  # Top align even for empty cells
     
     # Footer with separator line
     footer_y = 0.08

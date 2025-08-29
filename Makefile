@@ -1483,6 +1483,7 @@ install-web:
 	@cp web/scripts/create_user.sh "$(WEB_ROOT)/scripts/"
 	@cp web/scripts/change_password.sh "$(WEB_ROOT)/scripts/"
 	@cp web/scripts/generate_summary_page.py "$(WEB_ROOT)/scripts/"
+	@cp web/scripts/generate_summary_page_reportlab.py "$(WEB_ROOT)/scripts/"
 	@cp src/scripts/network_reachability_test.sh "$(WEB_ROOT)/scripts/"
 	@cp src/scripts/network_reachability_test_multi.py "$(WEB_ROOT)/scripts/"
 	@cp src/scripts/visualize_reachability.py "$(WEB_ROOT)/scripts/"

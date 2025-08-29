@@ -574,7 +574,7 @@ class CommandExecutor:
                 json.dump(results_list, f)
             
             # Run summary page generator with virtual environment
-            summary_script = "/var/www/traceroute-web/scripts/generate_summary_page.py"
+            summary_script = "/var/www/traceroute-web/scripts/generate_summary_page_reportlab.py"
             cmd = [
                 os.path.join(self.venv_path, "bin", "python"),
                 "-B", "-u", summary_script,

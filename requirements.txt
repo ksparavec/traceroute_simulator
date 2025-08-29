@@ -21,6 +21,7 @@ PyPDF2
 PySimpleSOAP
 PyYAML
 reportbug
+reportlab
 requests
 setuptools
 six

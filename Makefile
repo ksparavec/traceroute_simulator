@@ -505,13 +505,9 @@ clean:
 show-sudoers:
 	@echo "=== Traceroute Simulator Sudoers Configuration ==="
 	@echo ""
-	@echo "1. Namespace Operations (for tsim-users group):"
+	@echo "Namespace Operations (for tsim-users group):"
 	@echo "---------------------------------------------------"
 	@cat etc/sudoers.d/traceroute-simulator-namespaces
-	@echo ""
-	@echo "2. Web Interface (for $(WEB_USER) - optional):"
-	@echo "---------------------------------------------------"
-	@cat web/config/tsimsh-sudoers
 	@echo ""
 	@echo "Installation:"
 	@echo "  sudo cp etc/sudoers.d/traceroute-simulator-namespaces /etc/sudoers.d/"
@@ -1466,10 +1462,20 @@ install-web:
 	@mkdir -p "$(WEB_ROOT)/conf"
 	@mkdir -p "$(WEB_ROOT)/scripts"
 	
-	# Copy CGI scripts
+	# Copy production CGI scripts only
 	@echo "Installing CGI scripts..."
-	@cp -r web/cgi-bin/* "$(WEB_ROOT)/cgi-bin/"
-	@chmod +x "$(WEB_ROOT)/cgi-bin/"*.py
+	# Copy lib directory first
+	@cp -r web/cgi-bin/lib "$(WEB_ROOT)/cgi-bin/"
+	# Copy only production scripts (exclude test* and debug*)
+	@for file in web/cgi-bin/*.py web/cgi-bin/*.sh; do \
+		basename_file=$$(basename "$$file"); \
+		if echo "$$basename_file" | grep -vE '^(test|debug)' > /dev/null; then \
+			cp "$$file" "$(WEB_ROOT)/cgi-bin/"; \
+		fi; \
+	done
+	# Set permissions
+	@chmod +x "$(WEB_ROOT)/cgi-bin/"*.py 2>/dev/null || true
+	@chmod +x "$(WEB_ROOT)/cgi-bin/"*.sh 2>/dev/null || true
 	@chmod +x "$(WEB_ROOT)/cgi-bin/lib/"*.py
 	
 	# Copy frontend files
@@ -1522,17 +1528,12 @@ install-web:
 	@echo "✓ Web service files installed successfully!"
 	@echo ""
 	@echo "Next steps:"
-	@echo "1. Configure sudo permissions:"
-	@echo "   a) For namespace operations (tsim-users group):"
+	@echo "1. Configure sudo permissions for namespace operations:"
 	@echo "      sudo cp etc/sudoers.d/traceroute-simulator-namespaces /etc/sudoers.d/"
 	@echo "      sudo chmod 0440 /etc/sudoers.d/traceroute-simulator-namespaces"
 	@echo "      sudo groupadd -f tsim-users"
 	@echo "      sudo usermod -a -G tsim-users $(WEB_USER)"
 	@echo "      sudo usermod -a -G tsim-users $(USER)"
-	@echo ""
-	@echo "   b) For web interface (if needed):"
-	@echo "      sudo cp web/config/tsimsh-sudoers /etc/sudoers.d/tsimsh-web"
-	@echo "      sudo chmod 0440 /etc/sudoers.d/tsimsh-web"
 	@echo ""
 	@echo "2. Create an initial user:"
 	@echo "   cd $(WEB_ROOT) && sudo -u $(WEB_USER) ./scripts/create_user.sh"

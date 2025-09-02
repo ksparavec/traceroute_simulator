@@ -19,10 +19,10 @@ import re
 from pathlib import Path
 from typing import Optional, Tuple, Dict, List, Set
 
-# Use relative imports for package compatibility
-from .service_manager import ServiceClient, ServiceProtocol, ServiceConfig, ServiceManager
-from ..core.exceptions import NetworkError, ConfigurationError
-from ..core.config_loader import get_registry_paths
+# Use absolute imports for installed package
+from tsim.simulators.service_manager import ServiceClient, ServiceProtocol, ServiceConfig, ServiceManager
+from tsim.core.exceptions import NetworkError, ConfigurationError
+from tsim.core.config_loader import get_registry_paths
 
 
 class ServiceTester:

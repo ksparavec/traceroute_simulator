@@ -1,6 +1,9 @@
 # Traceroute Simulator Namespace Operations
 # This configuration allows tsim-users group to manage network namespaces
 # while preventing access to the host namespace
+#
+# NOTE: The group name 'tsim-users' below should match the unix_group setting
+#       in traceroute_simulator.yaml configuration file
 
 # IMPORTANT: ip netns exec requires a namespace name, preventing host namespace access
 

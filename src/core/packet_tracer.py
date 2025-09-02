@@ -28,10 +28,10 @@ from pathlib import Path
 import json
 
 # Import our existing components
-from core.traceroute_simulator import TracerouteSimulator
-from analyzers.iptables_forward_analyzer import IptablesForwardAnalyzer
-from analyzers.iptables_log_processor import IptablesLogProcessor, LogEntry
-from core.log_filter import LogFilter, FilterCriteria
+from tsim.core.traceroute_simulator import TracerouteSimulator
+from tsim.analyzers.iptables_forward_analyzer import IptablesForwardAnalyzer
+from tsim.analyzers.iptables_log_processor import IptablesLogProcessor, LogEntry
+from tsim.core.log_filter import LogFilter, FilterCriteria
 
 
 @dataclass
@@ -182,7 +182,7 @@ class PacketTracerEngine:
         """Get iptables analyzer for a specific router."""
         if router_name not in self.router_analyzers:
             try:
-                from analyzers.iptables_forward_analyzer import IptablesForwardAnalyzer
+                from tsim.analyzers.iptables_forward_analyzer import IptablesForwardAnalyzer
                 self.router_analyzers[router_name] = IptablesForwardAnalyzer(
                     self.facts_dir, router_name, self.verbose_level
                 )

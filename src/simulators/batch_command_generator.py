@@ -20,11 +20,10 @@ from datetime import datetime
 import yaml
 import time
 
-# Add parent directory to path for imports
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from core.raw_facts_block_loader import RawFactsBlockLoader
-from core.tsim_shm_manager import TsimBatchMemory
-from core.config_loader import get_registry_paths, load_traceroute_config
+# Import from installed package
+from tsim.core.raw_facts_block_loader import RawFactsBlockLoader
+from tsim.core.tsim_shm_manager import TsimBatchMemory
+from tsim.core.config_loader import get_registry_paths, load_traceroute_config
 
 # Don't import the full class, just copy what we need
 
@@ -109,8 +108,14 @@ class BatchCommandGenerator:
     def __init__(self, verbose: int = 0, log_file: str = None):
         self.verbose = verbose
         
-        # Load configuration
+        # Load configuration first (needed for unix_group)
         self.config = load_traceroute_config()
+        
+        # Get unix group from config
+        self.unix_group = self.config.get('system', {}).get('unix_group', 'tsim-users')
+        
+        # Ensure /dev/shm/tsim directory exists with proper permissions
+        self._ensure_shm_directory()
         
         # Use hidden namespace from config
         self.hidden_ns = self.config.get('network_setup', {}).get('hidden_namespace', 'tsim-hidden')
@@ -146,6 +151,62 @@ class BatchCommandGenerator:
         self.router_codes = {}  # router_name -> router_code
         self.interface_registry = {}  # router_code -> {interface_name -> interface_code}
         self.bridge_registry = {}  # bridge_name -> {"routers": {}, "hosts": {}}
+    
+    def _ensure_shm_directory(self):
+        """
+        Ensure /dev/shm/tsim directory exists with proper permissions.
+        Must have mode 2775 and be owned by current_user:unix_group.
+        """
+        shm_dir = Path('/dev/shm/tsim')
+        
+        # Create directory if it doesn't exist
+        if not shm_dir.exists():
+            try:
+                shm_dir.mkdir(mode=0o2775, parents=True, exist_ok=True)
+                if self.verbose:
+                    print(f"Created {shm_dir} with mode 2775")
+            except Exception as e:
+                print(f"Warning: Could not create {shm_dir}: {e}")
+                return
+        
+        # Try to set proper permissions and ownership
+        try:
+            import grp
+            import pwd
+            
+            # Get current user
+            uid = os.getuid()
+            
+            # Get unix group from config
+            try:
+                gid = grp.getgrnam(self.unix_group).gr_gid
+            except KeyError:
+                print(f"Warning: {self.unix_group} group not found. Please create it with: sudo groupadd {self.unix_group}")
+                return
+            
+            # Set group ownership (keep current user)
+            os.chown(shm_dir, -1, gid)  # -1 keeps current user, only changes group
+            
+            # Set permissions to 2775 (setgid + rwxrwxr-x)
+            os.chmod(shm_dir, 0o2775)
+            
+            if self.verbose:
+                user_name = pwd.getpwuid(uid).pw_name
+                print(f"Set {shm_dir} ownership to {user_name}:{self.unix_group} with mode 2775")
+                
+        except PermissionError:
+            # If not running as root, try to at least set the permissions we can
+            try:
+                current_stat = shm_dir.stat()
+                if current_stat.st_gid == grp.getgrnam(self.unix_group).gr_gid:
+                    # Directory has correct group, just ensure setgid bit
+                    os.chmod(shm_dir, 0o2775)
+                else:
+                    print(f"Warning: Cannot set ownership of {shm_dir}. Run as root or ensure you own the directory.")
+            except Exception as e:
+                print(f"Warning: Could not set permissions on {shm_dir}: {e}")
+        except Exception as e:
+            print(f"Warning: Could not configure {shm_dir}: {e}")
     
     def setup_logging(self, log_file: str = None):
         """
@@ -1959,8 +2020,16 @@ class BatchCommandGenerator:
                 with open(self.router_registry_file, 'w') as f:
                     json.dump(self.router_codes, f, indent=2)
                 
-                # Ensure the file has correct permissions
+                # Ensure the file has correct permissions and group ownership
                 os.chmod(self.router_registry_file, 0o664)  # rw-rw-r--
+                # Set group ownership
+                try:
+                    import grp
+                    gid = grp.getgrnam(self.unix_group).gr_gid
+                    os.chown(self.router_registry_file, -1, gid)
+                except (KeyError, OSError) as e:
+                    if self.verbose:
+                        print(f"Could not set {self.unix_group} group for router registry: {e}")
             finally:
                 # Restore original umask
                 os.umask(old_umask)
@@ -1976,8 +2045,16 @@ class BatchCommandGenerator:
                 with open(self.interface_registry_file, 'w') as f:
                     json.dump(self.interface_registry, f, indent=2)
                 
-                # Ensure the file has correct permissions
+                # Ensure the file has correct permissions and group ownership
                 os.chmod(self.interface_registry_file, 0o664)  # rw-rw-r--
+                # Set group ownership
+                try:
+                    import grp
+                    gid = grp.getgrnam(self.unix_group).gr_gid
+                    os.chown(self.interface_registry_file, -1, gid)
+                except (KeyError, OSError) as e:
+                    if self.verbose:
+                        print(f"Could not set {self.unix_group} group for interface registry: {e}")
             finally:
                 # Restore original umask
                 os.umask(old_umask)
@@ -1993,8 +2070,16 @@ class BatchCommandGenerator:
                 with open(self.bridge_registry_file, 'w') as f:
                     json.dump(self.bridge_registry, f, indent=2)
                 
-                # Ensure the file has correct permissions
+                # Ensure the file has correct permissions and group ownership
                 os.chmod(self.bridge_registry_file, 0o664)  # rw-rw-r--
+                # Set group ownership
+                try:
+                    import grp
+                    gid = grp.getgrnam(self.unix_group).gr_gid
+                    os.chown(self.bridge_registry_file, -1, gid)
+                except (KeyError, OSError) as e:
+                    if self.verbose:
+                        print(f"Could not set {self.unix_group} group for bridge registry: {e}")
             finally:
                 # Restore original umask
                 os.umask(old_umask)

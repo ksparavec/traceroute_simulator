@@ -47,8 +47,7 @@ import posix_ipc
 import hashlib
 
 # Import configuration loader
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from core.config_loader import get_registry_paths
+from tsim.core.config_loader import get_registry_paths, load_traceroute_config
 
 
 class HostNamespaceManager:
@@ -65,7 +64,7 @@ class HostNamespaceManager:
         self.setup_logging()
         
         # Load network configuration
-        from core.config_loader import get_network_setup_config
+        from tsim.core.config_loader import get_network_setup_config
         self.network_config = get_network_setup_config()
         self.hidden_ns = self.network_config.get('hidden_namespace', 'tsim-hidden')
         
@@ -73,6 +72,10 @@ class HostNamespaceManager:
         self.routers: Dict[str, Dict] = {}
         self.router_subnets: Dict[str, List[tuple]] = {}  # subnet -> [(router, interface, ip)]
         self.available_namespaces: Set[str] = set()
+        
+        # Load configuration for unix_group
+        config = load_traceroute_config()
+        self.unix_group = config.get('system', {}).get('unix_group', 'tsim-users')
         
         # Load registry paths from configuration
         registry_paths = get_registry_paths()
@@ -124,15 +127,16 @@ class HostNamespaceManager:
                     os.umask(old_umask)  # Restore original umask
                 self.semaphores[path] = sem
                 
-                # Set group ownership to tsim-users for the semaphore file
+                # Set group ownership to unix_group from config for the semaphore file
                 sem_file = f"/dev/shm/sem.{sem_name[1:]}"  # Remove leading / and add sem. prefix
                 try:
                     import grp
-                    tsim_gid = grp.getgrnam('tsim-users').gr_gid
+                    tsim_gid = grp.getgrnam(self.unix_group).gr_gid
                     os.chown(sem_file, -1, tsim_gid)  # -1 keeps current user, changes group
-                    self.logger.debug(f"Created semaphore {sem_name} with tsim-users group")
+                    os.chmod(sem_file, 0o660)  # Ensure proper permissions
+                    self.logger.debug(f"Created semaphore {sem_name} with {self.unix_group} group")
                 except (KeyError, OSError) as e:
-                    self.logger.warning(f"Could not set tsim-users group for {sem_file}: {e}")
+                    self.logger.warning(f"Could not set {self.unix_group} group for {sem_file}: {e}")
                     
                 self.logger.debug(f"Created semaphore {sem_name}")
             except posix_ipc.ExistentialError:
@@ -156,15 +160,16 @@ class HostNamespaceManager:
                             os.umask(old_umask)
                         self.semaphores[path] = sem
                         
-                        # Set group ownership to tsim-users
+                        # Set group ownership to unix_group from config
                         sem_file = f"/dev/shm/sem.{sem_name[1:]}"
                         try:
                             import grp
-                            tsim_gid = grp.getgrnam('tsim-users').gr_gid
+                            tsim_gid = grp.getgrnam(self.unix_group).gr_gid
                             os.chown(sem_file, -1, tsim_gid)
-                            self.logger.debug(f"Recreated semaphore {sem_name} with tsim-users group")
+                            os.chmod(sem_file, 0o660)  # Ensure proper permissions
+                            self.logger.debug(f"Recreated semaphore {sem_name} with {self.unix_group} group")
                         except (KeyError, OSError) as e:
-                            self.logger.warning(f"Could not set tsim-users group for {sem_file}: {e}")
+                            self.logger.warning(f"Could not set {self.unix_group} group for {sem_file}: {e}")
                     except Exception as e:
                         self.logger.error(f"Failed to recreate semaphore {sem_name}: {e}")
                         raise
@@ -192,12 +197,13 @@ class HostNamespaceManager:
                 finally:
                     os.umask(old_umask)  # Restore original umask
                 
-                # Set group ownership to tsim-users
+                # Set group ownership to unix_group from config
                 sem_file = f"/dev/shm/sem.{sem_name[1:]}"
                 try:
                     import grp
-                    tsim_gid = grp.getgrnam('tsim-users').gr_gid
+                    tsim_gid = grp.getgrnam(self.unix_group).gr_gid
                     os.chown(sem_file, -1, tsim_gid)
+                    os.chmod(sem_file, 0o660)  # Ensure proper permissions
                 except (KeyError, OSError):
                     pass  # Ignore if can't set group
                     
@@ -2016,19 +2022,19 @@ class HostNamespaceManager:
             self.logger.error("'ip' command not available - required for namespace operations")
             return False
             
-        # Check if user is in tsim-users group (unless running as root)
+        # Check if user is in unix_group (unless running as root)
         if os.geteuid() != 0:
             import grp
             import pwd
             try:
                 username = pwd.getpwuid(os.getuid()).pw_name
-                tsim_group = grp.getgrnam('tsim-users')
+                tsim_group = grp.getgrnam(self.unix_group)
                 if username not in tsim_group.gr_mem:
-                    self.logger.warning("User not in tsim-users group. Namespace operations may fail.")
-                    self.logger.warning("Run: sudo usermod -a -G tsim-users $USER")
+                    self.logger.warning(f"User not in {self.unix_group} group. Namespace operations may fail.")
+                    self.logger.warning(f"Run: sudo usermod -a -G {self.unix_group} $USER")
             except (KeyError, OSError):
-                self.logger.warning("tsim-users group not found. Namespace operations may fail.")
-                self.logger.warning("Run: sudo groupadd -f tsim-users")
+                self.logger.warning(f"{self.unix_group} group not found. Namespace operations may fail.")
+                self.logger.warning(f"Run: sudo groupadd -f {self.unix_group}")
             
         return True
     

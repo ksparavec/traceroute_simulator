@@ -29,14 +29,14 @@ import socket
 import posix_ipc
 import hashlib
 
-# Use relative imports for package compatibility
-from ..core.exceptions import (
+# Use absolute imports for installed package
+from tsim.core.exceptions import (
     ExecutionError, NetworkError, ValidationError, 
     PortValidationError, ConfigurationError, ErrorHandler
 )
-from ..core.models import IptablesRule
-from ..core.structured_logging import get_logger, setup_logging
-from ..core.config_loader import get_registry_paths
+from tsim.core.models import IptablesRule
+from tsim.core.structured_logging import get_logger, setup_logging
+from tsim.core.config_loader import get_registry_paths, load_traceroute_config
 
 
 class ServiceProtocol(str, Enum):
@@ -149,11 +149,11 @@ class ServiceConfig:
         if not 1 <= self.port <= 65535:
             raise PortValidationError(str(self.port))
             
-        # Set default paths if not provided
+        # Set default paths if not provided - use /dev/shm/tsim for all files
         if not self.pid_file:
-            self.pid_file = f"/var/opt/traceroute-simulator/traceroute_service_{self.namespace}_{self.name}_{self.port}.pid"
+            self.pid_file = f"/dev/shm/tsim/service_{self.namespace}_{self.name}_{self.port}.pid"
         if not self.log_file:
-            self.log_file = f"/var/opt/traceroute-simulator/traceroute_service_{self.namespace}_{self.name}_{self.port}.log"
+            self.log_file = f"/dev/shm/tsim/service_{self.namespace}_{self.name}_{self.port}.log"
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
@@ -176,6 +176,10 @@ class ServiceManager:
         self.verbose_level = verbose_level
         setup_logging(verbose_level)
         self.logger = get_logger(__name__, verbose_level)
+        
+        # Load configuration for unix_group
+        config = load_traceroute_config()
+        self.unix_group = config.get('system', {}).get('unix_group', 'tsim-users')
         
         # Load registry paths from configuration
         registry_paths = get_registry_paths()
@@ -204,14 +208,15 @@ class ServiceManager:
                 finally:
                     os.umask(old_umask)
                     
-                # Set group ownership to tsim-users
+                # Set group ownership to unix_group from config
                 sem_path = f"/dev/shm/sem.{self.sem_name[1:]}"  # Remove leading slash
                 try:
                     import grp
-                    tsim_gid = grp.getgrnam('tsim-users').gr_gid
+                    tsim_gid = grp.getgrnam(self.unix_group).gr_gid
                     os.chown(sem_path, -1, tsim_gid)
+                    os.chmod(sem_path, 0o660)  # Ensure proper permissions
                 except (KeyError, OSError) as e:
-                    self.logger.warning(f"Could not set tsim-users group for {sem_path}: {e}")
+                    self.logger.warning(f"Could not set {self.unix_group} group for {sem_path}: {e}")
                     
             except posix_ipc.ExistentialError:
                 # Another process created it between our check and create
@@ -227,14 +232,15 @@ class ServiceManager:
                 finally:
                     os.umask(old_umask)
                     
-                # Set group ownership to tsim-users
+                # Set group ownership to unix_group from config
                 sem_path = f"/dev/shm/sem.{self.sem_name[1:]}"
                 try:
                     import grp
-                    tsim_gid = grp.getgrnam('tsim-users').gr_gid
+                    tsim_gid = grp.getgrnam(self.unix_group).gr_gid
                     os.chown(sem_path, -1, tsim_gid)
+                    os.chmod(sem_path, 0o660)  # Ensure proper permissions
                 except (KeyError, OSError) as e:
-                    self.logger.warning(f"Could not set tsim-users group for {sem_path}: {e}")
+                    self.logger.warning(f"Could not set {self.unix_group} group for {sem_path}: {e}")
             except Exception as e2:
                 # Fallback to unique name
                 self.logger.warning(f"Failed to recreate semaphore, using fallback", error=str(e2))
@@ -246,12 +252,13 @@ class ServiceManager:
                 finally:
                     os.umask(old_umask)
                     
-                # Set group ownership to tsim-users
+                # Set group ownership to unix_group from config
                 sem_path = f"/dev/shm/sem.{self.sem_name[1:]}"
                 try:
                     import grp
-                    tsim_gid = grp.getgrnam('tsim-users').gr_gid
+                    tsim_gid = grp.getgrnam(self.unix_group).gr_gid
                     os.chown(sem_path, -1, tsim_gid)
+                    os.chmod(sem_path, 0o660)  # Ensure proper permissions
                 except (KeyError, OSError):
                     pass
         
@@ -439,6 +446,9 @@ class ServiceManager:
                     # Keep in same process group for proper cleanup
                 )
             
+            # Set proper permissions on log file
+            os.chmod(config.log_file, 0o664)
+            
             # Give it a moment to start
             time.sleep(0.5)
             
@@ -457,6 +467,9 @@ class ServiceManager:
             self.logger.debug(f"Saving PID {process.pid} to {config.pid_file}")
             with open(config.pid_file, 'w') as f:
                 f.write(str(process.pid))
+            
+            # Set proper permissions on pid file
+            os.chmod(config.pid_file, 0o664)
             
             # Register service
             self.services[key] = config

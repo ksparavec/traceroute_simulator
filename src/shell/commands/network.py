@@ -151,7 +151,7 @@ class NetworkCommands(BaseCommandHandler):
                 return [f for f in functions if f.startswith(text)]
             options = ['--limit', '-l', '--json', '-j', '--verbose', '-v']
         elif subcommand == 'clean':
-            options = ['--verbose', '-v']
+            options = ['--force', '-f', '--verbose', '-v']
         elif subcommand == 'clean-serial':
             options = ['--force', '-f', '--limit', '-l', '--verbose', '-v']
         elif subcommand == 'test':
@@ -321,6 +321,8 @@ class NetworkCommands(BaseCommandHandler):
         """Clean up network namespaces using batch command generator."""
         parser = argparse.ArgumentParser(prog='network clean',
                                        description='Clean up network namespaces (batch mode)')
+        parser.add_argument('--force', '-f', action='store_true',
+                          help='Skip confirmation prompt')
         parser.add_argument('--verbose', '-v', action='count', default=0,
                           help='Increase verbosity (-v, -vv, -vvv)')
         
@@ -329,15 +331,16 @@ class NetworkCommands(BaseCommandHandler):
         except SystemExit:
             return 1
         
-        # Confirmation
-        try:
-            response = input("Are you sure you want to clean up all network namespaces? (y/N): ")
-            if response.lower() not in ['y', 'yes']:
-                self.info("Cleanup cancelled")
+        # Confirmation (unless --force is used)
+        if not parsed_args.force:
+            try:
+                response = input("Are you sure you want to clean up all network namespaces? (y/N): ")
+                if response.lower() not in ['y', 'yes']:
+                    self.info("Cleanup cancelled")
+                    return 0
+            except KeyboardInterrupt:
+                self.info("\nCleanup cancelled")
                 return 0
-        except KeyboardInterrupt:
-            self.info("\nCleanup cancelled")
-            return 0
         
         self.info("Cleaning up network namespaces (batch mode)...")
         
@@ -483,7 +486,7 @@ class NetworkCommands(BaseCommandHandler):
         parser = argparse.ArgumentParser(prog='network clean-serial',
                                        description='Clean up network namespaces (serial/sequential mode)')
         parser.add_argument('--force', '-f', action='store_true',
-                          help='Force removal of stuck resources')
+                          help='Skip confirmation prompt and force removal of stuck resources')
         parser.add_argument('--limit', '-l',
                           help='Limit cleanup to specific routers (supports glob patterns)')
         parser.add_argument('--verbose', '-v', action='count', default=0,
@@ -494,7 +497,7 @@ class NetworkCommands(BaseCommandHandler):
         except SystemExit:
             return 1
         
-        # Confirmation if not forced
+        # Confirmation (unless --force is used)
         if not parsed_args.force:
             try:
                 response = input("Are you sure you want to clean up all network namespaces? (y/N): ")

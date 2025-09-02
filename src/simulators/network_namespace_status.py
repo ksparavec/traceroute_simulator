@@ -48,8 +48,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Set, Any
 
 # Import configuration loader
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from core.config_loader import get_registry_paths
+from tsim.core.config_loader import get_registry_paths
 
 
 class NetworkNamespaceStatus:
@@ -320,7 +319,7 @@ class NetworkNamespaceStatus:
         """Check if a namespace is a truly system namespace that should be hidden."""
         # Hide system namespaces and internal infrastructure
         # Get hidden namespace from configuration
-        from core.config_loader import get_network_setup_config
+        from tsim.core.config_loader import get_network_setup_config
         network_config = get_network_setup_config()
         hidden_ns = network_config.get('hidden_namespace', 'tsim-hidden')
         system_namespaces = {'default', hidden_ns}
@@ -329,7 +328,7 @@ class NetworkNamespaceStatus:
     def _get_namespace_type(self, namespace: str) -> str:
         """Determine the type of a namespace using JSON facts and host registry."""
         # Get hidden namespace from configuration
-        from core.config_loader import get_network_setup_config
+        from tsim.core.config_loader import get_network_setup_config
         network_config = get_network_setup_config()
         hidden_ns = network_config.get('hidden_namespace', 'tsim-hidden')
         

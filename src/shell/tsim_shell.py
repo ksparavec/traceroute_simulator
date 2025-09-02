@@ -843,8 +843,14 @@ Type 'set' to see all variables.
             self.trace_handler = TraceCommands(self)
             self.nettest_handler = NetTestCommands(self)
             
-        except ImportError as e:
+        except Exception as e:
+            import traceback
             self.poutput(f"{Fore.RED}Error loading command handlers: {e}{Style.RESET_ALL}")
+            if hasattr(self, 'verbose') and self.verbose:
+                self.poutput(f"{Fore.YELLOW}Traceback:{Style.RESET_ALL}")
+                self.poutput(traceback.format_exc())
+            else:
+                self.poutput(f"{Fore.YELLOW}Run tsimsh with -v for verbose error details{Style.RESET_ALL}")
             # Continue with basic shell functionality
     
     def _setup_completion(self):

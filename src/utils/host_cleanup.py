@@ -20,8 +20,7 @@ from pathlib import Path
 from typing import Dict, List
 
 # Import the host namespace setup module to use its removal logic
-sys.path.insert(0, str(Path(__file__).parent.parent))
-from simulators.host_namespace_setup import HostNamespaceManager
+from tsim.simulators.host_namespace_setup import HostNamespaceManager
 
 
 class HostCleanup:

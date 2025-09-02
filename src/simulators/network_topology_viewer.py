@@ -41,8 +41,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Set, Any
 
 # Import configuration loader
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from core.config_loader import get_registry_paths
+from tsim.core.config_loader import get_registry_paths
 
 
 class NetworkTopologyViewer:

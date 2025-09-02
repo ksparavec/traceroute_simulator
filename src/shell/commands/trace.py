@@ -16,9 +16,9 @@ except ImportError:
 
 from .base import BaseCommandHandler
 
-# Use relative imports for package compatibility
-from ...core.traceroute_simulator import TracerouteSimulator, load_configuration
-from ...core.reverse_path_tracer import ReversePathTracer
+# Use absolute imports for installed package
+from tsim.core.traceroute_simulator import TracerouteSimulator, load_configuration
+from tsim.core.reverse_path_tracer import ReversePathTracer
 
 
 class TraceCommands(BaseCommandHandler):

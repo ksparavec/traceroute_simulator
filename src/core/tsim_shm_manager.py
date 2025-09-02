@@ -7,6 +7,7 @@ Manages batch files in /dev/shm/tsim/ directory.
 
 import os
 from pathlib import Path
+from tsim.core.config_loader import load_traceroute_config
 
 class TsimBatchMemory:
     """
@@ -24,6 +25,10 @@ class TsimBatchMemory:
         self.shm_dir = Path('/dev/shm/tsim')
         self.file_path = self.shm_dir / f"batch_{batch_name}"
         
+        # Load configuration for unix_group
+        self.config = load_traceroute_config()
+        self.unix_group = self.config.get('system', {}).get('unix_group', 'tsim-users')
+        
         # Create directory if it doesn't exist
         self._ensure_directory()
         
@@ -31,13 +36,11 @@ class TsimBatchMemory:
         """Ensure /dev/shm/tsim/ directory exists with proper permissions."""
         if not self.shm_dir.exists():
             self.shm_dir.mkdir(mode=0o2775, parents=True, exist_ok=True)
-            # Try to set group to tsim-users if we have permissions
+            # Try to set group from config if we have permissions
             try:
                 import grp
-                import pwd
-                gid = grp.getgrnam('tsim-users').gr_gid
-                uid = pwd.getpwuid(os.getuid()).pw_uid
-                os.chown(self.shm_dir, uid, gid)
+                gid = grp.getgrnam(self.unix_group).gr_gid
+                os.chown(self.shm_dir, -1, gid)  # -1 keeps current user, only changes group
             except:
                 # Ignore if we can't set group
                 pass

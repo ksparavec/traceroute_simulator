@@ -5,6 +5,7 @@ import time
 import os
 import signal
 import sys
+from config import Config
 
 class NetworkLockManager:
     """
@@ -19,6 +20,10 @@ class NetworkLockManager:
         self.logger = logger
         self.semaphore = None
         self.acquired = False
+        
+        # Load config to get unix_group
+        config = Config()
+        self.unix_group = config.config.get('unix_group', 'tsim-users')
         
     def __enter__(self):
         """Context manager entry - acquire lock"""
@@ -48,7 +53,7 @@ class NetworkLockManager:
                 import grp
                 import subprocess
                 sem_path = f"/dev/shm/sem.{self.SEMAPHORE_NAME[1:]}"  # Remove leading /
-                tsim_gid = grp.getgrnam('tsim-users').gr_gid
+                tsim_gid = grp.getgrnam(self.unix_group).gr_gid
                 
                 # Check current ownership
                 stat_info = os.stat(sem_path)
@@ -58,7 +63,7 @@ class NetworkLockManager:
                         os.chown(sem_path, -1, tsim_gid)  # -1 means don't change user
                     else:
                         # Use sudo if not root
-                        subprocess.run(['sudo', 'chgrp', 'tsim-users', sem_path], 
+                        subprocess.run(['sudo', 'chgrp', self.unix_group, sem_path], 
                                      check=False, capture_output=True)
                     
                     # Also set group read/write permissions

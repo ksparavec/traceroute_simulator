@@ -25,6 +25,9 @@ export PYTHONDONTWRITEBYTECODE := 1
 WEB_USER := $(shell if id www-data >/dev/null 2>&1; then echo "www-data"; elif id apache >/dev/null 2>&1; then echo "apache"; else echo "apache"; fi)
 WEB_GROUP := $(WEB_USER)
 
+# Get unix_group from configuration file (defaults to tsim-users if not found)
+UNIX_GROUP := $(shell $(PYTHON) -c "import yaml; import os; conf_file='traceroute_simulator.yaml' if os.path.exists('traceroute_simulator.yaml') else None; print(yaml.safe_load(open(conf_file))['system']['unix_group'] if conf_file else 'tsim-users')" 2>/dev/null || echo "tsim-users")
+
 # Python modules required by the project
 REQUIRED_MODULES := json sys argparse ipaddress os glob typing subprocess re difflib matplotlib numpy
 
@@ -505,15 +508,15 @@ clean:
 show-sudoers:
 	@echo "=== Traceroute Simulator Sudoers Configuration ==="
 	@echo ""
-	@echo "Namespace Operations (for tsim-users group):"
+	@echo "Namespace Operations (for $(UNIX_GROUP) group):"
 	@echo "---------------------------------------------------"
 	@cat etc/sudoers.d/traceroute-simulator-namespaces
 	@echo ""
 	@echo "Installation:"
 	@echo "  sudo cp etc/sudoers.d/traceroute-simulator-namespaces /etc/sudoers.d/"
 	@echo "  sudo chmod 0440 /etc/sudoers.d/traceroute-simulator-namespaces"
-	@echo "  sudo groupadd -f tsim-users"
-	@echo "  sudo usermod -a -G tsim-users <username>"
+	@echo "  sudo groupadd -f $(UNIX_GROUP)"
+	@echo "  sudo usermod -a -G $(UNIX_GROUP) <username>"
 
 # Run traceroute simulator with command line arguments
 # Usage: make tsim ARGS="-s 10.1.1.1 -d 10.2.1.1"
@@ -566,10 +569,10 @@ netsetup:
 		echo "Please run: sudo -E make netsetup"; \
 		exit 1; \
 	fi
-	@echo "Checking for tsim-users group..."
-	@if ! getent group tsim-users > /dev/null 2>&1; then \
-		echo "Creating tsim-users group..."; \
-		groupadd tsim-users || true; \
+	@echo "Checking for $(UNIX_GROUP) group..."
+	@if ! getent group $(UNIX_GROUP) > /dev/null 2>&1; then \
+		echo "Creating $(UNIX_GROUP) group..."; \
+		groupadd $(UNIX_GROUP) || true; \
 	fi
 	@env TRACEROUTE_SIMULATOR_RAW_FACTS="$(TRACEROUTE_SIMULATOR_RAW_FACTS)" $(PYTHON) $(PYTHON_OPTIONS) src/simulators/batch_command_generator.py --clean --create --verify $(ARGS)
 
@@ -1531,9 +1534,9 @@ install-web:
 	@echo "1. Configure sudo permissions for namespace operations:"
 	@echo "      sudo cp etc/sudoers.d/traceroute-simulator-namespaces /etc/sudoers.d/"
 	@echo "      sudo chmod 0440 /etc/sudoers.d/traceroute-simulator-namespaces"
-	@echo "      sudo groupadd -f tsim-users"
-	@echo "      sudo usermod -a -G tsim-users $(WEB_USER)"
-	@echo "      sudo usermod -a -G tsim-users $(USER)"
+	@echo "      sudo groupadd -f $(UNIX_GROUP)"
+	@echo "      sudo usermod -a -G $(UNIX_GROUP) $(WEB_USER)"
+	@echo "      sudo usermod -a -G $(UNIX_GROUP) $(USER)"
 	@echo ""
 	@echo "2. Create an initial user:"
 	@echo "   cd $(WEB_ROOT) && sudo -u $(WEB_USER) ./scripts/create_user.sh"

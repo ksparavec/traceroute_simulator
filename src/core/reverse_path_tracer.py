@@ -35,14 +35,8 @@ except ImportError:
     try:
         import sys
         import os
-        # Add parent directories to path
-        current_dir = os.path.dirname(os.path.abspath(__file__))
-        parent_dir = os.path.dirname(current_dir)
-        if parent_dir not in sys.path:
-            sys.path.insert(0, parent_dir)
-        
-        from executors.mtr_executor import MTRExecutor
-        from core.route_formatter import RouteFormatter
+        from tsim.executors.mtr_executor import MTRExecutor
+        from tsim.core.route_formatter import RouteFormatter
         MTR_AVAILABLE = True
     except ImportError:
         MTR_AVAILABLE = False

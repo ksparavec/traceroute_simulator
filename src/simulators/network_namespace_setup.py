@@ -52,9 +52,8 @@ sys.stdout = FlushingWrapper(sys.stdout)
 sys.stderr = FlushingWrapper(sys.stderr)
 
 # Import the raw facts block loader and config loader
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
-from core.raw_facts_block_loader import RawFactsBlockLoader, RouterRawFacts
-from core.config_loader import get_registry_paths
+from tsim.core.raw_facts_block_loader import RawFactsBlockLoader, RouterRawFacts
+from tsim.core.config_loader import get_registry_paths
 
 
 class HiddenMeshNetworkSetup:
@@ -132,7 +131,7 @@ class HiddenMeshNetworkSetup:
         self.bridge_registry: Dict[str, Dict[str, Dict[str, Dict[str, str]]]] = {}
         
         # Hidden infrastructure namespace - get from config
-        from core.config_loader import get_network_setup_config
+        from tsim.core.config_loader import get_network_setup_config
         network_config = get_network_setup_config()
         self.hidden_ns = network_config.get('hidden_namespace', 'tsim-hidden')
         

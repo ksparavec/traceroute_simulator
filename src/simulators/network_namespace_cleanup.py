@@ -35,8 +35,7 @@ from typing import List, Set
 from pathlib import Path
 
 # Import configuration loader
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from core.config_loader import get_registry_paths
+from tsim.core.config_loader import get_registry_paths
 
 
 class NetworkNamespaceCleanup:
@@ -71,7 +70,7 @@ class NetworkNamespaceCleanup:
         self.bridge_registry_file = Path(registry_paths['bridges'])
         
         # Get hidden namespace from config
-        from core.config_loader import get_network_setup_config
+        from tsim.core.config_loader import get_network_setup_config
         network_config = get_network_setup_config()
         self.hidden_ns = network_config.get('hidden_namespace', 'tsim-hidden')
         

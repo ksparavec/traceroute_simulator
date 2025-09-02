@@ -1485,33 +1485,40 @@ install-web:
 	@echo "Installing frontend files..."
 	@cp -r web/htdocs/* "$(WEB_ROOT)/htdocs/"
 	
-	# Copy scripts
+	# Copy scripts (only production scripts, not test/debug/obsolete ones)
 	@echo "Installing utility scripts..."
-	@cp web/scripts/network_reachability_test_wrapper.py "$(WEB_ROOT)/scripts/"
+	# Multi-service workflow scripts
 	@cp web/scripts/network_reachability_test_wrapper_multi.py "$(WEB_ROOT)/scripts/"
-	@cp web/scripts/create_user.sh "$(WEB_ROOT)/scripts/"
-	@cp web/scripts/change_password.sh "$(WEB_ROOT)/scripts/"
-	@cp web/scripts/generate_summary_page.py "$(WEB_ROOT)/scripts/"
+	@cp src/scripts/network_reachability_test_multi.py "$(WEB_ROOT)/scripts/"
+	# PDF generation scripts
 	@cp web/scripts/generate_summary_page_reportlab.py "$(WEB_ROOT)/scripts/"
 	@cp web/scripts/merge_pdfs.py "$(WEB_ROOT)/scripts/"
-	@cp src/scripts/network_reachability_test.sh "$(WEB_ROOT)/scripts/"
-	@cp src/scripts/network_reachability_test_multi.py "$(WEB_ROOT)/scripts/"
 	@cp src/scripts/visualize_reachability.py "$(WEB_ROOT)/scripts/"
-	@cp src/scripts/format_reachability_output.py "$(WEB_ROOT)/scripts/"
+	# Analysis scripts
 	@cp src/scripts/analyze_packet_counts.py "$(WEB_ROOT)/scripts/"
-	@cp web/scripts/test_me.py "$(WEB_ROOT)/scripts/"
+	# User management scripts
+	@cp web/scripts/create_user.sh "$(WEB_ROOT)/scripts/"
+	@cp web/scripts/change_password.sh "$(WEB_ROOT)/scripts/"
+	# Set permissions
 	@chmod +x "$(WEB_ROOT)/scripts/"*.py
 	@chmod +x "$(WEB_ROOT)/scripts/"*.sh
 	
-	# Copy configuration templates
-	@echo "Installing configuration templates..."
-	@cp web/conf/* "$(WEB_ROOT)/conf/"
+	# Copy configuration files
+	@echo "Installing configuration..."
 	@cp traceroute_simulator.yaml "$(WEB_ROOT)/conf/"
+	@cp web/conf/config.json.example "$(WEB_ROOT)/conf/"
 	
-	# Create default configuration if doesn't exist
+	# Create config.json from example if doesn't exist
 	@if [ ! -f "$(WEB_ROOT)/conf/config.json" ]; then \
-		echo "Creating default configuration..."; \
-		$(PYTHON) $(PYTHON_OPTIONS) -c "import json; import secrets; config = {'data_retention_days': 365, 'session_timeout': 3600, 'venv_path': '$(HOME)/tsim-venv', 'tsimsh_path': 'tsimsh', 'traceroute_simulator_path': '$(WEB_ROOT)/scripts', 'traceroute_simulator_conf': '$(WEB_ROOT)/conf/traceroute_simulator.yaml', 'traceroute_simulator_facts': '/var/local/tsim_facts', 'traceroute_simulator_raw_facts': '/var/local/tsim_raw_facts', 'log_level': 'DEBUG', 'secret_key': secrets.token_hex(32), 'controller_ip': '127.0.0.1', 'base_url': 'http://localhost', 'registry_files': {'hosts': '/dev/shm/tsim/host_registry.json', 'routers': '/dev/shm/tsim/router_registry.json', 'interfaces': '/dev/shm/tsim/interface_registry.json', 'bridges': '/dev/shm/tsim/bridge_registry.json', 'services': '/dev/shm/tsim/services_registry.json'}}; json.dump(config, open('$(WEB_ROOT)/conf/config.json', 'w'), indent=2)"; \
+		echo "Creating config.json from example..."; \
+		cp "$(WEB_ROOT)/conf/config.json.example" "$(WEB_ROOT)/conf/config.json"; \
+		echo ""; \
+		echo "IMPORTANT: Edit $(WEB_ROOT)/conf/config.json and configure:"; \
+		echo "  - base_url: Your server's base URL (e.g., https://your-server.com)"; \
+		echo "  - venv_path: Path to your Python virtual environment"; \
+		echo "  - traceroute_simulator_facts: Path to facts directory"; \
+		echo "  - traceroute_simulator_raw_facts: Path to raw facts directory"; \
+		echo ""; \
 	fi
 	
 	# Set permissions
@@ -1532,30 +1539,35 @@ install-web:
 	@echo "✓ Web service files installed successfully!"
 	@echo ""
 	@echo "Next steps:"
-	@echo "1. Configure sudo permissions for namespace operations:"
+	@echo "1. Configure the application settings:"
+	@echo "   Edit $(WEB_ROOT)/conf/config.json and set:"
+	@echo "   - base_url: Your server's base URL (e.g., https://your-server.com)"
+	@echo "   - venv_path: Path to your Python virtual environment"
+	@echo "   - traceroute_simulator_facts: Path to facts directory"
+	@echo "   - traceroute_simulator_raw_facts: Path to raw facts directory"
+	@echo ""
+	@echo "2. Configure sudo permissions for namespace operations:"
 	@echo "      sudo cp etc/sudoers.d/traceroute-simulator-namespaces /etc/sudoers.d/"
 	@echo "      sudo chmod 0440 /etc/sudoers.d/traceroute-simulator-namespaces"
 	@echo "      sudo groupadd -f $(UNIX_GROUP)"
 	@echo "      sudo usermod -a -G $(UNIX_GROUP) $(WEB_USER)"
 	@echo "      sudo usermod -a -G $(UNIX_GROUP) $(USER)"
 	@echo ""
-	@echo "2. Create an initial user:"
+	@echo "3. Create an initial user:"
 	@echo "   cd $(WEB_ROOT) && sudo -u $(WEB_USER) ./scripts/create_user.sh"
 	@echo ""
 	@echo "   To change a user's password:"
 	@echo "   cd $(WEB_ROOT) && sudo -u $(WEB_USER) ./scripts/change_password.sh"
 	@echo ""
-	@echo "3. Configure Apache:"
-	@echo "   sudo cp $(WEB_ROOT)/conf/apache-site.conf.template /etc/apache2/sites-available/traceroute-web.conf"
-	@echo "   Edit the configuration file as needed"
+	@echo "4. Configure Apache:"
+	@echo "   Create /etc/apache2/sites-available/traceroute-web.conf with appropriate settings"
 	@echo "   sudo a2ensite traceroute-web"
 	@echo "   sudo systemctl reload apache2"
 	@echo ""
-	@echo "4. Set up cron jobs:"
+	@echo "5. Set up cron jobs for data cleanup (if needed):"
 	@echo "   sudo -u $(WEB_USER) crontab -e"
-	@echo "   Add entries from $(WEB_ROOT)/conf/crontab.template"
 	@echo ""
-	@echo "5. Create SSL certificate (for testing):"
+	@echo "6. Create SSL certificate (for testing):"
 	@echo "   sudo openssl req -x509 -nodes -days 365 -newkey rsa:2048 \\"
 	@echo "     -keyout /etc/ssl/private/traceroute.key \\"
 	@echo "     -out /etc/ssl/certs/traceroute.crt"

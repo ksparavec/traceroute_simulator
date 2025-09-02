@@ -1,27 +1,25 @@
 {
-    "secret_key": "CHANGE_ME_TO_RANDOM_SECRET",
-    "session_timeout": 3600,
-    "data_retention_days": 7,
-    "allowed_ips": [],
-    "max_trace_hops": 30,
-    "venv_path": "/home/sparavec/tsim-venv",
-    "tsimsh_path": "/home/sparavec/tsim-venv/bin/tsimsh",
-    "traceroute_simulator_path": "/var/www/traceroute-web/scripts",
-    "traceroute_simulator_mode": "test",
-    "test_trace_file": "/var/www/traceroute-web/data/test/trace_example.json",
-    "traceroute_simulator_facts": "/home/sparavec/tsim_facts",
-    "traceroute_simulator_raw_facts": "/home/sparavec/raw_facts",
-    "traceroute_simulator_conf": "/var/www/traceroute-web/conf/traceroute_simulator.yaml",
-    "tsimsh_verbose_level": 0,
-    "base_url": "http://localhost",
-    "registry_files": {
-        "hosts": "/dev/shm/tsim/host_registry.json",
-        "routers": "/dev/shm/tsim/router_registry.json",
-        "interfaces": "/dev/shm/tsim/interface_registry.json",
-        "bridges": "/dev/shm/tsim/bridge_registry.json",
-        "services": "/dev/shm/tsim/services_registry.json"
-    },
-    "quick_select_services": [
+  "base_url": "https://localhost",
+  "data_retention_days": 365,
+  "session_timeout": 3600,
+  "venv_path": "",
+  "tsimsh_path": "tsimsh",
+  "traceroute_simulator_path": "/var/www/traceroute-web/scripts",
+  "traceroute_simulator_conf": "/var/www/traceroute-web/conf/traceroute_simulator.yaml",
+  "traceroute_simulator_facts": "",
+  "traceroute_simulator_raw_facts": "",
+  "traceroute_simulator_mode": "test",
+  "log_level": "DEBUG",
+  "secret_key": "04c26073f6d66e3a222d91eda44d4ce431b07f554428f0fc992b5c85dc7b63c3",
+  "controller_ip": "127.0.0.1",
+  "registry_files": {
+      "hosts": "/dev/shm/tsim/host_registry.json",
+      "routers": "/dev/shm/tsim/router_registry.json",
+      "interfaces": "/dev/shm/tsim/interface_registry.json",
+      "bridges": "/dev/shm/tsim/bridge_registry.json",
+      "services": "/dev/shm/tsim/services_registry.json"
+  },
+  "quick_select_services": [
         {"port": 22, "protocol": "tcp", "name": "SSH", "description": "Secure Shell"},
         {"port": 53, "protocol": "tcp", "name": "DNS", "description": "Domain Name System (TCP)"},
         {"port": 53, "protocol": "udp", "name": "DNS", "description": "Domain Name System (UDP)"},
@@ -46,5 +44,5 @@
         {"port": 8080, "protocol": "tcp", "name": "HTTP-Alt", "description": "Alternate Web"},
         {"port": 8443, "protocol": "tcp", "name": "HTTPS-Alt", "description": "Alternate Secure Web"},
         {"port": 9389, "protocol": "tcp", "name": "AD-WS", "description": "AD Web Services"}
-    ]
+  ]
 }

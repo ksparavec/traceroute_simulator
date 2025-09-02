@@ -532,7 +532,6 @@ class CommandExecutor:
         import urllib.request
         import ssl
         import tempfile
-        from PyPDF2 import PdfMerger
         
         pdf_file = os.path.join(self.data_dir, "pdfs", f"{run_id}_report.pdf")
         os.makedirs(os.path.dirname(pdf_file), exist_ok=True, mode=0o775)
@@ -656,29 +655,39 @@ class CommandExecutor:
                 self.logger.log_error(f"Error generating PDF for {port}/{protocol}", str(e))
                 # Continue with other services
         
-        # Merge all PDFs into one
+        # Merge all PDFs into one using the merge script in venv
         if individual_pdfs:
             try:
-                merger = PdfMerger()
+                # Create a JSON file with the list of PDFs to merge
+                merge_list_file = os.path.join(self.data_dir, "pdfs", f"{run_id}_merge_list.json")
+                with open(merge_list_file, 'w') as f:
+                    json.dump(individual_pdfs, f)
                 
-                # Add each PDF to the merger
-                for pdf in individual_pdfs:
-                    merger.append(pdf)
+                # Run the merge script in the virtual environment
+                merge_script = "/var/www/traceroute-web/scripts/merge_pdfs.py"
+                cmd = [
+                    os.path.join(self.venv_path, "bin", "python"),
+                    "-B", "-u", merge_script,
+                    "--input-list", merge_list_file,
+                    "--output", pdf_file,
+                    "--cleanup"  # Remove individual PDFs after merge
+                ]
                 
-                # Write the merged PDF
-                merger.write(pdf_file)
-                merger.close()
+                # Use the venv activation method
+                result = self._activate_venv_and_run(cmd, timeout=30)
                 
-                self.logger.log_info(f"Merged {len(individual_pdfs)} PDFs into {pdf_file}")
-                
-                # Clean up individual PDFs
-                for pdf in individual_pdfs:
+                if result['success'] and os.path.exists(pdf_file):
+                    self.logger.log_info(f"Merged {len(individual_pdfs)} PDFs into {pdf_file}")
+                    
+                    # Clean up the merge list file
                     try:
-                        os.remove(pdf)
+                        os.remove(merge_list_file)
                     except:
                         pass
-                
-                return pdf_file
+                    
+                    return pdf_file
+                else:
+                    raise Exception(f"PDF merge failed: {result.get('error', 'Unknown error')}")
                 
             except Exception as e:
                 self.logger.log_error("Failed to merge PDFs", str(e))

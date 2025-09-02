@@ -9,7 +9,9 @@
     SSLEngine on
     SSLCertificateFile /etc/ssl/certs/traceroute.crt
     SSLCertificateKeyFile /etc/ssl/private/traceroute.key
-    
+
+    SetEnv PYTHONDONTWRITEBYTECODE 1
+
     # Increase timeout for long-running tests
     Timeout 600
     

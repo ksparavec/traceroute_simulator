@@ -24,6 +24,8 @@ export PYTHONDONTWRITEBYTECODE := 1
 # Check for www-data (Debian/Ubuntu) first, then apache (RHEL/CentOS/Fedora)
 WEB_USER := $(shell if id www-data >/dev/null 2>&1; then echo "www-data"; elif id apache >/dev/null 2>&1; then echo "apache"; else echo "apache"; fi)
 WEB_GROUP := $(WEB_USER)
+APACHE_CONF_DIR := $(shell if [ -d "/etc/apache2/sites-available" ]; then echo "/etc/apache2/sites-available"; elif [ -d "/etc/httpd/conf.d" ]; then echo "/etc/httpd/conf.d"; else echo "/etc/apache2/sites-available"; fi)
+APACHE_ENABLE_CMD := $(shell if [ -d "/etc/apache2/sites-available" ]; then echo "sudo a2ensite tsim-wsgi"; else echo "# Config already enabled in conf.d"; fi)
 
 # Get unix_group from configuration file (defaults to tsim-users if not found)
 UNIX_GROUP := $(shell $(PYTHON) -c "import yaml; import os; conf_file='traceroute_simulator.yaml' if os.path.exists('traceroute_simulator.yaml') else None; print(yaml.safe_load(open(conf_file))['system']['unix_group'] if conf_file else 'tsim-users')" 2>/dev/null || echo "tsim-users")
@@ -1571,6 +1573,185 @@ install-web:
 	@echo "   sudo openssl req -x509 -nodes -days 365 -newkey rsa:2048 \\"
 	@echo "     -keyout /etc/ssl/private/traceroute.key \\"
 	@echo "     -out /etc/ssl/certs/traceroute.crt"
+
+# Install WSGI implementation
+# Default TSIM_WEB_ROOT is /opt/tsim/wsgi
+TSIM_WEB_ROOT ?= /opt/tsim/wsgi
+
+install-wsgi:
+	@echo "Installing WSGI implementation..."
+	@echo "========================================"
+	@echo "Target directory: $(TSIM_WEB_ROOT)"
+	@echo ""
+	
+	# Check if running as root (recommended for setting permissions)
+	@if [ "$$(id -u)" = "0" ]; then \
+		echo "Running as root - will set proper ownership"; \
+	else \
+		echo "Warning: Not running as root - you may need to fix permissions later"; \
+	fi
+	
+	# Create directories
+	@echo "Creating directories..."
+	@mkdir -p "$(TSIM_WEB_ROOT)"
+	@mkdir -p "/opt/tsim/htdocs"
+	@if [ "$$(id -u)" = "0" ]; then \
+		mkdir -p "/var/log/tsim"; \
+		chown $(WEB_USER):$(WEB_GROUP) "/var/log/tsim"; \
+		chmod 755 "/var/log/tsim"; \
+		echo "Created log directory: /var/log/tsim"; \
+	else \
+		echo "Warning: Cannot create /var/log/tsim without root privileges"; \
+	fi
+	
+	# Copy WSGI application files (excluding htdocs, documentation, templates, and config.json)
+	@echo "Installing WSGI application..."
+	@rsync -av --exclude='htdocs' --exclude='*.md' --exclude='*.template' --exclude='config.json' wsgi/ "$(TSIM_WEB_ROOT)/"
+	
+	# Create conf directory
+	@echo "Creating conf directory..."
+	@mkdir -p "$(TSIM_WEB_ROOT)/conf"
+	
+	# Copy configuration files to conf directory
+	@echo "Installing configuration files..."
+	@cp traceroute_simulator.yaml "$(TSIM_WEB_ROOT)/conf/"
+	
+	# Install config.json to conf directory
+	@if [ -f "$(TSIM_WEB_ROOT)/conf/config.json" ]; then \
+		cp wsgi/config.json "$(TSIM_WEB_ROOT)/conf/config.json.example"; \
+		echo "Existing config.json preserved, new example saved as config.json.example"; \
+	else \
+		cp wsgi/config.json "$(TSIM_WEB_ROOT)/conf/config.json.example"; \
+		cp wsgi/config.json "$(TSIM_WEB_ROOT)/conf/config.json"; \
+	fi
+	
+	# Update paths in config files to match installation directory
+	@sed -i 's|"/opt/tsim/wsgi/scripts"|"$(TSIM_WEB_ROOT)/scripts"|g' "$(TSIM_WEB_ROOT)/conf/config.json.example"
+	@sed -i 's|"/opt/tsim/wsgi/conf/traceroute_simulator.yaml"|"$(TSIM_WEB_ROOT)/conf/traceroute_simulator.yaml"|g' "$(TSIM_WEB_ROOT)/conf/config.json.example"
+	@sed -i 's|"/opt/tsim/conf/users.json"|"$(TSIM_WEB_ROOT)/conf/users.json"|g' "$(TSIM_WEB_ROOT)/conf/config.json.example"
+	@if [ -f "$(TSIM_WEB_ROOT)/conf/config.json" ]; then \
+		sed -i 's|"/opt/tsim/wsgi/scripts"|"$(TSIM_WEB_ROOT)/scripts"|g' "$(TSIM_WEB_ROOT)/conf/config.json"; \
+		sed -i 's|"/opt/tsim/wsgi/conf/traceroute_simulator.yaml"|"$(TSIM_WEB_ROOT)/conf/traceroute_simulator.yaml"|g' "$(TSIM_WEB_ROOT)/conf/config.json"; \
+		sed -i 's|"/opt/tsim/conf/users.json"|"$(TSIM_WEB_ROOT)/conf/users.json"|g' "$(TSIM_WEB_ROOT)/conf/config.json"; \
+	fi
+	
+	# Copy htdocs to /opt/tsim/htdocs
+	@echo "Installing htdocs..."
+	@cp -r wsgi/htdocs/* "/opt/tsim/htdocs/"
+	
+	# Set proper permissions
+	@echo "Setting permissions..."
+	@if [ "$$(id -u)" = "0" ]; then \
+		echo "Setting ownership to $(WEB_USER):$(WEB_GROUP)..."; \
+		chown -R $(WEB_USER):$(WEB_GROUP) "$(TSIM_WEB_ROOT)"; \
+		chown -R $(WEB_USER):$(WEB_GROUP) "/opt/tsim/htdocs"; \
+		chmod 755 "$(TSIM_WEB_ROOT)"; \
+		chmod 755 "$(TSIM_WEB_ROOT)/handlers"; \
+		chmod 755 "$(TSIM_WEB_ROOT)/services"; \
+		chmod 755 "$(TSIM_WEB_ROOT)/scripts"; \
+		chmod 755 "/opt/tsim/htdocs"; \
+		chmod 644 "$(TSIM_WEB_ROOT)"/*.py; \
+		chmod 644 "$(TSIM_WEB_ROOT)/handlers"/*.py; \
+		chmod 644 "$(TSIM_WEB_ROOT)/services"/*.py; \
+		chmod 755 "$(TSIM_WEB_ROOT)/scripts"/*.py; \
+		chmod 755 "$(TSIM_WEB_ROOT)/scripts"/*.sh 2>/dev/null || true; \
+		chmod 644 "$(TSIM_WEB_ROOT)/app.wsgi"; \
+		find "/opt/tsim/htdocs" -type d -exec chmod 755 {} \;; \
+		find "/opt/tsim/htdocs" -type f -exec chmod 644 {} \;; \
+	else \
+		echo "Warning: Cannot set ownership without root privileges"; \
+		echo "Run: sudo chown -R $(WEB_USER):$(WEB_GROUP) $(TSIM_WEB_ROOT) /opt/tsim/htdocs"; \
+	fi
+	
+	# Create Apache configuration from template
+	@echo ""
+	@echo "Creating Apache configuration..."
+	@sed -e 's/__WEB_USER__/$(WEB_USER)/g' \
+	     -e 's/__WEB_GROUP__/$(WEB_GROUP)/g' \
+	     "wsgi/apache-site.conf.template" > "$(TSIM_WEB_ROOT)/apache-site.conf"
+	@echo "Apache configuration created at: $(TSIM_WEB_ROOT)/apache-site.conf"
+	
+	@echo ""
+	@echo "✓ WSGI installation complete!"
+	@echo ""
+	@echo "Next steps:"
+	@echo ""
+	@echo "1. Configure the application:"
+	@echo "   Edit $(TSIM_WEB_ROOT)/conf/config.json and set:"
+	@echo "   - venv_path: Path to your Python virtual environment"
+	@echo "   - tsimsh_path: Path to tsimsh executable"
+	@echo "   - tsim_raw_facts: Path to raw facts directory"
+	@echo "   - data_dir: Data directory (e.g., /dev/shm/tsim)"
+	@echo "   - log_dir: Log directory (e.g., /var/log/tsim)"
+	@echo "   - session_dir: Session directory (e.g., /dev/shm/tsim/sessions)"
+	@echo ""
+	@echo "2. Verify directories:"
+	@if [ "$$(id -u)" != "0" ]; then \
+		echo "   - Log directory: sudo mkdir -p /var/log/tsim"; \
+		echo "   - Set permissions: sudo chown $(WEB_USER):$(WEB_GROUP) /var/log/tsim"; \
+	else \
+		echo "   - Log directory already created: /var/log/tsim"; \
+	fi
+	@echo "   Note: /dev/shm/tsim will be created automatically by tsimsh with proper permissions"
+	@echo ""
+	@echo "3. Set up Python virtual environment:"
+	@echo "   python3 -m venv <venv_path from config.json>"
+	@echo "   <venv_path>/bin/pip install --upgrade pip"
+	@echo "   <venv_path>/bin/pip install mod-wsgi ujson psutil"
+	@echo "   <venv_path>/bin/pip install matplotlib networkx reportlab PyPDF2 python-pam"
+	@echo ""
+	@echo "4. Generate mod_wsgi configuration:"
+	@echo "   <venv_path>/bin/mod_wsgi-express module-config > /tmp/mod_wsgi.conf"
+	@echo "   sudo cp /tmp/mod_wsgi.conf /etc/apache2/mods-available/wsgi_tsim.load"
+	@echo "   sudo a2enmod wsgi_tsim"
+	@echo ""
+	@echo "5. Install Apache site configuration:"
+	@echo "   a. Copy the prepared configuration:"
+	@echo "      sudo cp $(TSIM_WEB_ROOT)/apache-site.conf $(APACHE_CONF_DIR)/tsim-wsgi.conf"
+	@echo "   b. Edit the configuration: sudo nano $(APACHE_CONF_DIR)/tsim-wsgi.conf"
+	@echo "      Update the following:"
+	@echo "      - ServerName: Change 'tsim.example.com' to your domain"
+	@echo "      - SSL paths: Update certificate and key file paths"
+	@echo "      - Verify all 'Define' paths match your setup (especially if not using defaults)"
+	@echo "   c. Enable the site: $(APACHE_ENABLE_CMD)"
+	@if [ "$(APACHE_CONF_DIR)" = "/etc/apache2/sites-available" ]; then \
+		echo "   d. Disable default site if needed: sudo a2dissite 000-default"; \
+	fi
+	@echo ""
+	@echo "6. Enable required Apache modules:"
+	@if [ "$(APACHE_CONF_DIR)" = "/etc/apache2/sites-available" ]; then \
+		echo "   sudo a2enmod ssl headers expires"; \
+	else \
+		echo "   # Modules should be already enabled in httpd.conf"; \
+		echo "   # Verify with: sudo httpd -M | grep -E 'ssl|headers|expires'"; \
+	fi
+	@echo ""
+	@echo "7. Create SSL certificate (for testing):"
+	@echo "   sudo openssl req -x509 -nodes -days 365 -newkey rsa:2048 \\"
+	@echo "     -keyout /etc/ssl/private/tsim.key \\"
+	@echo "     -out /etc/ssl/certs/tsim.crt"
+	@echo ""
+	@echo "8. Restart Apache:"
+	@if [ "$(APACHE_CONF_DIR)" = "/etc/apache2/sites-available" ]; then \
+		echo "   sudo systemctl restart apache2"; \
+	else \
+		echo "   sudo systemctl restart httpd"; \
+	fi
+	@echo ""
+	@echo "9. Create initial admin user:"
+	@echo "   cd $(TSIM_WEB_ROOT)/scripts"
+	@echo "   ./create_user.sh"
+	@echo "   # Enter username: admin, role: admin, and choose a password"
+	@echo ""
+	@echo "10. Test the installation:"
+	@echo "   https://$$(hostname -f)/"
+	@echo ""
+	@echo "User Management Scripts:"
+	@echo "   Create user: $(TSIM_WEB_ROOT)/scripts/create_user.sh"
+	@echo "   Change password: $(TSIM_WEB_ROOT)/scripts/change_password.sh"
+	@echo ""
+	@echo "Note: If migrating from CGI, disable the old CGI site first:"
+	@echo "   sudo a2dissite <old-cgi-site-name>"
 
 # PAM configuration for SSSD authentication
 pam-config:

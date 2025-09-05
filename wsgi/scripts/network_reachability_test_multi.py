@@ -26,9 +26,6 @@ import uuid
 from pathlib import Path
 from typing import List, Tuple, Dict, Any, Optional
 
-# Import the packet count analyzer function from CGI script
-from scripts.analyze_packet_counts import compare_packet_counts
-
 # Constants
 VERSION = "2.0.0"
 SCRIPT_START_TIME = time.time()
@@ -46,7 +43,7 @@ def log_timing(checkpoint: str, details: str = "") -> None:
     session_id = os.environ.get('RUN_ID', str(uuid.uuid4()))
     
     # Log to timings.log
-    log_dir = Path(os.environ.get('LOG_DIR', "/var/log/tsim"))
+    log_dir = Path("/var/www/traceroute-web/logs")
     if log_dir.exists():
         timings_file = log_dir / "timings.log"
         audit_file = log_dir / "audit.log"
@@ -77,33 +74,19 @@ def log_timing(checkpoint: str, details: str = "") -> None:
 
 def tsimsh_exec(command: str, capture_output: bool = False, verbose: int = 0) -> Optional[str]:
     """Execute tsimsh command."""
-    # WSGI is already running in the venv, just call tsimsh directly
-    # Use full path to tsimsh from the venv
-    venv_path = os.environ.get('VIRTUAL_ENV', '/home/sparavec/tsim-venv')
-    tsimsh_path = os.path.join(venv_path, 'bin', 'tsimsh')
+    # Always use tsimsh from PATH (properly installed version)
+    tsimsh_path = "tsimsh"
     
-    # If tsimsh doesn't exist at venv path, try PATH
-    if not os.path.exists(tsimsh_path):
-        tsimsh_path = 'tsimsh'
+    cmd = [tsimsh_path, "-q"]
     
     try:
         result = subprocess.run(
-            [tsimsh_path, '-q'],
+            cmd,
             input=command,
             capture_output=True,
             text=True,
-            timeout=60,
-            env=os.environ.copy()  # Pass current environment with all WSGI settings
+            timeout=60
         )
-        
-        # Always log to stderr for debugging
-        import sys
-        print(f"[TSIMSH] Command: {command.strip()}", file=sys.stderr)
-        print(f"[TSIMSH] Return code: {result.returncode}", file=sys.stderr)
-        if result.stdout:
-            print(f"[TSIMSH] Stdout: {result.stdout[:200]}", file=sys.stderr)
-        if result.stderr:
-            print(f"[TSIMSH] Stderr: {result.stderr[:200]}", file=sys.stderr)
         
         # Debug output for verbose mode
         if verbose > 0:
@@ -113,26 +96,20 @@ def tsimsh_exec(command: str, capture_output: bool = False, verbose: int = 0) ->
                 print(f"[DEBUG] tsimsh stderr: {result.stderr[:200]}", file=sys.stderr)
             print(f"[DEBUG] tsimsh return code: {result.returncode}", file=sys.stderr)
         
-        # Check for actual success/failure in output
         if capture_output:
             return result.stdout
-        else:
-            # For non-capture commands, check if there was an error
-            if result.returncode != 0 or "error" in result.stderr.lower() or "failed" in result.stderr.lower():
-                print(f"[TSIMSH] Command failed: {command.strip()}", file=sys.stderr)
-                return result.stderr if result.stderr else f"Command failed with code {result.returncode}"
-            return None  # Success
+        return None if result.returncode == 0 else result.stderr
     except Exception as e:
         print(f"Error executing tsimsh command: {e}", file=sys.stderr)
-        return str(e)
+        return None
 
 
-class TsimMultiServiceTester:
+class MultiServiceTester:
     """Main class for multi-service testing."""
     
     def __init__(self, source_ip: str, source_port: Optional[int], dest_ip: str, 
                  services: List[Tuple[int, str]], output_dir: str, 
-                 trace_file: Optional[str] = None, verbose: int = 0, run_id: Optional[str] = None):
+                 trace_file: Optional[str] = None, verbose: int = 0):
         self.source_ip = source_ip
         self.source_port = source_port
         self.dest_ip = dest_ip
@@ -140,7 +117,6 @@ class TsimMultiServiceTester:
         self.output_dir = Path(output_dir)
         self.trace_file = trace_file
         self.verbose = verbose
-        self.run_id = run_id or str(uuid.uuid4())
         
         # Create output directory with proper permissions
         self.output_dir.mkdir(parents=True, exist_ok=True, mode=0o775)
@@ -148,8 +124,6 @@ class TsimMultiServiceTester:
         # Track created resources for cleanup
         self.created_hosts = []
         self.started_services = []  # List of (ip, port, protocol) tuples
-        
-        # Packet analyzer will use CGI compare_packet_counts function directly
         
         # Track result files for each service (for PDF generation)
         self.service_result_files = []
@@ -346,13 +320,8 @@ class TsimMultiServiceTester:
         if traceroute_output:
             try:
                 traceroute_result = json.loads(traceroute_output)
-            except Exception as e:
-                # Include the raw output in error for debugging
-                traceroute_result = {
-                    "error": "Failed to parse traceroute output",
-                    "raw_output": traceroute_output[:500] if len(traceroute_output) > 500 else traceroute_output,
-                    "parse_error": str(e)
-                }
+            except:
+                traceroute_result = {"error": "Failed to parse traceroute output"}
         else:
             traceroute_result = {"error": "Traceroute failed"}
         
@@ -411,12 +380,8 @@ class TsimMultiServiceTester:
             try:
                 service_data = json.loads(service_output)
                 result["connectivity_test"] = service_data
-            except Exception as e:
-                result["connectivity_test"] = {
-                    "error": "Failed to parse service test output",
-                    "raw_output": service_output[:500] if len(service_output) > 500 else service_output,
-                    "parse_error": str(e)
-                }
+            except:
+                result["connectivity_test"] = {"error": "Failed to parse service test output"}
         else:
             result["connectivity_test"] = {"error": "Service test failed"}
         
@@ -510,7 +475,17 @@ class TsimMultiServiceTester:
                               iptables_after: Dict[str, Any], 
                               port: int, protocol: str,
                               router_modes: Dict[str, str]) -> Dict[str, Any]:
-        """Analyze packet counts using the packet analyzer class."""
+        """Analyze packet counts using analyze_packet_counts.py script."""
+        # Use analyze_packet_counts.py from the same directory as this script
+        # When installed, both scripts should be in web-root/scripts/
+        script_dir = Path(__file__).parent
+        script_path = script_dir / "analyze_packet_counts.py"
+        
+        if not script_path.exists():
+            error_msg = f"analyze_packet_counts.py not found at {script_path}"
+            print(f"ERROR: {error_msg}", file=sys.stderr)
+            raise Exception(error_msg)
+        
         analysis_results = {}
         
         # Analyze each router
@@ -521,43 +496,66 @@ class TsimMultiServiceTester:
             # Use the per-router mode determined from test results
             analysis_mode = router_modes.get(router, "blocking")
             
+            # Create temporary files for the script with raw JSON output
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as before_file:
+                # Write raw JSON output, not parsed/extracted data
+                before_file.write(iptables_before[router])
+                before_path = before_file.name
+            
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as after_file:
+                # Write raw JSON output, not parsed/extracted data
+                after_file.write(iptables_after[router])
+                after_path = after_file.name
+            
             try:
-                # Parse the JSON strings to get actual data
-                before_data = json.loads(iptables_before[router]) if isinstance(iptables_before[router], str) else iptables_before[router]
-                after_data = json.loads(iptables_after[router]) if isinstance(iptables_after[router], str) else iptables_after[router]
+                # Run the analysis script for this router
+                cmd = [
+                    sys.executable, "-B", "-u", 
+                    str(script_path), 
+                    router,           # router name
+                    before_path,      # before file
+                    after_path,       # after file
+                    "-m", analysis_mode  # mode based on test result
+                ]
                 
                 if self.verbose > 1:
-                    print(f"\nAnalyzing {router} in {analysis_mode} mode", file=sys.stderr)
+                    print(f"[DEBUG] Analyzing {router} in {analysis_mode} mode", file=sys.stderr)
                 
-                # Use the CGI compare_packet_counts function directly
-                analysis = compare_packet_counts(
-                    before_data,
-                    after_data,
-                    router_name=router,
-                    verbose=(self.verbose > 1),
-                    mode=analysis_mode
+                result = subprocess.run(
+                    cmd,
+                    capture_output=True,
+                    text=True,
+                    timeout=10
                 )
                 
-                if analysis:
-                    analysis_results[router] = analysis
-                else:
-                    analysis_results[router] = {
-                        "router": router,
-                        "mode": analysis_mode,
-                        "error": "No analysis result"
-                    }
-                    
-            except json.JSONDecodeError as e:
-                error_msg = f"Failed to parse iptables data: {e}"
-                print(f"ERROR analyzing {router}: {error_msg}", file=sys.stderr)
-                analysis_results[router] = {"error": error_msg}
+                if result.returncode != 0:
+                    error_msg = f"analyze_packet_counts.py failed for router {router}"
+                    if result.stderr:
+                        error_msg += f": {result.stderr}"
+                    print(f"ERROR: {error_msg}", file=sys.stderr)
+                    analysis_results[router] = {"error": error_msg}
+                elif result.stdout:
+                    try:
+                        analysis_results[router] = json.loads(result.stdout)
+                    except json.JSONDecodeError:
+                        analysis_results[router] = {"raw_output": result.stdout}
                 
+            except subprocess.TimeoutExpired:
+                error_msg = f"analyze_packet_counts.py timed out for router {router}"
+                print(f"ERROR: {error_msg}", file=sys.stderr)
+                analysis_results[router] = {"error": error_msg}
             except Exception as e:
-                error_msg = f"Failed to analyze {router}: {e}"
+                error_msg = f"Error analyzing router {router}: {e}"
                 print(f"ERROR: {error_msg}", file=sys.stderr)
                 analysis_results[router] = {"error": str(e)}
+            finally:
+                # Clean up temporary files
+                try:
+                    os.unlink(before_path)
+                    os.unlink(after_path)
+                except:
+                    pass
         
-        # Format final result with port and protocol info
         return {
             "port": port,
             "protocol": protocol,
@@ -604,7 +602,7 @@ class TsimMultiServiceTester:
         
         return False
     
-    def run(self) -> Dict[str, Any]:
+    def run(self) -> None:
         """Main execution flow matching shell script phases."""
         try:
             log_timing("START", f"Multi-service test: {self.source_ip} -> {self.dest_ip} ({len(self.services)} services)")
@@ -725,8 +723,8 @@ class TsimMultiServiceTester:
                         "blocked_by_routers": blocked_by
                     }
                 
-                # Save individual result file in EXACT shell script format with run_id
-                result_file = self.output_dir / f"{self.run_id}_{port}_{protocol}_results.json"
+                # Save individual result file in EXACT shell script format
+                result_file = self.output_dir / f"{port}_{protocol}_results.json"
                 with open(result_file, 'w') as f:
                     json.dump(formatted_result, f, indent=2)
                 
@@ -750,28 +748,22 @@ class TsimMultiServiceTester:
             total_duration = time.time() - SCRIPT_START_TIME
             log_timing("TOTAL", f"Total execution time: {total_duration:.2f}s")
             
-            # Return summary (for WSGI use)
-            result = {
+            # Print summary to stdout
+            print(json.dumps({
                 "status": "success",
                 "services_tested": len(self.services),
                 "services_reachable": summary["services_reachable"],
                 "duration": total_duration,
                 "output_dir": str(self.output_dir),
                 "result_files": self.service_result_files
-            }
-            
-            # Print for command-line use
-            print(json.dumps(result))
-            
-            return result
+            }))
             
         except Exception as e:
             log_timing("ERROR", str(e))
-            error_result = {
+            print(json.dumps({
                 "status": "error",
                 "error": str(e)
-            }
-            print(json.dumps(error_result))
+            }))
             raise
         finally:
             self.cleanup()

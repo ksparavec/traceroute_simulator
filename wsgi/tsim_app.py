@@ -238,3 +238,7 @@ class TsimWSGIApp:
             self.logger.error(f"Error serving HTML page {path}: {e}")
             start_response('500 Internal Server Error', [('Content-Type', 'text/plain')])
             return [b'Error reading page']
+
+# Expose a module-level WSGI callable for local testing tools
+# Example: python3 -m wsgiref.simple_server tsim_app:application 8000
+application = TsimWSGIApp()

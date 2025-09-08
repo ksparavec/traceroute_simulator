@@ -65,22 +65,29 @@ else:
     current_path = os.environ.get('PATH', '/usr/local/bin:/usr/bin:/bin')
     os.environ['PATH'] = f"{venv_bin}:{current_path}"
 
-# Print Python information for diagnostics
-print(f"=== TSIM WSGI Python Environment ===", file=sys.stderr)
-print(f"Python Version: {sys.version}", file=sys.stderr)
-print(f"Python Executable: {sys.executable}", file=sys.stderr)
-print(f"Python Prefix: {sys.prefix}", file=sys.stderr)
-print(f"Python Path: {':'.join(sys.path)}", file=sys.stderr)
-print(f"Working Directory: {os.getcwd()}", file=sys.stderr)
-print(f"Process UID: {os.getuid()}, GID: {os.getgid()}", file=sys.stderr)
-print(f"Config File: {config_path}", file=sys.stderr)
-print(f"Web Root: {web_root}", file=sys.stderr)
-print(f"Environment Variables (from config):", file=sys.stderr)
-print(f"  PYTHONPYCACHEPREFIX: {os.environ.get('PYTHONPYCACHEPREFIX')}", file=sys.stderr)
-print(f"  MPLCONFIGDIR: {os.environ.get('MPLCONFIGDIR')}", file=sys.stderr)
-print(f"  TRACEROUTE_SIMULATOR_RAW_FACTS: {os.environ.get('TRACEROUTE_SIMULATOR_RAW_FACTS')}", file=sys.stderr)
-print(f"  PATH: {os.environ.get('PATH', 'NOT SET')}", file=sys.stderr)
-print(f"=====================================", file=sys.stderr)
+# Print diagnostics only in debug mode
+_debug_enabled = False
+try:
+    _debug_enabled = (str(config.get('log_level', '')).upper() == 'DEBUG') or bool(config.get('debug', False))
+except Exception:
+    _debug_enabled = False
+
+if _debug_enabled:
+    print(f"=== TSIM WSGI Python Environment ===", file=sys.stderr)
+    print(f"Python Version: {sys.version}", file=sys.stderr)
+    print(f"Python Executable: {sys.executable}", file=sys.stderr)
+    print(f"Python Prefix: {sys.prefix}", file=sys.stderr)
+    print(f"Python Path: {':'.join(sys.path)}", file=sys.stderr)
+    print(f"Working Directory: {os.getcwd()}", file=sys.stderr)
+    print(f"Process UID: {os.getuid()}, GID: {os.getgid()}", file=sys.stderr)
+    print(f"Config File: {config_path}", file=sys.stderr)
+    print(f"Web Root: {web_root}", file=sys.stderr)
+    print(f"Environment Variables (from config):", file=sys.stderr)
+    print(f"  PYTHONPYCACHEPREFIX: {os.environ.get('PYTHONPYCACHEPREFIX')}", file=sys.stderr)
+    print(f"  MPLCONFIGDIR: {os.environ.get('MPLCONFIGDIR')}", file=sys.stderr)
+    print(f"  TRACEROUTE_SIMULATOR_RAW_FACTS: {os.environ.get('TRACEROUTE_SIMULATOR_RAW_FACTS')}", file=sys.stderr)
+    print(f"  PATH: {os.environ.get('PATH', 'NOT SET')}", file=sys.stderr)
+    print(f"=====================================", file=sys.stderr)
 
 # Ensure cache directories exist
 Path(os.environ['MPLCONFIGDIR']).mkdir(parents=True, exist_ok=True)
@@ -94,7 +101,8 @@ while '/tmp' in sys.path:
 sys.path.insert(0, os.path.join(web_root, 'scripts'))
 sys.path.insert(0, web_root)
 
-print(f"Adjusted Python Path: {':'.join(sys.path)}", file=sys.stderr)
+if _debug_enabled:
+    print(f"Adjusted Python Path: {':'.join(sys.path)}", file=sys.stderr)
 
 # Configure logging early
 # Note: mod_wsgi logs all stderr output as wsgi:error regardless of actual log level
@@ -213,7 +221,6 @@ from services.tsim_logger_service import TsimLoggerService
 from services.tsim_timing_service import TsimTimingService
 from services.tsim_lock_manager_service import TsimLockManagerService
 from services.tsim_executor import TsimExecutor
-from services.tsim_pdf_generator import TsimPDFGenerator
 from services.tsim_progress_tracker import TsimProgressTracker
 try:
     from services.tsim_hybrid_executor import TsimHybridExecutor

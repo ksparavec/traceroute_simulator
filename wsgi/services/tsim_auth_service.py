@@ -269,8 +269,6 @@ class TsimAuthService:
         except Exception as e:
             self.logger.error(f"LDAP authentication error: {e}")
             return False, None
-        
-        return True, None, user_data
     
     def create_user(self, username: str, password: str, role: str = 'user') -> Tuple[bool, Optional[str]]:
         """Create a new user

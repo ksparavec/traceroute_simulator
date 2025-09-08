@@ -32,17 +32,17 @@ wsgi/
 │   ├── tsim_services_config_handler.py
 │   ├── tsim_test_config_handler.py
 │   └── tsim_cleanup_handler.py
-├── services/             # Core services (11 modules)
+├── services/             # Core services
 │   ├── tsim_config_service.py
 │   ├── tsim_session_manager.py
-│   ├── tsim_logger.py
+│   ├── tsim_logger_service.py
 │   ├── tsim_auth_service.py
 │   ├── tsim_validator_service.py
-│   ├── tsim_port_parser.py
+│   ├── tsim_port_parser_service.py
 │   ├── tsim_timing_service.py
-│   ├── tsim_lock_manager.py
+│   ├── tsim_lock_manager_service.py
 │   ├── tsim_executor.py
-│   ├── tsim_pdf_generator.py
+│   ├── tsim_hybrid_executor.py
 │   └── tsim_performance_middleware.py
 ├── scripts/              # Refactored scripts (library + CLI)
 │   ├── tsim_reachability_tester.py
@@ -141,19 +141,19 @@ find /path/to/wsgi -type f -exec chmod 644 {} \;
 chmod 755 /path/to/wsgi/scripts/*.py
 ```
 
-## API Endpoints
+## Endpoints
 
-The WSGI application provides the following REST API endpoints:
+These routes are mounted directly (no `/api` prefix):
 
-- `GET/POST /api/login` - Authentication
-- `POST /api/logout` - Logout
-- `POST /api/main` - Submit reachability test
-- `GET /api/pdf` - Retrieve PDF report
-- `GET /api/progress` - Get test progress
-- `GET /api/progress-stream` - SSE progress stream
-- `GET /api/services-config` - Get available services
-- `GET /api/test-config` - Get test configuration
-- `POST /api/cleanup` - Admin cleanup operations
+- `GET/POST /login` - Authentication
+- `POST /logout` - Logout
+- `GET/POST /main` - Submit or query a test
+- `GET /pdf` - Retrieve PDF report (session or HMAC token)
+- `GET /progress` - Poll progress JSON
+- `GET /progress-stream` - SSE progress stream
+- `GET /services-config` - Available services and quick ports
+- `GET /test-config` - Authenticated test configuration
+- `POST /cleanup` - Admin cleanup operations
 
 ## Performance Optimizations
 
@@ -170,7 +170,6 @@ The WSGI application provides the following REST API endpoints:
 - Session-based authentication with secure tokens
 - Input validation and sanitization
 - CSRF protection via session tokens
-- Rate limiting on sensitive endpoints
 - Secure password hashing (SHA256)
 - XSS and injection prevention
 
@@ -222,11 +221,14 @@ tail -f /var/log/tsim/tsim.log
 ### Testing Locally
 
 ```bash
-# Run the WSGI app locally for testing
-cd wsgi/
-python3 -m wsgiref.simple_server tsim_app:application 8000
+# Option A: mod_wsgi-express (recommended)
+mod_wsgi-express start-server wsgi/app.wsgi --port 8000
 
-# Access at http://localhost:8000
+# Option B: simple built-in server
+python3 wsgi/run_local.py         # serves http://localhost:8000
+PORT=8080 python3 wsgi/run_local.py
+
+# Then visit http://localhost:8000/
 ```
 
 ### Adding New Handlers

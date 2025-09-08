@@ -9,7 +9,6 @@ import logging
 from typing import Dict, Any, List
 from .tsim_base_handler import TsimBaseHandler
 from services.tsim_executor import TsimExecutor
-from services.tsim_pdf_generator import TsimPDFGenerator
 
 
 class TsimCleanupHandler(TsimBaseHandler):
@@ -26,7 +25,6 @@ class TsimCleanupHandler(TsimBaseHandler):
         super().__init__(session_manager, logger_service)
         self.config = config_service
         self.executor = TsimExecutor(config_service)
-        self.pdf_generator = TsimPDFGenerator(config_service)
         self.logger = logging.getLogger('tsim.handler.cleanup')
     
     def handle(self, environ: Dict[str, Any], start_response) -> List[bytes]:
@@ -188,7 +186,7 @@ class TsimCleanupHandler(TsimBaseHandler):
             # Clean up PDFs
             if clean_pdfs:
                 try:
-                    pdfs_cleaned = self.pdf_generator.cleanup_old_pdfs(max_age)
+                    pdfs_cleaned = self._cleanup_old_pdfs(max_age)
                     cleanup_stats['pdf_files_removed'] = pdfs_cleaned
                     self.logger.info(f"Cleaned {pdfs_cleaned} old PDF files")
                 except Exception as e:
@@ -248,3 +246,45 @@ class TsimCleanupHandler(TsimBaseHandler):
                 f'Cleanup failed: {str(e)}',
                 '500 Internal Server Error'
             )
+
+    def _cleanup_old_pdfs(self, max_age: int) -> int:
+        """Remove old PDF files from run and data directories.
+
+        Args:
+            max_age: Maximum file age in seconds
+
+        Returns:
+            Count of PDF files removed
+        """
+        import time
+        from pathlib import Path
+
+        cutoff = time.time() - int(max_age)
+        removed = 0
+
+        # PDFs are primarily generated in /dev/shm/tsim/runs/<run_id>/*.pdf
+        run_dir = Path(self.config.get('run_dir', '/dev/shm/tsim/runs'))
+        if run_dir.exists():
+            for path in run_dir.rglob('*.pdf'):
+                try:
+                    if path.stat().st_mtime < cutoff:
+                        path.unlink()
+                        removed += 1
+                except Exception:
+                    continue
+
+        # Backward-compatible: also consider data_dir/pdfs
+        try:
+            pdf_dir = self.config.data_dir / 'pdfs'
+            if pdf_dir.exists():
+                for path in pdf_dir.glob('*.pdf'):
+                    try:
+                        if path.stat().st_mtime < cutoff:
+                            path.unlink()
+                            removed += 1
+                    except Exception:
+                        continue
+        except Exception:
+            pass
+
+        return removed

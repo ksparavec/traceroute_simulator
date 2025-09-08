@@ -17,6 +17,8 @@ from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor, Future
 import queue
 
+from .tsim_timing_service import TsimTimingService
+
 
 class TsimHybridExecutor:
     """
@@ -36,7 +38,8 @@ class TsimHybridExecutor:
         """
         self.config = config_service
         self.progress_tracker = progress_tracker
-        self.timing_service = timing_service
+        # Ensure a timing service is available
+        self.timing_service = timing_service or TsimTimingService()
         self.logger = logging.getLogger('tsim.hybrid_executor')
         
         # Paths
@@ -61,6 +64,53 @@ class TsimHybridExecutor:
         self.callback_lock = threading.Lock()
         
         self.logger.info("TsimHybridExecutor initialized with thread and process pools")
+
+    # -----------------------------
+    # Timing helpers
+    # -----------------------------
+    def _timer_id(self, run_id: str) -> str:
+        return f"run_{run_id}"
+
+    def _start_timing(self, run_id: str):
+        try:
+            self.timing_service.start_timer(self._timer_id(run_id))
+        except Exception:
+            pass
+
+    def _checkpoint(self, run_id: str, name: str, details: str = None):
+        try:
+            self.timing_service.checkpoint(self._timer_id(run_id), name, details)
+        except Exception:
+            pass
+
+    def _end_timing(self, run_id: str, run_dir: Path, extra: dict = None) -> dict:
+        try:
+            timing = self.timing_service.end_timer(self._timer_id(run_id))
+        except Exception:
+            timing = {}
+
+        # Write per-run timing.json for later analysis
+        try:
+            timing_out = dict(timing) if isinstance(timing, dict) else {}
+            if extra:
+                timing_out['extra'] = extra
+            out_path = Path(run_dir) / 'timing.json'
+            with open(out_path, 'w') as f:
+                json.dump(timing_out, f, indent=2)
+        except Exception:
+            pass
+
+        # Log concise summary
+        try:
+            total = timing.get('total_elapsed') if isinstance(timing, dict) else None
+            if total is not None:
+                checkpoints = timing.get('checkpoints', [])
+                summary = ', '.join([f"{c['name']}:{c.get('delta', 0):.3f}s" for c in checkpoints])
+                self.logger.info(f"Timing {run_id}: total={total:.3f}s, {summary}")
+        except Exception:
+            pass
+
+        return timing if isinstance(timing, dict) else {}
     
     def __del__(self):
         """Cleanup pools on deletion"""
@@ -90,11 +140,14 @@ class TsimHybridExecutor:
         
         # Initialize progress tracking
         self._update_progress(run_id, 'START', 'Starting test execution')
+        self._start_timing(run_id)
         
         try:
             # Step 1: Execute trace (I/O bound - use thread)
+            self._checkpoint(run_id, 'TRACE_START', f"{params['source_ip']}->{params['dest_ip']}")
             self._update_progress(run_id, 'MULTI_REACHABILITY_PHASE1_start', f"Path discovery from {params['source_ip']} to {params['dest_ip']}")
             trace_result = self._execute_trace(params, run_dir)
+            self._checkpoint(run_id, 'TRACE_DONE')
             if trace_result.get('trace_file'):
                 # Count routers in trace
                 try:
@@ -107,15 +160,19 @@ class TsimHybridExecutor:
                     self._update_progress(run_id, 'MULTI_REACHABILITY_PHASE1_complete', 'Path discovery completed')
             
             # Step 2: Execute reachability tests (I/O bound - use thread)
+            self._checkpoint(run_id, 'REACHABILITY_START')
             self._update_progress(run_id, 'MULTI_REACHABILITY_PHASE2_start', 'Setting up simulation environment')
             params['trace_file'] = trace_result['trace_file']
             reach_result = self._execute_reachability(params, run_dir)
+            self._checkpoint(run_id, 'REACHABILITY_DONE', f"services={len(params.get('port_protocol_list', []))}")
             self._update_progress(run_id, 'MULTI_REACHABILITY_PHASE4_complete', 'All service tests completed')
             
             # Step 3: Generate PDFs (CPU bound - use process pool)
+            self._checkpoint(run_id, 'PDF_START')
             self._update_progress(run_id, 'PDF_GENERATION', 'Generating PDF reports')
             params['result_files'] = reach_result.get('result_files', [])
             pdf_result = self._execute_pdf_generation(params, run_dir)
+            self._checkpoint(run_id, 'PDF_DONE')
             self._update_progress(run_id, 'PDF_COMPLETE', 'PDF generation completed')
             
             # Mark completion with PDF file
@@ -127,6 +184,7 @@ class TsimHybridExecutor:
             
             self.logger.info(f"Test completed for {run_id} with PDF: {final_pdf}")
             
+            timing = self._end_timing(run_id, run_dir, {'service_count': len(params.get('port_protocol_list', []))})
             return {
                 'success': True,
                 'run_id': run_id,
@@ -134,12 +192,15 @@ class TsimHybridExecutor:
                 'reachability': reach_result,
                 'pdf': pdf_result,
                 'final_pdf': final_pdf,
-                'timestamp': datetime.now().isoformat()
+                'timestamp': datetime.now().isoformat(),
+                'timing': timing
             }
             
         except Exception as e:
             self.logger.error(f"Test execution failed for {run_id}: {e}")
             self._update_progress(run_id, 'ERROR', f'Test failed: {str(e)}')
+            # Finalize timing even on error
+            self._end_timing(run_id, run_dir, {'error': str(e)})
             raise
     
     def _execute_trace(self, params: Dict[str, Any], run_dir: Path) -> Dict[str, Any]:
@@ -323,38 +384,46 @@ class TsimHybridExecutor:
             except Exception as e:
                 print(f"Failed to generate summary: {e}", file=sys.stderr)
         
-        # Step 2: Generate individual service PDFs
+        # Step 2: Generate individual service PDFs (direct call, no subprocess)
+        try:
+            from scripts.visualize_reachability import create_networkx_visualization, load_json_file
+        except Exception as e:
+            print(f"Visualizer import failed: {e}", file=sys.stderr)
+            create_networkx_visualization = None
+            load_json_file = None
+
+        trace_data = None
+        if create_networkx_visualization and load_json_file:
+            try:
+                trace_data = load_json_file(params['trace_file']) if params.get('trace_file') else None
+            except Exception as e:
+                print(f"Failed to load trace file: {e}", file=sys.stderr)
+                trace_data = None
+
         for result_file in params.get('result_files', []):
             try:
                 result_path = Path(result_file)
-                stem = result_path.stem  # e.g., "22_tcp_results" or "run_id_22_tcp_results"
-                
-                # Extract port and protocol from filename
-                # Handle both "22_tcp_results" and "run_id_22_tcp_results" formats
-                if '_results' in stem:
-                    stem = stem.replace('_results', '')
-                    parts = stem.split('_')
-                    
-                    if len(parts) >= 2:
-                        # Take last two parts as port and protocol
-                        port = parts[-2]
-                        protocol = parts[-1]
-                        service_pdf = run_dir / f"{run_id}_{port}_{protocol}.pdf"
-                        
-                        # Use visualize_reachability.py
-                        import subprocess
-                        cmd = [
-                            sys.executable, "-B", "-u",
-                            "-m", "scripts.visualize_reachability",
-                            "--trace", params['trace_file'],
-                            "--results", result_file,
-                            "--output", str(service_pdf),
-                            "--service", f"{port}/{protocol}"
-                        ]
-                        
-                        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
-                        if result.returncode == 0 and service_pdf.exists():
+                stem = result_path.stem
+                if '_results' not in stem:
+                    continue
+                parts = stem.replace('_results', '').split('_')
+                if len(parts) < 2:
+                    continue
+                port = parts[-2]
+                protocol = parts[-1]
+                service_pdf = run_dir / f"{run_id}_{port}_{protocol}.pdf"
+
+                if create_networkx_visualization and load_json_file and trace_data:
+                    try:
+                        results_data = load_json_file(result_file)
+                        results_data.setdefault('service_tested', f"{port}/{protocol}")
+                        create_networkx_visualization(trace_data, results_data, str(service_pdf))
+                        if service_pdf.exists():
                             pdf_files.append(str(service_pdf))
+                        continue
+                    except Exception as e:
+                        print(f"Direct PDF render failed, skipping: {e}", file=sys.stderr)
+                        continue
             except Exception as e:
                 print(f"Failed to generate PDF for {result_file}: {e}", file=sys.stderr)
         

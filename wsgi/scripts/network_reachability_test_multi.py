@@ -141,20 +141,19 @@ class MultiServiceTester:
         """Clean up all created resources (matches shell script cleanup)."""
         self._log_progress("cleanup_start", "Starting cleanup")
         
-        # Stop all services (using IP:port like shell script)
-        for ip, port, protocol in self.started_services:
-            try:
-                cmd = f"service stop --ip {ip} --port {port} --protocol {protocol}"
-                tsimsh_exec(cmd, verbose=self.verbose)
-            except:
-                pass
+        # Fast global cleanup: wipe all services, then all hosts
+        try:
+            tsimsh_exec("service clean --force", verbose=self.verbose)
+        except Exception:
+            pass
+        try:
+            tsimsh_exec("host clean --force", verbose=self.verbose)
+        except Exception:
+            pass
         
-        # Remove all hosts with --force flag
-        for host_name in self.created_hosts:
-            try:
-                tsimsh_exec(f"host remove --name {host_name} --force", verbose=self.verbose)
-            except:
-                pass
+        # Clear internal tracking (not strictly necessary with global clean)
+        self.started_services = []
+        self.created_hosts = []
         
         self._log_progress("cleanup_complete", "Cleanup completed")
     
@@ -370,13 +369,18 @@ class MultiServiceTester:
             self._log_progress(f"iptables_before_{port}_{protocol}_start", "Starting to get iptables counters before test")
             if self.verbose > 0:
                 print(f"[DEBUG] Getting fresh iptables snapshot before {port}/{protocol} test", file=sys.stderr)
+            # Fetch per-router snapshots concurrently to reduce wall time
             iptables_before = {}
-            for router in routers:
-                cmd = f"network status --json --limit {router} iptables"
-                output = tsimsh_exec(cmd, capture_output=True, verbose=self.verbose)
-                if output:
-                    # Store raw output just like shell script does
-                    iptables_before[router] = output
+            from concurrent.futures import ThreadPoolExecutor, as_completed
+            def _fetch_before(r):
+                cmd = f"network status --json --limit {r} iptables"
+                return r, tsimsh_exec(cmd, capture_output=True, verbose=self.verbose)
+            with ThreadPoolExecutor(max_workers=min(4, len(routers))) as pool:
+                futures = [pool.submit(_fetch_before, r) for r in routers]
+                for fut in as_completed(futures):
+                    r, out = fut.result()
+                    if out:
+                        iptables_before[r] = out
             self._log_progress(f"iptables_before_{port}_{protocol}_complete", f"Got iptables from {len(routers)} routers")
         
         # Step 2: Run service test EXACTLY like shell script
@@ -402,12 +406,16 @@ class MultiServiceTester:
         self._log_progress(f"iptables_after_{port}_{protocol}_start", "Starting to get iptables counters after test")
         
         iptables_after = {}
-        for router in routers:
-            cmd = f"network status --json --limit {router} iptables"
-            output = tsimsh_exec(cmd, capture_output=True, verbose=self.verbose)
-            if output:
-                # Store raw output just like shell script does
-                iptables_after[router] = output
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        def _fetch_after(r):
+            cmd = f"network status --json --limit {r} iptables"
+            return r, tsimsh_exec(cmd, capture_output=True, verbose=self.verbose)
+        with ThreadPoolExecutor(max_workers=min(4, len(routers))) as pool:
+            futures = [pool.submit(_fetch_after, r) for r in routers]
+            for fut in as_completed(futures):
+                r, out = fut.result()
+                if out:
+                    iptables_after[r] = out
         self._log_progress(f"iptables_after_{port}_{protocol}_complete", f"Got iptables from {len(routers)} routers")
         
         # Step 4: Parse service test results EXACTLY like shell script
@@ -506,73 +514,57 @@ class MultiServiceTester:
         
         analysis_results = {}
         
-        # Analyze each router
-        for router in iptables_before.keys():
+        # Analyze each router concurrently to reduce wall time
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        def _analyze_router(router: str):
             if router not in iptables_after:
-                continue
-            
-            # Use the per-router mode determined from test results
+                return router, {"error": "missing after snapshot"}
             analysis_mode = router_modes.get(router, "blocking")
-            
-            # Create temporary files for the script with raw JSON output
-            with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as before_file:
-                # Write raw JSON output, not parsed/extracted data
-                before_file.write(iptables_before[router])
-                before_path = before_file.name
-            
-            with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as after_file:
-                # Write raw JSON output, not parsed/extracted data
-                after_file.write(iptables_after[router])
-                after_path = after_file.name
-            
+            before_path = after_path = None
             try:
-                # Run the analysis script for this router
+                with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as before_file:
+                    before_file.write(iptables_before[router])
+                    before_path = before_file.name
+                with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as after_file:
+                    after_file.write(iptables_after[router])
+                    after_path = after_file.name
                 cmd = [
-                    sys.executable, "-B", "-u", 
-                    str(script_path), 
-                    router,           # router name
-                    before_path,      # before file
-                    after_path,       # after file
-                    "-m", analysis_mode  # mode based on test result
+                    sys.executable, "-B", "-u",
+                    str(script_path),
+                    router,
+                    before_path,
+                    after_path,
+                    "-m", analysis_mode
                 ]
-                
                 if self.verbose > 1:
                     print(f"[DEBUG] Analyzing {router} in {analysis_mode} mode", file=sys.stderr)
-                
-                result = subprocess.run(
-                    cmd,
-                    capture_output=True,
-                    text=True,
-                    timeout=10
-                )
-                
+                result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
                 if result.returncode != 0:
-                    error_msg = f"analyze_packet_counts.py failed for router {router}"
-                    if result.stderr:
-                        error_msg += f": {result.stderr}"
-                    print(f"ERROR: {error_msg}", file=sys.stderr)
-                    analysis_results[router] = {"error": error_msg}
-                elif result.stdout:
+                    err = result.stderr or "Analysis script failed"
+                    return router, {"error": err}
+                if result.stdout:
                     try:
-                        analysis_results[router] = json.loads(result.stdout)
+                        return router, json.loads(result.stdout)
                     except json.JSONDecodeError:
-                        analysis_results[router] = {"raw_output": result.stdout}
-                
+                        return router, {"raw_output": result.stdout}
+                return router, {"error": "No output"}
             except subprocess.TimeoutExpired:
-                error_msg = f"analyze_packet_counts.py timed out for router {router}"
-                print(f"ERROR: {error_msg}", file=sys.stderr)
-                analysis_results[router] = {"error": error_msg}
+                return router, {"error": f"analyze_packet_counts.py timed out for router {router}"}
             except Exception as e:
-                error_msg = f"Error analyzing router {router}: {e}"
-                print(f"ERROR: {error_msg}", file=sys.stderr)
-                analysis_results[router] = {"error": str(e)}
+                return router, {"error": str(e)}
             finally:
-                # Clean up temporary files
                 try:
-                    os.unlink(before_path)
-                    os.unlink(after_path)
+                    if before_path:
+                        os.unlink(before_path)
+                    if after_path:
+                        os.unlink(after_path)
                 except:
                     pass
+        with ThreadPoolExecutor(max_workers=min(4, len(iptables_before))) as pool:
+            futures = [pool.submit(_analyze_router, r) for r in iptables_before.keys()]
+            for fut in as_completed(futures):
+                r, data = fut.result()
+                analysis_results[r] = data
         
         return {
             "port": port,

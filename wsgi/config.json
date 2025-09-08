@@ -78,13 +78,7 @@
     "hmac_expiry": 86400,
     "allow_trace_input": true,
     "test_mode": false,
-    
-    "rate_limit": {
-        "enabled": true,
-        "window": 60,
-        "max_requests": 100
-    },
-    
+
     "cors": {
         "enabled": false,
         "allowed_origins": ["*"],

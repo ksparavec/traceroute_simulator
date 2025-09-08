@@ -14,7 +14,6 @@ from .tsim_base_handler import TsimBaseHandler
 from services.tsim_validator_service import TsimValidatorService
 from services.tsim_port_parser_service import TsimPortParserService
 from services.tsim_executor import TsimExecutor
-from services.tsim_pdf_generator import TsimPDFGenerator
 from services.tsim_lock_manager_service import TsimLockManagerService
 from services.tsim_timing_service import TsimTimingService
 from services.tsim_progress_tracker import TsimProgressTracker
@@ -50,7 +49,7 @@ class TsimMainHandler(TsimBaseHandler):
         if hybrid_executor:
             self.executor.set_hybrid_executor(hybrid_executor)
         
-        self.pdf_generator = TsimPDFGenerator(config_service)
+        # PDF generation is handled by the hybrid executor; no direct PDF generator needed here
         self.logger = logging.getLogger('tsim.handler.main')
     
     def handle(self, environ: Dict[str, Any], start_response) -> List[bytes]:

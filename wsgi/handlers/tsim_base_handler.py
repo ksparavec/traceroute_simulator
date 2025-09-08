@@ -194,11 +194,24 @@ class TsimBaseHandler(ABC):
         
         # Add CORS headers if configured
         if hasattr(self, 'config') and self.config:
+            # Backward-compat: cors_origin single value
             cors_origin = self.config.get('cors_origin')
+            cors_cfg = self.config.get('cors', {}) if hasattr(self.config, 'get') else {}
+            allow_cors = False
+            origin_value = None
+
             if cors_origin:
-                response_headers.append(('Access-Control-Allow-Origin', cors_origin))
-                response_headers.append(('Access-Control-Allow-Methods', 'GET, POST, OPTIONS'))
-                response_headers.append(('Access-Control-Allow-Headers', 'Content-Type, X-Requested-With'))
+                allow_cors = True
+                origin_value = cors_origin
+            elif isinstance(cors_cfg, dict) and cors_cfg.get('enabled'):
+                allow_cors = True
+                origins = cors_cfg.get('allowed_origins') or ['*']
+                origin_value = origins[0] if isinstance(origins, list) and origins else '*'
+
+            if allow_cors:
+                response_headers.append(('Access-Control-Allow-Origin', origin_value))
+                response_headers.append(('Access-Control-Allow-Methods', ', '.join(cors_cfg.get('allowed_methods', ['GET','POST','OPTIONS']))))
+                response_headers.append(('Access-Control-Allow-Headers', ', '.join(cors_cfg.get('allowed_headers', ['Content-Type','X-Requested-With']))))
         start_response(status, response_headers)
         return [response_body]
     

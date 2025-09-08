@@ -214,11 +214,12 @@ from services.tsim_timing_service import TsimTimingService
 from services.tsim_lock_manager_service import TsimLockManagerService
 from services.tsim_executor import TsimExecutor
 from services.tsim_pdf_generator import TsimPDFGenerator
+from services.tsim_progress_tracker import TsimProgressTracker
 try:
-    from services.tsim_background_executor import TsimBackgroundExecutor
-    from services.tsim_progress_tracker import TsimProgressTracker
+    from services.tsim_hybrid_executor import TsimHybridExecutor
+    logger.info("Hybrid executor loaded")
 except ImportError as e:
-    logger.warning(f"Some new services not available: {e}")
+    logger.warning(f"Hybrid executor not available: {e}")
 logger.info("All service modules loaded")
 
 # Preload ALL handlers (import but don't instantiate yet)
@@ -235,15 +236,8 @@ from handlers.tsim_test_config_handler import TsimTestConfigHandler
 from handlers.tsim_cleanup_handler import TsimCleanupHandler
 logger.info("All handler modules loaded")
 
-# Preload ALL refactored scripts
-logger.info("Loading script modules...")
-from scripts.tsim_reachability_tester import TsimReachabilityTester
-from scripts.tsim_reachability_visualizer import TsimReachabilityVisualizer
-try:
-    from scripts.tsim_pdf_merger import TsimPDFMerger
-except ImportError as e:
-    logger.warning(f"PDF merger not available: {e}")
-logger.info("All script modules loaded")
+# Script modules are loaded on-demand, not preloaded
+logger.info("Script modules will be loaded on demand")
 
 # Import the main application AFTER all modules are loaded
 logger.info("Loading main WSGI application...")

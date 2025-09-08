@@ -128,9 +128,18 @@ class MultiServiceTester:
         # Track result files for each service (for PDF generation)
         self.service_result_files = []
         
+        # Progress callback for WSGI integration
+        self.progress_callback = None
+        
+    def _log_progress(self, phase: str, message: str = ""):
+        """Log progress to both file and callback"""
+        log_timing(phase, message)
+        if self.progress_callback:
+            self.progress_callback(phase, message)
+    
     def cleanup(self) -> None:
         """Clean up all created resources (matches shell script cleanup)."""
-        log_timing("cleanup_start", "Starting cleanup")
+        self._log_progress("cleanup_start", "Starting cleanup")
         
         # Stop all services (using IP:port like shell script)
         for ip, port, protocol in self.started_services:
@@ -147,17 +156,17 @@ class MultiServiceTester:
             except:
                 pass
         
-        log_timing("cleanup_complete", "Cleanup completed")
+        self._log_progress("cleanup_complete", "Cleanup completed")
     
     def phase1_path_discovery(self) -> Dict[str, Any]:
         """Phase 1: Path Discovery - matches shell script phase1_path_discovery."""
-        log_timing("PHASE1_start", f"Path discovery from {self.source_ip} to {self.dest_ip}")
+        self._log_progress("PHASE1_start", f"Path discovery from {self.source_ip} to {self.dest_ip}")
         
         if self.trace_file and Path(self.trace_file).exists():
             # Use existing trace file (READ ONLY - NEVER modify it)
             with open(self.trace_file, 'r') as f:
                 trace_data = json.load(f)
-            log_timing("PHASE1_trace_load", f"Loaded trace from file: {self.trace_file}")
+            self._log_progress("PHASE1_trace_load", f"Loaded trace from file: {self.trace_file}")
         else:
             # Run live trace
             trace_output = tsimsh_exec(
@@ -170,16 +179,16 @@ class MultiServiceTester:
                 raise Exception("Failed to run trace")
             
             trace_data = json.loads(trace_output)
-            log_timing("PHASE1_trace_complete", "Live trace completed")
+            self._log_progress("PHASE1_trace_complete", "Live trace completed")
         
         return trace_data
     
     def phase2_setup_environment(self, routers: List[str]) -> None:
         """Phase 2: Setup Environment - matches shell script phase2_setup_environment."""
-        log_timing("PHASE2_start", "Setting up simulation environment")
+        self._log_progress("PHASE2_start", "Setting up simulation environment")
         
         # Check existing hosts (like shell script does)
-        log_timing("PHASE2_host_list", "Query existing hosts")
+        self._log_progress("PHASE2_host_list", "Query existing hosts")
         host_list_output = tsimsh_exec("host list --json", capture_output=True)
         
         existing_hosts = {}
@@ -207,7 +216,7 @@ class MultiServiceTester:
         
         # Add hosts to ALL routers (using 1-based indexing like shell script)
         num_routers = len(routers)
-        log_timing("PHASE2_host_setup_start", f"Adding hosts to {num_routers} routers")
+        self._log_progress("PHASE2_host_setup_start", f"Adding hosts to {num_routers} routers")
         
         hosts_added = 0
         router_index = 1  # Start at 1 like shell script
@@ -221,7 +230,7 @@ class MultiServiceTester:
             # Add source host to this router if needed
             src_host_name = f"source-{router_index}"
             if not source_exists_for_router:
-                log_timing(f"host_add_source_{router_index}", f"Adding source host {src_host_name} to router {router}")
+                self._log_progress(f"host_add_source_{router_index}", f"Adding source host {src_host_name} to router {router}")
                 result = tsimsh_exec(
                     f"host add --name {src_host_name} --primary-ip {self.source_ip}/24 --connect-to {router} --no-delay",
                     verbose=self.verbose
@@ -243,7 +252,7 @@ class MultiServiceTester:
             # Add destination host to this router if needed
             dst_host_name = f"destination-{router_index}"
             if not dest_exists_for_router:
-                log_timing(f"host_add_dest_{router_index}", f"Adding destination host {dst_host_name} to router {router}")
+                self._log_progress(f"host_add_dest_{router_index}", f"Adding destination host {dst_host_name} to router {router}")
                 result = tsimsh_exec(
                     f"host add --name {dst_host_name} --primary-ip {self.dest_ip}/24 --connect-to {router} --no-delay",
                     verbose=self.verbose
@@ -259,10 +268,10 @@ class MultiServiceTester:
             
             router_index += 1  # Increment for next router
         
-        log_timing("PHASE2_hosts_complete", f"Host setup completed: {hosts_added} hosts added")
+        self._log_progress("PHASE2_hosts_complete", f"Host setup completed: {hosts_added} hosts added")
         
         # Check existing services
-        log_timing("PHASE2_service_check", "Checking existing services")
+        self._log_progress("PHASE2_service_check", "Checking existing services")
         service_list_output = tsimsh_exec("service list --json", capture_output=True)
         existing_services = []
         
@@ -279,7 +288,7 @@ class MultiServiceTester:
                 pass
         
         # Start ALL services in parallel (different from shell script which starts one)
-        log_timing("PHASE2_services_start", f"Starting {len(self.services)} services on {self.dest_ip}")
+        self._log_progress("PHASE2_services_start", f"Starting {len(self.services)} services on {self.dest_ip}")
         
         for port, protocol in self.services:
             # Check if this service already exists
@@ -295,19 +304,19 @@ class MultiServiceTester:
                 
                 if result is None:  # Success
                     self.started_services.append((self.dest_ip, port, protocol))
-                    log_timing(f"service_{port}_{protocol}_started", f"Started {protocol.upper()} service on {self.dest_ip}:{port}")
+                    self._log_progress(f"service_{port}_{protocol}_started", f"Started {protocol.upper()} service on {self.dest_ip}:{port}")
                 else:
                     print(f"Warning: Failed to start service on {self.dest_ip}:{port}/{protocol}: {result}", file=sys.stderr)
             else:
-                log_timing(f"service_{port}_{protocol}_exists", f"Service already running on {self.dest_ip}:{port}/{protocol}")
+                self._log_progress(f"service_{port}_{protocol}_exists", f"Service already running on {self.dest_ip}:{port}/{protocol}")
         
         # Give services a moment to stabilize
         time.sleep(1)
-        log_timing("PHASE2_complete", "Environment setup finished")
+        self._log_progress("PHASE2_complete", "Environment setup finished")
     
     def phase3_initial_tests(self) -> Dict[str, Any]:
         """Phase 3: Initial Reachability Tests - only traceroute (no ping as requested)."""
-        log_timing("PHASE3_start", "Starting initial reachability tests")
+        self._log_progress("PHASE3_start", "Starting initial reachability tests")
         
         # Run traceroute test only (no ping as requested)
         traceroute_output = tsimsh_exec(
@@ -325,7 +334,7 @@ class MultiServiceTester:
         else:
             traceroute_result = {"error": "Traceroute failed"}
         
-        log_timing("PHASE3_complete", "Initial tests finished")
+        self._log_progress("PHASE3_complete", "Initial tests finished")
         return traceroute_result
     
     def test_service_with_packet_analysis(self, port: int, protocol: str, routers: List[str], 
@@ -338,7 +347,7 @@ class MultiServiceTester:
         3. Get iptables counters AFTER test
         4. Analyze packet counts with correct mode per router
         """
-        log_timing(f"test_{port}_{protocol}_start", f"Testing {protocol.upper()} port {port}")
+        self._log_progress(f"test_{port}_{protocol}_start", f"Testing {protocol.upper()} port {port}")
         
         result = {
             "port": port,
@@ -353,12 +362,12 @@ class MultiServiceTester:
         # Step 1: Get iptables counters BEFORE test for each router
         # Optimization: reuse previous "after" snapshot as "before" if available
         if reuse_before_snapshot:
-            log_timing(f"iptables_before_{port}_{protocol}", "Reusing previous iptables snapshot")
+            self._log_progress(f"iptables_before_{port}_{protocol}", "Reusing previous iptables snapshot")
             if self.verbose > 0:
                 print(f"[DEBUG] OPTIMIZATION: Reusing previous iptables snapshot for {port}/{protocol}", file=sys.stderr)
             iptables_before = reuse_before_snapshot
         else:
-            log_timing(f"iptables_before_{port}_{protocol}", "Getting iptables counters before test")
+            self._log_progress(f"iptables_before_{port}_{protocol}_start", "Starting to get iptables counters before test")
             if self.verbose > 0:
                 print(f"[DEBUG] Getting fresh iptables snapshot before {port}/{protocol} test", file=sys.stderr)
             iptables_before = {}
@@ -368,13 +377,16 @@ class MultiServiceTester:
                 if output:
                     # Store raw output just like shell script does
                     iptables_before[router] = output
+            self._log_progress(f"iptables_before_{port}_{protocol}_complete", f"Got iptables from {len(routers)} routers")
         
         # Step 2: Run service test EXACTLY like shell script
         # Shell script command: service test --source ${SOURCE_IP} --destination ${DEST_IP}:${DEST_PORT} --protocol ${PROTOCOL} --timeout 1 --json
         test_cmd = f"service test --source {self.source_ip} --destination {self.dest_ip}:{port} --protocol {protocol} --timeout 1 --json"
         # Note: shell script does NOT add source-port to the service test command
         
+        self._log_progress(f"service_test_{port}_{protocol}_start", f"Starting connectivity test to {self.dest_ip}:{port}/{protocol}")
         service_output = tsimsh_exec(test_cmd, capture_output=True, verbose=self.verbose)
+        self._log_progress(f"service_test_{port}_{protocol}_complete", "Service test completed")
         
         if service_output:
             try:
@@ -385,11 +397,9 @@ class MultiServiceTester:
         else:
             result["connectivity_test"] = {"error": "Service test failed"}
         
-        log_timing(f"service_test_{port}_{protocol}", "Service test completed")
-        
         # Step 3: Get iptables counters AFTER test for each router
         time.sleep(0.5)  # Let packets complete processing
-        log_timing(f"iptables_after_{port}_{protocol}", "Getting iptables counters after test")
+        self._log_progress(f"iptables_after_{port}_{protocol}_start", "Starting to get iptables counters after test")
         
         iptables_after = {}
         for router in routers:
@@ -398,6 +408,7 @@ class MultiServiceTester:
             if output:
                 # Store raw output just like shell script does
                 iptables_after[router] = output
+        self._log_progress(f"iptables_after_{port}_{protocol}_complete", f"Got iptables from {len(routers)} routers")
         
         # Step 4: Parse service test results EXACTLY like shell script
         # Shell script logic from phase3_reachability_tests lines 694-706:
@@ -437,6 +448,7 @@ class MultiServiceTester:
             print(f"[DEBUG] Router modes for {port}/{protocol}: {router_modes}", file=sys.stderr)
         
         # Step 5: Analyze packet counts for each router
+        self._log_progress(f"packet_analysis_{port}_{protocol}_start", "Starting packet count analysis")
         packet_analysis = self.analyze_packet_counts(
             iptables_before,
             iptables_after,
@@ -444,6 +456,7 @@ class MultiServiceTester:
             protocol,
             router_modes
         )
+        self._log_progress(f"packet_analysis_{port}_{protocol}_complete", f"Analyzed packets for {len(routers)} routers")
         # Store with both names for compatibility
         result["packet_analysis"] = packet_analysis
         result["packet_count_analysis"] = packet_analysis  # Expected by visualize_reachability.py
@@ -467,7 +480,12 @@ class MultiServiceTester:
         # Step 8: Store iptables_after for potential reuse in next test
         result["iptables_after"] = iptables_after
         
-        log_timing(f"test_{port}_{protocol}_complete", f"Service test completed: {result['reachable']}")
+        self._log_progress(f"test_{port}_{protocol}_complete", f"Service test completed: {result['reachable']}")
+        
+        # Log summary of this service test timing
+        self._log_progress(f"test_{port}_{protocol}_summary", 
+                          f"Test summary - Reachable: {result['reachable']}, "
+                          f"Routers: {len(routers)}")
         
         return result
     
@@ -605,7 +623,7 @@ class MultiServiceTester:
     def run(self) -> None:
         """Main execution flow matching shell script phases."""
         try:
-            log_timing("START", f"Multi-service test: {self.source_ip} -> {self.dest_ip} ({len(self.services)} services)")
+            self._log_progress("START", f"Multi-service test: {self.source_ip} -> {self.dest_ip} ({len(self.services)} services)")
             
             # Phase 1: Path Discovery
             trace_data = self.phase1_path_discovery()
@@ -622,7 +640,7 @@ class MultiServiceTester:
             if not routers:
                 raise Exception("No routers found in trace path")
             
-            log_timing("PHASE1_complete", f"Found {len(routers)} routers: {', '.join(routers)}")
+            self._log_progress("PHASE1_complete", f"Found {len(routers)} routers: {', '.join(routers)}")
             
             # Phase 2: Environment Setup (hosts and services)
             self.phase2_setup_environment(routers)
@@ -632,7 +650,7 @@ class MultiServiceTester:
             self.traceroute_result = traceroute_result  # Store for use in formatting
             
             # Phase 4: Test each service SEQUENTIALLY with packet analysis
-            log_timing("PHASE4_start", f"Testing {len(self.services)} services sequentially")
+            self._log_progress("PHASE4_start", f"Testing {len(self.services)} services sequentially")
             
             all_results = []
             last_iptables_snapshot = None  # Track last snapshot for optimization
@@ -654,7 +672,7 @@ class MultiServiceTester:
                 if i < len(self.services):
                     time.sleep(1)
             
-            log_timing("PHASE4_complete", "All service tests completed")
+            self._log_progress("PHASE4_complete", "All service tests completed")
             
             # Phase 5: Generate individual result files in EXACT shell script format
             self.service_result_files = []
@@ -729,7 +747,7 @@ class MultiServiceTester:
                     json.dump(formatted_result, f, indent=2)
                 
                 self.service_result_files.append(str(result_file))
-                log_timing(f"service_{i+1}_file_created", f"Created result file for {port}/{protocol}")
+                self._log_progress(f"service_{i+1}_file_created", f"Created result file for {port}/{protocol}")
             
             # Save summary file for reference
             summary = {
@@ -746,7 +764,7 @@ class MultiServiceTester:
                 json.dump(summary, f, indent=2)
             
             total_duration = time.time() - SCRIPT_START_TIME
-            log_timing("TOTAL", f"Total execution time: {total_duration:.2f}s")
+            self._log_progress("TOTAL", f"Total execution time: {total_duration:.2f}s")
             
             # Print summary to stdout
             print(json.dumps({
@@ -759,7 +777,7 @@ class MultiServiceTester:
             }))
             
         except Exception as e:
-            log_timing("ERROR", str(e))
+            self._log_progress("ERROR", str(e))
             print(json.dumps({
                 "status": "error",
                 "error": str(e)

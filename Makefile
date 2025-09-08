@@ -1608,6 +1608,12 @@ install-wsgi:
 	@echo "Installing WSGI application..."
 	@rsync -av --exclude='htdocs' --exclude='*.md' --exclude='*.template' --exclude='config.json' wsgi/ "$(TSIM_WEB_ROOT)/"
 	
+	# Remove old subprocess-based files that have been replaced
+	@echo "Removing obsolete files..."
+	@rm -f "$(TSIM_WEB_ROOT)/services/tsim_background_executor.py"
+	@rm -f "$(TSIM_WEB_ROOT)/scripts/tsim_reachability_tester.py"
+	@rm -f "$(TSIM_WEB_ROOT)/scripts/tsim_multi_service_tester.py"
+	
 	# Create conf directory
 	@echo "Creating conf directory..."
 	@mkdir -p "$(TSIM_WEB_ROOT)/conf"

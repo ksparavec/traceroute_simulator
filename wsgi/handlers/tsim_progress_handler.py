@@ -14,17 +14,25 @@ from .tsim_base_handler import TsimBaseHandler
 class TsimProgressHandler(TsimBaseHandler):
     """Handler for progress polling requests"""
     
-    def __init__(self, config_service, session_manager, logger_service):
+    def __init__(self, config_service, session_manager, logger_service, progress_tracker=None):
         """Initialize progress handler
         
         Args:
             config_service: TsimConfigService instance
             session_manager: TsimSessionManager instance
             logger_service: TsimLoggerService instance
+            progress_tracker: Optional shared TsimProgressTracker instance
         """
         super().__init__(session_manager, logger_service)
         self.config = config_service
         self.logger = logging.getLogger('tsim.handler.progress')
+        
+        # Use shared progress tracker if provided
+        if progress_tracker:
+            self.progress_tracker = progress_tracker
+        else:
+            from services.tsim_progress_tracker import TsimProgressTracker
+            self.progress_tracker = TsimProgressTracker(config_service)
     
     def handle(self, environ: Dict[str, Any], start_response) -> List[bytes]:
         """Handle progress request
@@ -48,92 +56,62 @@ class TsimProgressHandler(TsimBaseHandler):
         if not run_id:
             return self.error_response(start_response, 'Missing run_id parameter')
         
-        # Get progress file path
-        # Get progress from /dev/shm/tsim/runs/<run_id>/progress.json
-        progress_dir = Path(self.config.get('run_dir', '/dev/shm/tsim/runs'))
-        run_dir = progress_dir / run_id
-        progress_file = run_dir / "progress.json"
+        # Get progress from progress tracker (in-memory first, then files)
+        progress = self.progress_tracker.get_progress(run_id)
         
-        if not progress_file.exists():
-            # No progress file yet - test may be starting
+        if not progress:
+            # No progress yet - test may be starting or invalid run_id
+            # Return CGI-compatible format
             return self.json_response(start_response, {
-                'success': True,
                 'run_id': run_id,
-                'overall_progress': 0,
-                'phases': {},
-                'complete': False,
-                'message': 'Test initializing...'
+                'phase': 'UNKNOWN',
+                'details': 'Test initializing...',
+                'all_phases': [],
+                'complete': False
             })
         
-        try:
-            # Read progress file (contains multiple JSON objects, one per line)
-            phases = []
-            latest_phase = None
-            is_complete = False
-            has_error = False
+        # Get the latest phase
+        phases = progress.get('phases', [])
+        latest_phase = phases[-1] if phases else {'phase': 'UNKNOWN', 'message': 'Test initializing...'}
+        
+        # Format phases as all_phases with details field
+        all_phases = []
+        for phase_entry in phases:
+            phase_name = phase_entry.get('phase', 'UNKNOWN')
             
-            with open(progress_file, 'r') as f:
-                for line in f:
-                    if line.strip():
-                        try:
-                            phase_data = json.loads(line)
-                            phases.append(phase_data)
-                            latest_phase = phase_data
-                            
-                            # Check for completion or error
-                            if phase_data.get('phase') == 'COMPLETE':
-                                is_complete = True
-                            elif phase_data.get('phase') == 'ERROR':
-                                has_error = True
-                        except json.JSONDecodeError:
-                            continue
+            # Strip prefixes like CGI does
+            if phase_name.startswith('MULTI_REACHABILITY_'):
+                phase_name = phase_name.replace('MULTI_REACHABILITY_', '')
+            elif phase_name.startswith('REACHABILITY_'):
+                phase_name = phase_name.replace('REACHABILITY_', '')
             
-            # Calculate overall progress based on phases
-            phase_progress = {
-                'PHASE1_START': 10,
-                'PHASE1_COMPLETE': 20,
-                'PHASE2_START': 30,
-                'PHASE3_START': 40,
-                'PHASE4_START': 50,
-                'PHASE4_COMPLETE': 70,
-                'PHASE5_START': 80,
-                'PHASE5_COMPLETE': 85,
-                'PDF_GENERATION': 90,
-                'COMPLETE': 100,
-                'ERROR': -1
-            }
-            
-            # Get the latest phase progress
-            overall_progress = 0
-            current_message = "Test initializing..."
-            
-            if latest_phase:
-                phase_name = latest_phase.get('phase', '')
-                overall_progress = phase_progress.get(phase_name, 0)
-                current_message = latest_phase.get('message', '')
-            
-            # Build response
-            progress_data = {
-                'success': True,
-                'run_id': run_id,
-                'overall_progress': overall_progress,
-                'phases': phases,
-                'complete': is_complete,
-                'error': has_error,
-                'message': current_message
-            }
-            
-            # Add PDF URL if complete
-            if is_complete and not has_error:
-                progress_data['pdf_url'] = f'/pdf?run_id={run_id}'
-                progress_data['redirect'] = f'/pdf_viewer_final.html?id={run_id}'
-            
-            return self.json_response(start_response, progress_data)
-            
-        except Exception as e:
-            self.logger.error(f"Error reading progress for {run_id}: {e}")
-            return self.error_response(
-                start_response,
-                'Error reading progress',
-                '500 Internal Server Error'
-            )
+            all_phases.append({
+                'phase': phase_name,
+                'details': phase_entry.get('message', '')
+            })
+        
+        # Get latest phase name with prefix stripped
+        latest_phase_name = latest_phase.get('phase', 'UNKNOWN')
+        if latest_phase_name.startswith('MULTI_REACHABILITY_'):
+            latest_phase_name = latest_phase_name.replace('MULTI_REACHABILITY_', '')
+        elif latest_phase_name.startswith('REACHABILITY_'):
+            latest_phase_name = latest_phase_name.replace('REACHABILITY_', '')
+        
+        # Build response matching CGI format exactly
+        response = {
+            'run_id': run_id,
+            'phase': latest_phase_name,
+            'details': latest_phase.get('message', ''),
+            'all_phases': all_phases,  # This is what the frontend expects
+            'complete': progress.get('complete', False)
+        }
+        
+        # Add redirect URL if complete
+        if progress.get('complete'):
+            session_id = session.get('session_id', '')
+            if session_id:
+                response['redirect_url'] = f'/pdf_viewer_final.html?id={run_id}&session={session_id}'
+            else:
+                response['redirect_url'] = f'/pdf_viewer_final.html?id={run_id}'
+        
+        return self.json_response(start_response, response)

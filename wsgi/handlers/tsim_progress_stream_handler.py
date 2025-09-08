@@ -15,17 +15,25 @@ from .tsim_base_handler import TsimBaseHandler
 class TsimProgressStreamHandler(TsimBaseHandler):
     """Handler for SSE progress stream requests"""
     
-    def __init__(self, config_service, session_manager, logger_service):
+    def __init__(self, config_service, session_manager, logger_service, progress_tracker=None):
         """Initialize progress stream handler
         
         Args:
             config_service: TsimConfigService instance
             session_manager: TsimSessionManager instance
             logger_service: TsimLoggerService instance
+            progress_tracker: Optional shared TsimProgressTracker instance
         """
         super().__init__(session_manager, logger_service)
         self.config = config_service
         self.logger = logging.getLogger('tsim.handler.progress_stream')
+        
+        # Use shared progress tracker if provided
+        if progress_tracker:
+            self.progress_tracker = progress_tracker
+        else:
+            from services.tsim_progress_tracker import TsimProgressTracker
+            self.progress_tracker = TsimProgressTracker(config_service)
     
     def handle(self, environ: Dict[str, Any], start_response) -> Generator[bytes, None, None]:
         """Handle SSE progress stream request
@@ -80,38 +88,49 @@ class TsimProgressStreamHandler(TsimBaseHandler):
             try:
                 # Check if progress file exists
                 if progress_file.exists():
-                    # Read all progress entries (one JSON per line)
+                    # Read the entire progress JSON file
                     current_phases = []
                     is_complete = False
                     has_error = False
                     
                     with open(progress_file, 'r') as f:
-                        for line in f:
-                            if line.strip():
-                                try:
-                                    phase_data = json.loads(line)
-                                    current_phases.append(phase_data)
-                                    if phase_data.get('phase') == 'COMPLETE':
-                                        is_complete = True
-                                    elif phase_data.get('phase') == 'ERROR':
-                                        has_error = True
-                                except json.JSONDecodeError:
-                                    continue
+                        try:
+                            progress_data = json.load(f)
+                            # Extract phases from the JSON structure
+                            current_phases = progress_data.get('phases', [])
+                            
+                            # Check for completion or error
+                            for phase in current_phases:
+                                if phase.get('phase') == 'COMPLETE':
+                                    is_complete = True
+                                elif phase.get('phase') == 'ERROR':
+                                    has_error = True
+                        except json.JSONDecodeError:
+                            self.logger.error(f"Failed to parse progress.json for {run_id}")
+                            continue
                     
                     # Check if we have new phases
                     if len(current_phases) > len(all_phases):
                         # Add new phases to our collection
                         for i in range(len(all_phases), len(current_phases)):
                             phase = current_phases[i]
+                            phase_name = phase.get('phase', 'UNKNOWN')
+                            
+                            # Strip prefixes like CGI does
+                            if phase_name.startswith('MULTI_REACHABILITY_'):
+                                phase_name = phase_name.replace('MULTI_REACHABILITY_', '')
+                            elif phase_name.startswith('REACHABILITY_'):
+                                phase_name = phase_name.replace('REACHABILITY_', '')
+                            
                             all_phases.append({
-                                'phase': phase.get('phase', 'UNKNOWN'),
+                                'phase': phase_name,
                                 'details': phase.get('message', phase.get('details', '')),
                                 'duration': phase.get('duration', 0)
                             })
                             
                             # Send SSE event for this phase update (matching CGI format)
                             data = {
-                                'phase': phase.get('phase', 'UNKNOWN'),
+                                'phase': phase_name,
                                 'details': phase.get('message', phase.get('details', '')),
                                 'duration': phase.get('duration', 0),
                                 'all_phases': all_phases,

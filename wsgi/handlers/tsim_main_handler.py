@@ -23,13 +23,16 @@ from services.tsim_progress_tracker import TsimProgressTracker
 class TsimMainHandler(TsimBaseHandler):
     """Handler for main test execution requests"""
     
-    def __init__(self, config_service, session_manager, logger_service):
+    def __init__(self, config_service, session_manager, logger_service, 
+                 progress_tracker=None, hybrid_executor=None):
         """Initialize main handler
         
         Args:
             config_service: TsimConfigService instance
             session_manager: TsimSessionManager instance
             logger_service: TsimLoggerService instance
+            progress_tracker: Optional shared TsimProgressTracker instance
+            hybrid_executor: Optional shared TsimHybridExecutor instance
         """
         super().__init__(session_manager, logger_service)
         self.config = config_service
@@ -37,9 +40,17 @@ class TsimMainHandler(TsimBaseHandler):
         self.port_parser = TsimPortParserService()
         self.lock_manager = TsimLockManagerService(config_service)
         self.timing_service = TsimTimingService()
-        self.executor = TsimExecutor(config_service, self.lock_manager, self.timing_service)
+        
+        # Use shared instances if provided, otherwise create new ones
+        self.progress_tracker = progress_tracker or TsimProgressTracker(config_service)
+        
+        # Create executor and set hybrid executor
+        self.executor = TsimExecutor(config_service, self.lock_manager, 
+                                    self.timing_service, self.progress_tracker)
+        if hybrid_executor:
+            self.executor.set_hybrid_executor(hybrid_executor)
+        
         self.pdf_generator = TsimPDFGenerator(config_service)
-        self.progress_tracker = TsimProgressTracker(config_service)
         self.logger = logging.getLogger('tsim.handler.main')
     
     def handle(self, environ: Dict[str, Any], start_response) -> List[bytes]:
@@ -181,12 +192,28 @@ class TsimMainHandler(TsimBaseHandler):
             if not is_valid:
                 return self.error_response(start_response, f'Invalid trace data: {error}')
         
+        # Check if user already has a test running
+        username = session.get('username', 'unknown')
+        active_run = self.progress_tracker.get_active_run_for_user(username)
+        if active_run:
+            # Return the existing run instead of starting a new one
+            self.logger.info(f"User {username} already has active run {active_run}, redirecting")
+            return self.json_response(start_response, {
+                'success': True,
+                'run_id': active_run,
+                'message': 'Test already in progress',
+                'redirect': f'/progress.html?id={active_run}'
+            })
+        
         # Generate run ID
         run_id = str(uuid.uuid4())
         
         # Create run directory and initial progress files
         run_dir = self.progress_tracker.create_run_directory(run_id)
         self.progress_tracker.log_phase(run_id, 'parse_args', 'Parsing arguments')
+        
+        # Register this run as active for the user
+        self.progress_tracker.set_active_run_for_user(username, run_id)
         
         # Log test execution
         client_ip = self.get_client_ip(environ)
@@ -203,22 +230,30 @@ class TsimMainHandler(TsimBaseHandler):
             }
         )
         
-        # Execute test asynchronously
+        # Execute test directly (will use thread/process pools internally)
         try:
             # Start overall timing
             self.timing_service.start_timer(f"test_{run_id}")
             self.progress_tracker.log_phase(run_id, 'START', 'Starting test execution')
             
-            # Execute the entire test pipeline asynchronously
-            task_info = self.executor.tsim_execute_async(
-                run_id, source_ip, dest_ip, source_port, port_protocol_list, user_trace_data
-            )
+            # Start execution in background thread to avoid blocking
+            import threading
+            def execute_in_background():
+                try:
+                    result = self.executor.execute(
+                        run_id, source_ip, dest_ip, source_port, port_protocol_list, user_trace_data
+                    )
+                    # Update progress tracker with final PDF if available
+                    if result and result.get('final_pdf'):
+                        self.progress_tracker.set_pdf_url(run_id, result['final_pdf'])
+                except Exception as e:
+                    self.logger.error(f"Background execution failed: {e}")
+                    self.progress_tracker.log_phase(run_id, 'ERROR', str(e))
             
-            # Log that the test has been started in background
-            self.progress_tracker.log_phase(run_id, 'BACKGROUND', 'Test running in background')
+            thread = threading.Thread(target=execute_in_background, daemon=True)
+            thread.start()
             
-            # For async execution, we don't wait for results
-            # The progress page will poll for updates
+            # For immediate response, we don't wait for results
             final_pdf = None
             summary_data = {
                 'source_ip': source_ip,
@@ -232,8 +267,7 @@ class TsimMainHandler(TsimBaseHandler):
                         'status': 'PENDING'
                     }
                     for port, protocol in port_protocol_list
-                ],
-                'task_info': task_info
+                ]
             }
             
             # For async execution, we don't have results yet
@@ -252,7 +286,7 @@ class TsimMainHandler(TsimBaseHandler):
             # Save initial test info to session
             test_result = {
                 'status': 'running',
-                'task_info': task_info,
+                'run_id': run_id,
                 'summary': summary_data,
                 'share_link': share_link,
                 'token': token

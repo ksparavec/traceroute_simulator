@@ -27,6 +27,8 @@ from handlers.tsim_cleanup_handler import TsimCleanupHandler
 from services.tsim_session_manager import TsimSessionManager
 from services.tsim_config_service import TsimConfigService
 from services.tsim_logger_service import TsimLoggerService
+from services.tsim_progress_tracker import TsimProgressTracker
+from services.tsim_hybrid_executor import TsimHybridExecutor
 
 
 class TsimWSGIApp:
@@ -47,6 +49,10 @@ class TsimWSGIApp:
             self.session_manager = TsimSessionManager(self.config)
             self.logger_service = TsimLoggerService(self.config)
             
+            # Initialize shared progress tracker and hybrid executor
+            self.progress_tracker = TsimProgressTracker(self.config)
+            self.hybrid_executor = TsimHybridExecutor(self.config, self.progress_tracker)
+            
             self.logger.info("Core services initialized successfully")
         except Exception as e:
             self.logger.error(f"Failed to initialize core services: {e}")
@@ -57,10 +63,13 @@ class TsimWSGIApp:
             self.handlers = {
                 '/login': TsimLoginHandler(self.config, self.session_manager, self.logger_service),
                 '/logout': TsimLogoutHandler(self.session_manager, self.logger_service),
-                '/main': TsimMainHandler(self.config, self.session_manager, self.logger_service),
+                '/main': TsimMainHandler(self.config, self.session_manager, self.logger_service,
+                                        self.progress_tracker, self.hybrid_executor),
                 '/pdf': TsimPDFHandler(self.config, self.session_manager, self.logger_service),
-                '/progress': TsimProgressHandler(self.config, self.session_manager, self.logger_service),
-                '/progress-stream': TsimProgressStreamHandler(self.config, self.session_manager, self.logger_service),
+                '/progress': TsimProgressHandler(self.config, self.session_manager, self.logger_service, 
+                                                self.progress_tracker),
+                '/progress-stream': TsimProgressStreamHandler(self.config, self.session_manager, self.logger_service,
+                                                             self.progress_tracker),
                 '/services-config': TsimServicesConfigHandler(self.config, self.logger_service),
                 '/test-config': TsimTestConfigHandler(self.config, self.session_manager, self.logger_service),
                 '/cleanup': TsimCleanupHandler(self.config, self.session_manager, self.logger_service),

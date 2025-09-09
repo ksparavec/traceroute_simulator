@@ -19,6 +19,7 @@ pyparsing
 pyperclip
 PyPDF2
 PySimpleSOAP
+python-pam
 PyYAML
 reportbug
 reportlab

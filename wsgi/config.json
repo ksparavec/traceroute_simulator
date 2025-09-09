@@ -1,0 +1,88 @@
+{
+    "data_retention_days": 365,
+    "session_timeout": 3600,
+    "venv_path": "/opt/tsim/venv",
+    "tsimsh_path": "tsimsh",
+    "traceroute_simulator_path": "/opt/tsim/wsgi/scripts",
+    "traceroute_simulator_conf": "/opt/tsim/wsgi/conf/traceroute_simulator.yaml",
+    "traceroute_simulator_facts": "/opt/tsim/facts",
+    "traceroute_simulator_raw_facts": "/opt/tsim/raw_facts",
+    "traceroute_simulator_mode": "test",
+    "log_level": "DEBUG",
+    "secret_key": "CHANGE-THIS-SECRET-KEY-IN-PRODUCTION",
+    "controller_ip": "127.0.0.1",
+    "registry_files": {
+        "hosts": "/dev/shm/tsim/host_registry.json",
+        "routers": "/dev/shm/tsim/router_registry.json",
+        "interfaces": "/dev/shm/tsim/interface_registry.json",
+        "bridges": "/dev/shm/tsim/bridge_registry.json",
+        "services": "/dev/shm/tsim/services_registry.json"
+    },
+    "quick_select_services": [
+        {"port": 22, "protocol": "tcp", "name": "SSH", "description": "Secure Shell"},
+        {"port": 53, "protocol": "tcp", "name": "DNS", "description": "Domain Name System (TCP)"},
+        {"port": 53, "protocol": "udp", "name": "DNS", "description": "Domain Name System (UDP)"},
+        {"port": 80, "protocol": "tcp", "name": "HTTP", "description": "Web Traffic"},
+        {"port": 88, "protocol": "tcp", "name": "Kerberos", "description": "AD Authentication (TCP)"},
+        {"port": 88, "protocol": "udp", "name": "Kerberos", "description": "AD Authentication (UDP)"},
+        {"port": 135, "protocol": "tcp", "name": "RPC", "description": "Microsoft RPC Endpoint Mapper"},
+        {"port": 139, "protocol": "tcp", "name": "NetBIOS", "description": "NetBIOS Session Service"},
+        {"port": 389, "protocol": "tcp", "name": "LDAP", "description": "Lightweight Directory Access"},
+        {"port": 389, "protocol": "udp", "name": "LDAP", "description": "Lightweight Directory Access (UDP)"},
+        {"port": 443, "protocol": "tcp", "name": "HTTPS", "description": "Secure Web"},
+        {"port": 445, "protocol": "tcp", "name": "SMB", "description": "Server Message Block (File Sharing)"},
+        {"port": 464, "protocol": "tcp", "name": "Kpasswd", "description": "Kerberos Password Change"},
+        {"port": 636, "protocol": "tcp", "name": "LDAPS", "description": "Secure LDAP"},
+        {"port": 3268, "protocol": "tcp", "name": "GC", "description": "AD Global Catalog"},
+        {"port": 3269, "protocol": "tcp", "name": "GC-SSL", "description": "AD Global Catalog (SSL)"},
+        {"port": 3306, "protocol": "tcp", "name": "MySQL", "description": "MySQL Database"},
+        {"port": 3389, "protocol": "tcp", "name": "RDP", "description": "Remote Desktop"},
+        {"port": 5432, "protocol": "tcp", "name": "PostgreSQL", "description": "PostgreSQL Database"},
+        {"port": 5985, "protocol": "tcp", "name": "WinRM", "description": "Windows Remote Management (HTTP)"},
+        {"port": 5986, "protocol": "tcp", "name": "WinRM-SSL", "description": "Windows Remote Management (HTTPS)"},
+        {"port": 8080, "protocol": "tcp", "name": "HTTP-Alt", "description": "Alternate Web"},
+        {"port": 8443, "protocol": "tcp", "name": "HTTPS-Alt", "description": "Alternate Secure Web"},
+        {"port": 9389, "protocol": "tcp", "name": "AD-WS", "description": "AD Web Services"}
+    ],
+    
+    "wsgi_processes": 4,
+    "wsgi_threads": 2,
+    "wsgi_max_requests": 1000,
+    "wsgi_request_timeout": 300,
+    "wsgi_socket_timeout": 60,
+    "wsgi_preload_modules": [
+        "tsim_application",
+        "services.tsim_config_service",
+        "services.tsim_session_manager",
+        "services.tsim_logger_service"
+    ],
+    
+    "data_dir": "/dev/shm/tsim",
+    "log_dir": "/var/log/tsim",
+    "session_dir": "/dev/shm/tsim/sessions",
+    "run_dir": "/dev/shm/tsim/runs",
+    "scripts_dir": "/dev/shm/tsim/scripts",
+    "cache_dir": "/dev/shm/tsim/pycache",
+    "matplotlib_cache_dir": "/dev/shm/tsim/matplotlib",
+    "lock_dir": "/dev/shm/tsim/locks",
+    "users_file": "/opt/tsim/wsgi/conf/users.json",
+    "web_root": "/opt/tsim/wsgi",
+    
+    "max_services": 10,
+    "max_trace_hops": 30,
+    "trace_timeout": 120,
+    "reachability_timeout": 120,
+    "pdf_timeout": 300,
+    "cleanup_age": 86400,
+    
+    "hmac_expiry": 86400,
+    "allow_trace_input": true,
+    "test_mode": false,
+
+    "cors": {
+        "enabled": false,
+        "allowed_origins": ["*"],
+        "allowed_methods": ["GET", "POST"],
+        "allowed_headers": ["Content-Type", "Authorization"]
+    }
+}

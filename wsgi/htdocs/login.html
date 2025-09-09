@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Login - Network Reachability Test</title>
+    <link rel="stylesheet" href="/css/style.css">
+    <style>
+        .password-container {
+            position: relative;
+            display: inline-block;
+            width: 100%;
+        }
+        .password-container input {
+            width: 100%;
+            padding-right: 40px;
+        }
+        .password-toggle {
+            position: absolute;
+            right: 10px;
+            top: 50%;
+            transform: translateY(-50%);
+            background: none;
+            border: none;
+            cursor: pointer;
+            padding: 5px;
+            font-size: 18px;
+            color: #666;
+        }
+        .password-toggle:hover {
+            color: #333;
+        }
+        .eye-icon {
+            width: 20px;
+            height: 20px;
+            display: inline-block;
+        }
+        .error-message {
+            background: #f8d7da;
+            color: #721c24;
+            padding: 10px;
+            border-radius: 4px;
+            margin-bottom: 15px;
+            border: 1px solid #f5c6cb;
+        }
+    </style>
+    <script>
+        function togglePassword() {
+            var passwordInput = document.getElementById('password');
+            var toggleBtn = document.getElementById('toggleBtn');
+            
+            if (passwordInput.type === 'password') {
+                passwordInput.type = 'text';
+                toggleBtn.innerHTML = '<svg class="eye-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle><line x1="1" y1="1" x2="23" y2="23"></line></svg>';
+                toggleBtn.title = 'Hide password';
+            } else {
+                passwordInput.type = 'password';
+                toggleBtn.innerHTML = '<svg class="eye-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>';
+                toggleBtn.title = 'Show password';
+            }
+        }
+        
+        // Handle form submission via AJAX
+        document.addEventListener('DOMContentLoaded', function() {
+            const form = document.querySelector('form');
+            const errorDiv = document.querySelector('.error-message') || createErrorDiv();
+            
+            function createErrorDiv() {
+                const div = document.createElement('div');
+                div.className = 'error-message';
+                div.style.display = 'none';
+                form.parentNode.insertBefore(div, form);
+                return div;
+            }
+            
+            form.addEventListener('submit', function(e) {
+                e.preventDefault();
+                
+                // Clear any previous error
+                errorDiv.style.display = 'none';
+                errorDiv.textContent = '';
+                
+                // Get form data
+                const formData = new FormData(form);
+                const data = {
+                    username: formData.get('username'),
+                    password: formData.get('password')
+                };
+                
+                // Send login request
+                fetch('/login', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(data)
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        // Redirect on success
+                        window.location.href = data.redirect || '/form.html';
+                    } else {
+                        // Show error message
+                        errorDiv.textContent = data.error || 'Login failed';
+                        errorDiv.style.display = 'block';
+                    }
+                })
+                .catch(error => {
+                    errorDiv.textContent = 'Connection error. Please try again.';
+                    errorDiv.style.display = 'block';
+                });
+            });
+        });
+    </script>
+</head>
+<body>
+    <div class="login-container">
+        <h1>Network Reachability Test</h1>
+        <h2>Login</h2>
+        <form method="POST" action="/login">
+            <label>Username: <input type="text" name="username" required></label>
+            <label>Password: 
+                <div class="password-container">
+                    <input type="password" id="password" name="password" required>
+                    <button type="button" id="toggleBtn" class="password-toggle" onclick="togglePassword()" title="Show password">
+                        <svg class="eye-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                            <circle cx="12" cy="12" r="3"></circle>
+                        </svg>
+                    </button>
+                </div>
+            </label>
+            <button type="submit">Login</button>
+        </form>
+    </div>
+</body>
+</html>

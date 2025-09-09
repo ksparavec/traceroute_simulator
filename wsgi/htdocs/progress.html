@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test in Progress - Network Reachability</title>
+    <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Network Reachability Test in Progress</h1>
+        </header>
+        
+        <div class="progress-container">
+            <div class="progress-bar">
+                <div id="progressBar" class="progress-fill" style="width: 0%"></div>
+                <div class="progress-text" id="progressText">Initializing test...</div>
+            </div>
+            <div class="progress-percentage">
+                <span id="progressPercent">0</span>%
+            </div>
+        </div>
+        
+        <div class="progress-log">
+            <div id="progressLog"></div>
+        </div>
+        
+        <div style="text-align: center; margin-top: 20px;">
+            <button id="showPdfButton" style="display: none; padding: 12px 24px; font-size: 16px; background-color: #3498db; color: white; border: none; border-radius: 4px; cursor: pointer; transition: background-color 0.3s;" 
+                    onmouseover="this.style.backgroundColor='#2980b9'" 
+                    onmouseout="this.style.backgroundColor='#3498db'" 
+                    disabled>
+                Show PDF Report
+            </button>
+        </div>
+    </div>
+
+    <script>
+    // Get parameters from URL
+    const urlParams = new URLSearchParams(window.location.search);
+    const runId = urlParams.get('run_id') || urlParams.get('id');  // Support both 'run_id' and 'id'
+    const sessionId = urlParams.get('session');
+    
+    // Simple progress tracking - just increment by 2% for each new entry
+    const PROGRESS_INCREMENT = 2;
+    
+    // Track progress
+    let currentProgress = 0;
+    let processedPhases = new Set();
+    let firstCheckDone = false;
+    let pdfRedirectUrl = null;
+    let lastMilestoneMessage = 'Initializing...';  // Keep track of last milestone
+    
+    function updateProgress(percent, status) {
+        // Update progress bar - always use the provided percent value
+        document.getElementById('progressBar').style.width = percent + '%';
+        document.getElementById('progressPercent').textContent = Math.round(percent);
+        
+        // Only update text if status is provided
+        if (status !== null && status !== undefined) {
+            document.getElementById('progressText').textContent = status;
+        }
+    }
+    
+    function addProgressLogEntry(message, type = 'info') {
+        const logDiv = document.getElementById('progressLog');
+        const entry = document.createElement('div');
+        entry.className = `progress-log-entry ${type}`;
+        const timestamp = new Date().toLocaleTimeString();
+        entry.textContent = `[${timestamp}] ${message}`;
+        logDiv.appendChild(entry);
+        // Auto-scroll to bottom to show latest entry
+        // Need to scroll the parent container that has the scrollbar
+        const scrollContainer = logDiv.parentElement;
+        setTimeout(function() {
+            scrollContainer.scrollTop = scrollContainer.scrollHeight;
+        }, 10);
+    }
+    
+    function getPhaseStatus(phase) {
+        // Generate human-readable status from phase name
+        const statusMap = {
+            // Main test phases
+            'START': 'Starting test',
+            'parse_args': 'Validating parameters',
+            'TRACE_COMPLETE': 'Trace execution completed',
+            'SERVICE_TESTS': 'Testing services',
+            'PDF_GENERATION': 'Generating PDF report',
+            'PHASE1_start': 'Initializing path discovery',
+            'PHASE1_path_discovery': 'Discovering network path',
+            'PHASE1_trace_load': 'Loading trace data',
+            'PHASE1_trace_complete': 'Trace completed',
+            'PHASE1_complete': 'Path discovery complete',
+            'PHASE2_start': 'Setting up environment',
+            'PHASE2_host_list': 'Checking existing hosts',
+            'PHASE2_host_setup_start': 'Setting up test hosts',
+            'PHASE2_hosts_complete': 'Hosts configured',
+            'PHASE2_service_check': 'Checking services',
+            'PHASE2_services_start': 'Starting services',
+            'PHASE2_complete': 'Environment ready',
+            'PHASE3_start': 'Starting reachability tests',
+            'PHASE3_complete': 'Initial tests complete',
+            'PHASE4_start': 'Testing services',
+            'PHASE4_complete': 'Service tests complete',
+            'PHASE5_format_output': 'Formatting results',
+            'PHASE5_complete': 'Results formatted',
+            'TOTAL': 'Test execution complete',
+            
+            // Cleanup phases
+            'cleanup_start': 'Starting cleanup',
+            'cleanup_complete': 'Cleanup complete',
+            
+            // Web request phases
+            'web_request_START': 'Initializing request',
+            'web_request_execute_trace': 'Executing trace',
+            'web_request_network_reachability_test_multi_2_services': 'Testing services',
+            'web_request_network_reachability_test_multi_3_services': 'Testing services',
+            'web_request_generate_multi_page_pdf': 'Generating PDF report',
+            'web_request_generate_share_link': 'Creating share link',
+            'web_request_prepare_redirect': 'Preparing results',
+            'web_request_TOTAL': 'Request complete',
+            
+            // PDF generation phases
+            'PDF_GEN_PARSE_START': 'Parsing PDF parameters',
+            'PDF_GEN_parse_params': 'Processing PDF settings',
+            'PDF_GEN_validate_params': 'Validating PDF parameters',
+            'PDF_GEN_venv_activate': 'Preparing PDF environment',
+            'PDF_GEN_visualize_reachability.py': 'Rendering PDF',
+            'PDF_GEN_TOTAL': 'PDF complete',
+            
+            // Generic phases
+            'COMPLETE': 'Test complete!',
+            'ERROR': 'Error occurred',
+            'FAIL': 'Test failed'
+        };
+        
+        // For dynamic phases like host_add_source_1, service_22_tcp_started, etc.
+        if (phase.startsWith('host_add_source')) {
+            return 'Adding source host';
+        } else if (phase.startsWith('host_add_dest')) {
+            return 'Adding destination host';
+        } else if (phase.startsWith('service_') && phase.includes('_started')) {
+            return 'Starting service';
+        } else if (phase.startsWith('service_') && phase.includes('_exists')) {
+            return 'Service exists';
+        } else if (phase.startsWith('test_') && phase.includes('_start')) {
+            return 'Testing service';
+        } else if (phase.startsWith('test_') && phase.includes('_complete')) {
+            return 'Service test complete';
+        } else if (phase.startsWith('iptables_')) {
+            return 'Analyzing firewall rules';
+        } else if (phase.startsWith('service_test_')) {
+            return 'Running service test';
+        } else if (phase.startsWith('service_') && phase.includes('_file_created')) {
+            return 'Creating result file';
+        } else if (phase.includes('network_reachability_test_multi_')) {
+            // Extract number of services
+            const match = phase.match(/(\d+)_services/);
+            if (match) {
+                return `Testing ${match[1]} services`;
+            }
+            return 'Testing services';
+        }
+        
+        return statusMap[phase] || phase.replace(/_/g, ' ');
+    }
+    
+    // Use Server-Sent Events for real-time progress
+    function startProgressStream() {
+        if (!runId) {
+            addProgressLogEntry('Error: No run ID provided', 'error');
+            return;
+        }
+        
+        // Create EventSource connection with both run_id and session
+        const eventSource = new EventSource(`/progress-stream?run_id=${runId}&session=${sessionId}`);
+        
+        eventSource.onmessage = function(event) {
+            try {
+                const data = JSON.parse(event.data);
+                
+                // Process all phases that have been seen
+                if (data.all_phases && data.all_phases.length > 0) {
+                    data.all_phases.forEach(phaseInfo => {
+                        const phase = phaseInfo.phase;
+                        const details = phaseInfo.details || '';
+                        
+                        const phaseKey = `${phase}|${details}`; // Unique key including details
+                        if (!processedPhases.has(phaseKey)) {
+                            processedPhases.add(phaseKey);
+                            
+                            // Increment progress by 2% for each new entry (cap at 100%)
+                            currentProgress = Math.min(currentProgress + PROGRESS_INCREMENT, 100);
+                            
+                            // Get clean phase name for progress bar
+                            let cleanPhaseName = getPhaseStatus(phase);
+                            
+                            // Create detailed message for log window
+                            let logMessage = cleanPhaseName;
+                            if (details && details.trim()) {
+                                logMessage += `: ${details}`;
+                            }
+                            
+                            // Update progress bar with clean name only
+                            updateProgress(currentProgress, cleanPhaseName);
+                            
+                            // Determine log type based on phase
+                            let logType = 'info';
+                            if (phase === 'COMPLETE' || phase === 'PDF_GEN_TOTAL' || phase === 'TOTAL') {
+                                logType = 'success';
+                                currentProgress = 100; // Force to 100% on completion
+                            } else if (phase.includes('ERROR') || phase.includes('FAIL')) {
+                                logType = 'error';
+                            }
+                            
+                            // Add full details to log window
+                            addProgressLogEntry(logMessage, logType);
+                        }
+                    });
+                }
+                
+                // Handle completion
+                if (data.complete) {
+                    lastMilestoneMessage = 'Test complete!';
+                    updateProgress(100, lastMilestoneMessage);
+                    addProgressLogEntry('Test completed successfully!', 'success');
+                    
+                    // Close EventSource
+                    eventSource.close();
+                    
+                    // Store redirect URL and show button
+                    if (data.redirect_url) {
+                        pdfRedirectUrl = data.redirect_url;
+                        const button = document.getElementById('showPdfButton');
+                        button.style.display = 'inline-block';
+                        button.disabled = false;
+                        button.onclick = function() {
+                            window.location.href = pdfRedirectUrl;
+                        };
+                        addProgressLogEntry('PDF report is ready. Click the button below to view it.', 'success');
+                    }
+                }
+            } catch (error) {
+                console.error('Error parsing SSE data:', error);
+            }
+        };
+        
+        eventSource.onerror = function(error) {
+            console.error('SSE connection error:', error);
+            addProgressLogEntry('Connection lost. Retrying...', 'warning');
+            
+            // EventSource will automatically reconnect
+            // But if we're complete, close it
+            if (currentProgress >= 100) {
+                eventSource.close();
+            }
+        };
+        
+        eventSource.addEventListener('error', function(event) {
+            if (event.data) {
+                try {
+                    const data = JSON.parse(event.data);
+                    addProgressLogEntry('Error: ' + data.error, 'error');
+                } catch (e) {
+                    console.error('Error parsing error event:', e);
+                }
+            }
+            eventSource.close();
+        });
+    }
+    
+    // Initial update
+    updateProgress(0, 'Initializing...');
+    
+    // Start SSE stream after a short delay to let the test start
+    setTimeout(startProgressStream, 1000);
+    </script>
+</body>
+</html>

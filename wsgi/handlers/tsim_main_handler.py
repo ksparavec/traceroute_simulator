@@ -166,7 +166,7 @@ class TsimMainHandler(TsimBaseHandler):
                 if isinstance(quick_ports, str):
                     quick_ports = [quick_ports]
                 dest_port_spec = ','.join(quick_ports) if quick_ports else ','.join(self.port_parser.get_quick_ports())
-            elif port_mode == 'custom':
+            elif port_mode in ('custom', 'manual'):
                 # Use custom port specification
                 dest_port_spec = data.get('dest_ports', '').strip()
                 if not dest_port_spec:
@@ -210,6 +210,15 @@ class TsimMainHandler(TsimBaseHandler):
         # Create run directory and initial progress files
         run_dir = self.progress_tracker.create_run_directory(run_id)
         self.progress_tracker.log_phase(run_id, 'parse_args', 'Parsing arguments')
+        
+        # Estimate expected steps to enable precise percentage progress
+        try:
+            base_steps = 21  # static phases incl. cleanup/pdf/complete
+            per_service_steps = 9  # per-service phases incl. file_created
+            expected_steps = base_steps + per_service_steps * len(port_protocol_list)
+            self.progress_tracker.set_expected_steps(run_id, expected_steps)
+        except Exception:
+            pass
         
         # Register this run as active for the user
         self.progress_tracker.set_active_run_for_user(username, run_id)

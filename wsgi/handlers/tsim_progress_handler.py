@@ -98,12 +98,17 @@ class TsimProgressHandler(TsimBaseHandler):
             latest_phase_name = latest_phase_name.replace('REACHABILITY_', '')
         
         # Build response matching CGI format exactly
+        # Include percent and expected steps for accurate progress meters
+        percent = int(progress.get('overall_progress', 0))
+        expected_steps = int(progress.get('expected_steps', len(all_phases) or 1))
         response = {
             'run_id': run_id,
             'phase': latest_phase_name,
             'details': latest_phase.get('message', ''),
             'all_phases': all_phases,  # This is what the frontend expects
-            'complete': progress.get('complete', False)
+            'complete': progress.get('complete', False),
+            'percent': percent,
+            'expected_steps': expected_steps
         }
         
         # Add redirect URL if complete

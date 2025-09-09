@@ -40,10 +40,7 @@
     const runId = urlParams.get('run_id') || urlParams.get('id');  // Support both 'run_id' and 'id'
     const sessionId = urlParams.get('session');
     
-    // Simple progress tracking - just increment by 2% for each new entry
-    const PROGRESS_INCREMENT = 2;
-    
-    // Track progress
+    // Track progress using server-provided percent/expected_steps
     let currentProgress = 0;
     let processedPhases = new Set();
     let firstCheckDone = false;
@@ -188,8 +185,12 @@
                         if (!processedPhases.has(phaseKey)) {
                             processedPhases.add(phaseKey);
                             
-                            // Increment progress by 2% for each new entry (cap at 100%)
-                            currentProgress = Math.min(currentProgress + PROGRESS_INCREMENT, 100);
+                            // Use server-provided percent if available; otherwise derive from counts
+                            if (typeof data.percent === 'number') {
+                                currentProgress = Math.min(Math.max(data.percent, 0), 100);
+                            } else if (typeof data.expected_steps === 'number' && data.expected_steps > 0) {
+                                currentProgress = Math.min(99, Math.floor(100 * (data.all_phases.length / data.expected_steps)));
+                            }
                             
                             // Get clean phase name for progress bar
                             let cleanPhaseName = getPhaseStatus(phase);

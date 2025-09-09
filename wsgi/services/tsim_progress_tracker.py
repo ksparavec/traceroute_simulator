@@ -74,6 +74,7 @@ class TsimProgressTracker:
                 'phases': [],
                 'current_phase': 'START',
                 'overall_progress': 0,
+                'expected_steps': len(self.expected_phases),
                 'complete': False,
                 'success': None,
                 'error': None,
@@ -128,10 +129,11 @@ class TsimProgressTracker:
                 if message:
                     progress['error'] = message
             else:
-                # Calculate based on phase progression
+                # Calculate based on steps completed vs expected steps
                 completed = len(progress['phases'])
-                expected = len(self.expected_phases)
-                progress['overall_progress'] = min(95, int(100 * completed / expected))
+                expected = max(1, progress.get('expected_steps') or len(self.expected_phases))
+                # Cap at 99% until completion
+                progress['overall_progress'] = min(99, int(100 * completed / expected))
         
         # Write to files for SSE
         self._write_timing_file(run_id, phase, message)
@@ -156,6 +158,22 @@ class TsimProgressTracker:
         
         # Fallback to file-based progress if not in memory
         return self._read_file_progress(run_id)
+
+    def set_expected_steps(self, run_id: str, expected_steps: int):
+        """Set the expected total number of steps for a run
+        
+        Args:
+            run_id: Run identifier
+            expected_steps: Total steps expected
+        """
+        with self.lock:
+            if run_id in self.progress:
+                self.progress[run_id]['expected_steps'] = max(1, int(expected_steps))
+                # Recalculate progress with new expected value
+                completed = len(self.progress[run_id]['phases'])
+                expected = self.progress[run_id]['expected_steps']
+                if not self.progress[run_id].get('complete'):
+                    self.progress[run_id]['overall_progress'] = min(99, int(100 * completed / expected))
     
     def get_all_progress(self) -> Dict[str, Dict[str, Any]]:
         """Get progress for all active runs

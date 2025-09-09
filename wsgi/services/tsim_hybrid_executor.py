@@ -147,6 +147,22 @@ class TsimHybridExecutor:
             self._checkpoint(run_id, 'TRACE_START', f"{params['source_ip']}->{params['dest_ip']}")
             self._update_progress(run_id, 'MULTI_REACHABILITY_PHASE1_start', f"Path discovery from {params['source_ip']} to {params['dest_ip']}")
             trace_result = self._execute_trace(params, run_dir)
+            # After obtaining the trace, compute exact expected step count
+            try:
+                router_count = 0
+                if trace_result.get('trace_file'):
+                    with open(trace_result['trace_file'], 'r') as f:
+                        td = json.load(f)
+                        router_count = len([h for h in td.get('path', []) if h.get('is_router')])
+                service_count = len(params.get('port_protocol_list', []))
+                expected_steps = 25 + (12 * service_count) + (2 * router_count)
+                if self.progress_tracker:
+                    try:
+                        self.progress_tracker.set_expected_steps(params['run_id'], expected_steps)
+                    except Exception:
+                        pass
+            except Exception:
+                pass
             self._checkpoint(run_id, 'TRACE_DONE')
             if trace_result.get('trace_file'):
                 # Count routers in trace

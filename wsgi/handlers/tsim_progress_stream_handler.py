@@ -98,6 +98,8 @@ class TsimProgressStreamHandler(TsimBaseHandler):
                             progress_data = json.load(f)
                             # Extract phases from the JSON structure
                             current_phases = progress_data.get('phases', [])
+                            expected_steps = progress_data.get('expected_steps') or len(current_phases) or 1
+                            percent = int(progress_data.get('overall_progress', 0))
                             
                             # Check for completion or error
                             for phase in current_phases:
@@ -135,6 +137,8 @@ class TsimProgressStreamHandler(TsimBaseHandler):
                                 'duration': phase.get('duration', 0),
                                 'all_phases': all_phases,
                                 'complete': is_complete,
+                                'expected_steps': expected_steps,
+                                'percent': percent,
                                 'redirect_url': f'/pdf_viewer_final.html?id={run_id}' if is_complete else None
                             }
                             

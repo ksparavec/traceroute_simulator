@@ -1,462 +1,377 @@
-// Load quick select services from config
+// TSIM Reachability Form JS (clean version)
+let TSIM_MODE = 'prod';
+
+// Validate destination port specification tokens
+function isValidDestSpec(spec) {
+    if (!spec) return false;
+    const tokens = spec.split(',').map(p => p.trim()).filter(Boolean);
+    if (tokens.length === 0) return false;
+    const re = /^(\d+)(?:-(\d+))?(?:\/(tcp|udp))?$/i;
+    for (const t of tokens) {
+        if (!re.test(t)) return false;
+        const m = t.match(/^(\d+)(?:-(\d+))?/);
+        if (m && m[1] && m[2] && parseInt(m[1]) > parseInt(m[2])) return false; // invalid range
+    }
+    return true;
+}
+
 function loadQuickSelectServices() {
     fetch('/services-config')
-        .then(response => response.json())
+        .then(r => r.json())
         .then(data => {
             const quickPorts = document.getElementById('quick_ports');
-            if (quickPorts && data.services) {
-                // Clear existing options
-                quickPorts.innerHTML = '';
-                
-                // Add options from config
-                data.services.forEach(service => {
-                    const option = document.createElement('option');
-                    option.value = `${service.port}/${service.protocol}`;
-                    option.text = `${service.name} (${service.port}/${service.protocol}) - ${service.description}`;
-                    quickPorts.appendChild(option);
-                });
-                
-                // After loading services, restore saved selections
-                restoreSavedSelections();
-            }
+            if (!quickPorts) return;
+            quickPorts.innerHTML = '';
+            const services = (data && data.services) || [];
+            services.forEach(s => {
+                const opt = document.createElement('option');
+                opt.value = `${s.port}/${s.protocol}`;
+                opt.text = `${s.name} (${s.port}/${s.protocol}) - ${s.description}`;
+                quickPorts.appendChild(opt);
+            });
+            restoreSavedSelections();
         })
-        .catch(error => {
-            console.error('Failed to load services config:', error);
-            // Fall back to some default services
+        .catch(() => {
             const quickPorts = document.getElementById('quick_ports');
-            if (quickPorts) {
-                const defaults = [
-                    {value: '22/tcp', text: 'SSH (22/tcp) - Secure Shell'},
-                    {value: '80/tcp', text: 'HTTP (80/tcp) - Web Traffic'},
-                    {value: '443/tcp', text: 'HTTPS (443/tcp) - Secure Web'},
-                    {value: '3389/tcp', text: 'RDP (3389/tcp) - Remote Desktop'}
-                ];
-                defaults.forEach(service => {
-                    const option = document.createElement('option');
-                    option.value = service.value;
-                    option.text = service.text;
-                    quickPorts.appendChild(option);
-                });
-                restoreSavedSelections();
-            }
+            if (!quickPorts) return;
+            const defaults = [
+                {value: '22/tcp', text: 'SSH (22/tcp) - Secure Shell'},
+                {value: '80/tcp', text: 'HTTP (80/tcp) - Web Traffic'},
+                {value: '443/tcp', text: 'HTTPS (443/tcp) - Secure Web'},
+                {value: '3389/tcp', text: 'RDP (3389/tcp) - Remote Desktop'}
+            ];
+            defaults.forEach(d => {
+                const opt = document.createElement('option');
+                opt.value = d.value;
+                opt.text = d.text;
+                quickPorts.appendChild(opt);
+            });
+            restoreSavedSelections();
         });
 }
 
-// Function to restore saved quick port selections
 function restoreSavedSelections() {
-    const savedData = localStorage.getItem('reachability_form_data');
-    if (savedData) {
-        const data = JSON.parse(savedData);
-        if (data.quick_ports) {
-            const quickPorts = document.getElementById('quick_ports');
-            const selectedValues = Array.isArray(data.quick_ports) ? data.quick_ports : [];
-            if (quickPorts) {
-                for (let option of quickPorts.options) {
-                    option.selected = selectedValues.includes(option.value);
-                }
-            }
-        }
+    const saved = localStorage.getItem('reachability_form_data');
+    if (!saved) return;
+    const data = JSON.parse(saved);
+    const quickPorts = document.getElementById('quick_ports');
+    if (!quickPorts || !Array.isArray(data.quick_ports)) return;
+    for (let opt of quickPorts.options) {
+        opt.selected = data.quick_ports.includes(opt.value);
     }
 }
 
-// Function to save form data to localStorage
 function saveFormData() {
     const form = document.getElementById('reachability-form');
-    const formData = new FormData(form);
+    const fd = new FormData(form);
     const data = {};
-    
-    for (const [key, value] of formData.entries()) {
-        // Skip quick_ports as we'll handle it separately
-        if (key !== 'quick_ports') {
-            data[key] = value;
-        }
+    for (const [k, v] of fd.entries()) {
+        if (k !== 'quick_ports') data[k] = v;
     }
-    
-    // Handle multi-select quick_ports specially
     const quickPorts = document.getElementById('quick_ports');
-    const selectedPorts = [];
-    for (let option of quickPorts.options) {
-        if (option.selected) {
-            selectedPorts.push(option.value);
-        }
-    }
-    data.quick_ports = selectedPorts;
-    
-    // Explicitly save the port mode radio button value
-    const portModeRadio = document.querySelector('input[name="port_mode"]:checked');
-    if (portModeRadio) {
-        data.port_mode = portModeRadio.value;
-    }
-    
+    const selected = [];
+    for (let opt of quickPorts.options) if (opt.selected) selected.push(opt.value);
+    data.quick_ports = selected;
+    const pm = document.querySelector('input[name="port_mode"]:checked');
+    if (pm) data.port_mode = pm.value;
     localStorage.setItem('reachability_form_data', JSON.stringify(data));
 }
 
-// Restore form data from localStorage
-window.addEventListener('DOMContentLoaded', function() {
+function setVisible(el, yes) {
+    if (!el) return;
+    const grp = el.closest('.form-group');
+    if (grp) grp.style.display = yes ? 'block' : 'none';
+}
+
+function setDisabled(el, yes) {
+    if (!el) return;
+    el.disabled = !!yes;
+    if (yes) el.removeAttribute('required');
+}
+
+window.togglePortMode = function() {
+    const mode = document.querySelector('input[name="port_mode"]:checked')?.value || 'quick';
+    setVisible(document.getElementById('quick_select_group'), mode !== 'manual');
+    setVisible(document.getElementById('manual_entry_group'), mode === 'manual');
+};
+
+window.addEventListener('DOMContentLoaded', () => {
     const form = document.getElementById('reachability-form');
-    
-    // Load quick select services first
+    const src = document.getElementById('source_ip');
+    const srcPort = document.getElementById('source_port');
+    const dst = document.getElementById('dest_ip');
+    const traceBtn = Array.from(document.querySelectorAll('button')).find(b => b.textContent.includes('Trace File Input'));
+    const userTraceHidden = document.getElementById('user_trace_data');
+
     loadQuickSelectServices();
-    
-    // First check for test mode configuration
-    fetch('/test-config')
-        .then(response => response.json())
-        .then(config => {
-            console.log('Test config received:', config);
-            if (config.mode === 'test' && config.test_ips) {
-                // In test mode - check if we have saved data
-                const savedData = localStorage.getItem('reachability_form_data');
-                
-                if (savedData) {
-                    // Restore saved data
-                    const data = JSON.parse(savedData);
-                    // But ensure source and dest IPs match test file
-                    data.source_ip = config.test_ips.source || '';
-                    data.dest_ip = config.test_ips.destination || '';
-                    
-                    for (const [key, value] of Object.entries(data)) {
-                        const field = form.elements[key];
-                        if (field) {
-                            // Handle different field types
-                            if (key === 'quick_ports') {
-                                // Skip - will be handled by restoreSavedSelections() after services are loaded
-                            } else if (field.type === 'radio-button' || (field[0] && field[0].type === 'radio')) {
-                                // Handle radio buttons
-                                const radios = form.querySelectorAll(`input[name="${key}"]`);
-                                radios.forEach(radio => {
-                                    radio.checked = (radio.value === value);
-                                });
-                            } else {
-                                field.value = value;
-                            }
+
+    fetch('/services-config')
+        .then(r => r.json())
+        .then(cfg => {
+            TSIM_MODE = (cfg && cfg.mode) || 'prod';
+            // Toggle body class for mode-specific styling
+            document.body.classList.toggle('tsim-mode-prod', TSIM_MODE === 'prod');
+            document.body.classList.toggle('tsim-mode-test', TSIM_MODE === 'test');
+            // Update page titles based on mode
+            const modeTitle = TSIM_MODE === 'test'
+                ? 'Network Reachability Test (Mode: Testing)'
+                : 'Network Reachability Test (Mode: Production)';
+            document.title = modeTitle;
+            const h1 = document.querySelector('header h1');
+            if (h1) h1.textContent = modeTitle;
+            if (TSIM_MODE === 'test') {
+                // Hide and disable IP inputs; show trace upload
+                setVisible(src, false); setDisabled(src, true);
+                setVisible(srcPort, true); setDisabled(srcPort, false);
+                setVisible(dst, false); setDisabled(dst, true);
+                if (traceBtn) {
+                    traceBtn.style.display = 'inline-block';
+                    // Move Trace button to the top of the form in test mode
+                    const firstGroup = form.querySelector('.form-group');
+                    if (firstGroup && traceBtn.parentElement) {
+                        // Create or reuse a top container
+                        let topContainer = document.getElementById('trace_top_container');
+                        if (!topContainer) {
+                            topContainer = document.createElement('div');
+                            topContainer.id = 'trace_top_container';
+                            topContainer.className = 'form-group';
                         }
+                        // Place the button into the top container
+                        topContainer.innerHTML = '';
+                        const hint = document.createElement('div');
+                        hint.className = 'help-text';
+                        hint.textContent = 'Paste a JSON formatted trace file via the button above';
+                        // Center button and help text in test mode
+                        topContainer.style.textAlign = 'center';
+                        traceBtn.style.display = 'inline-block';
+                        traceBtn.style.margin = '8px auto';
+                        hint.style.textAlign = 'center';
+                        // Append elements
+                        topContainer.appendChild(traceBtn);
+                        topContainer.appendChild(hint);
+                        form.insertBefore(topContainer, firstGroup);
                     }
-                    
-                    // Ensure port group visibility is already set above
-                } else {
-                    // No saved data - prefill from test config
-                    const sourceField = form.elements['source_ip'];
-                    const destField = form.elements['dest_ip'];
-                    
-                    if (sourceField) sourceField.value = config.test_ips.source || '';
-                    if (destField) destField.value = config.test_ips.destination || '';
                 }
-                
-                // Always save after setting values
-                saveFormData();
             } else {
-                // Not in test mode, restore from localStorage
-                const savedData = localStorage.getItem('reachability_form_data');
-                if (savedData) {
-                    const data = JSON.parse(savedData);
-                    // FIRST: Set the visibility of port groups based on saved mode
-                    const portMode = data.port_mode || 'quick';
-                    if (portMode === 'manual') {
-                        document.getElementById('quick_select_group').style.display = 'none';
-                        document.getElementById('manual_entry_group').style.display = 'block';
-                    } else {
-                        document.getElementById('quick_select_group').style.display = 'block';
-                        document.getElementById('manual_entry_group').style.display = 'none';
+                setVisible(src, true); setDisabled(src, false);
+                setVisible(srcPort, true); setDisabled(srcPort, false);
+                setVisible(dst, true); setDisabled(dst, false);
+                if (traceBtn) traceBtn.style.display = 'none';
+                // Ensure no leftover trace data is submitted in prod
+                sessionStorage.removeItem('user_trace_data');
+                if (userTraceHidden) userTraceHidden.value = '';
+            }
+
+            // Restore saved form values (except hidden/disabled ones in test mode)
+            const saved = localStorage.getItem('reachability_form_data');
+            if (saved) {
+                const data = JSON.parse(saved);
+                Object.entries(data).forEach(([k, v]) => {
+                    const field = form.elements[k];
+                    if (!field) return;
+                    if (k === 'quick_ports') return; // handled elsewhere
+                    if (field[0] && field[0].type === 'radio') {
+                        form.querySelectorAll(`input[name="${k}"]`).forEach(r => r.checked = (r.value === v));
+                    } else if (!field.disabled) {
+                        field.value = v;
                     }
-                    
-                    // THEN: Restore all form values
-                    for (const [key, value] of Object.entries(data)) {
-                        const field = form.elements[key];
-                        if (field) {
-                            // Handle different field types
-                            if (key === 'quick_ports') {
-                                // Skip - will be handled by restoreSavedSelections() after services are loaded
-                            } else if (field.type === 'radio-button' || (field[0] && field[0].type === 'radio')) {
-                                // Handle radio buttons
-                                const radios = form.querySelectorAll(`input[name="${key}"]`);
-                                radios.forEach(radio => {
-                                    radio.checked = (radio.value === value);
-                                });
-                            } else if (field) {
-                                field.value = value;
-                            }
-                        }
-                    }
-                }
+                });
+                window.togglePortMode();
+            }
+
+            // Restore user trace data in test mode
+            if (TSIM_MODE === 'test') {
+                const savedTrace = sessionStorage.getItem('user_trace_data');
+                if (savedTrace && userTraceHidden) userTraceHidden.value = savedTrace;
             }
         })
-        .catch(error => {
-            // If fetch fails, fall back to localStorage
-            console.error('Failed to fetch test config:', error);
-            const savedData = localStorage.getItem('reachability_form_data');
-            if (savedData) {
-                const data = JSON.parse(savedData);
-                for (const [key, value] of Object.entries(data)) {
-                    const field = form.elements[key];
-                    if (field) {
-                        // Handle different field types
-                        if (key === 'quick_ports') {
-                            // Skip - will be handled by restoreSavedSelections() after services are loaded
-                        } else if (field.type === 'radio-button' || (field[0] && field[0].type === 'radio')) {
-                            // Handle radio buttons
-                            const radios = form.querySelectorAll(`input[name="${key}"]`);
-                            radios.forEach(radio => {
-                                radio.checked = (radio.value === value);
-                            });
-                        } else {
-                            field.value = value;
-                        }
-                    }
-                }
-                
-                // After restoring, make sure the correct port input group is visible
-                const portMode = data.port_mode || 'quick';
-                if (portMode === 'manual') {
-                    document.getElementById('quick_select_group').style.display = 'none';
-                    document.getElementById('manual_entry_group').style.display = 'block';
-                }
+        .catch(() => {});
+
+    // Input listeners
+    form.querySelectorAll('input:not([type="hidden"]), select').forEach(inp => {
+        inp.addEventListener('input', saveFormData);
+        inp.addEventListener('change', saveFormData);
+    });
+
+    // Submit validation (via AJAX to handle server-side errors gracefully)
+    form.addEventListener('submit', async (e) => {
+        // Service count limit 10
+        const pm = document.querySelector('input[name="port_mode"]:checked')?.value || 'quick';
+        // Manual mode: validate dest_ports format early and show detailed hint
+        if (pm === 'manual') {
+            const destEl = document.getElementById('dest_ports');
+            const spec = (destEl?.value || '').trim();
+            if (!isValidDestSpec(spec)) {
+                e.preventDefault();
+                const hintEl = destEl?.closest('.form-group')?.querySelector('.help-text');
+                const hint = hintEl ? hintEl.innerText : 'Format: port[/protocol], port-range[/protocol], comma-separated. Examples: 22/tcp, 80, 443/tcp, 1000-2000/udp, 53/tcp,53/udp';
+                showError(hint);
+                return;
             }
-        });
-    
-    // Restore user trace data from sessionStorage if available
-    const savedTraceData = sessionStorage.getItem('user_trace_data');
-    if (savedTraceData) {
-        document.getElementById('user_trace_data').value = savedTraceData;
-        console.log('Restored user trace data from sessionStorage');
-    }
-    
-    // Add event listeners to save form data on input changes
-    const inputs = form.querySelectorAll('input:not([type="hidden"]), select');
-    inputs.forEach(input => {
-        input.addEventListener('input', saveFormData);
-        input.addEventListener('change', saveFormData);
+        }
+        let count = 0;
+        if (pm === 'quick') {
+            count = document.getElementById('quick_ports').selectedOptions.length;
+        } else {
+            const spec = document.getElementById('dest_ports').value.trim();
+            const parts = spec.split(',').map(p => p.trim()).filter(Boolean);
+            for (const part of parts) {
+                const m = part.match(/^(\d+)(?:-(\d+))?/);
+                if (!m) continue;
+                if (m[2]) count += (parseInt(m[2]) - parseInt(m[1]) + 1); else count += 1;
+            }
+        }
+        if (count === 0) {
+            e.preventDefault();
+            showError('Please select at least one destination service to test.');
+            return;
+        }
+        if (count > 10) {
+            e.preventDefault();
+            showError(`Too many services selected (${count}). Max is 10.`);
+            return;
+        }
+
+        // Enforce mode-specific requirements
+        if (TSIM_MODE === 'test') {
+            const traceData = sessionStorage.getItem('user_trace_data') || '';
+            if (!traceData.trim()) {
+                e.preventDefault();
+                showError('Trace File Input is required in test mode.');
+                return;
+            }
+            if (userTraceHidden) userTraceHidden.value = traceData;
+        } else {
+            // Ensure hidden field is empty in prod
+            if (userTraceHidden) userTraceHidden.value = '';
+        }
+        // Perform AJAX submission to capture server-side validation errors
+        e.preventDefault();
+        saveFormData();
+        try {
+            const fd = new FormData(form);
+            const resp = await fetch('/main', {
+                method: 'POST',
+                headers: { 'X-Requested-With': 'XMLHttpRequest' },
+                body: fd
+            });
+            const ct = resp.headers.get('content-type') || '';
+            let payload = null;
+            if (ct.includes('application/json')) {
+                payload = await resp.json();
+            } else {
+                payload = await resp.text();
+            }
+            if (!resp.ok) {
+                const msg = (payload && payload.message) || (payload && payload.error) || 'Request failed. Please check your inputs and try again.';
+                showError(msg);
+                return;
+            }
+            if (payload && payload.success) {
+                const url = (payload.redirect) || `/progress.html?id=${payload.run_id}`;
+                window.location.href = url;
+            } else {
+                const msg = (payload && (payload.message || payload.error)) || 'Unexpected response. Please try again.';
+                showError(msg);
+            }
+        } catch (err) {
+            showError('Network or server error. Please try again.');
+        }
     });
 });
 
-// Removed - combined with the main submit handler below
-
-// Toggle between quick select and manual entry modes
-window.togglePortMode = function() {
-    const portMode = document.querySelector('input[name="port_mode"]:checked').value;
-    const quickGroup = document.getElementById('quick_select_group');
-    const manualGroup = document.getElementById('manual_entry_group');
-    const destPorts = document.getElementById('dest_ports');
-    const quickPorts = document.getElementById('quick_ports');
-    
-    if (portMode === 'quick') {
-        quickGroup.style.display = 'block';
-        manualGroup.style.display = 'none';
-        // Clear manual entry and remove any validation
-        destPorts.value = '';
-        destPorts.setCustomValidity('');
-    } else {
-        quickGroup.style.display = 'none';
-        manualGroup.style.display = 'block';
-        // Clear quick select
-        for (let option of quickPorts.options) {
-            option.selected = false;
-        }
-    }
-}
-
-// Clear form and localStorage - made globally accessible
-window.clearForm = function() {
-    document.getElementById('reachability-form').reset();
-    localStorage.removeItem('reachability_form_data');
-    sessionStorage.removeItem('user_trace_data');
-    // Reload the page to reinitialize
-    location.reload();
-}
-
-// Validate IP address format
-function validateIP(input) {
-    const ipPattern = /^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/;
-    if (!ipPattern.test(input.value)) {
-        input.setCustomValidity('Please enter a valid IP address');
-    } else {
-        input.setCustomValidity('');
-    }
-}
-
-// Setup validation event listeners after DOM is ready
-setTimeout(function() {
-    const sourceIp = document.getElementById('source_ip');
-    const destIp = document.getElementById('dest_ip');
-    
-    if (sourceIp) {
-        sourceIp.addEventListener('input', function() {
-            validateIP(this);
-        });
-    }
-    
-    if (destIp) {
-        destIp.addEventListener('input', function() {
-            validateIP(this);
-        });
-    }
-}, 100);
-
-// Modal functions for trace file input - moved outside DOMContentLoaded to be globally accessible
+// Modal functions for trace file input
 window.openTraceFileInput = function() {
-    console.log('openTraceFileInput called');
     const modal = document.getElementById('traceModal');
-    if (!modal) {
-        console.error('Modal element not found!');
-        return;
+    if (modal) {
+        const saved = sessionStorage.getItem('user_trace_data');
+        if (saved) document.getElementById('traceJsonInput').value = saved;
+        modal.style.display = 'block';
     }
-    console.log('Setting modal display to block');
-    modal.style.display = 'block';
-    
-    // Load any previously saved trace data
-    const savedTrace = sessionStorage.getItem('user_trace_data');
-    if (savedTrace) {
-        document.getElementById('traceJsonInput').value = savedTrace;
-    }
-}
+};
 
 window.closeTraceModal = function() {
     const modal = document.getElementById('traceModal');
-    modal.style.display = 'none';
-}
+    if (modal) modal.style.display = 'none';
+};
 
 window.clearTraceInput = function() {
-    document.getElementById('traceJsonInput').value = '';
-    document.getElementById('jsonValidationError').style.display = 'none';
+    const ta = document.getElementById('traceJsonInput');
+    const err = document.getElementById('jsonValidationError');
+    if (ta) ta.value = '';
+    if (err) err.style.display = 'none';
     sessionStorage.removeItem('user_trace_data');
-}
+    const hidden = document.getElementById('user_trace_data');
+    if (hidden) hidden.value = '';
+};
 
 window.validateAndSaveTrace = function() {
-    const traceInput = document.getElementById('traceJsonInput').value.trim();
-    const errorDiv = document.getElementById('jsonValidationError');
-    
-    if (!traceInput) {
-        errorDiv.textContent = 'Please provide JSON trace data';
-        errorDiv.style.display = 'block';
+    const ta = document.getElementById('traceJsonInput');
+    const err = document.getElementById('jsonValidationError');
+    const val = (ta?.value || '').trim();
+    if (!val) {
+        if (err) { err.textContent = 'Please provide JSON trace data'; err.style.display = 'block'; }
         return;
     }
-    
     try {
-        // Validate JSON format
-        const jsonData = JSON.parse(traceInput);
-        
-        // Store in hidden form field
-        document.getElementById('user_trace_data').value = traceInput;
-        
-        // Also store in sessionStorage for persistence
-        sessionStorage.setItem('user_trace_data', traceInput);
-        
-        // Hide error message
-        errorDiv.style.display = 'none';
-        
-        // Close modal
-        closeTraceModal();
-        
-        // Show success feedback
+        JSON.parse(val);
+        sessionStorage.setItem('user_trace_data', val);
+        const hidden = document.getElementById('user_trace_data');
+        if (hidden) hidden.value = val;
+        if (err) err.style.display = 'none';
+        window.closeTraceModal();
         alert('Trace file loaded successfully. It will be used when you run the test.');
-        
     } catch (e) {
-        errorDiv.textContent = 'Invalid JSON format: ' + e.message;
-        errorDiv.style.display = 'block';
+        if (err) { err.textContent = 'Invalid JSON format: ' + e.message; err.style.display = 'block'; }
     }
+};
+
+// Error modal helpers
+function showError(message) {
+    const modal = document.getElementById('errorModal');
+    const box = document.getElementById('errorModalMessage');
+    if (box) box.textContent = message || 'An error occurred.';
+    if (modal) modal.style.display = 'block';
 }
+
+window.closeErrorModal = function() {
+    const modal = document.getElementById('errorModal');
+    if (modal) modal.style.display = 'none';
+};
+
+// Clear all selections and inputs (both modes)
+window.clearForm = function() {
+    const form = document.getElementById('reachability-form');
+    if (!form) return;
+    // Text inputs
+    const ids = ['source_ip', 'source_port', 'dest_ip', 'dest_ports'];
+    ids.forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+    // Multi-select
+    const quick = document.getElementById('quick_ports');
+    if (quick) { Array.from(quick.options).forEach(o => o.selected = false); }
+    // Radio defaults
+    const pmQuick = form.querySelector('input[name="port_mode"][value="quick"]');
+    if (pmQuick) pmQuick.checked = true;
+    // Default protocol
+    const proto = document.getElementById('default_protocol');
+    if (proto) proto.value = 'tcp';
+    // Hidden trace field and stored data
+    const hidden = document.getElementById('user_trace_data');
+    if (hidden) hidden.value = '';
+    sessionStorage.removeItem('user_trace_data');
+    const ta = document.getElementById('traceJsonInput');
+    if (ta) ta.value = '';
+    const err = document.getElementById('jsonValidationError');
+    if (err) err.style.display = 'none';
+    // Persist cleared state and update visibility sections
+    localStorage.removeItem('reachability_form_data');
+    window.togglePortMode();
+};
 
 // Close modal when clicking outside of it
 window.addEventListener('click', function(event) {
     const modal = document.getElementById('traceModal');
     if (event.target === modal) {
-        closeTraceModal();
+        window.closeTraceModal();
     }
-});
-
-// Function to count services from port specification
-function countServicesFromPortSpec(portSpec, defaultProtocol) {
-    let totalServices = 0;
-    const parts = portSpec.split(',').map(p => p.trim()).filter(p => p);
-    
-    for (const part of parts) {
-        // Check if it's a range
-        const rangeParts = part.split('-');
-        if (rangeParts.length === 2) {
-            // It's a range
-            let startPort, endPort;
-            
-            // Handle protocol in first part of range
-            const firstPart = rangeParts[0].trim();
-            const firstPortMatch = firstPart.match(/^(\d+)/);
-            if (firstPortMatch) {
-                startPort = parseInt(firstPortMatch[1]);
-            } else {
-                continue; // Invalid format
-            }
-            
-            // Handle second part of range (might have protocol)
-            const secondPart = rangeParts[1].trim();
-            const secondPortMatch = secondPart.match(/^(\d+)/);
-            if (secondPortMatch) {
-                endPort = parseInt(secondPortMatch[1]);
-            } else {
-                continue; // Invalid format
-            }
-            
-            if (startPort && endPort && startPort <= endPort) {
-                // Count each port in the range
-                totalServices += (endPort - startPort + 1);
-            }
-        } else {
-            // Single port (might have multiple protocols)
-            const portProto = part.split('/')[0].trim();
-            if (portProto && !isNaN(parseInt(portProto))) {
-                totalServices += 1;
-            }
-        }
-    }
-    
-    return totalServices;
-}
-
-// Handle form submission - restore user trace data to hidden field
-document.getElementById('reachability-form').addEventListener('submit', function(e) {
-    // First validate the number of services
-    const portMode = document.querySelector('input[name="port_mode"]:checked').value;
-    let serviceCount = 0;
-    
-    if (portMode === 'quick') {
-        // Count selected services in quick mode
-        const quickPorts = document.getElementById('quick_ports');
-        serviceCount = quickPorts.selectedOptions.length;
-    } else {
-        // Count services from manual entry (including ranges)
-        const destPorts = document.getElementById('dest_ports').value.trim();
-        const defaultProtocol = document.getElementById('default_protocol').value;
-        if (destPorts) {
-            serviceCount = countServicesFromPortSpec(destPorts, defaultProtocol);
-        }
-    }
-    
-    // Check if service count exceeds limit
-    if (serviceCount > 10) {
-        e.preventDefault(); // Stop form submission
-        
-        // Show error message
-        alert(`Too many services selected (${serviceCount} services).\n\n` +
-              `Please reduce the number of services to 10 or less.\n` +
-              `Note: Each port in a range counts as a separate service.\n\n` +
-              `Current selection: ${serviceCount} services`);
-        return;
-    }
-    
-    if (serviceCount === 0) {
-        e.preventDefault(); // Stop form submission
-        alert('Please select at least one service to test.');
-        return;
-    }
-    
-    // Save form data
-    saveFormData();
-    
-    // Get user trace data from sessionStorage and put it in hidden field
-    const userTraceData = sessionStorage.getItem('user_trace_data');
-    if (userTraceData) {
-        console.log('Restoring user trace data to hidden field, length:', userTraceData.length);
-        document.getElementById('user_trace_data').value = userTraceData;
-    } else {
-        console.log('No user trace data found in sessionStorage');
-    }
-    
-    // Let the form submit normally (no preventDefault)
 });

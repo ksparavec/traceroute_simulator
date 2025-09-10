@@ -49,9 +49,11 @@ class TsimServicesConfigHandler(TsimBaseHandler):
         # Get quick test ports
         quick_ports = self.port_parser.get_quick_ports()
         
-        # Build response
+        # Build response, include mode to drive frontend UX (prod|test)
+        mode = self.config.get('traceroute_simulator_mode', 'prod')
         config = {
             'success': True,
+            'mode': mode,
             'services': services,
             'quick_ports': quick_ports,
             'port_modes': [

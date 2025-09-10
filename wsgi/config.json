@@ -76,8 +76,6 @@
     "cleanup_age": 86400,
     
     "hmac_expiry": 86400,
-    "allow_trace_input": true,
-    "test_mode": false,
 
     "cors": {
         "enabled": false,

@@ -147,20 +147,50 @@ class TsimMainHandler(TsimBaseHandler):
             self.logger.error(f"Failed to parse POST data: {e}")
             return self.error_response(start_response, 'Invalid request data')
         
-        # Extract and validate parameters
+        # Determine mode and extract parameters
+        mode = self.config.get('traceroute_simulator_mode', 'prod')
         source_ip = data.get('source_ip', '').strip()
         source_port = data.get('source_port', '').strip() or None
         dest_ip = data.get('dest_ip', '').strip()
         port_mode = data.get('port_mode', 'quick')
         default_protocol = data.get('default_protocol', 'tcp')
         user_trace_data = data.get('user_trace_data', '').strip() or None
-        
-        # Validate IPs
-        if not self.validator.validate_ip(source_ip):
-            return self.error_response(start_response, f'Invalid source IP: {source_ip}')
-        
-        if not self.validator.validate_ip(dest_ip):
-            return self.error_response(start_response, f'Invalid destination IP: {dest_ip}')
+
+        # Enforce allowed execution paths by mode
+        if mode == 'prod':
+            # In prod mode, require source/destination IPs and do not accept user trace input
+            if not self.validator.validate_ip(source_ip):
+                return self.error_response(start_response, f'Invalid source IP: {source_ip}')
+            if not self.validator.validate_ip(dest_ip):
+                return self.error_response(start_response, f'Invalid destination IP: {dest_ip}')
+            # Ignore any user-provided trace data to avoid alternate paths
+            user_trace_data = None
+        else:
+            # Test mode: require user trace data; source/destination fields are hidden in UI
+            if not user_trace_data:
+                return self.error_response(start_response, 'Trace file is required in test mode')
+            # Validate that provided trace is valid JSON and try to infer IPs
+            is_valid, error = self.validator.validate_trace_data(user_trace_data)
+            if not is_valid:
+                return self.error_response(start_response, f'Invalid trace data: {error}')
+            try:
+                trace_json = json.loads(user_trace_data)
+            except Exception:
+                return self.error_response(start_response, 'Trace file must be valid JSON')
+            # Try to infer source/destination IPs from trace JSON
+            def _get(d: dict, keys: list):
+                for k in keys:
+                    if isinstance(d, dict) and k in d and isinstance(d[k], str) and d[k].strip():
+                        return d[k].strip()
+                return None
+            inferred_source = _get(trace_json, ['source_ip', 'source', 'src'])
+            inferred_dest = _get(trace_json, ['dest_ip', 'destination', 'dest', 'dst'])
+            if not inferred_source or not self.validator.validate_ip(inferred_source):
+                return self.error_response(start_response, 'Trace file missing valid source IP')
+            if not inferred_dest or not self.validator.validate_ip(inferred_dest):
+                return self.error_response(start_response, 'Trace file missing valid destination IP')
+            source_ip = inferred_source
+            dest_ip = inferred_dest
         
         # Validate source port if provided
         if source_port:
@@ -195,11 +225,7 @@ class TsimMainHandler(TsimBaseHandler):
         except ValueError as e:
             return self.error_response(start_response, f'Invalid port specification: {str(e)}')
         
-        # Validate user trace data if provided
-        if user_trace_data:
-            is_valid, error = self.validator.validate_trace_data(user_trace_data)
-            if not is_valid:
-                return self.error_response(start_response, f'Invalid trace data: {error}')
+        # At this point, user_trace_data is only non-None in test mode; already validated above
         
         # Check if user already has a test running
         username = session.get('username', 'unknown')

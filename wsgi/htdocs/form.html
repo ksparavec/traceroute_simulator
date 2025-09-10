@@ -3,6 +3,7 @@
 <head>
     <title>Network Reachability Test</title>
     <link rel="stylesheet" href="/css/style.css">
+    <script src="/js/mode_title.js"></script>
     <script src="/js/form.js"></script>
 </head>
 <body>
@@ -34,7 +35,7 @@
             </div>
             
             <div class="form-group">
-                <label for="port_mode">Port Selection Mode *</label>
+                <label for="port_mode">Destination Port Selection Mode *</label>
                 <div class="radio-group">
                     <label class="radio-label">
                         <input type="radio" name="port_mode" value="quick" checked onchange="togglePortMode()">
@@ -107,16 +108,24 @@
                 </div>
             </div>
         </div>
-        
-        <div class="info">
-            <p>This tool will generate a comprehensive network reachability report including:</p>
-            <ul>
-                <li>Network path trace</li>
-                <li>Connectivity tests (ping, MTR, service)</li>
-                <li>Firewall rule analysis</li>
-                <li>Visual network diagram</li>
-            </ul>
+
+        <!-- Modal for errors -->
+        <div id="errorModal" class="modal" style="display: none;">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2>Error</h2>
+                    <span class="close" onclick="closeErrorModal()">&times;</span>
+                </div>
+                <div class="modal-body">
+                    <div id="errorModalMessage" class="error-message"></div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" onclick="closeErrorModal()">Close</button>
+                </div>
+            </div>
         </div>
+        
+        
     </div>
 </body>
 </html>

@@ -20,7 +20,6 @@ from handlers.tsim_pdf_handler import TsimPDFHandler
 from handlers.tsim_progress_handler import TsimProgressHandler
 from handlers.tsim_progress_stream_handler import TsimProgressStreamHandler
 from handlers.tsim_services_config_handler import TsimServicesConfigHandler
-from handlers.tsim_test_config_handler import TsimTestConfigHandler
 from handlers.tsim_cleanup_handler import TsimCleanupHandler
 
 # All services are already preloaded in app.wsgi
@@ -71,7 +70,6 @@ class TsimWSGIApp:
                 '/progress-stream': TsimProgressStreamHandler(self.config, self.session_manager, self.logger_service,
                                                              self.progress_tracker),
                 '/services-config': TsimServicesConfigHandler(self.config, self.logger_service),
-                '/test-config': TsimTestConfigHandler(self.config, self.session_manager, self.logger_service),
                 '/cleanup': TsimCleanupHandler(self.config, self.session_manager, self.logger_service),
             }
             

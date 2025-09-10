@@ -30,7 +30,6 @@ wsgi/
 │   ├── tsim_progress_handler.py
 │   ├── tsim_progress_stream_handler.py
 │   ├── tsim_services_config_handler.py
-│   ├── tsim_test_config_handler.py
 │   └── tsim_cleanup_handler.py
 ├── services/             # Core services
 │   ├── tsim_config_service.py
@@ -152,7 +151,6 @@ These routes are mounted directly (no `/api` prefix):
 - `GET /progress` - Poll progress JSON
 - `GET /progress-stream` - SSE progress stream
 - `GET /services-config` - Available services and quick ports
-- `GET /test-config` - Authenticated test configuration
 - `POST /cleanup` - Admin cleanup operations
 
 ## Performance Optimizations

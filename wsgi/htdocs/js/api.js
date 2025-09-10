@@ -16,7 +16,6 @@ const TSIM_API = {
         PROGRESS: '/progress',
         PROGRESS_STREAM: '/progress-stream',
         SERVICES_CONFIG: '/services-config',
-        TEST_CONFIG: '/test-config',
         CLEANUP: '/cleanup'
     },
     
@@ -157,12 +156,7 @@ const TSIM_API = {
         return await this.request(this.ENDPOINTS.SERVICES_CONFIG);
     },
     
-    /**
-     * Get test configuration
-     */
-    async getTestConfig() {
-        return await this.request(this.ENDPOINTS.TEST_CONFIG);
-    },
+    
     
     /**
      * Perform cleanup (admin only)

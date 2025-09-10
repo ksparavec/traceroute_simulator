@@ -65,7 +65,17 @@ class TsimMainHandler(TsimBaseHandler):
         # Check session
         session = self.validate_session(environ)
         if not session:
-            return self.error_response(start_response, 'Authentication required', '401 Unauthorized')
+            # Distinguish between browser form submission and AJAX/JSON
+            is_ajax = environ.get('HTTP_X_REQUESTED_WITH', '').lower() == 'xmlhttprequest'
+            accept_header = environ.get('HTTP_ACCEPT', '')
+            content_type = environ.get('CONTENT_TYPE', '')
+            wants_json = 'application/json' in accept_header or 'application/json' in content_type
+
+            if is_ajax or wants_json:
+                return self.error_response(start_response, 'Authentication required', '401 Unauthorized')
+            else:
+                # Redirect interactive users to login page instead of showing JSON
+                return self.redirect_response(start_response, '/login.html')
         
         method = environ.get('REQUEST_METHOD', 'GET')
         

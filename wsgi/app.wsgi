@@ -9,21 +9,28 @@ import sys
 import os
 import logging
 
+# Prevent Python from writing .pyc files (avoid __pycache__ in install dirs)
+try:
+    sys.dont_write_bytecode = True
+except Exception:
+    pass
+
 # Load configuration first to get all paths
 import json
 from pathlib import Path
 
-# Config path can be specified via environment or uses default
-# Note: Apache SetEnv won't be available here, only in WSGI environ
+# Resolve configuration path strictly from environment or default install path
 config_path = Path(os.environ.get('TSIM_CONFIG_FILE', '/opt/tsim/wsgi/conf/config.json'))
 if config_path.exists():
     with open(config_path, 'r') as f:
         config = json.load(f)
+    # Use configured web_root or default to standard install path
     web_root = config.get('web_root', '/opt/tsim/wsgi')
     venv_path = config.get('venv_path', '/opt/tsim/venv')
     
     # Set environment variables from config
     os.environ['PYTHONPYCACHEPREFIX'] = config.get('cache_dir', '/dev/shm/tsim/pycache')
+    os.environ['PYTHONDONTWRITEBYTECODE'] = '1'
     os.environ['MPLCONFIGDIR'] = config.get('matplotlib_cache_dir', '/dev/shm/tsim/matplotlib')
     os.environ['TSIM_WEB_ROOT'] = web_root
     os.environ['TRACEROUTE_SIMULATOR_RAW_FACTS'] = config.get('traceroute_simulator_raw_facts', '/opt/tsim/raw_facts')
@@ -44,9 +51,14 @@ if config_path.exists():
 else:
     # Fallback if config doesn't exist
     print(f"Warning: Config file not found at {config_path}, using defaults", file=sys.stderr)
-    web_root = '/opt/tsim/wsgi'
+    # Try to infer local dev path relative to this file
+    try:
+        web_root = str(Path(__file__).resolve().parent)
+    except Exception:
+        web_root = '/opt/tsim/wsgi'
     venv_path = '/opt/tsim/venv'
     os.environ['PYTHONPYCACHEPREFIX'] = '/dev/shm/tsim/pycache'
+    os.environ['PYTHONDONTWRITEBYTECODE'] = '1'
     os.environ['MPLCONFIGDIR'] = '/dev/shm/tsim/matplotlib'
     os.environ['TSIM_WEB_ROOT'] = web_root
     os.environ['TRACEROUTE_SIMULATOR_RAW_FACTS'] = '/opt/tsim/raw_facts'
@@ -239,7 +251,6 @@ from handlers.tsim_pdf_handler import TsimPDFHandler
 from handlers.tsim_progress_handler import TsimProgressHandler
 from handlers.tsim_progress_stream_handler import TsimProgressStreamHandler
 from handlers.tsim_services_config_handler import TsimServicesConfigHandler
-from handlers.tsim_test_config_handler import TsimTestConfigHandler
 from handlers.tsim_cleanup_handler import TsimCleanupHandler
 logger.info("All handler modules loaded")
 

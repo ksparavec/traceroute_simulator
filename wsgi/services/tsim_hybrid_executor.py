@@ -15,9 +15,21 @@ from pathlib import Path
 from typing import Dict, Any, Optional, List, Tuple, Callable
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor, Future
+import multiprocessing
 import queue
 
 from .tsim_timing_service import TsimTimingService
+
+
+def _tsim_init_worker():
+    """Initializer for ProcessPool workers: disable bytecode and set cache dir."""
+    try:
+        import sys as _sys, os as _os
+        _sys.dont_write_bytecode = True
+        _os.environ.setdefault('PYTHONDONTWRITEBYTECODE', '1')
+        _os.environ.setdefault('PYTHONPYCACHEPREFIX', '/dev/shm/tsim/pycache')
+    except Exception:
+        pass
 
 
 class TsimHybridExecutor:
@@ -37,6 +49,13 @@ class TsimHybridExecutor:
             timing_service: Optional timing service instance
         """
         self.config = config_service
+        # Ensure child processes/execs don't write bytecode to install dirs
+        try:
+            os.environ.setdefault('PYTHONDONTWRITEBYTECODE', '1')
+            os.environ.setdefault('PYTHONPYCACHEPREFIX', '/dev/shm/tsim/pycache')
+            Path(os.environ['PYTHONPYCACHEPREFIX']).mkdir(parents=True, exist_ok=True)
+        except Exception:
+            pass
         self.progress_tracker = progress_tracker
         # Ensure a timing service is available
         self.timing_service = timing_service or TsimTimingService()
@@ -54,10 +73,23 @@ class TsimHybridExecutor:
         )
         
         # Process pool for CPU-bound operations (PDF generation)
-        self.process_pool = ProcessPoolExecutor(
-            max_workers=2,
-            max_tasks_per_child=10  # Restart workers after 10 tasks to prevent memory leaks
-        )
+        # Use initializer to disable bytecode in worker processes, and set env
+        # Use 'spawn' context to be compatible with max_tasks_per_child on Python 3.11+
+        # Fallback to default context without max_tasks_per_child if spawn unavailable
+        try:
+            mp_ctx = multiprocessing.get_context('spawn')
+            self.process_pool = ProcessPoolExecutor(
+                max_workers=2,
+                max_tasks_per_child=10,  # Restart workers after 10 tasks to prevent memory leaks
+                initializer=_tsim_init_worker,
+                mp_context=mp_ctx
+            )
+        except Exception:
+            # Fallback: omit max_tasks_per_child (not supported on 'fork')
+            self.process_pool = ProcessPoolExecutor(
+                max_workers=2,
+                initializer=_tsim_init_worker
+            )
         
         # Progress callback storage
         self.progress_callbacks = {}
@@ -489,10 +521,12 @@ class TsimHybridExecutor:
             Command output
         """
         try:
-            # Set environment to point to config file
+            # Set environment to point to config file and suppress bytecode
             env = os.environ.copy()
             env['TRACEROUTE_SIMULATOR_CONF'] = self.config.get('traceroute_simulator_conf', 
                                                               '/opt/tsim/wsgi/conf/traceroute_simulator.yaml')
+            env.setdefault('PYTHONDONTWRITEBYTECODE', '1')
+            env.setdefault('PYTHONPYCACHEPREFIX', '/dev/shm/tsim/pycache')
             
             # Direct execution - capture stdout only, let stderr go to logs
             result = subprocess.run(

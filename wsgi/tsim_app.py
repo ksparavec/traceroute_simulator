@@ -21,6 +21,9 @@ from handlers.tsim_progress_handler import TsimProgressHandler
 from handlers.tsim_progress_stream_handler import TsimProgressStreamHandler
 from handlers.tsim_services_config_handler import TsimServicesConfigHandler
 from handlers.tsim_cleanup_handler import TsimCleanupHandler
+from handlers.tsim_queue_admin_handler import TsimQueueAdminHandler
+from handlers.tsim_job_details_handler import TsimJobDetailsHandler
+from handlers.tsim_admin_queue_stream_handler import TsimAdminQueueStreamHandler
 
 # All services are already preloaded in app.wsgi
 from services.tsim_session_manager import TsimSessionManager
@@ -28,6 +31,11 @@ from services.tsim_config_service import TsimConfigService
 from services.tsim_logger_service import TsimLoggerService
 from services.tsim_progress_tracker import TsimProgressTracker
 from services.tsim_hybrid_executor import TsimHybridExecutor
+from services.tsim_executor import TsimExecutor
+from services.tsim_lock_manager_service import TsimLockManagerService
+from services.tsim_queue_service import TsimQueueService
+from services.tsim_scheduler_service import TsimSchedulerService
+from services.tsim_reconciler_service import TsimReconcilerService
 
 
 class TsimWSGIApp:
@@ -51,6 +59,18 @@ class TsimWSGIApp:
             # Initialize shared progress tracker and hybrid executor
             self.progress_tracker = TsimProgressTracker(self.config)
             self.hybrid_executor = TsimHybridExecutor(self.config, self.progress_tracker)
+            # Global lock manager, executor, queue, and scheduler
+            self.lock_manager = TsimLockManagerService(self.config)
+            self.executor = TsimExecutor(self.config, self.lock_manager, None, self.progress_tracker)
+            self.executor.set_hybrid_executor(self.hybrid_executor)
+            self.queue_service = TsimQueueService(self.config)
+            self.scheduler = TsimSchedulerService(
+                self.config, self.queue_service, self.progress_tracker, self.executor, self.lock_manager
+            )
+            self.scheduler.start()
+            # Start reconciler to finalize cancelled/aborted runs
+            self.reconciler = TsimReconcilerService(self.config, self.queue_service, self.progress_tracker, interval=1.0)
+            self.reconciler.start()
             
             self.logger.info("Core services initialized successfully")
         except Exception as e:
@@ -63,14 +83,20 @@ class TsimWSGIApp:
                 '/login': TsimLoginHandler(self.config, self.session_manager, self.logger_service),
                 '/logout': TsimLogoutHandler(self.session_manager, self.logger_service),
                 '/main': TsimMainHandler(self.config, self.session_manager, self.logger_service,
-                                        self.progress_tracker, self.hybrid_executor),
+                                        self.progress_tracker, self.hybrid_executor, self.queue_service,
+                                        self.lock_manager),
                 '/pdf': TsimPDFHandler(self.config, self.session_manager, self.logger_service),
                 '/progress': TsimProgressHandler(self.config, self.session_manager, self.logger_service, 
-                                                self.progress_tracker),
+                                                self.progress_tracker, self.queue_service),
                 '/progress-stream': TsimProgressStreamHandler(self.config, self.session_manager, self.logger_service,
-                                                             self.progress_tracker),
+                                                             self.progress_tracker, self.queue_service),
                 '/services-config': TsimServicesConfigHandler(self.config, self.logger_service),
                 '/cleanup': TsimCleanupHandler(self.config, self.session_manager, self.logger_service),
+                '/admin-queue': TsimQueueAdminHandler(self.config, self.session_manager, self.logger_service,
+                                                     self.queue_service, self.lock_manager),
+                '/admin-job': TsimJobDetailsHandler(self.config, self.session_manager, self.logger_service),
+                '/admin-queue-stream': TsimAdminQueueStreamHandler(self.config, self.session_manager, self.logger_service,
+                                                                   self.queue_service, self.lock_manager),
             }
             
             self.logger.info(f"Initialized {len(self.handlers)} request handlers")

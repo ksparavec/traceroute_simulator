@@ -52,10 +52,20 @@ class TsimLoggerService:
     
     def _setup_handlers(self):
         """Set up logging handlers"""
+        # Determine base log level from config.json
+        cfg_level = str(self.config.get('log_level', 'INFO')).upper()
+        level_map = {
+            'DEBUG': logging.DEBUG,
+            'INFO': logging.INFO,
+            'WARNING': logging.WARNING,
+            'ERROR': logging.ERROR,
+            'CRITICAL': logging.CRITICAL
+        }
+        base_level = level_map.get(cfg_level, logging.INFO)
         # Application log handler
         try:
             app_handler = logging.FileHandler(self.app_log)
-            app_handler.setLevel(logging.INFO)
+            app_handler.setLevel(base_level)
             app_formatter = logging.Formatter(
                 '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
             )
@@ -77,9 +87,9 @@ class TsimLoggerService:
             print(f"Warning: Could not create error log handler: {e}")
         
         # Console handler for development
-        if self.config.get('debug', False):
+        if self.config.get('debug', False) or base_level == logging.DEBUG:
             console_handler = logging.StreamHandler()
-            console_handler.setLevel(logging.DEBUG)
+            console_handler.setLevel(base_level)
             console_formatter = logging.Formatter(
                 '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
             )
@@ -87,7 +97,7 @@ class TsimLoggerService:
             self.logger.addHandler(console_handler)
         
         # Set overall log level
-        self.logger.setLevel(logging.DEBUG if self.config.get('debug', False) else logging.INFO)
+        self.logger.setLevel(base_level)
     
     def log_info(self, message: str, **kwargs):
         """Log informational message

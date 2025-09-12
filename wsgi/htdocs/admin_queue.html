@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>TSIM Queue Admin</title>
+  <link rel="stylesheet" href="/css/style.css">
+  <style>
+    .queue-table { width: 100%; border-collapse: collapse; }
+    .queue-table th, .queue-table td { border: 1px solid #ddd; padding: 8px; }
+    .queue-table th { background: #f2f2f2; text-align: left; }
+    .locks { margin: 10px 0; font-size: 14px; }
+    .status-badge { padding: 2px 6px; border-radius: 4px; background: #eee; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>Run Queue</h1>
+    </header>
+
+    <div class="locks" id="locks"></div>
+
+    <div id="runningContainer" style="margin: 16px 0; display: none;">
+      <h2>Currently Running</h2>
+      <div class="progress-container">
+        <div class="progress-bar">
+          <div id="runningFill" class="progress-fill" style="width: 0%"></div>
+          <div class="progress-text" id="runningText">Initializing...</div>
+        </div>
+        <div class="progress-percentage"><span id="runningPercent">0</span>%</div>
+      </div>
+      <table class="queue-table" id="runningDetails">
+        <thead><tr><th>Run ID</th><th>User</th><th>Created</th><th>Services</th></tr></thead>
+        <tbody><tr><td id="rdRun"></td><td id="rdUser"></td><td id="rdCreated"></td><td id="rdServices"></td></tr></tbody>
+      </table>
+    </div>
+
+    <table class="queue-table" id="queueTable">
+      <thead>
+        <tr>
+          <th>Position</th>
+          <th>Run ID</th>
+          <th>User</th>
+          <th>Status</th>
+          <th>Created</th>
+          <th>Services</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody id="queueBody"></tbody>
+    </table>
+
+    <h2 style="margin-top:24px;">Finished Jobs</h2>
+    <table class="queue-table" id="historyTable">
+      <thead>
+        <tr>
+          <th>Run ID</th>
+          <th>User</th>
+          <th>Status</th>
+          <th>Finished</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody id="historyBody"></tbody>
+    </table>
+  </div>
+
+  <script>
+    function sanitizeAscii(s){ return (s||'').replace(/[^\x20-\x7E]/g,''); }
+    function fmtDate(ts){
+      if (ts == null || ts === '') return '';
+      let n = Number(ts);
+      if (isNaN(n)) return '';
+      if (n > 1e12) n = Math.floor(n/1000);
+      const d = new Date(n*1000);
+      const pad = v => String(v).padStart(2,'0');
+      return `${pad(d.getDate())}.${pad(d.getMonth()+1)}.${d.getFullYear()}. ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+    }
+    function getPhaseStatus(phase) {
+      const map = {
+        'START': 'Starting test',
+        'parse_args': 'Validating parameters',
+        'QUEUED': 'In queue',
+        'WAITING_FOR_ENVIRONMENT': 'Waiting for simulator to be available',
+        'TRACE_COMPLETE': 'Trace execution completed',
+        'SERVICE_TESTS': 'Testing services',
+        'PDF_GENERATION': 'Generating PDF report',
+        'PHASE1_start': 'Initializing path discovery',
+        'PHASE1_path_discovery': 'Discovering network path',
+        'PHASE1_trace_load': 'Loading trace data',
+        'PHASE1_trace_complete': 'Trace completed',
+        'PHASE1_complete': 'Path discovery complete',
+        'PHASE2_start': 'Setting up environment',
+        'PHASE2_host_list': 'Checking existing hosts',
+        'PHASE2_host_setup_start': 'Setting up test hosts',
+        'PHASE2_hosts_complete': 'Hosts configured',
+        'PHASE2_service_check': 'Checking services',
+        'PHASE2_services_start': 'Starting services',
+        'PHASE2_complete': 'Environment ready',
+        'PHASE3_start': 'Starting reachability tests',
+        'PHASE3_complete': 'Initial tests complete',
+        'PHASE4_start': 'Testing services',
+        'PHASE4_complete': 'Service tests complete',
+        'PHASE5_format_output': 'Formatting results',
+        'PHASE5_complete': 'Results formatted',
+        'TOTAL': 'Test execution complete',
+        'COMPLETE': 'Test complete!',
+        'ERROR': 'Error occurred',
+        'FAIL': 'Test failed',
+        'FAILED': 'Cancelled'
+      };
+      return map[phase] || phase;
+    }
+    function startStream(){
+      const es = new EventSource('/admin-queue-stream');
+      es.onmessage = function(event){
+        const data = JSON.parse(event.data || '{}');
+        const locks = data.locks || {};
+        const locksEl = document.getElementById('locks');
+        const leaderText = locks.scheduler_leader ? 'acquired' : 'free';
+        locksEl.textContent = `Leader: ${leaderText} | network_test: ${locks.network_test ? 'locked' : 'free'}`;
+        if (window._prevLeader !== locks.scheduler_leader) {
+          locksEl.style.backgroundColor = '#fff3cd';
+          setTimeout(() => { locksEl.style.backgroundColor = ''; }, 800);
+          window._prevLeader = locks.scheduler_leader;
+        }
+
+        const body = document.getElementById('queueBody');
+        body.innerHTML = '';
+        const running = data.running || null;
+        const rc = document.getElementById('runningContainer');
+        if (running && running.run_id) {
+          rc.style.display = 'block';
+          const percent = Math.max(0, Math.min(100, parseInt(running.percent || 0)));
+          const phaseLabel = sanitizeAscii(getPhaseStatus(running.phase || 'RUNNING'));
+          document.getElementById('runningFill').style.width = percent + '%';
+          document.getElementById('runningPercent').textContent = Math.round(percent);
+          document.getElementById('runningText').textContent = phaseLabel;
+          const created = fmtDate(running.created_at);
+          const servicesRun = Array.isArray(running.params?.port_protocol_list)
+            ? running.params.port_protocol_list.map(p => `${p[0]}/${p[1]}`).join(', ') : '';
+          document.getElementById('rdRun').textContent = sanitizeAscii(running.run_id||'');
+          document.getElementById('rdUser').textContent = sanitizeAscii(running.username||'');
+          document.getElementById('rdCreated').textContent = created;
+          document.getElementById('rdServices').textContent = sanitizeAscii(servicesRun);
+          if (!running.username) {
+            fetch(`/admin-job?id=${encodeURIComponent(running.run_id)}`, { headers: { 'X-Requested-With':'XMLHttpRequest' } })
+              .then(r => r.ok ? r.json() : null)
+              .then(dj => {
+                if (!dj) return;
+                const mu = (dj.meta && dj.meta.username) || '';
+                if (mu) document.getElementById('rdUser').textContent = sanitizeAscii(mu);
+              })
+              .catch(() => {});
+          }
+        } else {
+          rc.style.display = 'none';
+        }
+        (data.queue || []).forEach(j => {
+          const tr = document.createElement('tr');
+          const created = fmtDate(j.created_at);
+          const services = Array.isArray(j.params?.port_protocol_list)
+            ? j.params.port_protocol_list.map(p => `${p[0]}/${p[1]}`).join(', ') : '';
+          tr.innerHTML = `<td>${j.position||''}</td>`+
+                         `<td>${sanitizeAscii(j.run_id||'')}</td>`+
+                         `<td>${sanitizeAscii(j.username||'')}</td>`+
+                         `<td><span class=\"status-badge\">${sanitizeAscii(j.status||'')}</span></td>`+
+                         `<td>${created}</td>`+
+                         `<td>${sanitizeAscii(services)}</td>`+
+                         `<td><button data-run-id=\"${sanitizeAscii(j.run_id||'')}\" class=\"cancel-btn\">Cancel</button></td>`;
+          body.appendChild(tr);
+        });
+        document.querySelectorAll('.cancel-btn').forEach(btn => {
+          btn.onclick = async () => {
+            const runId = btn.getAttribute('data-run-id');
+            if (!runId) return;
+            if (!confirm(`Cancel ${runId}?`)) return;
+            const fd = new FormData();
+            fd.append('action', 'cancel');
+            fd.append('run_id', runId);
+            await fetch('/admin-queue', { method: 'POST', body: fd, headers: { 'X-Requested-With': 'XMLHttpRequest' } });
+          };
+        });
+        // Populate history
+        const hbody = document.getElementById('historyBody');
+        if (hbody) {
+          hbody.innerHTML = '';
+          (data.history || []).forEach(item => {
+            const tr = document.createElement('tr');
+            const finished = fmtDate(item.finished_at);
+            let status = item.status || (item.success ? 'SUCCESS' : 'FAILED');
+            if (status === 'FAILED' && (item.cancelled_by || item.cancelled_at)) {
+              status = 'CANCELLED';
+            }
+            const runId = sanitizeAscii(item.run_id||'');
+            tr.innerHTML = `<td>${runId}</td>`+
+                           `<td>${sanitizeAscii(item.username||'')}</td>`+
+                           `<td>${sanitizeAscii(status)}</td>`+
+                           `<td>${finished}</td>`+
+                           `<td><button class=\"details-btn\" data-run-id=\"${runId}\">Details</button></td>`;
+            hbody.appendChild(tr);
+          });
+          document.querySelectorAll('.details-btn').forEach(btn => {
+            btn.onclick = () => {
+              const rid = btn.getAttribute('data-run-id');
+              if (rid) window.open(`/admin_job.html?id=${rid}`, '_blank');
+            };
+          });
+        }
+      };
+      es.onerror = function(e){ console.debug('admin-queue stream error', e); };
+    }
+    startStream();
+  </script>
+</body>
+</html>

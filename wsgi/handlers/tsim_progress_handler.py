@@ -14,7 +14,7 @@ from .tsim_base_handler import TsimBaseHandler
 class TsimProgressHandler(TsimBaseHandler):
     """Handler for progress polling requests"""
     
-    def __init__(self, config_service, session_manager, logger_service, progress_tracker=None):
+    def __init__(self, config_service, session_manager, logger_service, progress_tracker=None, queue_service=None):
         """Initialize progress handler
         
         Args:
@@ -33,6 +33,15 @@ class TsimProgressHandler(TsimBaseHandler):
         else:
             from services.tsim_progress_tracker import TsimProgressTracker
             self.progress_tracker = TsimProgressTracker(config_service)
+        # Optional queue service for live queue position
+        if queue_service is not None:
+            self.queue_service = queue_service
+        else:
+            try:
+                from services.tsim_queue_service import TsimQueueService
+                self.queue_service = TsimQueueService(config_service)
+            except Exception:
+                self.queue_service = None
     
     def handle(self, environ: Dict[str, Any], start_response) -> List[bytes]:
         """Handle progress request
@@ -101,6 +110,14 @@ class TsimProgressHandler(TsimBaseHandler):
         # Include percent and expected steps for accurate progress meters
         percent = int(progress.get('overall_progress', 0))
         expected_steps = int(progress.get('expected_steps', len(all_phases) or 1))
+        # Live queue position for queued/waiting
+        queue_position = None
+        if self.queue_service and not progress.get('complete') and latest_phase_name in ('QUEUED', 'WAITING_FOR_ENVIRONMENT'):
+            try:
+                queue_position = self.queue_service.get_position(run_id)
+            except Exception:
+                queue_position = None
+
         response = {
             'run_id': run_id,
             'phase': latest_phase_name,
@@ -108,7 +125,10 @@ class TsimProgressHandler(TsimBaseHandler):
             'all_phases': all_phases,  # This is what the frontend expects
             'complete': progress.get('complete', False),
             'percent': percent,
-            'expected_steps': expected_steps
+            'expected_steps': expected_steps,
+            'queue_position': queue_position,
+            'success': progress.get('success', None),
+            'error': progress.get('error', None)
         }
         
         # Add redirect URL if complete

@@ -119,8 +119,24 @@ if _debug_enabled:
 # Configure logging early
 # Note: mod_wsgi logs all stderr output as wsgi:error regardless of actual log level
 # This is normal behavior and cannot be changed without modifying Apache LogLevel
+# Respect log level from config.json if present
+_level_map = {
+    'DEBUG': logging.DEBUG,
+    'INFO': logging.INFO,
+    'WARNING': logging.WARNING,
+    'ERROR': logging.ERROR,
+    'CRITICAL': logging.CRITICAL
+}
+try:
+    _cfg_level = None
+    if 'config' in globals() and isinstance(config, dict):
+        _cfg_level = str(config.get('log_level', 'INFO')).upper()
+    _base_level = _level_map.get(_cfg_level, logging.INFO)
+except Exception:
+    _base_level = logging.INFO
+
 logging.basicConfig(
-    level=logging.INFO,
+    level=_base_level,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger('tsim.startup')
@@ -234,6 +250,9 @@ from services.tsim_timing_service import TsimTimingService
 from services.tsim_lock_manager_service import TsimLockManagerService
 from services.tsim_executor import TsimExecutor
 from services.tsim_progress_tracker import TsimProgressTracker
+from services.tsim_queue_service import TsimQueueService
+from services.tsim_scheduler_service import TsimSchedulerService
+from services.tsim_reconciler_service import TsimReconcilerService
 try:
     from services.tsim_hybrid_executor import TsimHybridExecutor
     logger.info("Hybrid executor loaded")
@@ -252,6 +271,9 @@ from handlers.tsim_progress_handler import TsimProgressHandler
 from handlers.tsim_progress_stream_handler import TsimProgressStreamHandler
 from handlers.tsim_services_config_handler import TsimServicesConfigHandler
 from handlers.tsim_cleanup_handler import TsimCleanupHandler
+from handlers.tsim_queue_admin_handler import TsimQueueAdminHandler
+from handlers.tsim_job_details_handler import TsimJobDetailsHandler
+from handlers.tsim_admin_queue_stream_handler import TsimAdminQueueStreamHandler
 logger.info("All handler modules loaded")
 
 # Script modules are loaded on-demand, not preloaded

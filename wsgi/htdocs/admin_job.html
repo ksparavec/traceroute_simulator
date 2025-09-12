@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>TSIM Job Details</title>
+  <link rel="stylesheet" href="/css/style.css">
+  <style>
+    .section { margin-bottom: 20px; }
+    pre, #audit {
+      background: #f8f9fa;
+      border: 1px solid #e0e0e0;
+      padding: 10px;
+      border-radius: 4px;
+      max-height: 400px;
+      overflow: auto;
+      white-space: pre-wrap;      /* wrap long lines */
+      word-wrap: break-word;      /* break long words */
+      overflow-wrap: anywhere;    /* allow breaks anywhere if needed */
+    }
+    .kv td { padding: 4px 8px; }
+    .muted { color: #666; font-size: 0.95em; }
+    .logline { display: block; white-space: pre-wrap; font-family: monospace; padding: 1px 4px; }
+    .logline.alt { background: #e0e0e0; }
+  </style>
+  <script>
+    function q(k){ return new URLSearchParams(window.location.search).get(k); }
+    function esc(s){ return (s||'').toString().replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+    function fmtTime(ts){
+      if (ts == null || ts === '') return '';
+      let n = Number(ts);
+      if (isNaN(n)) return '';
+      if (n > 1e12) n = Math.floor(n/1000);
+      const d = new Date(n*1000);
+      const pad = v => String(v).padStart(2,'0');
+      return `${pad(d.getDate())}.${pad(d.getMonth()+1)}.${d.getFullYear()}. ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+    }
+    async function load(){
+      const id = q('id');
+      if (!id){ document.body.innerHTML = 'Missing run id'; return; }
+      const res = await fetch(`/admin-job?id=${encodeURIComponent(id)}`, { headers: { 'X-Requested-With':'XMLHttpRequest' } });
+      if (!res.ok){ document.body.innerHTML = 'Not found or unauthorized'; return; }
+      const data = await res.json();
+      document.getElementById('runId').textContent = data.run_id;
+      const meta = data.meta || {}; const prog = data.progress || {}; const derived = data.derived || {};
+      // Params
+      const p = meta.params || {};
+      document.getElementById('params').innerHTML = `
+        <table class=\"kv\">
+          <tr><td><b>Source IP:</b></td><td>${esc(p.source_ip||'')}</td></tr>
+          <tr><td><b>Destination IP:</b></td><td>${esc(p.dest_ip||'')}</td></tr>
+          <tr><td><b>Source Port(s):</b></td><td>${(()=>{ const ports = Array.isArray(derived.source_ports_used)?derived.source_ports_used:(derived.source_port_used?[derived.source_port_used]:[]); return esc((ports && ports.length? ports.join(', ') : (p.source_port||''))); })()}</td></tr>
+          <tr><td><b>Destination Port(s):</b></td><td>${esc((p.port_protocol_list||[]).map(x=>x.join('/')).join(', '))}</td></tr>
+          <tr><td><b>User:</b></td><td>${esc(meta.username||'')}</td></tr>
+          <tr><td><b>Created:</b></td><td>${esc(fmtTime(meta.created_at))}</td></tr>
+          <tr><td><b>Trace File:</b></td><td>${data.links && data.links.trace_file ? `<a href=\"${esc(data.links.trace_file)}\" target=\"_blank\">Open Trace File</a>` : '<span class=\"muted\">Not available</span>'}</td></tr>
+        </table>`;
+      // PDF header as clickable link
+      const pdfUrl = (prog.pdf_url || '').toString();
+      const pdfHeader = document.getElementById('pdfHeader');
+      const pdfDiv = document.getElementById('pdf');
+      if (pdfUrl){
+        pdfHeader.innerHTML = `<a href="${pdfUrl}" target="_blank">Open PDF Report</a>`;
+        pdfDiv.innerHTML = '';
+      } else {
+        pdfHeader.textContent = 'Result PDF';
+        pdfDiv.textContent = 'No PDF available';
+      }
+      // Logs
+      const logs = data.logs || {};
+      if (logs['audit.log']) {
+        const auditEl = document.getElementById('audit');
+        auditEl.innerHTML = '';
+        const lines = String(logs['audit.log']).split('\n');
+        lines.forEach((line, idx) => {
+          if (line === '' && idx === lines.length-1) return; // skip last empty
+          const div = document.createElement('div');
+          div.className = 'logline' + (idx % 2 === 1 ? ' alt' : '');
+          div.textContent = line;
+          auditEl.appendChild(div);
+        });
+      }
+      if (logs['timing.json']) document.getElementById('timingjson').textContent = JSON.stringify(logs['timing.json'], null, 2);
+    }
+    window.addEventListener('DOMContentLoaded', load);
+  </script>
+</head>
+<body>
+  <div class="container">
+    <header><h1>Job Details: <span id="runId"></span></h1></header>
+    <div class="section"><h2>Input</h2><div id="params"></div></div>
+    <div class="section"><h2 id="pdfHeader">Result PDF</h2><div id="pdf"></div></div>
+    <div class="section"><h2>Audit Log</h2><pre id="audit"></pre></div>
+    <div class="section"><h2>Timing JSON</h2><pre id="timingjson"></pre></div>
+  </div>
+</body>
+</html>

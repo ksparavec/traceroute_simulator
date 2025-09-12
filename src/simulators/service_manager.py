@@ -777,12 +777,22 @@ try:
     sock.settimeout({timeout})
     {connect_code}
     {send_recv_code}
+    # Determine local (ephemeral) port actually used
+    try:
+        local_port = sock.getsockname()[1]
+    except Exception:
+        local_port = None
     
     # Close connection
     sock.close()
     
     # Print response to stdout
-    print(response, end='')
+    if local_port is not None:
+        # Print response plus marker with local port on a new line
+        print(str(response), end='')
+        print("\nLOCAL_PORT:" + str(local_port), end='')
+    else:
+        print(str(response), end='')
     sys.exit(0)
     
 except socket.timeout:
@@ -856,8 +866,10 @@ except Exception as e:
                 else:
                     raise ServiceConnectionError(dest_ip, port, protocol, result.stderr.strip())
             
-            # Success: check if message is in response
-            if message in response:
+            # Success: check indicators
+            # 1) Expected message contained
+            # 2) Our LOCAL_PORT marker present (means connection and send/recv worked)
+            if message in response or ('LOCAL_PORT:' in response):
                 return True, response.strip()
             
             # If we got here, we connected but didn't get expected response

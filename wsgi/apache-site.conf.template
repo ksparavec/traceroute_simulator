@@ -110,7 +110,7 @@ WSGISocketPrefix /var/run/wsgi
     
     # Mount the WSGI application only for API endpoints
     # Static files (.html, .css, .js) are served directly by Apache
-    WSGIScriptAliasMatch "^/(login|logout|main|pdf|progress|progress-stream|services-config|cleanup)$" ${TSIM_WEB_ROOT}/app.wsgi
+    WSGIScriptAliasMatch "^/(login|logout|main|pdf|progress|progress-stream|services-config|cleanup|admin-queue|admin-job|admin-queue-stream)$" ${TSIM_WEB_ROOT}/app.wsgi
     
     # Allow access to WSGI directory
     <Directory ${TSIM_WEB_ROOT}>

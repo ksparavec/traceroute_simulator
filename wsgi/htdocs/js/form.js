@@ -158,7 +158,7 @@ window.addEventListener('DOMContentLoaded', () => {
                 setVisible(dst, true); setDisabled(dst, false);
                 if (traceBtn) traceBtn.style.display = 'none';
                 // Ensure no leftover trace data is submitted in prod
-                sessionStorage.removeItem('user_trace_data');
+                localStorage.removeItem('user_trace_data');
                 if (userTraceHidden) userTraceHidden.value = '';
             }
 
@@ -181,8 +181,19 @@ window.addEventListener('DOMContentLoaded', () => {
 
             // Restore user trace data in test mode
             if (TSIM_MODE === 'test') {
-                const savedTrace = sessionStorage.getItem('user_trace_data');
+                const savedTrace = localStorage.getItem('user_trace_data');
                 if (savedTrace && userTraceHidden) userTraceHidden.value = savedTrace;
+            }
+        })
+        .catch(() => {});
+
+    // Show Queue Admin link for admin users
+    fetch('/login')
+        .then(r => r.json())
+        .then(info => {
+            if (info && info.logged_in && (info.role === 'admin' || info.role === 'administrator')) {
+                const link = document.getElementById('queueAdminLink');
+                if (link) link.style.display = 'inline-block';
             }
         })
         .catch(() => {});
@@ -234,7 +245,7 @@ window.addEventListener('DOMContentLoaded', () => {
 
         // Enforce mode-specific requirements
         if (TSIM_MODE === 'test') {
-            const traceData = sessionStorage.getItem('user_trace_data') || '';
+            const traceData = localStorage.getItem('user_trace_data') || '';
             if (!traceData.trim()) {
                 e.preventDefault();
                 showError('Trace File Input is required in test mode.');
@@ -284,7 +295,7 @@ window.addEventListener('DOMContentLoaded', () => {
 window.openTraceFileInput = function() {
     const modal = document.getElementById('traceModal');
     if (modal) {
-        const saved = sessionStorage.getItem('user_trace_data');
+        const saved = localStorage.getItem('user_trace_data');
         if (saved) document.getElementById('traceJsonInput').value = saved;
         modal.style.display = 'block';
     }
@@ -300,7 +311,7 @@ window.clearTraceInput = function() {
     const err = document.getElementById('jsonValidationError');
     if (ta) ta.value = '';
     if (err) err.style.display = 'none';
-    sessionStorage.removeItem('user_trace_data');
+    localStorage.removeItem('user_trace_data');
     const hidden = document.getElementById('user_trace_data');
     if (hidden) hidden.value = '';
 };
@@ -315,7 +326,7 @@ window.validateAndSaveTrace = function() {
     }
     try {
         JSON.parse(val);
-        sessionStorage.setItem('user_trace_data', val);
+        localStorage.setItem('user_trace_data', val);
         const hidden = document.getElementById('user_trace_data');
         if (hidden) hidden.value = val;
         if (err) err.style.display = 'none';

@@ -32,7 +32,7 @@ class TsimLockManagerService:
         # Ensure lock directory exists
         try:
             self.lock_dir.mkdir(parents=True, exist_ok=True, mode=0o755)
-            self.logger.info(f"Using lock directory: {self.lock_dir}")
+            self.logger.debug(f"Using lock directory: {self.lock_dir}")
         except Exception as e:
             self.logger.error(f"Failed to create lock directory: {e}")
             # Use config-based fallback
@@ -46,6 +46,8 @@ class TsimLockManagerService:
         
         # File-based locks for process synchronization
         self.file_locks = {}
+        # Optional legacy lock FDs (for network_test compatibility)
+        self.legacy_file_locks = {}
     
     def acquire_lock(self, lock_name: str, timeout: float = 60.0, 
                     retry_interval: float = 0.5) -> bool:
@@ -73,7 +75,7 @@ class TsimLockManagerService:
         # Now try file-based lock for inter-process synchronization
         lock_file = self.lock_dir / f"{lock_name}.lock"
         start_time = time.time()
-        
+
         while time.time() - start_time < timeout:
             try:
                 # Open or create lock file
@@ -89,10 +91,33 @@ class TsimLockManagerService:
                 
                 # Store file descriptor
                 self.file_locks[lock_name] = fd
-                
-                self.logger.info(f"Acquired lock: {lock_name}")
+
+                # Also acquire legacy global lock for network_test to ensure cross-tool serialization
+                if lock_name == 'network_test':
+                    legacy_path = '/dev/shm/tsim/network_test.lock'
+                    try:
+                        lfd = os.open(legacy_path, os.O_CREAT | os.O_WRONLY, 0o664)
+                        fcntl.flock(lfd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                        os.write(lfd, f"{os.getpid()}\n".encode())
+                        os.fsync(lfd)
+                        self.legacy_file_locks[lock_name] = lfd
+                    except BlockingIOError:
+                        # Release primary lock and retry after interval to avoid split-brain
+                        try:
+                            fcntl.flock(fd, fcntl.LOCK_UN)
+                            os.close(fd)
+                            del self.file_locks[lock_name]
+                        except Exception:
+                            pass
+                        time.sleep(retry_interval)
+                        continue
+                    except Exception as _e:
+                        # If legacy lock fails for other reasons, log and proceed with primary
+                        self.logger.debug(f"Legacy lock acquisition issue: {_e}")
+
+                self.logger.debug(f"Acquired lock: {lock_name}")
                 return True
-                
+
             except BlockingIOError:
                 # Lock is held by another process
                 os.close(fd)
@@ -106,7 +131,10 @@ class TsimLockManagerService:
         
         # Timeout reached
         thread_lock.release()
-        self.logger.warning(f"Timeout acquiring lock: {lock_name}")
+        if lock_name == 'scheduler_leader':
+            self.logger.debug(f"Timeout acquiring lock: {lock_name}")
+        else:
+            self.logger.warning(f"Timeout acquiring lock: {lock_name}")
         return False
     
     def release_lock(self, lock_name: str) -> bool:
@@ -135,10 +163,20 @@ class TsimLockManagerService:
                 except:
                     pass  # Non-critical
                 
-                self.logger.info(f"Released lock: {lock_name}")
+                self.logger.debug(f"Released lock: {lock_name}")
             except Exception as e:
                 self.logger.error(f"Error releasing file lock {lock_name}: {e}")
                 success = False
+
+        # Release legacy lock if held
+        if lock_name in self.legacy_file_locks:
+            lfd = self.legacy_file_locks[lock_name]
+            try:
+                fcntl.flock(lfd, fcntl.LOCK_UN)
+                os.close(lfd)
+                del self.legacy_file_locks[lock_name]
+            except Exception as e:
+                self.logger.warning(f"Error releasing legacy lock {lock_name}: {e}")
         
         # Release thread lock
         with self.thread_lock_mutex:

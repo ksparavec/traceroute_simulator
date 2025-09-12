@@ -51,7 +51,7 @@ class TsimProgressTracker:
             'PDF_GENERATION', 'PDF_COMPLETE', 'COMPLETE'
         ]
         
-        self.logger.info("In-memory progress tracker initialized")
+        self.logger.debug("In-memory progress tracker initialized")
     
     def create_run_directory(self, run_id: str) -> Path:
         """Create run directory and initialize progress
@@ -99,11 +99,27 @@ class TsimProgressTracker:
             details: Optional details dictionary
         """
         timestamp = time.time()
+        # Sanitize message and any string details to ASCII to avoid non-rendering glyphs
+        def _sanitize_text(s: str) -> str:
+            try:
+                # Keep printable ASCII range only
+                return ''.join(ch for ch in s if 32 <= ord(ch) <= 126)
+            except Exception:
+                return s
+        if isinstance(message, str):
+            message = _sanitize_text(message)
+        if isinstance(details, dict):
+            try:
+                for k, v in list(details.items()):
+                    if isinstance(v, str):
+                        details[k] = _sanitize_text(v)
+            except Exception:
+                pass
         
         # Update in-memory progress
         with self.lock:
             if run_id not in self.progress:
-                self.logger.warning(f"Run {run_id} not found in progress tracker")
+                self.logger.debug(f"Run {run_id} not found in progress tracker")
                 return
             
             progress = self.progress[run_id]
@@ -195,12 +211,15 @@ class TsimProgressTracker:
             if run_id in self.progress:
                 # Convert file path to URL path
                 if '/dev/shm/tsim/runs/' in pdf_path:
-                    # Extract relative path from run directory
-                    parts = pdf_path.split('/dev/shm/tsim/runs/')
-                    if len(parts) > 1:
-                        pdf_url = f"/pdf?file={parts[1]}"
-                        self.progress[run_id]['pdf_url'] = pdf_url
-                        self.progress[run_id]['pdf_file'] = pdf_path
+                    # Extract run_id from path and point to /pdf?id=<run_id>
+                    try:
+                        rel = pdf_path.split('/dev/shm/tsim/runs/')[1]
+                        rid = rel.split('/')[0]
+                        pdf_url = f"/pdf?id={rid}"
+                    except Exception:
+                        pdf_url = f"/pdf?id={run_id}"
+                    self.progress[run_id]['pdf_url'] = pdf_url
+                    self.progress[run_id]['pdf_file'] = pdf_path
     
     def get_active_run_for_user(self, username: str) -> Optional[str]:
         """Get active run ID for a user
@@ -213,17 +232,37 @@ class TsimProgressTracker:
         """
         with self.lock:
             run_id = self.active_runs.get(username)
-            if run_id and run_id in self.progress:
-                # Check if the run is still active (not complete)
-                if not self.progress[run_id].get('complete', False):
-                    return run_id
-                else:
-                    # Clean up completed run
+            if not run_id:
+                return None
+
+            # If we have in-memory progress and it's incomplete, cross-check file progress
+            mem = self.progress.get(run_id)
+            if mem and not mem.get('complete', False):
+                file_prog = self._read_file_progress(run_id)
+                if file_prog and file_prog.get('complete', False):
+                    # Update memory to reflect completion and clear active mapping
+                    try:
+                        self.progress[run_id]['complete'] = True
+                        self.progress[run_id]['overall_progress'] = 100
+                    except Exception:
+                        pass
                     del self.active_runs[username]
-            elif run_id:
-                # Clean up stale entry
+                    return None
+                # Not complete according to file either -> still active
+                return run_id
+
+            # If memory indicates complete or we don't have memory state, consult file to decide
+            file_prog = self._read_file_progress(run_id)
+            if file_prog and not file_prog.get('complete', False):
+                # Still active based on file progress
+                return run_id
+
+            # Otherwise, consider it done/stale and clear mapping
+            try:
                 del self.active_runs[username]
-        return None
+            except Exception:
+                pass
+            return None
     
     def set_active_run_for_user(self, username: str, run_id: str):
         """Set active run ID for a user
@@ -263,11 +302,13 @@ class TsimProgressTracker:
                 progress['overall_progress'] = 100
                 if pdf_file:
                     progress['pdf_file'] = str(pdf_file)
-                    # Set PDF URL directly without calling set_pdf_url (avoid deadlock)
-                    if '/dev/shm/tsim/runs/' in str(pdf_file):
-                        parts = str(pdf_file).split('/dev/shm/tsim/runs/')
-                        if len(parts) > 1:
-                            progress['pdf_url'] = f"/pdf?file={parts[1]}"
+                    # Set /pdf?id=<run_id> link directly
+                    try:
+                        rel = str(pdf_file).split('/dev/shm/tsim/runs/')[1]
+                        rid = rel.split('/')[0]
+                        progress['pdf_url'] = f"/pdf?id={rid}"
+                    except Exception:
+                        progress['pdf_url'] = f"/pdf?id={run_id}"
                 if error:
                     progress['error'] = error
                 
@@ -314,7 +355,7 @@ class TsimProgressTracker:
                 self.logger.debug(f"Removed old progress data for {run_id}")
         
         if to_remove:
-            self.logger.info(f"Cleaned up {len(to_remove)} old progress entries from memory")
+            self.logger.debug(f"Cleaned up {len(to_remove)} old progress entries from memory")
     
     def cleanup_old_runs(self, max_age_seconds: Optional[int] = None):
         """Clean up old run directories from disk
@@ -341,7 +382,7 @@ class TsimProgressTracker:
                     self.logger.warning(f"Error cleaning up {run_path}: {e}")
         
         if cleaned > 0:
-            self.logger.info(f"Cleaned up {cleaned} old run directories from disk")
+            self.logger.debug(f"Cleaned up {cleaned} old run directories from disk")
         
         # Also clean memory
         self.cleanup_memory(max_age_seconds)

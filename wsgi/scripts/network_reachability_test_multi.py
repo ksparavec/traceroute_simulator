@@ -104,6 +104,8 @@ def tsimsh_exec(command: str, capture_output: bool = False, verbose: int = 0) ->
         return None
 
 
+
+
 class MultiServiceTester:
     """Main class for multi-service testing."""
     
@@ -396,6 +398,17 @@ class MultiServiceTester:
             try:
                 service_data = json.loads(service_output)
                 result["connectivity_test"] = service_data
+                # Try to derive actual source port from tests
+                try:
+                    tests = service_data.get("tests", [])
+                    for t in tests:
+                        sp = t.get("source_port")
+                        if sp and sp != "ephemeral":
+                            result["source_port"] = sp
+                            break
+                except Exception:
+                    pass
+                # If still missing here, will remain 'ephemeral' in summary
             except:
                 result["connectivity_test"] = {"error": "Failed to parse service test output"}
         else:
@@ -668,6 +681,7 @@ class MultiServiceTester:
             
             # Phase 5: Generate individual result files in EXACT shell script format
             self.service_result_files = []
+            used_source_ports = []
             
             for i, (service_result, (port, protocol)) in enumerate(zip(all_results, self.services)):
                 # Build result in EXACT format that shell script produces via format_reachability_output.py
@@ -676,7 +690,7 @@ class MultiServiceTester:
                     "version": "1.0.0",
                     "summary": {
                         "source_ip": self.source_ip,
-                        "source_port": str(self.source_port) if self.source_port else "ephemeral",
+                        "source_port": (lambda v: str(v) if v not in (None, "", "ephemeral") else (str(self.source_port) if self.source_port else "ephemeral"))(service_result.get("source_port")),
                         "destination_ip": self.dest_ip,
                         "destination_port": str(port),
                         "protocol": protocol
@@ -739,6 +753,13 @@ class MultiServiceTester:
                     json.dump(formatted_result, f, indent=2)
                 
                 self.service_result_files.append(str(result_file))
+                # Track used source port if available
+                try:
+                    sp_used = formatted_result.get('summary', {}).get('source_port')
+                    if sp_used and sp_used != 'ephemeral' and sp_used not in used_source_ports:
+                        used_source_ports.append(sp_used)
+                except Exception:
+                    pass
                 self._log_progress(f"service_{i+1}_file_created", f"Created result file for {port}/{protocol}")
             
             # Save summary file for reference
@@ -748,7 +769,8 @@ class MultiServiceTester:
                 "destination_ip": self.dest_ip,
                 "services_tested": len(self.services),
                 "services_reachable": sum(1 for r in all_results if r.get("reachable", False)),
-                "result_files": self.service_result_files
+                "result_files": self.service_result_files,
+                "source_ports": used_source_ports
             }
             
             summary_file = self.output_dir / "summary.json"

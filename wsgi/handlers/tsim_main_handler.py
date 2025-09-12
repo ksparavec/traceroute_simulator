@@ -15,6 +15,7 @@ from services.tsim_validator_service import TsimValidatorService
 from services.tsim_port_parser_service import TsimPortParserService
 from services.tsim_executor import TsimExecutor
 from services.tsim_lock_manager_service import TsimLockManagerService
+from services.tsim_queue_service import TsimQueueService
 from services.tsim_timing_service import TsimTimingService
 from services.tsim_progress_tracker import TsimProgressTracker
 
@@ -23,7 +24,8 @@ class TsimMainHandler(TsimBaseHandler):
     """Handler for main test execution requests"""
     
     def __init__(self, config_service, session_manager, logger_service, 
-                 progress_tracker=None, hybrid_executor=None):
+                 progress_tracker=None, hybrid_executor=None, queue_service: TsimQueueService = None,
+                 lock_manager: TsimLockManagerService = None):
         """Initialize main handler
         
         Args:
@@ -37,13 +39,14 @@ class TsimMainHandler(TsimBaseHandler):
         self.config = config_service
         self.validator = TsimValidatorService()
         self.port_parser = TsimPortParserService()
-        self.lock_manager = TsimLockManagerService(config_service)
+        self.lock_manager = lock_manager or TsimLockManagerService(config_service)
         self.timing_service = TsimTimingService()
         
         # Use shared instances if provided, otherwise create new ones
         self.progress_tracker = progress_tracker or TsimProgressTracker(config_service)
+        self.queue_service = queue_service or TsimQueueService(config_service)
         
-        # Create executor and set hybrid executor
+        # Create executor and set hybrid executor (not used directly for immediate runs anymore)
         self.executor = TsimExecutor(config_service, self.lock_manager, 
                                     self.timing_service, self.progress_tracker)
         if hybrid_executor:
@@ -227,18 +230,8 @@ class TsimMainHandler(TsimBaseHandler):
         
         # At this point, user_trace_data is only non-None in test mode; already validated above
         
-        # Check if user already has a test running
+        # Allow multiple jobs per user; global queue will serialize execution
         username = session.get('username', 'unknown')
-        active_run = self.progress_tracker.get_active_run_for_user(username)
-        if active_run:
-            # Return the existing run instead of starting a new one
-            self.logger.info(f"User {username} already has active run {active_run}, redirecting")
-            return self.json_response(start_response, {
-                'success': True,
-                'run_id': active_run,
-                'message': 'Test already in progress',
-                'redirect': f'/progress.html?id={active_run}'
-            })
         
         # Generate run ID
         run_id = str(uuid.uuid4())
@@ -256,8 +249,7 @@ class TsimMainHandler(TsimBaseHandler):
         except Exception:
             pass
         
-        # Register this run as active for the user
-        self.progress_tracker.set_active_run_for_user(username, run_id)
+        # Do not register per-user active run; queuing handles concurrency globally
         
         # Log test execution
         client_ip = self.get_client_ip(environ)
@@ -274,47 +266,23 @@ class TsimMainHandler(TsimBaseHandler):
             }
         )
         
-        # Execute test directly (will use thread/process pools internally)
+        # Enqueue job instead of starting immediately
         try:
-            # Start overall timing
-            self.timing_service.start_timer(f"test_{run_id}")
-            self.progress_tracker.log_phase(run_id, 'START', 'Starting test execution')
-            
-            # Start execution in background thread to avoid blocking
-            import threading
-            def execute_in_background():
-                try:
-                    result = self.executor.execute(
-                        run_id, source_ip, dest_ip, source_port, port_protocol_list, user_trace_data
-                    )
-                    # Update progress tracker with final PDF if available
-                    if result and result.get('final_pdf'):
-                        self.progress_tracker.set_pdf_url(run_id, result['final_pdf'])
-                except Exception as e:
-                    self.logger.error(f"Background execution failed: {e}")
-                    self.progress_tracker.log_phase(run_id, 'ERROR', str(e))
-            
-            thread = threading.Thread(target=execute_in_background, daemon=True)
-            thread.start()
-            
-            # For immediate response, we don't wait for results
-            final_pdf = None
-            summary_data = {
+            # Prepare parameters for executor
+            params = {
+                'run_id': run_id,
                 'source_ip': source_ip,
                 'dest_ip': dest_ip,
-                'service_count': len(port_protocol_list),
-                'services': [
-                    {
-                        'name': f"{port}/{protocol}",
-                        'port': port,
-                        'protocol': protocol,
-                        'status': 'PENDING'
-                    }
-                    for port, protocol in port_protocol_list
-                ]
+                'source_port': source_port,
+                'port_protocol_list': port_protocol_list,
+                'user_trace_data': user_trace_data,
+                'run_dir': str(self.config.get('run_dir', '/dev/shm/tsim/runs'))
             }
-            
-            # For async execution, we don't have results yet
+
+            position = self.queue_service.enqueue(run_id, username, params)
+            # Log queued state to progress
+            self.progress_tracker.log_phase(run_id, 'QUEUED', f'In queue (position {position})')
+
             # Generate shareable link with HMAC token for progress monitoring
             secret_key = self.config.get('secret_key', 'default-secret-key')
             token = hmac.new(
@@ -322,79 +290,59 @@ class TsimMainHandler(TsimBaseHandler):
                 msg=run_id.encode(),
                 digestmod=hashlib.sha256
             ).hexdigest()
-            
-            # Build share URL for progress page
             base_url = environ.get('HTTP_HOST', 'localhost')
             share_link = f"https://{base_url}/progress.html?id={run_id}&token={token}"
-            
+
             # Save initial test info to session
+            summary_data = {
+                'source_ip': source_ip,
+                'dest_ip': dest_ip,
+                'service_count': len(port_protocol_list),
+                'services': [
+                    {'name': f"{port}/{protocol}", 'port': port, 'protocol': protocol, 'status': 'PENDING'}
+                    for port, protocol in port_protocol_list
+                ]
+            }
             test_result = {
-                'status': 'running',
+                'status': 'queued',
                 'run_id': run_id,
                 'summary': summary_data,
                 'share_link': share_link,
-                'token': token
+                'token': token,
+                'queue_position': position
             }
-            
             session_id = self.get_session_id(environ)
             self.session_manager.save_test_result(session_id, run_id, test_result)
-            
-            # Log that test started
-            self.logger.info(
-                f"Test {run_id} started in background mode"
-            )
-            
-            # Check if this is an AJAX request
+
+            # Response (AJAX or redirect) with queued status
             is_ajax = environ.get('HTTP_X_REQUESTED_WITH', '').lower() == 'xmlhttprequest'
             accept_header = environ.get('HTTP_ACCEPT', '')
             content_type = environ.get('CONTENT_TYPE', '')
-            
-            # If Content-Type is application/json, it's likely AJAX
-            # If it's application/x-www-form-urlencoded, it's likely a regular form submission
             wants_json = 'application/json' in accept_header or 'application/json' in content_type
-            
+
             if is_ajax or wants_json:
-                # Return JSON for AJAX requests
                 return self.json_response(start_response, {
                     'success': True,
                     'run_id': run_id,
-                    'message': 'Test started successfully',
-                    'status': 'running',
+                    'message': f'Your test has been queued at position {position}',
+                    'status': 'queued',
+                    'position': position,
                     'redirect': f'/progress.html?id={run_id}',
                     'share_link': share_link,
                     'token': token
                 })
             else:
-                # Perform HTTP redirect for regular form submission to progress page
                 redirect_url = f'/progress.html?id={run_id}'
                 response_headers = [
                     ('Location', redirect_url),
                     ('Cache-Control', 'no-cache, no-store, must-revalidate')
                 ]
-                
                 start_response('302 Found', response_headers)
                 return [b'']
-            
+
         except Exception as e:
-            self.logger.error(f"Test execution failed for {run_id}: {e}", exc_info=True)
-            
-            # Log failure
-            self.logger_service.log_audit(
-                'test_failed',
-                session.get('username'),
-                client_ip,
-                False,
-                {
-                    'run_id': run_id,
-                    'error': str(e)
-                }
-            )
-            
-            return self.error_response(
-                start_response,
-                f'Test execution failed: {str(e)}',
-                '500 Internal Server Error'
-            )
+            self.logger.error(f"Queueing failed for {run_id}: {e}", exc_info=True)
+            return self.error_response(start_response, f'Queueing failed: {str(e)}', '500 Internal Server Error')
     
     def _extract_service_from_filename(self, filename):
         """Extract service name from result filename

@@ -283,9 +283,8 @@ class ServiceTester:
         for i in range(num_tests):
             src_namespace = src_namespaces[i]
             dest_namespace = dest_namespaces[i] if dest_namespaces[i] else "unknown"
-            # Get source port if not already bound
+            # Default source port before test
             if not src_port:
-                # Use ephemeral port (let system assign)
                 src_port_used = "ephemeral"
             else:
                 src_port_used = src_port
@@ -299,6 +298,14 @@ class ServiceTester:
                     message,
                     timeout
                 )
+                # Try to parse actual local port from response marker
+                try:
+                    import re as _re
+                    m = _re.search(r"LOCAL_PORT:(\d+)", response or "")
+                    if m:
+                        src_port_used = int(m.group(1))
+                except Exception:
+                    pass
                 
                 # Determine the router used for this path
                 via_router = self._get_next_hop_router(src_namespace, dest_ip)
@@ -335,6 +342,14 @@ class ServiceTester:
                 via_router = self._get_next_hop_router(src_namespace, dest_ip)
                 incoming_iface, outgoing_iface = self._get_router_interfaces(src_namespace, dest_namespace)
                 
+                # Even on error, try to parse local port
+                try:
+                    import re as _re
+                    m = _re.search(r"LOCAL_PORT:(\d+)", str(e))
+                    if m:
+                        src_port_used = int(m.group(1))
+                except Exception:
+                    pass
                 result = {
                     'source_host': src_namespace,
                     'source_ip': src_ip,

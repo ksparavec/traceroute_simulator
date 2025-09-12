@@ -15,7 +15,7 @@ from .tsim_base_handler import TsimBaseHandler
 class TsimProgressStreamHandler(TsimBaseHandler):
     """Handler for SSE progress stream requests"""
     
-    def __init__(self, config_service, session_manager, logger_service, progress_tracker=None):
+    def __init__(self, config_service, session_manager, logger_service, progress_tracker=None, queue_service=None):
         """Initialize progress stream handler
         
         Args:
@@ -34,6 +34,15 @@ class TsimProgressStreamHandler(TsimBaseHandler):
         else:
             from services.tsim_progress_tracker import TsimProgressTracker
             self.progress_tracker = TsimProgressTracker(config_service)
+        # Optional queue service for live queue position
+        if queue_service is not None:
+            self.queue_service = queue_service
+        else:
+            try:
+                from services.tsim_queue_service import TsimQueueService
+                self.queue_service = TsimQueueService(config_service)
+            except Exception:
+                self.queue_service = None
     
     def handle(self, environ: Dict[str, Any], start_response) -> Generator[bytes, None, None]:
         """Handle SSE progress stream request
@@ -101,12 +110,18 @@ class TsimProgressStreamHandler(TsimBaseHandler):
                             expected_steps = progress_data.get('expected_steps') or len(current_phases) or 1
                             percent = int(progress_data.get('overall_progress', 0))
                             
-                            # Check for completion or error
-                            for phase in current_phases:
-                                if phase.get('phase') == 'COMPLETE':
-                                    is_complete = True
-                                elif phase.get('phase') == 'ERROR':
-                                    has_error = True
+                            # Prefer explicit flags for completion/success if present
+                            is_complete = bool(progress_data.get('complete', False))
+                            has_error = (progress_data.get('success') is False)
+                            
+                            # Fallback to phases to infer state
+                            if not is_complete or not has_error:
+                                for phase in current_phases:
+                                    p = phase.get('phase')
+                                    if p in ('COMPLETE', 'FAILED'):
+                                        is_complete = True
+                                    if p in ('ERROR', 'FAILED'):
+                                        has_error = True
                         except json.JSONDecodeError:
                             self.logger.error(f"Failed to parse progress.json for {run_id}")
                             continue
@@ -131,6 +146,14 @@ class TsimProgressStreamHandler(TsimBaseHandler):
                             })
                             
                             # Send SSE event for this phase update (matching CGI format)
+                            # Live queue position if waiting
+                            queue_position = None
+                            if self.queue_service and not is_complete and phase_name in ('QUEUED', 'WAITING_FOR_ENVIRONMENT'):
+                                try:
+                                    queue_position = self.queue_service.get_position(run_id)
+                                except Exception:
+                                    queue_position = None
+
                             data = {
                                 'phase': phase_name,
                                 'details': phase.get('message', phase.get('details', '')),
@@ -139,7 +162,10 @@ class TsimProgressStreamHandler(TsimBaseHandler):
                                 'complete': is_complete,
                                 'expected_steps': expected_steps,
                                 'percent': percent,
-                                'redirect_url': f'/pdf_viewer_final.html?id={run_id}' if is_complete else None
+                                'queue_position': queue_position,
+                                'success': progress_data.get('success'),
+                                'error': progress_data.get('error'),
+                                'redirect_url': f'/pdf_viewer_final.html?id={run_id}' if (is_complete and not has_error) else None
                             }
                             
                             # Use CGI format: "data: json\n\n"
@@ -150,6 +176,55 @@ class TsimProgressStreamHandler(TsimBaseHandler):
                         if is_complete:
                             self.logger.info(f"Progress stream completed for run_id {run_id}")
                             break
+                    elif is_complete:
+                        # Run is complete but no new phases (e.g., race during cancellation) -> emit final state once
+                        last = current_phases[-1] if current_phases else {}
+                        phase_name = last.get('phase', 'UNKNOWN')
+                        if phase_name.startswith('MULTI_REACHABILITY_'):
+                            phase_name = phase_name.replace('MULTI_REACHABILITY_', '')
+                        elif phase_name.startswith('REACHABILITY_'):
+                            phase_name = phase_name.replace('REACHABILITY_', '')
+                        data = {
+                            'phase': phase_name,
+                            'details': last.get('message', last.get('details', '')),
+                            'duration': last.get('duration', 0),
+                            'all_phases': all_phases,
+                            'complete': True,
+                            'expected_steps': expected_steps,
+                            'percent': percent,
+                            'queue_position': None,
+                            'success': progress_data.get('success'),
+                            'error': progress_data.get('error'),
+                            'redirect_url': f'/pdf_viewer_final.html?id={run_id}' if not has_error else None
+                        }
+                        event = f"data: {json.dumps(data)}\n\n"
+                        yield event.encode('utf-8')
+                        self.logger.info(f"Final completion event sent for run_id {run_id}")
+                        break
+                    else:
+                        # Emit a lightweight snapshot periodically to refresh UI (e.g., queue position cleared after cancel)
+                        if retry_count % 2 == 0:  # every ~1s (loop is 0.5s)
+                            last = current_phases[-1] if current_phases else {}
+                            phase_name = last.get('phase', 'UNKNOWN')
+                            if phase_name.startswith('MULTI_REACHABILITY_'):
+                                phase_name = phase_name.replace('MULTI_REACHABILITY_', '')
+                            elif phase_name.startswith('REACHABILITY_'):
+                                phase_name = phase_name.replace('REACHABILITY_', '')
+                            snapshot = {
+                                'phase': phase_name,
+                                'details': last.get('message', last.get('details', '')),
+                                'duration': last.get('duration', 0),
+                                'all_phases': all_phases,
+                                'complete': is_complete,
+                                'expected_steps': expected_steps,
+                                'percent': percent,
+                                'queue_position': None if is_complete else None,
+                                'success': progress_data.get('success'),
+                                'error': progress_data.get('error'),
+                                'redirect_url': None
+                            }
+                            event = f"data: {json.dumps(snapshot)}\n\n"
+                            yield event.encode('utf-8')
                 else:
                     # No progress file yet - send waiting event
                     if retry_count % 10 == 0:  # Every 5 seconds

@@ -80,6 +80,8 @@
             // Main test phases
             'START': 'Starting test',
             'parse_args': 'Validating parameters',
+            'QUEUED': 'In queue',
+            'WAITING_FOR_ENVIRONMENT': 'Waiting for simulator to be available',
             'TRACE_COMPLETE': 'Trace execution completed',
             'SERVICE_TESTS': 'Testing services',
             'PDF_GENERATION': 'Generating PDF report',
@@ -128,7 +130,8 @@
             // Generic phases
             'COMPLETE': 'Test complete!',
             'ERROR': 'Error occurred',
-            'FAIL': 'Test failed'
+            'FAIL': 'Test failed',
+            'FAILED': 'Cancelled'
         };
         
         // For dynamic phases like host_add_source_1, service_22_tcp_started, etc.
@@ -177,6 +180,7 @@
                 const data = JSON.parse(event.data);
                 
                 // Process all phases that have been seen
+                let newPhasesProcessed = false;
                 if (data.all_phases && data.all_phases.length > 0) {
                     data.all_phases.forEach(phaseInfo => {
                         const phase = phaseInfo.phase;
@@ -195,11 +199,17 @@
                             
                             // Get clean phase name for progress bar
                             let cleanPhaseName = getPhaseStatus(phase);
+                            cleanPhaseName = sanitizeAscii(cleanPhaseName);
                             
                             // Create detailed message for log window
                             let logMessage = cleanPhaseName;
                             if (details && details.trim()) {
-                                logMessage += `: ${details}`;
+                                logMessage += `: ${sanitizeAscii(details)}`;
+                            }
+                            // Append live queue position if present (QUEUED only)
+                            if (!data.complete && phase === 'QUEUED' && typeof data.queue_position === 'number' && data.queue_position > 0) {
+                                logMessage = `In queue position ${data.queue_position}`;
+                                cleanPhaseName = `In queue position ${data.queue_position}`;
                             }
                             
                             // Update progress bar with clean name only
@@ -216,29 +226,46 @@
                             
                             // Add full details to log window
                             addProgressLogEntry(logMessage, logType);
+                            
+                            // If cancelled/failed, inform user and stop
+                            if (phase === 'FAILED' || phase === 'ERROR') {
+                                try { eventSource.close(); } catch (e) {}
+                                const msg = details || 'Your job was cancelled.';
+                                showCancelledModal(sanitizeAscii(msg));
+                            }
+                            newPhasesProcessed = true;
                         }
                     });
+                }
+                // If no new phases were processed but server sent a snapshot with a phase, update progress text
+                if (!newPhasesProcessed && data.phase) {
+                    let cleanPhaseName = sanitizeAscii(getPhaseStatus(data.phase));
+                    if (!data.complete && data.phase === 'QUEUED' && typeof data.queue_position === 'number' && data.queue_position > 0) {
+                        cleanPhaseName = `In queue position ${data.queue_position}`;
+                    }
+                    updateProgress(currentProgress, cleanPhaseName);
                 }
                 
                 // Handle completion
                 if (data.complete) {
-                    lastMilestoneMessage = 'Test complete!';
-                    updateProgress(100, lastMilestoneMessage);
-                    addProgressLogEntry('Test completed successfully!', 'success');
-                    
-                    // Close EventSource
-                    eventSource.close();
-                    
-                    // Store redirect URL and show button
-                    if (data.redirect_url) {
-                        pdfRedirectUrl = data.redirect_url;
-                        const button = document.getElementById('showPdfButton');
-                        button.style.display = 'inline-block';
-                        button.disabled = false;
-                        button.onclick = function() {
-                            window.location.href = pdfRedirectUrl;
-                        };
-                        addProgressLogEntry('PDF report is ready. Click the button below to view it.', 'success');
+                    // If job failed/cancelled, inform the user and return to form
+                    if (data.success === false || (data.phase && (data.phase === 'FAILED' || data.phase === 'ERROR'))) {
+                        try { eventSource.close(); } catch (e) {}
+                        const msg = sanitizeAscii(data.error || 'Your job was cancelled.');
+                        showCancelledModal(msg);
+                    } else {
+                        lastMilestoneMessage = 'Test complete!';
+                        updateProgress(100, lastMilestoneMessage);
+                        addProgressLogEntry('Test completed successfully!', 'success');
+                        try { eventSource.close(); } catch (e) {}
+                        if (data.redirect_url) {
+                            pdfRedirectUrl = data.redirect_url;
+                            const button = document.getElementById('showPdfButton');
+                            button.style.display = 'inline-block';
+                            button.disabled = false;
+                            button.onclick = function() { window.location.href = pdfRedirectUrl; };
+                            addProgressLogEntry('PDF report is ready. Click the button below to view it.', 'success');
+                        }
                     }
                 }
             } catch (error) {
@@ -272,9 +299,52 @@
     
     // Initial update
     updateProgress(0, 'Initializing...');
+    // Sanitize to printable ASCII for UI
+    function sanitizeAscii(s) {
+        if (!s) return '';
+        return s.replace(/[^\x20-\x7E]/g, '');
+    }
     
     // Start SSE stream after a short delay to let the test start
     setTimeout(startProgressStream, 1000);
+
+    function showCancelledModal(message) {
+        const modal = document.createElement('div');
+        modal.className = 'modal';
+        modal.style.display = 'block';
+        modal.innerHTML = `
+            <div class="modal-content">
+              <div class="modal-header">
+                <h2>Job Cancelled</h2>
+              </div>
+              <div class="modal-body">
+                <p>${message}</p>
+              </div>
+              <div class="modal-footer">
+                <button type="button" onclick="window.location.href='/form.html'">OK</button>
+              </div>
+            </div>`;
+        document.body.appendChild(modal);
+    }
+
+    function showCancelledModal(message) {
+        const modal = document.createElement('div');
+        modal.className = 'modal';
+        modal.style.display = 'block';
+        modal.innerHTML = `
+            <div class="modal-content">
+              <div class="modal-header">
+                <h2>Job Cancelled</h2>
+              </div>
+              <div class="modal-body">
+                <p>${message}</p>
+              </div>
+              <div class="modal-footer">
+                <button type="button" onclick="window.location.href='/form.html'">OK</button>
+              </div>
+            </div>`;
+        document.body.appendChild(modal);
+    }
     </script>
 </body>
 </html>

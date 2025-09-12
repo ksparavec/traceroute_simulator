@@ -10,6 +10,10 @@ TESTS_DIR := tests
 ROUTING_FACTS_DIR := $(TRACEROUTE_SIMULATOR_FACTS)
 ANSIBLE_DIR := ansible
 
+# Global TSIM deployment parameters (override via environment or make vars)
+# Default TSIM_LOG_DIR is /var/log/tsim
+TSIM_LOG_DIR ?= /var/log/tsim
+
 # Build configuration
 CC := gcc
 CFLAGS := -std=c99 -Wall -Wextra -O2 -D_GNU_SOURCE
@@ -1596,12 +1600,12 @@ install-wsgi:
 	@mkdir -p "$(TSIM_WEB_ROOT)"
 	@mkdir -p "/opt/tsim/htdocs"
 	@if [ "$$(id -u)" = "0" ]; then \
-		mkdir -p "/var/log/tsim"; \
-		chown $(WEB_USER):$(WEB_GROUP) "/var/log/tsim"; \
-		chmod 755 "/var/log/tsim"; \
-		echo "Created log directory: /var/log/tsim"; \
+		mkdir -p "$(TSIM_LOG_DIR)"; \
+		chown $(WEB_USER):$(WEB_GROUP) "$(TSIM_LOG_DIR)"; \
+		chmod 755 "$(TSIM_LOG_DIR)"; \
+		echo "Created log directory: $(TSIM_LOG_DIR)"; \
 	else \
-		echo "Warning: Cannot create /var/log/tsim without root privileges"; \
+		echo "Warning: Cannot create $(TSIM_LOG_DIR) without root privileges"; \
 	fi
 	
 	# Copy WSGI application files (excluding htdocs, documentation, templates, and config.json)
@@ -1688,15 +1692,15 @@ install-wsgi:
 	@echo "   - tsimsh_path: Path to tsimsh executable"
 	@echo "   - tsim_raw_facts: Path to raw facts directory"
 	@echo "   - data_dir: Data directory (e.g., /dev/shm/tsim)"
-	@echo "   - log_dir: Log directory (e.g., /var/log/tsim)"
+	@echo "   - log_dir: Log directory (e.g., $(TSIM_LOG_DIR))"
 	@echo "   - session_dir: Session directory (e.g., /dev/shm/tsim/sessions)"
 	@echo ""
 	@echo "2. Verify directories:"
 	@if [ "$$(id -u)" != "0" ]; then \
-		echo "   - Log directory: sudo mkdir -p /var/log/tsim"; \
-		echo "   - Set permissions: sudo chown $(WEB_USER):$(WEB_GROUP) /var/log/tsim"; \
+		echo "   - Log directory: sudo mkdir -p $(TSIM_LOG_DIR)"; \
+		echo "   - Set permissions: sudo chown $(WEB_USER):$(WEB_GROUP) $(TSIM_LOG_DIR)"; \
 	else \
-		echo "   - Log directory already created: /var/log/tsim"; \
+		echo "   - Log directory already created: $(TSIM_LOG_DIR)"; \
 	fi
 	@echo "   Note: /dev/shm/tsim will be created automatically by tsimsh with proper permissions"
 	@echo ""

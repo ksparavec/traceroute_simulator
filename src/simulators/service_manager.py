@@ -747,12 +747,15 @@ class ServiceClient:
     
     def _create_python_test_script(self, protocol: str, dest_ip: str, port: int, message: str, timeout: int) -> str:
         """Create Python script for testing services (TCP or UDP)."""
+        # Escape message for safe inclusion in Python string
+        escaped_message = message.replace('\\', '\\\\').replace("'", "\\'")
+        
         if protocol.upper() == "TCP":
             socket_type = "socket.SOCK_STREAM"
             connect_code = f"sock.connect(('{dest_ip}', {port}))"
             send_recv_code = f"""
     # Send message
-    sock.send('{message}'.encode() + b'\\n')
+    sock.send('{escaped_message}'.encode() + b'\\n')
     
     # Receive response
     response = sock.recv(1024).decode()"""
@@ -761,7 +764,7 @@ class ServiceClient:
             connect_code = ""  # UDP doesn't connect
             send_recv_code = f"""
     # Send message
-    sock.sendto('{message}'.encode() + b'\\n', ('{dest_ip}', {port}))
+    sock.sendto('{escaped_message}'.encode() + b'\\n', ('{dest_ip}', {port}))
     
     # Receive response (with timeout)
     response, addr = sock.recvfrom(1024)
@@ -790,7 +793,7 @@ try:
     if local_port is not None:
         # Print response plus marker with local port on a new line
         print(str(response), end='')
-        print("\nLOCAL_PORT:" + str(local_port), end='')
+        print("\\nLOCAL_PORT:" + str(local_port), end='')
     else:
         print(str(response), end='')
     sys.exit(0)

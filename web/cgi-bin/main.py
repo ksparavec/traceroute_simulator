@@ -184,17 +184,17 @@ import hashlib
 import hmac
 
 # Set RUN_ID environment variable for reachability script
-os.environ['RUN_ID'] = '{run_id}'
+os.environ['RUN_ID'] = {repr(run_id)}
 
-session_id = '{session_id}'
-username = '{session['username']}'
-source_ip = '{source_ip}'
-source_port = {f'"{source_port}"' if source_port else 'None'}
-dest_ip = '{dest_ip}'
+session_id = {repr(session_id)}
+username = {repr(session['username'])}
+source_ip = {repr(source_ip)}
+source_port = {repr(source_port) if source_port else 'None'}
+dest_ip = {repr(dest_ip)}
 port_protocol_list = {repr(port_protocol_list)}
-port_list_str = '{port_list_str}'
-user_trace_data = '''{user_trace_data}'''
-run_id = '{run_id}'
+port_list_str = {repr(port_list_str)}
+user_trace_data = {repr(user_trace_data)}
+run_id = {repr(run_id)}
 
 try:
     config = Config()

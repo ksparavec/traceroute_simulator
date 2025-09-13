@@ -1,17 +1,16 @@
-# TSIM WSGI Apache Configuration Template
+# TSIM WSGI Apache Configuration
 # 
-# Installation Instructions:
-# 1. Install mod_wsgi in virtual environment:
-#    /opt/tsim/venv/bin/pip install mod-wsgi
-#    
-# 2. Generate mod_wsgi module path:
-#    /opt/tsim/venv/bin/mod_wsgi-express module-config
-#    
-# 3. Copy this template to Apache sites-available:
-#    sudo cp apache-site.conf.template /etc/apache2/sites-available/tsim-wsgi.conf
-#    
-# 4. Update paths and settings below as needed
-# 5. Enable the site:
+# This configuration requires mod_wsgi to be installed in the TSIM virtual environment.
+# The mod_wsgi LoadModule directive should be in a separate file that is loaded before this configuration.
+#
+# To use this configuration:
+# 1. Ensure mod_wsgi is installed: make install-venv (includes mod-wsgi in requirements.txt)
+# 2. Copy the generated mod_wsgi.conf to Apache:
+#    sudo cp __TSIM_WEB_ROOT__/mod_wsgi.conf /etc/apache2/mods-available/wsgi_tsim.load
+#    sudo a2enmod wsgi_tsim
+# 3. Copy this configuration to Apache:
+#    sudo cp __TSIM_WEB_ROOT__/apache-site.conf /etc/apache2/sites-available/tsim-wsgi.conf
+# 4. Enable the site:
 #    sudo a2ensite tsim-wsgi
 #    sudo systemctl reload apache2
 
@@ -24,11 +23,11 @@ WSGISocketPrefix /var/run/wsgi
     ServerAlias www.tsim.example.com
     
     # Define variables for easy configuration
-    Define TSIM_WEB_ROOT /opt/tsim/wsgi
-    Define TSIM_VENV_PATH /opt/tsim/venv
-    Define TSIM_DATA_DIR /dev/shm/tsim
-    Define TSIM_LOG_DIR /var/log/tsim
-    Define TSIM_HTDOCS /opt/tsim/htdocs
+    Define TSIM_WEB_ROOT __TSIM_WEB_ROOT__
+    Define TSIM_VENV_PATH __TSIM_VENV__
+    Define TSIM_DATA_DIR __TSIM_DATA_DIR__
+    Define TSIM_LOG_DIR __TSIM_LOG_DIR__
+    Define TSIM_HTDOCS __TSIM_HTDOCS__
     
     # Document root for static files
     DocumentRoot ${TSIM_HTDOCS}

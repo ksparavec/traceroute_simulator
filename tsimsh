@@ -24,11 +24,39 @@ else:
 def main():
     """Main entry point for the shell."""
     # Parse command-line arguments
-    parser = argparse.ArgumentParser(description='Traceroute Simulator Shell')
+    import argparse as _argparse
+    parser = argparse.ArgumentParser(
+        description='Traceroute Simulator Shell',
+        epilog='Examples:\n  tsimsh -V\n  tsimsh -q',
+        formatter_class=_argparse.RawDescriptionHelpFormatter
+    )
     parser.add_argument('-q', '--quick', action='store_true',
                         help='Quick startup: disable network status check and .tsimrc loading')
+    parser.add_argument('-V', '--version', action='store_true',
+                        help='Print version and exit')
     args = parser.parse_args()
-    
+
+    # Handle version early and exit
+    if getattr(args, 'version', False):
+        def _get_version():
+            try:
+                from tsim import __version__ as v
+                return v
+            except Exception:
+                pass
+            try:
+                from src import __version__ as v
+                return v
+            except Exception:
+                pass
+            try:
+                import importlib.metadata as md
+                return md.version('tsim')
+            except Exception:
+                return 'unknown'
+        print(f"tsimsh {_get_version()}")
+        return 0
+
     # Clear sys.argv to prevent cmd2 from processing our arguments
     sys.argv = [sys.argv[0]]
     

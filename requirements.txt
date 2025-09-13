@@ -8,6 +8,7 @@ gnureadline
 httplib2
 idna
 matplotlib
+mod-wsgi
 NetworkX
 pip
 posix_ipc
@@ -27,6 +28,7 @@ requests
 setuptools
 six
 tabulate
+ujson
 Unidecode
 urllib3
 wcwidth

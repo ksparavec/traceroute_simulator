@@ -11,8 +11,26 @@ ROUTING_FACTS_DIR := $(TRACEROUTE_SIMULATOR_FACTS)
 ANSIBLE_DIR := ansible
 
 # Global TSIM deployment parameters (override via environment or make vars)
+# Default TSIM_WEB_ROOT is /opt/tsim/wsgi
+TSIM_WEB_ROOT ?= /opt/tsim/wsgi
 # Default TSIM_LOG_DIR is /var/log/tsim
 TSIM_LOG_DIR ?= /var/log/tsim
+
+# Default TSIM_HTDOCS is /opt/tsim/htdocs (static web root for WSGI)
+TSIM_HTDOCS ?= /opt/tsim/htdocs
+
+# Default Python virtual environment for TSIM
+TSIM_VENV ?= /opt/tsim/venv
+# Default uv directory for Python installations and cache
+TSIM_UV ?= /opt/tsim/uv
+# Default data directory for runtime data (in shared memory for performance)
+TSIM_DATA_DIR ?= /dev/shm/tsim
+# Python series to install via uv (latest available minor for the series)
+TSIM_PYTHON_SERIES ?= 3.11
+# Where uv installs/downloads Python toolchains (separate from venv to avoid conflicts)
+TSIM_UV_PY_DIR ?= $(TSIM_UV)/python
+# Where uv caches artifacts (separate from venv to avoid conflicts)
+TSIM_UV_CACHE_DIR ?= $(TSIM_UV)/cache
 
 # Build configuration
 CC := gcc
@@ -39,7 +57,7 @@ REQUIRED_MODULES := json sys argparse ipaddress os glob typing subprocess re dif
 
 # Colors removed for better terminal compatibility
 
-.PHONY: help check-deps test test-iptables-enhanced test-policy-routing test-ipset-enhanced test-raw-facts-loading test-mtr-options test-iptables-logging test-packet-tracing test-network facts clean tsim ifa netsetup nettest netclean netshow netstatus test-namespace hostadd hostdel hostlist hostclean netnsclean service-start service-stop service-restart service-status service-test service-clean test-services svctest svcstart svcstop svclist svcclean install-wrapper install-package install-pipx uninstall-package uninstall-pipx list-package show-sudoers
+.PHONY: help check-deps test test-iptables-enhanced test-policy-routing test-ipset-enhanced test-raw-facts-loading test-mtr-options test-iptables-logging test-packet-tracing test-network facts clean-shell tsim ifa netsetup nettest netclean netshow netstatus test-namespace hostadd hostdel hostlist hostclean netnsclean service-start service-stop service-restart service-status service-test service-clean test-services svctest svcstart svcstop svclist svcclean install-wrapper install-shell install-venv install-pipx uninstall-shell uninstall-pipx list-package show-sudoers
 
 # Default target
 help:
@@ -48,13 +66,14 @@ help:
 	@echo "check-deps        - Check for required Python modules and provide installation hints"
 	@echo "test              - Execute all test scripts with test setup and report results (includes make targets tests)"
 	@echo "facts             - Run Ansible playbook to collect network facts (requires INVENTORY_FILE or INVENTORY)"
-	@echo "clean             - Clean up generated files and cache"
+	@echo "clean-shell       - Clean up generated files and cache for shell build"
 	@echo "show-sudoers      - Display sudoers configuration for namespace operations"
 	@echo "install-wrapper   - Build and install the netns_reader wrapper with proper capabilities (requires sudo)"
 	@echo "package           - Build pip-installable tsim package (creates wheel and source distributions)"
-	@echo "install-package   - Build and install tsim package (use USER=1 for user install, BREAK_SYSTEM=1 to force)"
+	@echo "install-shell     - Build and install tsim shell package (use USER=1 for user install, BREAK_SYSTEM=1 to force)"
+	@echo "install-venv      - Bootstrap Python $(TSIM_PYTHON_SERIES) with uv into TSIM_VENV and install requirements + tsimsh"
 	@echo "install-pipx      - Install tsim package using pipx (recommended for command-line applications)"
-	@echo "uninstall-package - Uninstall tsim package (use USER=1 for user uninstall, BREAK_SYSTEM=1 to force)"
+	@echo "uninstall-shell   - Uninstall tsim shell package (use USER=1 for user uninstall, BREAK_SYSTEM=1 to force)"
 	@echo "uninstall-pipx    - Uninstall tsim package from pipx"
 	@echo "list-package      - List all files included in the built package"
 	@echo "pam-config        - Configure PAM for SSSD authentication fallback (requires sudo)"
@@ -489,7 +508,7 @@ facts:
 	fi
 
 # Clean up generated files and cache
-clean:
+clean-shell:
 	@echo "Cleaning up generated files and cache"
 	@echo "======================================="
 	@rm -rf __pycache__/
@@ -1272,12 +1291,12 @@ $(PACKAGE_TIMESTAMP): $(PACKAGE_SOURCES)
 	@echo "  dist/tsim-*.tar.gz (source distribution)"
 	@echo "  dist/tsim-*.whl (wheel distribution)"
 	@echo ""
-	@echo "To install locally: make install-package"
+	@echo "To install locally: make install-shell"
 	@echo "To install elsewhere: pip install dist/tsim-*.whl"
 
 # Install the package in the current Python environment
-# Usage: make install-package [USER=1] [BREAK_SYSTEM=1]
-install-package: $(PACKAGE_TIMESTAMP)
+# Usage: make install-shell [USER=1] [BREAK_SYSTEM=1]
+install-shell: $(PACKAGE_TIMESTAMP)
 	@echo "Installing tsim package..."
 	@echo "========================================"
 	@# Check if we're in a virtual environment
@@ -1301,10 +1320,10 @@ install-package: $(PACKAGE_TIMESTAMP)
 			echo "  2. Create and use a virtual environment:"; \
 			echo "     python3 -m venv ~/tsim-venv"; \
 			echo "     source ~/tsim-venv/bin/activate"; \
-			echo "     make install-package"; \
+			echo "     make install-shell"; \
 			echo ""; \
 			echo "  3. Force installation (override system protection):"; \
-			echo "     make install-package BREAK_SYSTEM=1"; \
+			echo "     make install-shell BREAK_SYSTEM=1"; \
 			exit 1; \
 		}; \
 	else \
@@ -1315,7 +1334,7 @@ install-package: $(PACKAGE_TIMESTAMP)
 			echo ""; \
 			echo "Options:"; \
 			echo "  1. Install in user directory:"; \
-			echo "     make install-package USER=1"; \
+			echo "     make install-shell USER=1"; \
 			echo ""; \
 			echo "  2. Use pipx (recommended for applications):"; \
 			echo "     pipx install dist/tsim-*.whl"; \
@@ -1323,10 +1342,10 @@ install-package: $(PACKAGE_TIMESTAMP)
 			echo "  3. Use a virtual environment:"; \
 			echo "     python3 -m venv venv"; \
 			echo "     source venv/bin/activate"; \
-			echo "     make install-package"; \
+			echo "     make install-shell"; \
 			echo ""; \
 			echo "  4. Force system installation (not recommended):"; \
-			echo "     make install-package BREAK_SYSTEM=1"; \
+			echo "     make install-shell BREAK_SYSTEM=1"; \
 			exit 1; \
 		}; \
 	fi
@@ -1380,9 +1399,81 @@ install-pipx: $(PACKAGE_TIMESTAMP)
 	@echo ""
 	@echo "Try running: tsimsh"
 
+# Bootstrap a Python venv at TSIM_VENV using uv and install requirements + tsimsh
+# Usage: make install-venv [TSIM_VENV=/opt/tsim/venv] [TSIM_PYTHON_SERIES=3.11]
+install-venv:
+	@echo "Bootstrapping TSIM Python environment"
+	@echo "====================================="
+	@echo "Target venv: $(TSIM_VENV)"
+	@echo "Python series: $(TSIM_PYTHON_SERIES)"
+	@echo ""
+	@echo "Ensuring directories exist with correct ownership and permissions..." \
+		&& sudo -E mkdir -p "$(dir $(TSIM_VENV))" "$(TSIM_UV)" \
+		&& sudo -E chown $(WEB_USER):$(UNIX_GROUP) "$(dir $(TSIM_VENV))" "$(TSIM_UV)" \
+		&& sudo -E chmod 2775 "$(dir $(TSIM_VENV))" "$(TSIM_UV)" \
+		|| { echo "Failed to create or set permissions on directories (sudo required)."; exit 1; }
+	@if ! id -nG | tr ' ' '\n' | grep -qx "$(UNIX_GROUP)"; then \
+		echo "Error: current user '$$USER' is not a member of group '$(UNIX_GROUP)'."; \
+		echo "Add the user to the group and re-login, then rerun: make install-venv"; \
+		exit 1; \
+	fi
+	@PATH="$$HOME/.local/bin:$$PATH"; \
+	if ! command -v "$(PYTHON)" >/dev/null 2>&1; then echo "$(PYTHON) not found in PATH"; exit 1; fi; \
+	PYTHONDONTWRITEBYTECODE=1 "$(PYTHON)" $(PYTHON_OPTIONS) -m pip install --break-system-packages -U uv || true; \
+	if ! "$(PYTHON)" $(PYTHON_OPTIONS) -c "import uv" >/dev/null 2>&1; then echo "Failed to install uv. Please install uv and re-run."; exit 1; fi
+	@if [ -x "$(TSIM_VENV)/bin/python" ]; then \
+		echo "Existing venv detected at $(TSIM_VENV); skipping interpreter install and venv creation"; \
+	else \
+		echo "Installing Python $(TSIM_PYTHON_SERIES) via uv..."; \
+		umask 002; env UV_PYTHON_INSTALL_DIR="$(TSIM_UV_PY_DIR)" UV_CACHE_DIR="$(TSIM_UV_CACHE_DIR)" XDG_CACHE_HOME="$(TSIM_UV_CACHE_DIR)" \
+			"$(PYTHON)" $(PYTHON_OPTIONS) -m uv python install $(TSIM_PYTHON_SERIES) \
+			|| { echo "Failed to install Python $(TSIM_PYTHON_SERIES) via uv"; exit 1; }; \
+		NEW_PYTHON="$$(find "$(TSIM_UV_PY_DIR)" -name "python$(TSIM_PYTHON_SERIES)" -type f -executable 2>/dev/null | head -1)"; \
+		if [ -z "$$NEW_PYTHON" ]; then \
+			echo "Failed to find installed Python $(TSIM_PYTHON_SERIES) in $(TSIM_UV_PY_DIR)"; exit 1; \
+		fi; \
+		echo "Found new Python at: $$NEW_PYTHON"; \
+		echo "Creating venv with the new Python..."; \
+		umask 002; env UV_PYTHON_INSTALL_DIR="$(TSIM_UV_PY_DIR)" UV_CACHE_DIR="$(TSIM_UV_CACHE_DIR)" XDG_CACHE_HOME="$(TSIM_UV_CACHE_DIR)" \
+			"$(PYTHON)" $(PYTHON_OPTIONS) -m uv venv --python "$$NEW_PYTHON" "$(TSIM_VENV)" \
+			|| { echo "Failed to create venv at $(TSIM_VENV)"; exit 1; }; \
+	fi
+	@export VIRTUAL_ENV="$(TSIM_VENV)"; export PATH="$(TSIM_VENV)/bin:$$PATH"; VENV_PY="$(TSIM_VENV)/bin/python"; \
+	"$$VENV_PY" $(PYTHON_OPTIONS) -m ensurepip --default-pip >/dev/null 2>&1 || true; \
+	"$$VENV_PY" $(PYTHON_OPTIONS) -m pip install -U pip >/dev/null 2>&1 || true; \
+	"$$VENV_PY" $(PYTHON_OPTIONS) -m pip install -U uv || { echo "Failed to install uv in venv"; exit 1; }; \
+	umask 002; env UV_PYTHON_INSTALL_DIR="$(TSIM_UV_PY_DIR)" UV_CACHE_DIR="$(TSIM_UV_CACHE_DIR)" XDG_CACHE_HOME="$(TSIM_UV_CACHE_DIR)" \
+		"$$VENV_PY" $(PYTHON_OPTIONS) -m uv pip install -r requirements.txt --python "$$VENV_PY" \
+		|| { echo "Failed to install requirements via uv"; exit 1; }; \
+	"$$VENV_PY" $(PYTHON_OPTIONS) -m pip install -U build wheel >/dev/null 2>&1 || { echo "Failed to install build tooling in venv"; exit 1; }; \
+	echo "Building tsim package..."; \
+	umask 002; "$$VENV_PY" $(PYTHON_OPTIONS) -m build >/dev/null 2>&1 || { echo "Failed to build package with venv Python"; exit 1; }; \
+	umask 002; env UV_PYTHON_INSTALL_DIR="$(TSIM_UV_PY_DIR)" UV_CACHE_DIR="$(TSIM_UV_CACHE_DIR)" XDG_CACHE_HOME="$(TSIM_UV_CACHE_DIR)" \
+		"$$VENV_PY" $(PYTHON_OPTIONS) -m uv pip install dist/tsim-*.whl --python "$$VENV_PY" \
+		|| { echo "Failed to install tsim package via uv"; exit 1; }; \
+	if [ "$$UID" = "0" ]; then \
+		sudo -E chown -R $(WEB_USER):$(UNIX_GROUP) "$(TSIM_VENV)"; \
+	fi; \
+	for cfg in "$(TSIM_WEB_ROOT)/conf/config.json" "$(TSIM_WEB_ROOT)/conf/config.json.example"; do \
+		if [ -f "$$cfg" ]; then \
+			if [ -w "$$cfg" ]; then \
+				sed -i 's|"venv_path"\s*:\s*"[^"]*"|"venv_path": "$(TSIM_VENV)"|g' "$$cfg"; \
+			elif [ "$$UID" = "0" ] || command -v sudo >/dev/null 2>&1; then \
+				sudo sed -i 's|"venv_path"\s*:\s*"[^"]*"|"venv_path": "$(TSIM_VENV)"|g' "$$cfg" 2>/dev/null || true; \
+			fi; \
+		fi; \
+	done; \
+	echo ""; \
+	echo "✓ TSIM venv ready at $(TSIM_VENV)"; \
+	echo "  Python: $$($(TSIM_VENV)/bin/python -V 2>/dev/null || echo unknown)"; \
+	echo "  Shell:  $$($(TSIM_VENV)/bin/tsimsh -V 2>/dev/null || echo tsimsh installed)"; \
+	echo ""; \
+	echo "Activate TSIM venv with: source $(TSIM_VENV)/bin/activate"; \
+	echo ""
+
 # Uninstall the package from the current Python environment
-# Usage: make uninstall-package [USER=1] [BREAK_SYSTEM=1]
-uninstall-package:
+# Usage: make uninstall-shell [USER=1] [BREAK_SYSTEM=1]
+uninstall-shell:
 	@echo "Uninstalling tsim package..."
 	@echo "========================================"
 	@if [ -n "$(BREAK_SYSTEM)" ]; then \
@@ -1395,7 +1486,7 @@ uninstall-package:
 		echo "Attempting standard uninstallation..."; \
 		$(PYTHON) $(PYTHON_OPTIONS) -m pip uninstall -y tsim 2>/dev/null || { \
 			echo "Package not installed or requires special handling"; \
-			echo "Try: make uninstall-package USER=1"; \
+			echo "Try: make uninstall-shell USER=1"; \
 		}; \
 	fi
 	@echo "✓ Uninstall completed"
@@ -1598,11 +1689,11 @@ install-wsgi:
 	# Create directories
 	@echo "Creating directories..."
 	@mkdir -p "$(TSIM_WEB_ROOT)"
-	@mkdir -p "/opt/tsim/htdocs"
+	@mkdir -p "$(TSIM_HTDOCS)"
 	@if [ "$$(id -u)" = "0" ]; then \
 		mkdir -p "$(TSIM_LOG_DIR)"; \
-		chown $(WEB_USER):$(WEB_GROUP) "$(TSIM_LOG_DIR)"; \
-		chmod 755 "$(TSIM_LOG_DIR)"; \
+		chown $(WEB_USER):$(UNIX_GROUP) "$(TSIM_LOG_DIR)"; \
+		chmod 2775 "$(TSIM_LOG_DIR)"; \
 		echo "Created log directory: $(TSIM_LOG_DIR)"; \
 	else \
 		echo "Warning: Cannot create $(TSIM_LOG_DIR) without root privileges"; \
@@ -1638,46 +1729,64 @@ install-wsgi:
 	# Update paths in config files to match installation directory
 	@sed -i 's|"/opt/tsim/wsgi/scripts"|"$(TSIM_WEB_ROOT)/scripts"|g' "$(TSIM_WEB_ROOT)/conf/config.json.example"
 	@sed -i 's|"/opt/tsim/wsgi/conf/traceroute_simulator.yaml"|"$(TSIM_WEB_ROOT)/conf/traceroute_simulator.yaml"|g' "$(TSIM_WEB_ROOT)/conf/config.json.example"
-	@sed -i 's|"/opt/tsim/conf/users.json"|"$(TSIM_WEB_ROOT)/conf/users.json"|g' "$(TSIM_WEB_ROOT)/conf/config.json.example"
+	@sed -i 's|"venv_path"\s*:\s*"[^"]*"|"venv_path": "$(TSIM_VENV)"|g' "$(TSIM_WEB_ROOT)/conf/config.json.example"
+	@sed -i 's|"/dev/shm/tsim|"$(TSIM_DATA_DIR)|g' "$(TSIM_WEB_ROOT)/conf/config.json.example"
 	@if [ -f "$(TSIM_WEB_ROOT)/conf/config.json" ]; then \
 		sed -i 's|"/opt/tsim/wsgi/scripts"|"$(TSIM_WEB_ROOT)/scripts"|g' "$(TSIM_WEB_ROOT)/conf/config.json"; \
 		sed -i 's|"/opt/tsim/wsgi/conf/traceroute_simulator.yaml"|"$(TSIM_WEB_ROOT)/conf/traceroute_simulator.yaml"|g' "$(TSIM_WEB_ROOT)/conf/config.json"; \
-		sed -i 's|"/opt/tsim/conf/users.json"|"$(TSIM_WEB_ROOT)/conf/users.json"|g' "$(TSIM_WEB_ROOT)/conf/config.json"; \
+		sed -i 's|"venv_path"\s*:\s*"[^"]*"|"venv_path": "$(TSIM_VENV)"|g' "$(TSIM_WEB_ROOT)/conf/config.json"; \
+		sed -i 's|"/dev/shm/tsim|"$(TSIM_DATA_DIR)|g' "$(TSIM_WEB_ROOT)/conf/config.json"; \
 	fi
 	
-	# Copy htdocs to /opt/tsim/htdocs
+	# Copy htdocs to $(TSIM_HTDOCS)
 	@echo "Installing htdocs..."
-	@cp -r wsgi/htdocs/* "/opt/tsim/htdocs/"
+	@cp -r wsgi/htdocs/* "$(TSIM_HTDOCS)/"
 	
 	# Set proper permissions
 	@echo "Setting permissions..."
 	@if [ "$$(id -u)" = "0" ]; then \
-		echo "Setting ownership to $(WEB_USER):$(WEB_GROUP)..."; \
-		chown -R $(WEB_USER):$(WEB_GROUP) "$(TSIM_WEB_ROOT)"; \
-		chown -R $(WEB_USER):$(WEB_GROUP) "/opt/tsim/htdocs"; \
+		echo "Setting ownership to $(WEB_USER):$(UNIX_GROUP)..."; \
+		chown -R $(WEB_USER):$(UNIX_GROUP) "$(TSIM_WEB_ROOT)"; \
+		chown -R $(WEB_USER):$(UNIX_GROUP) "$(TSIM_HTDOCS)"; \
 		chmod 755 "$(TSIM_WEB_ROOT)"; \
 		chmod 755 "$(TSIM_WEB_ROOT)/handlers"; \
 		chmod 755 "$(TSIM_WEB_ROOT)/services"; \
 		chmod 755 "$(TSIM_WEB_ROOT)/scripts"; \
-		chmod 755 "/opt/tsim/htdocs"; \
+		chmod 755 "$(TSIM_HTDOCS)"; \
 		chmod 644 "$(TSIM_WEB_ROOT)"/*.py; \
 		chmod 644 "$(TSIM_WEB_ROOT)/handlers"/*.py; \
 		chmod 644 "$(TSIM_WEB_ROOT)/services"/*.py; \
 		chmod 755 "$(TSIM_WEB_ROOT)/scripts"/*.py; \
 		chmod 755 "$(TSIM_WEB_ROOT)/scripts"/*.sh 2>/dev/null || true; \
 		chmod 644 "$(TSIM_WEB_ROOT)/app.wsgi"; \
-		find "/opt/tsim/htdocs" -type d -exec chmod 755 {} \;; \
-		find "/opt/tsim/htdocs" -type f -exec chmod 644 {} \;; \
+		find "$(TSIM_HTDOCS)" -type d -exec chmod 755 {} \;; \
+		find "$(TSIM_HTDOCS)" -type f -exec chmod 644 {} \;; \
 	else \
 		echo "Warning: Cannot set ownership without root privileges"; \
-		echo "Run: sudo chown -R $(WEB_USER):$(WEB_GROUP) $(TSIM_WEB_ROOT) /opt/tsim/htdocs"; \
+		echo "Run: sudo chown -R $(WEB_USER):$(UNIX_GROUP) $(TSIM_WEB_ROOT) $(TSIM_HTDOCS)"; \
+	fi
+	
+	# Generate mod_wsgi configuration from venv
+	@echo ""
+	@echo "Generating mod_wsgi configuration..."
+	@if [ -x "$(TSIM_VENV)/bin/mod_wsgi-express" ]; then \
+		"$(TSIM_VENV)/bin/mod_wsgi-express" module-config > "$(TSIM_WEB_ROOT)/mod_wsgi.conf" 2>/dev/null \
+			&& echo "mod_wsgi configuration generated at: $(TSIM_WEB_ROOT)/mod_wsgi.conf" \
+			|| echo "Warning: Failed to generate mod_wsgi configuration"; \
+	else \
+		echo "Warning: mod_wsgi-express not found in venv. Please install mod-wsgi in the venv."; \
 	fi
 	
 	# Create Apache configuration from template
 	@echo ""
 	@echo "Creating Apache configuration..."
-	@sed -e 's/__WEB_USER__/$(WEB_USER)/g' \
-	     -e 's/__WEB_GROUP__/$(WEB_GROUP)/g' \
+	@sed -e 's|__WEB_USER__|$(WEB_USER)|g' \
+	     -e 's|__WEB_GROUP__|$(WEB_GROUP)|g' \
+	     -e 's|__TSIM_VENV__|$(TSIM_VENV)|g' \
+	     -e 's|__TSIM_WEB_ROOT__|$(TSIM_WEB_ROOT)|g' \
+	     -e 's|__TSIM_HTDOCS__|$(TSIM_HTDOCS)|g' \
+	     -e 's|__TSIM_LOG_DIR__|$(TSIM_LOG_DIR)|g' \
+	     -e 's|__TSIM_DATA_DIR__|$(TSIM_DATA_DIR)|g' \
 	     "wsgi/apache-site.conf.template" > "$(TSIM_WEB_ROOT)/apache-site.conf"
 	@echo "Apache configuration created at: $(TSIM_WEB_ROOT)/apache-site.conf"
 	
@@ -1686,36 +1795,27 @@ install-wsgi:
 	@echo ""
 	@echo "Next steps:"
 	@echo ""
-	@echo "1. Configure the application:"
-	@echo "   Edit $(TSIM_WEB_ROOT)/conf/config.json and set:"
-	@echo "   - venv_path: Path to your Python virtual environment"
-	@echo "   - tsimsh_path: Path to tsimsh executable"
-	@echo "   - tsim_raw_facts: Path to raw facts directory"
-	@echo "   - data_dir: Data directory (e.g., /dev/shm/tsim)"
-	@echo "   - log_dir: Log directory (e.g., $(TSIM_LOG_DIR))"
-	@echo "   - session_dir: Session directory (e.g., /dev/shm/tsim/sessions)"
+	@echo "1. Ensure TSIM venv is installed:"
+	@echo "   make install-venv"
+	@echo "   This will install Python $(TSIM_PYTHON_SERIES) and all requirements including mod-wsgi"
 	@echo ""
-	@echo "2. Verify directories:"
-	@if [ "$$(id -u)" != "0" ]; then \
-		echo "   - Log directory: sudo mkdir -p $(TSIM_LOG_DIR)"; \
-		echo "   - Set permissions: sudo chown $(WEB_USER):$(WEB_GROUP) $(TSIM_LOG_DIR)"; \
+	@echo "2. Review configuration:"
+	@echo "   Configuration has been updated with your paths:"
+	@echo "   - TSIM venv: $(TSIM_VENV)"
+	@echo "   - Web root: $(TSIM_WEB_ROOT)"
+	@echo "   - Data dir: $(TSIM_DATA_DIR)"
+	@echo "   - Log dir: $(TSIM_LOG_DIR)"
+	@echo "   Edit $(TSIM_WEB_ROOT)/conf/config.json if you need to adjust any settings"
+	@echo ""
+	@echo "3. Install mod_wsgi configuration:"
+	@if [ -f "$(TSIM_WEB_ROOT)/mod_wsgi.conf" ]; then \
+		echo "   sudo cp $(TSIM_WEB_ROOT)/mod_wsgi.conf /etc/apache2/mods-available/wsgi_tsim.load"; \
+		echo "   sudo a2enmod wsgi_tsim"; \
 	else \
-		echo "   - Log directory already created: $(TSIM_LOG_DIR)"; \
+		echo "   Warning: mod_wsgi.conf not found. Run 'make install-venv' first to install mod-wsgi"; \
 	fi
-	@echo "   Note: /dev/shm/tsim will be created automatically by tsimsh with proper permissions"
 	@echo ""
-	@echo "3. Set up Python virtual environment:"
-	@echo "   python3 -m venv <venv_path from config.json>"
-	@echo "   <venv_path>/bin/pip install --upgrade pip"
-	@echo "   <venv_path>/bin/pip install mod-wsgi ujson psutil"
-	@echo "   <venv_path>/bin/pip install matplotlib networkx reportlab PyPDF2 python-pam"
-	@echo ""
-	@echo "4. Generate mod_wsgi configuration:"
-	@echo "   <venv_path>/bin/mod_wsgi-express module-config > /tmp/mod_wsgi.conf"
-	@echo "   sudo cp /tmp/mod_wsgi.conf /etc/apache2/mods-available/wsgi_tsim.load"
-	@echo "   sudo a2enmod wsgi_tsim"
-	@echo ""
-	@echo "5. Install Apache site configuration:"
+	@echo "4. Install Apache site configuration:"
 	@echo "   a. Copy the prepared configuration:"
 	@echo "      sudo cp $(TSIM_WEB_ROOT)/apache-site.conf $(APACHE_CONF_DIR)/tsim-wsgi.conf"
 	@echo "   b. Edit the configuration: sudo nano $(APACHE_CONF_DIR)/tsim-wsgi.conf"
@@ -1728,7 +1828,7 @@ install-wsgi:
 		echo "   d. Disable default site if needed: sudo a2dissite 000-default"; \
 	fi
 	@echo ""
-	@echo "6. Enable required Apache modules:"
+	@echo "5. Enable required Apache modules:"
 	@if [ "$(APACHE_CONF_DIR)" = "/etc/apache2/sites-available" ]; then \
 		echo "   sudo a2enmod ssl headers expires"; \
 	else \
@@ -1736,24 +1836,24 @@ install-wsgi:
 		echo "   # Verify with: sudo httpd -M | grep -E 'ssl|headers|expires'"; \
 	fi
 	@echo ""
-	@echo "7. Create SSL certificate (for testing):"
+	@echo "6. Create SSL certificate (for testing):"
 	@echo "   sudo openssl req -x509 -nodes -days 365 -newkey rsa:2048 \\"
 	@echo "     -keyout /etc/ssl/private/tsim.key \\"
 	@echo "     -out /etc/ssl/certs/tsim.crt"
 	@echo ""
-	@echo "8. Restart Apache:"
+	@echo "7. Restart Apache:"
 	@if [ "$(APACHE_CONF_DIR)" = "/etc/apache2/sites-available" ]; then \
 		echo "   sudo systemctl restart apache2"; \
 	else \
 		echo "   sudo systemctl restart httpd"; \
 	fi
 	@echo ""
-	@echo "9. Create initial admin user:"
+	@echo "8. Create initial admin user:"
 	@echo "   cd $(TSIM_WEB_ROOT)/scripts"
 	@echo "   ./create_user.sh"
 	@echo "   # Enter username: admin, role: admin, and choose a password"
 	@echo ""
-	@echo "10. Test the installation:"
+	@echo "9. Test the installation:"
 	@echo "   https://$$(hostname -f)/"
 	@echo ""
 	@echo "User Management Scripts:"

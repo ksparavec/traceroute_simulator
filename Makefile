@@ -1740,7 +1740,7 @@ install-wsgi:
 	
 	# Copy htdocs to $(TSIM_HTDOCS)
 	@echo "Installing htdocs..."
-	@cp -r wsgi/htdocs/* "$(TSIM_HTDOCS)/"
+	@rsync -av wsgi/htdocs/ "$(TSIM_HTDOCS)/"
 	
 	# Set proper permissions
 	@echo "Setting permissions..."

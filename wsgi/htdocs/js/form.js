@@ -1,5 +1,9 @@
 // TSIM Reachability Form JS (clean version)
-let TSIM_MODE = 'prod';
+// TSIM_MODE is now injected server-side via window.TSIM_MODE
+// Default to 'prod' if not set for some reason
+if (typeof window.TSIM_MODE === 'undefined') {
+    window.TSIM_MODE = 'prod';
+}
 
 // Validate destination port specification tokens
 function isValidDestSpec(spec) {
@@ -25,8 +29,25 @@ function loadQuickSelectServices() {
             const services = (data && data.services) || [];
             services.forEach(s => {
                 const opt = document.createElement('option');
-                opt.value = `${s.port}/${s.protocol}`;
-                opt.text = `${s.name} (${s.port}/${s.protocol}) - ${s.description}`;
+                // Set value based on format
+                if (s.ports) {
+                    opt.value = s.ports;
+                } else if (s.port && s.protocol) {
+                    opt.value = `${s.port}/${s.protocol}`;
+                } else {
+                    // Skip invalid service
+                    return;
+                }
+                
+                // Set display text - prefer display field if available
+                if (s.display) {
+                    opt.text = s.display;
+                } else if (s.ports) {
+                    opt.text = `${s.name} - ${s.description}`;
+                } else {
+                    opt.text = `${s.name} (${s.port}/${s.protocol}) - ${s.description}`;
+                }
+                
                 quickPorts.appendChild(opt);
             });
             restoreSavedSelections();
@@ -105,87 +126,82 @@ window.addEventListener('DOMContentLoaded', () => {
 
     loadQuickSelectServices();
 
-    fetch('/services-config')
-        .then(r => r.json())
-        .then(cfg => {
-            TSIM_MODE = (cfg && cfg.mode) || 'prod';
-            // Toggle body class for mode-specific styling
-            document.body.classList.toggle('tsim-mode-prod', TSIM_MODE === 'prod');
-            document.body.classList.toggle('tsim-mode-test', TSIM_MODE === 'test');
-            // Update page titles based on mode
-            const modeTitle = TSIM_MODE === 'test'
-                ? 'Network Reachability Test (Mode: Testing)'
-                : 'Network Reachability Test (Mode: Production)';
-            document.title = modeTitle;
-            const h1 = document.querySelector('header h1');
-            if (h1) h1.textContent = modeTitle;
-            if (TSIM_MODE === 'test') {
-                // Hide and disable IP inputs; show trace upload
-                setVisible(src, false); setDisabled(src, true);
-                setVisible(srcPort, true); setDisabled(srcPort, false);
-                setVisible(dst, false); setDisabled(dst, true);
-                if (traceBtn) {
-                    traceBtn.style.display = 'inline-block';
-                    // Move Trace button to the top of the form in test mode
-                    const firstGroup = form.querySelector('.form-group');
-                    if (firstGroup && traceBtn.parentElement) {
-                        // Create or reuse a top container
-                        let topContainer = document.getElementById('trace_top_container');
-                        if (!topContainer) {
-                            topContainer = document.createElement('div');
-                            topContainer.id = 'trace_top_container';
-                            topContainer.className = 'form-group';
-                        }
-                        // Place the button into the top container
-                        topContainer.innerHTML = '';
-                        const hint = document.createElement('div');
-                        hint.className = 'help-text';
-                        hint.textContent = 'Paste a JSON formatted trace file via the button above';
-                        // Center button and help text in test mode
-                        topContainer.style.textAlign = 'center';
-                        traceBtn.style.display = 'inline-block';
-                        traceBtn.style.margin = '8px auto';
-                        hint.style.textAlign = 'center';
-                        // Append elements
-                        topContainer.appendChild(traceBtn);
-                        topContainer.appendChild(hint);
-                        form.insertBefore(topContainer, firstGroup);
-                    }
+    // Apply mode-specific UI immediately (no fetch needed - mode is already set)
+    // Toggle body class for mode-specific styling
+    document.body.classList.toggle('tsim-mode-prod', window.TSIM_MODE === 'prod');
+    document.body.classList.toggle('tsim-mode-test', window.TSIM_MODE === 'test');
+    // Update page titles based on mode
+    const modeTitle = window.TSIM_MODE === 'test'
+        ? 'Network Reachability Test (Mode: Testing)'
+        : 'Network Reachability Test (Mode: Production)';
+    document.title = modeTitle;
+    const h1 = document.querySelector('header h1');
+    if (h1) h1.textContent = modeTitle;
+    if (window.TSIM_MODE === 'test') {
+        // Hide and disable IP inputs; show trace upload
+        setVisible(src, false); setDisabled(src, true);
+        setVisible(srcPort, true); setDisabled(srcPort, false);
+        setVisible(dst, false); setDisabled(dst, true);
+        if (traceBtn) {
+            traceBtn.style.display = 'inline-block';
+            // Move Trace button to the top of the form in test mode
+            const firstGroup = form.querySelector('.form-group');
+            if (firstGroup && traceBtn.parentElement) {
+                // Create or reuse a top container
+                let topContainer = document.getElementById('trace_top_container');
+                if (!topContainer) {
+                    topContainer = document.createElement('div');
+                    topContainer.id = 'trace_top_container';
+                    topContainer.className = 'form-group';
                 }
-            } else {
-                setVisible(src, true); setDisabled(src, false);
-                setVisible(srcPort, true); setDisabled(srcPort, false);
-                setVisible(dst, true); setDisabled(dst, false);
-                if (traceBtn) traceBtn.style.display = 'none';
-                // Ensure no leftover trace data is submitted in prod
-                localStorage.removeItem('user_trace_data');
-                if (userTraceHidden) userTraceHidden.value = '';
+                // Place the button into the top container
+                topContainer.innerHTML = '';
+                const hint = document.createElement('div');
+                hint.className = 'help-text';
+                hint.textContent = 'Paste a JSON formatted trace file via the button above';
+                // Center button and help text in test mode
+                topContainer.style.textAlign = 'center';
+                traceBtn.style.display = 'inline-block';
+                traceBtn.style.margin = '8px auto';
+                hint.style.textAlign = 'center';
+                // Append elements
+                topContainer.appendChild(traceBtn);
+                topContainer.appendChild(hint);
+                form.insertBefore(topContainer, firstGroup);
             }
+        }
+    } else {
+        setVisible(src, true); setDisabled(src, false);
+        setVisible(srcPort, true); setDisabled(srcPort, false);
+        setVisible(dst, true); setDisabled(dst, false);
+        if (traceBtn) traceBtn.style.display = 'none';
+        // Ensure no leftover trace data is submitted in prod
+        localStorage.removeItem('user_trace_data');
+        if (userTraceHidden) userTraceHidden.value = '';
+    }
 
-            // Restore saved form values (except hidden/disabled ones in test mode)
-            const saved = localStorage.getItem('reachability_form_data');
-            if (saved) {
-                const data = JSON.parse(saved);
-                Object.entries(data).forEach(([k, v]) => {
-                    const field = form.elements[k];
-                    if (!field) return;
-                    if (k === 'quick_ports') return; // handled elsewhere
-                    if (field[0] && field[0].type === 'radio') {
-                        form.querySelectorAll(`input[name="${k}"]`).forEach(r => r.checked = (r.value === v));
-                    } else if (!field.disabled) {
-                        field.value = v;
-                    }
-                });
-                window.togglePortMode();
+    // Restore saved form values (except hidden/disabled ones in test mode)
+    const saved = localStorage.getItem('reachability_form_data');
+    if (saved) {
+        const data = JSON.parse(saved);
+        Object.entries(data).forEach(([k, v]) => {
+            const field = form.elements[k];
+            if (!field) return;
+            if (k === 'quick_ports') return; // handled elsewhere
+            if (field[0] && field[0].type === 'radio') {
+                form.querySelectorAll(`input[name="${k}"]`).forEach(r => r.checked = (r.value === v));
+            } else if (!field.disabled) {
+                field.value = v;
             }
+        });
+        window.togglePortMode();
+    }
 
-            // Restore user trace data in test mode
-            if (TSIM_MODE === 'test') {
-                const savedTrace = localStorage.getItem('user_trace_data');
-                if (savedTrace && userTraceHidden) userTraceHidden.value = savedTrace;
-            }
-        })
-        .catch(() => {});
+    // Restore user trace data in test mode
+    if (window.TSIM_MODE === 'test') {
+        const savedTrace = localStorage.getItem('user_trace_data');
+        if (savedTrace && userTraceHidden) userTraceHidden.value = savedTrace;
+    }
 
     // Show Queue Admin link for admin users
     fetch('/login')

@@ -28,13 +28,50 @@ if config_path.exists():
     web_root = config.get('web_root', '/opt/tsim/wsgi')
     venv_path = config.get('venv_path', '/opt/tsim/venv')
     
-    # Set environment variables from config
+    # Set environment variables that tsimsh needs
+    os.environ['TRACEROUTE_SIMULATOR_FACTS'] = config.get('traceroute_simulator_facts', '/opt/tsim/tsim_facts')
+    os.environ['TRACEROUTE_SIMULATOR_RAW_FACTS'] = config.get('traceroute_simulator_raw_facts', '/opt/tsim/raw_facts')
+    
+    # Validate facts directories (critical for system operation)
+    facts_dir = Path(os.environ['TRACEROUTE_SIMULATOR_FACTS'])
+    raw_facts_dir = Path(os.environ['TRACEROUTE_SIMULATOR_RAW_FACTS'])
+    facts_valid = True
+    facts_errors = []
+    
+    # Check JSON facts directory
+    if not facts_dir.exists():
+        facts_errors.append(f"Facts directory does not exist: {facts_dir}")
+        facts_valid = False
+    elif not facts_dir.is_dir():
+        facts_errors.append(f"Facts path is not a directory: {facts_dir}")
+        facts_valid = False
+    elif not any(facts_dir.glob('*.json')):
+        facts_errors.append(f"No JSON fact files found in: {facts_dir}")
+        facts_valid = False
+    
+    # Check raw facts directory
+    if not raw_facts_dir.exists():
+        facts_errors.append(f"Raw facts directory does not exist: {raw_facts_dir}")
+        facts_valid = False
+    elif not raw_facts_dir.is_dir():
+        facts_errors.append(f"Raw facts path is not a directory: {raw_facts_dir}")
+        facts_valid = False
+    elif not any(raw_facts_dir.iterdir()):
+        facts_errors.append(f"No files found in raw facts directory: {raw_facts_dir}")
+        facts_valid = False
+    
+    if not facts_valid:
+        # Log all errors
+        for error in facts_errors:
+            print(f"CRITICAL: {error}", file=sys.stderr)
+        print("CRITICAL: FACTS VALIDATION FAILED - System cannot perform network analysis", file=sys.stderr)
+        # Set a flag that services can check
+        os.environ['TSIM_FACTS_INVALID'] = '1'
+    
+    # Set only system environment variables (not config values)
     os.environ['PYTHONPYCACHEPREFIX'] = config.get('cache_dir', '/dev/shm/tsim/pycache')
     os.environ['PYTHONDONTWRITEBYTECODE'] = '1'
     os.environ['MPLCONFIGDIR'] = config.get('matplotlib_cache_dir', '/dev/shm/tsim/matplotlib')
-    os.environ['TSIM_WEB_ROOT'] = web_root
-    os.environ['TRACEROUTE_SIMULATOR_RAW_FACTS'] = config.get('traceroute_simulator_raw_facts', '/opt/tsim/raw_facts')
-    os.environ['TRACEROUTE_SIMULATOR_FACTS'] = config.get('traceroute_simulator_facts', '/opt/tsim/facts')
     os.environ['PYTHONIOENCODING'] = 'utf-8'
     
     # Add web_root to PYTHONPATH so all child processes can import from it
@@ -57,12 +94,45 @@ else:
     except Exception:
         web_root = '/opt/tsim/wsgi'
     venv_path = '/opt/tsim/venv'
+    # Set environment variables that tsimsh needs
+    os.environ['TRACEROUTE_SIMULATOR_FACTS'] = '/opt/tsim/tsim_facts'
+    os.environ['TRACEROUTE_SIMULATOR_RAW_FACTS'] = '/opt/tsim/raw_facts'
+    
+    # Validate facts directories (same as above)
+    facts_dir = Path(os.environ['TRACEROUTE_SIMULATOR_FACTS'])
+    raw_facts_dir = Path(os.environ['TRACEROUTE_SIMULATOR_RAW_FACTS'])
+    facts_valid = True
+    facts_errors = []
+    
+    if not facts_dir.exists():
+        facts_errors.append(f"Facts directory does not exist: {facts_dir}")
+        facts_valid = False
+    elif not facts_dir.is_dir():
+        facts_errors.append(f"Facts path is not a directory: {facts_dir}")
+        facts_valid = False
+    elif not any(facts_dir.glob('*.json')):
+        facts_errors.append(f"No JSON fact files found in: {facts_dir}")
+        facts_valid = False
+    
+    if not raw_facts_dir.exists():
+        facts_errors.append(f"Raw facts directory does not exist: {raw_facts_dir}")
+        facts_valid = False
+    elif not raw_facts_dir.is_dir():
+        facts_errors.append(f"Raw facts path is not a directory: {raw_facts_dir}")
+        facts_valid = False
+    elif not any(raw_facts_dir.iterdir()):
+        facts_errors.append(f"No files found in raw facts directory: {raw_facts_dir}")
+        facts_valid = False
+    
+    if not facts_valid:
+        for error in facts_errors:
+            print(f"CRITICAL: {error}", file=sys.stderr)
+        print("CRITICAL: FACTS VALIDATION FAILED - System cannot perform network analysis", file=sys.stderr)
+        os.environ['TSIM_FACTS_INVALID'] = '1'
+    
     os.environ['PYTHONPYCACHEPREFIX'] = '/dev/shm/tsim/pycache'
     os.environ['PYTHONDONTWRITEBYTECODE'] = '1'
     os.environ['MPLCONFIGDIR'] = '/dev/shm/tsim/matplotlib'
-    os.environ['TSIM_WEB_ROOT'] = web_root
-    os.environ['TRACEROUTE_SIMULATOR_RAW_FACTS'] = '/opt/tsim/raw_facts'
-    os.environ['TRACEROUTE_SIMULATOR_FACTS'] = '/opt/tsim/facts'
     os.environ['PYTHONIOENCODING'] = 'utf-8'
     
     # Add web_root to PYTHONPATH so all child processes can import from it
@@ -141,6 +211,15 @@ logging.basicConfig(
 )
 logger = logging.getLogger('tsim.startup')
 logger.info(f"Starting TSIM WSGI application from {web_root}")
+
+# Log facts validation status
+if os.environ.get('TSIM_FACTS_INVALID') == '1':
+    logger.critical("FACTS VALIDATION FAILED - System cannot perform network analysis")
+    logger.critical("Please contact your system administrator to ensure fact files are properly installed")
+    logger.critical(f"Expected JSON facts in: {os.environ.get('TRACEROUTE_SIMULATOR_FACTS')}")
+    logger.critical(f"Expected raw facts in: {os.environ.get('TRACEROUTE_SIMULATOR_RAW_FACTS')}")
+else:
+    logger.info(f"Facts validated: JSON={os.environ.get('TRACEROUTE_SIMULATOR_FACTS')}, RAW={os.environ.get('TRACEROUTE_SIMULATOR_RAW_FACTS')}")
 
 # ============================================================================
 # PRELOAD ALL MODULES FOR MAXIMUM PERFORMANCE
@@ -317,11 +396,14 @@ _application = application
 
 def application(environ, start_response):
     """WSGI application wrapper that transfers Apache SetEnv variables to os.environ"""
-    # Transfer config file location from Apache SetEnv to os.environ (one-time only)
-    if 'TSIM_CONFIG_FILE' in environ and 'TSIM_CONFIG_FILE_SET' not in os.environ:
-        os.environ['TSIM_CONFIG_FILE'] = environ['TSIM_CONFIG_FILE']
-        os.environ['TSIM_CONFIG_FILE_SET'] = '1'  # Flag to prevent repeated setting
-        logger.info(f"Config file path set from Apache: {os.environ['TSIM_CONFIG_FILE']}")
+    # Transfer environment variables from Apache SetEnv to os.environ (one-time only)
+    if 'TSIM_ENV_SET' not in os.environ:
+        for key in ['TSIM_CONFIG_FILE', 'TSIM_WEB_ROOT', 'TSIM_HTDOCS', 'TSIM_VENV', 
+                    'TSIM_DATA_DIR', 'TSIM_LOG_DIR']:
+            if key in environ:
+                os.environ[key] = environ[key]
+                logger.debug(f"{key} set from Apache: {environ[key]}")
+        os.environ['TSIM_ENV_SET'] = '1'  # Flag to prevent repeated setting
     
     # Call the actual application
     return _application(environ, start_response)

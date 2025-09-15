@@ -1,20 +1,3 @@
-# TSIM WSGI Apache Configuration
-# 
-# This configuration requires mod_wsgi to be installed in the TSIM virtual environment.
-# The mod_wsgi LoadModule directive should be in a separate file that is loaded before this configuration.
-#
-# To use this configuration:
-# 1. Ensure mod_wsgi is installed: make install-venv (includes mod-wsgi in requirements.txt)
-# 2. Copy the generated mod_wsgi.conf to Apache:
-#    sudo cp __TSIM_WEB_ROOT__/mod_wsgi.conf /etc/apache2/mods-available/wsgi_tsim.load
-#    sudo a2enmod wsgi_tsim
-# 3. Copy this configuration to Apache:
-#    sudo cp __TSIM_WEB_ROOT__/apache-site.conf /etc/apache2/sites-available/tsim-wsgi.conf
-# 4. Enable the site:
-#    sudo a2ensite tsim-wsgi
-#    sudo systemctl reload apache2
-
-# Global WSGI configuration (must be outside VirtualHost)
 WSGIRestrictEmbedded On
 WSGISocketPrefix /var/run/wsgi
 
@@ -22,68 +5,75 @@ WSGISocketPrefix /var/run/wsgi
     ServerName tsim.example.com
     ServerAlias www.tsim.example.com
     
-    # Define variables for easy configuration
     Define TSIM_WEB_ROOT __TSIM_WEB_ROOT__
     Define TSIM_VENV_PATH __TSIM_VENV__
     Define TSIM_DATA_DIR __TSIM_DATA_DIR__
     Define TSIM_LOG_DIR __TSIM_LOG_DIR__
     Define TSIM_HTDOCS __TSIM_HTDOCS__
     
-    # Document root for static files
-    DocumentRoot ${TSIM_HTDOCS}
+    DocumentRoot ${TSIM_WEB_ROOT}
     DirectoryIndex index.html login.html
     
-    # Alias for static files to ensure they're served by Apache, not WSGI
     Alias /css ${TSIM_HTDOCS}/css
     Alias /js ${TSIM_HTDOCS}/js
     Alias /images ${TSIM_HTDOCS}/images
     Alias /fonts ${TSIM_HTDOCS}/fonts
     
-    # SSL Configuration
     SSLEngine on
     SSLCertificateFile /etc/ssl/certs/tsim.crt
     SSLCertificateKeyFile /etc/ssl/private/tsim.key
-    # SSLCertificateChainFile /etc/ssl/certs/tsim-chain.crt
     
-    # SSL Security Settings
     SSLProtocol -all +TLSv1.2 +TLSv1.3
     SSLCipherSuite HIGH:!aNULL:!MD5:!3DES
     SSLHonorCipherOrder on
     
-    # Enable HTTP/2 for better performance
     Protocols h2 http/1.1
     
-    # Security Headers
     Header always set Strict-Transport-Security "max-age=31536000; includeSubDomains"
     Header always set X-Frame-Options "SAMEORIGIN"
     Header always set X-Content-Type-Options "nosniff"
     Header always set X-XSS-Protection "1; mode=block"
     
-    # Static files directory
-    <Directory ${TSIM_HTDOCS}>
-        Options -Indexes +FollowSymLinks
+    <Directory ${TSIM_HTDOCS}/css>
+        Options -Indexes
         AllowOverride None
         Require all granted
-        
-        # Enable compression for static files
-        <IfModule mod_deflate.c>
-            AddOutputFilterByType DEFLATE text/css text/javascript application/javascript application/json text/html
-        </IfModule>
-        
-        # Cache static assets
         <IfModule mod_expires.c>
             ExpiresActive On
-            ExpiresByType text/css "access plus 1 week"
-            ExpiresByType application/javascript "access plus 1 week"
-            ExpiresByType image/png "access plus 1 month"
-            ExpiresByType image/jpeg "access plus 1 month"
-            ExpiresByType font/woff2 "access plus 1 month"
+            ExpiresDefault "access plus 1 week"
         </IfModule>
     </Directory>
     
-    # WSGI Daemon Configuration
-    # Note: python-home must point to virtual environment root
-    # Environment variables must be set here for the daemon process
+    <Directory ${TSIM_HTDOCS}/js>
+        Options -Indexes
+        AllowOverride None
+        Require all granted
+        <IfModule mod_expires.c>
+            ExpiresActive On
+            ExpiresDefault "access plus 1 week"
+        </IfModule>
+    </Directory>
+    
+    <Directory ${TSIM_HTDOCS}/images>
+        Options -Indexes
+        AllowOverride None
+        Require all granted
+        <IfModule mod_expires.c>
+            ExpiresActive On
+            ExpiresDefault "access plus 1 month"
+        </IfModule>
+    </Directory>
+    
+    <Directory ${TSIM_HTDOCS}/fonts>
+        Options -Indexes
+        AllowOverride None
+        Require all granted
+        <IfModule mod_expires.c>
+            ExpiresActive On
+            ExpiresDefault "access plus 1 month"
+        </IfModule>
+    </Directory>
+    
     WSGIDaemonProcess tsim \
         python-home=${TSIM_VENV_PATH} \
         processes=4 \
@@ -100,63 +90,48 @@ WSGISocketPrefix /var/run/wsgi
         locale=C.UTF-8 \
         home=/tmp
     
-    # Process group assignment
     WSGIProcessGroup tsim
     WSGIApplicationGroup %{GLOBAL}
     
-    # Pass authorization headers (if needed)
     WSGIPassAuthorization On
     
-    # Mount the WSGI application only for API endpoints
-    # Static files (.html, .css, .js) are served directly by Apache
-    WSGIScriptAliasMatch "^/(login|logout|main|pdf|progress|progress-stream|services-config|cleanup|admin-queue|admin-job|admin-queue-stream)$" ${TSIM_WEB_ROOT}/app.wsgi
+    WSGIScriptAlias / ${TSIM_WEB_ROOT}/app.wsgi
     
-    # Allow access to WSGI directory
     <Directory ${TSIM_WEB_ROOT}>
         Require all granted
         Options -Indexes
         
-        # Pass configuration file location to WSGI application
-        # This will be available in the WSGI environ
         SetEnv TSIM_CONFIG_FILE ${TSIM_WEB_ROOT}/conf/config.json
+        SetEnv TSIM_WEB_ROOT ${TSIM_WEB_ROOT}
+        SetEnv TSIM_HTDOCS ${TSIM_HTDOCS}
+        SetEnv TSIM_VENV ${TSIM_VENV_PATH}
+        SetEnv TSIM_DATA_DIR ${TSIM_DATA_DIR}
+        SetEnv TSIM_LOG_DIR ${TSIM_LOG_DIR}
+        SetEnv PYTHONPYCACHEPREFIX /dev/shm/tsim/pycache
+        SetEnv PYTHONDONTWRITEBYTECODE 1
+        SetEnv MPLCONFIGDIR /dev/shm/tsim/matplotlib
+        SetEnv MPLBACKEND Agg
+        SetEnv PYTHONIOENCODING utf-8
     </Directory>
     
-    # Ensure data directories exist with proper permissions
-    # These should be created during installation:
-    # sudo mkdir -p ${TSIM_DATA_DIR}
-    # sudo mkdir -p ${TSIM_LOG_DIR}
-    # sudo chown -R www-data:www-data ${TSIM_DATA_DIR}
-    # sudo chown -R www-data:www-data ${TSIM_LOG_DIR}
-    
-    # Proxy configuration for WebSocket support (if needed in future)
-    # ProxyPass /ws ws://localhost:8080/ws
-    # ProxyPassReverse /ws ws://localhost:8080/ws
-    
-    # Performance optimizations
     KeepAlive On
     KeepAliveTimeout 5
     MaxKeepAliveRequests 100
     
-    # Enable sendfile for static files
     EnableSendfile On
     
-    # Logging
     ErrorLog ${TSIM_LOG_DIR}/apache-error.log
     CustomLog ${TSIM_LOG_DIR}/apache-access.log combined
     
-    # Log level (change to warn in production)
     LogLevel info
 </VirtualHost>
 
-# HTTP to HTTPS redirect
 <VirtualHost *:80>
     ServerName tsim.example.com
     ServerAlias www.tsim.example.com
     
-    # Redirect all HTTP traffic to HTTPS
     Redirect permanent / https://tsim.example.com/
     
-    # Minimal logging for redirects
-    ErrorLog /var/log/tsim/redirect-error.log
-    CustomLog /var/log/tsim/redirect-access.log combined
+    ErrorLog ${TSIM_LOG_DIR}/redirect-error.log
+    CustomLog ${TSIM_LOG_DIR}/redirect-access.log combined
 </VirtualHost>

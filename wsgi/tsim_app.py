@@ -190,8 +190,8 @@ class TsimWSGIApp:
     
     def _serve_static(self, environ, start_response, path):
         """Serve static files (fallback - should be handled by Apache)"""
-        web_root = os.environ.get('TSIM_WEB_ROOT', '/opt/tsim/wsgi')
-        file_path = os.path.join(web_root, 'htdocs', path.lstrip('/'))
+        htdocs_root = os.environ.get('TSIM_HTDOCS', '/opt/tsim/htdocs')
+        file_path = os.path.join(htdocs_root, path.lstrip('/'))
         
         if not os.path.exists(file_path) or not os.path.isfile(file_path):
             start_response('404 Not Found', [('Content-Type', 'text/plain')])
@@ -230,16 +230,69 @@ class TsimWSGIApp:
             return [b'Error reading file']
     
     def _serve_html(self, environ, start_response, path):
-        """Serve HTML pages"""
+        """Serve HTML pages with authentication check"""
+        # Handle root/index - redirect based on auth status
+        if path in ['/', '/index.html']:
+            # Check if user is authenticated
+            cookie_header = environ.get('HTTP_COOKIE', '')
+            session_id = None
+            if cookie_header:
+                for cookie in cookie_header.split(';'):
+                    cookie = cookie.strip()
+                    if cookie.startswith('session_id='):
+                        session_id = cookie[11:]
+                        break
+            
+            session = self.session_manager.get_session(session_id) if session_id else None
+            if session:
+                # Authenticated - redirect to main app
+                start_response('302 Found', [
+                    ('Location', '/form.html'),
+                    ('Content-Type', 'text/plain')
+                ])
+                return [b'Redirecting to application...']
+            else:
+                # Not authenticated - redirect to login
+                start_response('302 Found', [
+                    ('Location', '/login.html'),
+                    ('Content-Type', 'text/plain')
+                ])
+                return [b'Redirecting to login...']
+        
+        # Allow only login.html without authentication
+        public_pages = ['/login.html']
+        
+        if path not in public_pages:
+            # Check for valid session
+            cookie_header = environ.get('HTTP_COOKIE', '')
+            session_id = None
+            if cookie_header:
+                for cookie in cookie_header.split(';'):
+                    cookie = cookie.strip()
+                    if cookie.startswith('session_id='):
+                        session_id = cookie[11:]  # Remove 'session_id=' prefix
+                        break
+            
+            # Validate session
+            session = self.session_manager.get_session(session_id) if session_id else None
+            if not session:
+                # Redirect to login page
+                location = '/login.html?redirect=' + path
+                start_response('302 Found', [
+                    ('Location', location),
+                    ('Content-Type', 'text/plain')
+                ])
+                return [b'Authentication required. Redirecting to login...']
+        
         if path == '/':
             path = '/index.html'
         
-        web_root = os.environ.get('TSIM_WEB_ROOT', '/opt/tsim/wsgi')
-        file_path = os.path.join(web_root, 'htdocs', path.lstrip('/'))
+        htdocs_root = os.environ.get('TSIM_HTDOCS', '/opt/tsim/htdocs')
+        file_path = os.path.join(htdocs_root, path.lstrip('/'))
         
         if not os.path.exists(file_path) or not os.path.isfile(file_path):
             # Try to serve 404.html if it exists
-            not_found_path = os.path.join(web_root, 'htdocs', '404.html')
+            not_found_path = os.path.join(htdocs_root, '404.html')
             if os.path.exists(not_found_path):
                 file_path = not_found_path
                 status = '404 Not Found'
@@ -252,6 +305,15 @@ class TsimWSGIApp:
         try:
             with open(file_path, 'rb') as f:
                 content = f.read()
+            
+            # Inject mode configuration into form.html
+            if path == '/form.html' or file_path.endswith('form.html'):
+                mode = self.config.get('traceroute_simulator_mode', 'prod')
+                # Inject a script tag with the mode BEFORE form.js loads
+                original_tag = b'<script src="/js/form.js"></script>'
+                mode_script = f'<script>window.TSIM_MODE = "{mode}";</script>\n    <script src="/js/form.js"></script>'.encode('utf-8')
+                content = content.replace(original_tag, mode_script)
+                self.logger.debug(f"Injected mode '{mode}' into form.html")
             
             start_response(status, [
                 ('Content-Type', 'text/html; charset=utf-8'),

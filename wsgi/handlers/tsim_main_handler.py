@@ -9,6 +9,7 @@ import uuid
 import logging
 import hmac
 import hashlib
+import os
 from typing import Dict, Any, List
 from .tsim_base_handler import TsimBaseHandler
 from services.tsim_validator_service import TsimValidatorService
@@ -143,6 +144,15 @@ class TsimMainHandler(TsimBaseHandler):
         Returns:
             Response body
         """
+        # Check if facts are valid before processing
+        if os.environ.get('TSIM_FACTS_INVALID') == '1':
+            self.logger.error("Network analysis request rejected: Facts validation failed")
+            return self.error_response(
+                start_response, 
+                'Network analysis is currently unavailable. Please contact your system administrator.',
+                '503 Service Unavailable'
+            )
+        
         # Parse POST data
         try:
             data = self.parse_post_data(environ)

@@ -40,11 +40,15 @@ class TsimServicesConfigHandler(TsimBaseHandler):
         # Get services from config.json
         services = self.config.get('quick_select_services', [])
         
-        # Ensure each service has required fields
+        # Ensure each service has required fields and handle both formats
         for service in services:
             if 'display' not in service:
-                # Create display field if not present
-                service['display'] = f"{service.get('name', 'Unknown')} ({service.get('port', 0)}/{service.get('protocol', 'tcp')})"
+                # Create display field based on format (multi-port or single port)
+                if 'ports' in service:
+                    service['display'] = f"{service.get('name', 'Unknown')} - {service.get('description', '')}"
+                else:
+                    # Legacy single port format
+                    service['display'] = f"{service.get('name', 'Unknown')} ({service.get('port', 0)}/{service.get('protocol', 'tcp')})"
         
         # Get quick test ports
         quick_ports = self.port_parser.get_quick_ports()

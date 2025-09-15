@@ -83,7 +83,7 @@ class TsimConfigService:
         return {
             'venv_path': '/opt/tsim/venv',
             'tsimsh_path': '/usr/local/bin/tsimsh',
-            'tsim_raw_facts': os.environ.get('TRACEROUTE_SIMULATOR_RAW_FACTS', '/opt/tsim/raw_facts'),
+            'tsim_raw_facts': '/opt/tsim/raw_facts',
             'data_dir': '/dev/shm/tsim/data',
             'log_dir': '/opt/tsim/logs',
             'session_dir': '/dev/shm/tsim',
@@ -107,9 +107,8 @@ class TsimConfigService:
         self.data_dir = Path(self.get('data_dir', '/dev/shm/tsim/data'))
         self.log_dir = Path(self.get('log_dir', '/opt/tsim/logs'))
         self.session_dir = Path(self.get('session_dir', '/dev/shm/tsim'))
-        # Environment variable takes precedence over config file
+        # Use config file value
         self.raw_facts_dir = Path(
-            os.environ.get('TRACEROUTE_SIMULATOR_RAW_FACTS') or 
             self.get('traceroute_simulator_raw_facts', '/opt/tsim/raw_facts')
         )
         self.secret_key = self.get('secret_key', 'CHANGE_THIS_IN_PRODUCTION')

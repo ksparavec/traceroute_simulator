@@ -10,6 +10,7 @@ import hashlib
 import secrets
 import logging
 import subprocess
+import yaml
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, Any, Optional, Tuple
@@ -44,6 +45,14 @@ class TsimAuthService:
         self.ldap_server = config_service.get('ldap_server')
         self.ldap_base_dn = config_service.get('ldap_base_dn')
         
+        # Get Unix group for admin privileges from traceroute_simulator.yaml
+        # Default to None - PAM users won't be admins unless explicitly configured
+        self.admin_unix_group = self._load_unix_group_from_yaml()
+        if self.admin_unix_group:
+            self.logger.info(f"Admin Unix group configured: {self.admin_unix_group}")
+        else:
+            self.logger.info("No admin Unix group configured - PAM users will not get admin privileges")
+        
         # Load users if file exists, otherwise initialize empty
         if self.users_file.exists():
             self.users = self._load_users()
@@ -53,6 +62,42 @@ class TsimAuthService:
             self.logger.warning("Please run scripts/create_user.sh to create an admin user")
         
         self.logger.info(f"Auth service initialized (external: {self.external_auth_enabled}, type: {self.external_auth_type})")
+    
+    def _load_unix_group_from_yaml(self) -> Optional[str]:
+        """Load Unix group from traceroute_simulator.yaml configuration
+        
+        Returns:
+            Unix group name or None if not configured
+        """
+        # Get the traceroute_simulator.yaml path from config service
+        yaml_path = self.config.get('traceroute_simulator_conf')
+        if not yaml_path:
+            self.logger.info("No traceroute_simulator_conf path configured in config.json - PAM users will not get admin privileges")
+            return None
+        
+        config_file = Path(yaml_path)
+        if not config_file.exists():
+            self.logger.warning(f"traceroute_simulator.yaml not found at configured path: {yaml_path}")
+            return None
+        
+        try:
+            with open(config_file, 'r') as f:
+                config = yaml.safe_load(f) or {}
+            
+            # Get system.unix_group from config
+            system_config = config.get('system', {})
+            unix_group = system_config.get('unix_group')
+            
+            if unix_group:
+                self.logger.info(f"Loaded Unix group '{unix_group}' from {config_file}")
+                return unix_group
+            else:
+                self.logger.debug(f"No unix_group found in system section of {config_file}")
+                
+        except Exception as e:
+            self.logger.error(f"Failed to load config from {config_file}: {e}")
+        
+        return None
     
     def _load_users(self) -> Dict[str, Dict[str, Any]]:
         """Load users from JSON file
@@ -201,6 +246,51 @@ class TsimAuthService:
             self.logger.error(f"Unknown external auth type: {self.external_auth_type}")
             return False, None
     
+    def _is_user_in_group(self, username: str, group_name: str) -> bool:
+        """Check if a user is a member of a Unix group
+        
+        Args:
+            username: Username to check
+            group_name: Unix group name
+            
+        Returns:
+            True if user is in group, False otherwise
+        """
+        try:
+            import grp
+            import pwd
+            
+            self.logger.debug(f"Checking if user '{username}' is in group '{group_name}'")
+            
+            # Get the group info
+            group_info = grp.getgrnam(group_name)
+            self.logger.debug(f"Group '{group_name}' members: {group_info.gr_mem}")
+            
+            # Check if user is in the group's member list
+            if username in group_info.gr_mem:
+                self.logger.debug(f"User '{username}' found in group '{group_name}' member list")
+                return True
+            
+            # Also check if this is the user's primary group
+            try:
+                user_info = pwd.getpwnam(username)
+                if user_info.pw_gid == group_info.gr_gid:
+                    self.logger.debug(f"Group '{group_name}' is primary group for user '{username}'")
+                    return True
+            except KeyError:
+                self.logger.debug(f"User '{username}' not found in passwd database")
+                pass
+            
+            self.logger.debug(f"User '{username}' is NOT in group '{group_name}'")
+            return False
+            
+        except KeyError:
+            self.logger.warning(f"Group '{group_name}' not found in system")
+            return False
+        except Exception as e:
+            self.logger.error(f"Error checking group membership: {e}")
+            return False
+    
     def _authenticate_pam(self, username: str, password: str) -> Tuple[bool, Optional[Dict[str, Any]]]:
         """Authenticate via PAM
         
@@ -218,12 +308,26 @@ class TsimAuthService:
         try:
             p = pam.pam()
             if p.authenticate(username, password, service=self.pam_service):
-                return True, {
+                # Check if user should have admin role based on group membership
+                role = 'user'
+                if self.admin_unix_group:
+                    self.logger.debug(f"Checking admin group membership for PAM user '{username}'")
+                    if self._is_user_in_group(username, self.admin_unix_group):
+                        role = 'admin'
+                        self.logger.info(f"PAM user '{username}' granted admin role (member of {self.admin_unix_group})")
+                    else:
+                        self.logger.info(f"PAM user '{username}' authenticated with user role (not member of {self.admin_unix_group})")
+                else:
+                    self.logger.debug(f"No admin group configured, PAM user '{username}' gets user role")
+                
+                user_data = {
                     'username': username,
-                    'role': 'user',
+                    'role': role,
                     'active': True,
                     'auth_type': 'pam'
                 }
+                self.logger.info(f"PAM authentication successful for '{username}' with role '{role}'")
+                return True, user_data
             return False, None
             
         except Exception as e:
@@ -424,6 +528,13 @@ class TsimAuthService:
         Returns:
             True if admin, False otherwise
         """
+        # Check local users first
         if username in self.users:
             return self.users[username].get('role') == 'admin'
+        
+        # For PAM users, check group membership
+        if self.external_auth_enabled and self.external_auth_type == 'pam':
+            if self.admin_unix_group and self._is_user_in_group(username, self.admin_unix_group):
+                return True
+        
         return False

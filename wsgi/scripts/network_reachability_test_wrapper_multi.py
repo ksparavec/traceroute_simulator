@@ -48,8 +48,9 @@ def acquire_lock(timeout: int = LOCK_TIMEOUT) -> Optional[int]:
     start_time = time.time()
     attempt = 0
     
-    # Log to audit log that we're waiting for lock
-    audit_log = Path("/var/www/traceroute-web/logs/audit.log")
+    # Log to audit log that we're waiting for lock - use TSIM_LOG_DIR
+    log_dir = Path(os.environ.get('TSIM_LOG_DIR', '/var/log/tsim'))
+    audit_log = log_dir / "audit.log"
     if audit_log.parent.exists():
         try:
             with open(audit_log, 'a') as f:
@@ -133,8 +134,9 @@ def release_lock(fd: int):
         except:
             pass
         
-        # Log lock release
-        audit_log = Path("/var/www/traceroute-web/logs/audit.log")
+        # Log lock release - use TSIM_LOG_DIR
+        log_dir = Path(os.environ.get('TSIM_LOG_DIR', '/var/log/tsim'))
+        audit_log = log_dir / "audit.log"
         if audit_log.parent.exists():
             try:
                 with open(audit_log, 'a') as f:

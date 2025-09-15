@@ -42,8 +42,8 @@ def log_timing(checkpoint: str, details: str = "") -> None:
     timestamp = time.strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
     session_id = os.environ.get('RUN_ID', str(uuid.uuid4()))
     
-    # Log to timings.log
-    log_dir = Path("/var/www/traceroute-web/logs")
+    # Log to timings.log - use TSIM_LOG_DIR environment variable
+    log_dir = Path(os.environ.get('TSIM_LOG_DIR', '/var/log/tsim'))
     if log_dir.exists():
         timings_file = log_dir / "timings.log"
         audit_file = log_dir / "audit.log"

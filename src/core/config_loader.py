@@ -206,12 +206,12 @@ def get_registry_paths() -> Dict[str, str]:
 def get_network_setup_config() -> Dict[str, Any]:
     """
     Get network setup configuration settings.
-    
+
     Returns:
         Dictionary with network setup configuration
     """
     config = load_traceroute_config()
-    
+
     # Default network setup configuration
     defaults = {
         'hidden_namespace': 'tsim-hidden',
@@ -220,15 +220,46 @@ def get_network_setup_config() -> Dict[str, Any]:
             'parallel_limit': 50
         }
     }
-    
+
     # Get network setup config from loaded configuration
     network_config = config.get('network_setup', {})
-    
+
     # Deep merge
     result = defaults.copy()
     if 'batch_processing' in network_config:
         result['batch_processing'].update(network_config['batch_processing'])
     if 'hidden_namespace' in network_config:
         result['hidden_namespace'] = network_config['hidden_namespace']
-    
+
+    return result
+
+
+def get_ssh_config() -> Dict[str, Any]:
+    """
+    Get SSH configuration settings for remote execution.
+
+    Returns:
+        Dictionary with SSH configuration including:
+        - ssh_mode: 'user' or 'standard' mode
+        - ssh_user: Username for SSH connections (user mode)
+        - ssh_key: Path to SSH private key (user mode)
+        - ssh_options: Dictionary of SSH options (user mode)
+    """
+    config = load_traceroute_config()
+
+    # Default SSH configuration (standard mode by default)
+    defaults = {
+        'ssh_mode': 'standard',
+        'ssh_user': None,
+        'ssh_key': None,
+        'ssh_options': {}
+    }
+
+    # Get SSH config from loaded configuration
+    ssh_config = config.get('ssh', {})
+
+    # Merge with defaults
+    result = defaults.copy()
+    result.update(ssh_config)
+
     return result

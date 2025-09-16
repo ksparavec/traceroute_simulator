@@ -90,7 +90,16 @@ class ReversePathTracer:
         # Initialize MTR executor and route formatter if available
         if MTR_AVAILABLE:
             linux_routers = set(simulator.routers.keys()) if simulator.routers else set()
-            self.mtr_executor = MTRExecutor(linux_routers, verbose, verbose_level)
+
+            # Load SSH configuration
+            ssh_config = None
+            try:
+                from tsim.core.config_loader import get_ssh_config
+                ssh_config = get_ssh_config()
+            except ImportError:
+                pass
+
+            self.mtr_executor = MTRExecutor(linux_routers, verbose, verbose_level, ssh_config)
             # Set comprehensive IP lookup table for proper router identification
             if hasattr(simulator, 'comprehensive_ip_lookup'):
                 self.mtr_executor.set_ip_lookup(simulator.comprehensive_ip_lookup)

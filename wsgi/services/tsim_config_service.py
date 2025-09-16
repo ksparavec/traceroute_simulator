@@ -82,7 +82,7 @@ class TsimConfigService:
         """
         return {
             'venv_path': '/opt/tsim/venv',
-            'tsimsh_path': '/usr/local/bin/tsimsh',
+            'tsimsh_path': '/opt/tsim/venv/bin/tsimsh',
             'tsim_raw_facts': '/opt/tsim/raw_facts',
             'data_dir': '/dev/shm/tsim/data',
             'log_dir': '/opt/tsim/logs',
@@ -103,7 +103,7 @@ class TsimConfigService:
     def _cache_common_values(self):
         """Cache commonly accessed configuration values"""
         self.venv_path = Path(self.get('venv_path', '/opt/tsim/venv'))
-        self.tsimsh_path = self.get('tsimsh_path', '/usr/local/bin/tsimsh')
+        self.tsimsh_path = self.get('tsimsh_path', '/opt/tsim/venv/bin/tsimsh')
         self.data_dir = Path(self.get('data_dir', '/dev/shm/tsim/data'))
         self.log_dir = Path(self.get('log_dir', '/opt/tsim/logs'))
         self.session_dir = Path(self.get('session_dir', '/dev/shm/tsim'))

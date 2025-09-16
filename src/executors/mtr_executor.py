@@ -42,19 +42,34 @@ class MTRExecutor:
         linux_routers (set): Set of known Linux router hostnames
     """
     
-    def __init__(self, linux_routers: set = None, verbose: bool = False, verbose_level: int = 1):
+    def __init__(self, linux_routers: set = None, verbose: bool = False, verbose_level: int = 1, ssh_config: dict = None):
         """
         Initialize MTR executor with Linux router information.
-        
+
         Args:
             linux_routers: Set of known Linux router hostnames (optional)
             verbose: Enable verbose output for debugging operations
             verbose_level: Verbosity level (1=basic, 2=detailed debugging)
+            ssh_config: SSH configuration dictionary (optional)
         """
         self.verbose = verbose
         self.verbose_level = verbose_level
         self.linux_routers = linux_routers or set()
         self.ip_to_router_lookup = {}  # Will be set later via set_ip_lookup
+
+        # SSH configuration (load if not provided)
+        if ssh_config is None:
+            try:
+                from tsim.core.config_loader import get_ssh_config
+                ssh_config = get_ssh_config()
+            except ImportError:
+                ssh_config = {}
+
+        self.ssh_config = ssh_config or {}
+        self.ssh_mode = self.ssh_config.get('ssh_mode', 'standard')
+        self.ssh_user = self.ssh_config.get('ssh_user')
+        self.ssh_key = self.ssh_config.get('ssh_key')
+        self.ssh_options = self.ssh_config.get('ssh_options', {})
     
     def add_linux_router(self, hostname: str):
         """Add a Linux router hostname to the known routers set."""
@@ -206,15 +221,39 @@ class MTRExecutor:
             ipaddress.ip_address(destination_ip)
         except ipaddress.AddressValueError:
             raise ValueError(f"Invalid destination IP address: {destination_ip}")
-        
-        # Construct SSH command to run MTR directly with --no-dns to get IP addresses
-        ssh_command = [
-            'ssh', source_router,
-            f'mtr --report --no-dns -c 1 -m 30 {destination_ip}'
-        ]
-        
+
+        # Construct SSH command based on mode
+        if self.ssh_mode == 'user' and self.ssh_user and self.ssh_key:
+            # User mode: simplified SSH command with specific user and key
+            ssh_command = ['ssh']
+
+            # Add identity file
+            ssh_command.extend(['-i', self.ssh_key])
+
+            # Add user
+            ssh_command.extend(['-l', self.ssh_user])
+
+            # Add SSH options
+            for option, value in self.ssh_options.items():
+                ssh_command.extend(['-o', f'{option}={value}'])
+
+            # Add router and destination IP (no mtr command in user mode)
+            ssh_command.extend([source_router, destination_ip])
+
+            if self.verbose:
+                print(f"Executing trace in user mode from {source_router} to {destination_ip}", file=sys.stderr)
+                print(f"SSH user: {self.ssh_user}, Key: {self.ssh_key}", file=sys.stderr)
+        else:
+            # Standard mode: use mtr command
+            ssh_command = [
+                'ssh', source_router,
+                f'mtr --report --no-dns -c 1 -m 30 {destination_ip}'
+            ]
+
+            if self.verbose:
+                print(f"Executing mtr tool from {source_router} to {destination_ip}", file=sys.stderr)
+
         if self.verbose:
-            print(f"Executing mtr tool from {source_router} to {destination_ip}", file=sys.stderr)
             print(f"Command: {' '.join(ssh_command)}", file=sys.stderr)
         
         try:
@@ -226,15 +265,20 @@ class MTRExecutor:
                 timeout=60  # 60 second timeout for MTR execution
             )
             
-            # Show MTR command output in detailed debug mode
+            # Show command output in detailed debug mode
             if self.verbose_level >= 2:
-                print("=== MTR COMMAND OUTPUT ===", file=sys.stderr)
-                print(f"MTR STDOUT:\n{result.stdout}", file=sys.stderr)
+                mode_str = "USER MODE" if self.ssh_mode == 'user' else "MTR"
+                print(f"=== {mode_str} COMMAND OUTPUT ===", file=sys.stderr)
+                print(f"STDOUT:\n{result.stdout}", file=sys.stderr)
                 if result.stderr:
-                    print(f"MTR STDERR:\n{result.stderr}", file=sys.stderr)
-                print("=== END MTR OUTPUT ===", file=sys.stderr)
-            
-            return self._parse_mtr_output(result.stdout)
+                    print(f"STDERR:\n{result.stderr}", file=sys.stderr)
+                print(f"=== END {mode_str} OUTPUT ===", file=sys.stderr)
+
+            # Parse output based on mode
+            if self.ssh_mode == 'user' and self.ssh_user:
+                return self._parse_user_mode_output(result.stdout)
+            else:
+                return self._parse_mtr_output(result.stdout)
             
         except subprocess.TimeoutExpired:
             raise ValueError("mtr tool execution timed out")
@@ -343,7 +387,87 @@ class MTRExecutor:
             raise ValueError("No valid mtr tool data found in output")
         
         return hops
-    
+
+    def _parse_user_mode_output(self, output: str) -> List[Dict]:
+        """
+        Parse user mode SSH output to extract hop information.
+
+        User mode format is CSV with comment header:
+        - First line: comment starting with #
+        - Data lines: hop_number,ip_address,rtt_ms,status_code
+
+        Args:
+            output: Raw output from SSH user mode command
+
+        Returns:
+            List of hop dictionaries with parsed information
+
+        Raises:
+            ValueError: If output format is unrecognizable
+        """
+        hops = []
+        lines = output.strip().split('\n')
+
+        for line in lines:
+            line = line.strip()
+
+            # Skip empty lines
+            if not line:
+                continue
+
+            # Skip comment lines starting with #
+            if line.startswith('#'):
+                if self.verbose_level >= 2:
+                    print(f"Skipping comment line: {line}", file=sys.stderr)
+                continue
+
+            # Parse CSV format: hop_number,ip_address,rtt_ms,status_code
+            parts = line.split(',')
+            if len(parts) >= 4:
+                try:
+                    hop_num = int(parts[0])
+                    ip = parts[1].strip()
+                    rtt = float(parts[2])
+                    status = int(parts[3])
+
+                    # Validate IP address
+                    try:
+                        ipaddress.ip_address(ip)
+                    except ipaddress.AddressValueError:
+                        if self.verbose:
+                            print(f"Warning: Invalid IP in user mode output: {ip}", file=sys.stderr)
+                        continue
+
+                    # Perform reverse DNS lookup for hostname
+                    hostname = self._perform_reverse_dns(ip)
+
+                    # Convert status code to loss percentage (0=success, other=100% loss)
+                    loss_pct = 0.0 if status == 0 else 100.0
+
+                    hops.append({
+                        'hop': hop_num,
+                        'ip': ip,
+                        'hostname': hostname,
+                        'rtt': rtt,
+                        'loss': loss_pct
+                    })
+
+                    if self.verbose_level >= 2:
+                        print(f"Parsed hop {hop_num}: {ip} ({hostname}), RTT={rtt}ms, Loss={loss_pct}%", file=sys.stderr)
+
+                except (ValueError, IndexError) as e:
+                    if self.verbose:
+                        print(f"Warning: Failed to parse line '{line}': {e}", file=sys.stderr)
+                    continue
+            else:
+                if self.verbose_level >= 2:
+                    print(f"Skipping malformed line (expected 4+ fields): {line}", file=sys.stderr)
+
+        if not hops:
+            raise ValueError("No valid hop data found in user mode output")
+
+        return hops
+
     def filter_linux_hops(self, hops: List[Dict]) -> List[Dict]:
         """
         Filter MTR hops to include only Linux routers from inventory.

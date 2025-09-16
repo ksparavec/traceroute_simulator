@@ -247,13 +247,21 @@ class TsimBaseHandler(ABC):
         
         # Send appropriate response based on status
         if status_code.startswith('5'):
-            # Server error - include less detail
-            response_data = {
-                'success': False,
-                'error': 'Internal server error'
-            }
+            # Server error - include less detail unless explicitly allowed
             if details and details.get('show_to_user'):
-                response_data['error'] = error
+                # Show the actual error message to the user
+                response_data = {
+                    'success': False,
+                    'error': error,
+                    'message': error  # Include in both fields for compatibility
+                }
+            else:
+                # Generic server error
+                response_data = {
+                    'success': False,
+                    'error': 'Internal server error',
+                    'message': 'Internal server error'
+                }
         
         return self.json_response(start_response, response_data, status)
     

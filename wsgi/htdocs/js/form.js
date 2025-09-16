@@ -284,16 +284,42 @@ window.addEventListener('DOMContentLoaded', () => {
             });
             const ct = resp.headers.get('content-type') || '';
             let payload = null;
-            if (ct.includes('application/json')) {
-                payload = await resp.json();
-            } else {
-                payload = await resp.text();
+
+            // Try to parse response regardless of status
+            try {
+                if (ct.includes('application/json')) {
+                    payload = await resp.json();
+                } else {
+                    const textResponse = await resp.text();
+                    // Try to parse as JSON anyway in case content-type is wrong
+                    try {
+                        payload = JSON.parse(textResponse);
+                    } catch {
+                        payload = textResponse;
+                    }
+                }
+            } catch (parseErr) {
+                console.error('Error parsing response:', parseErr);
+                payload = null;
             }
+
             if (!resp.ok) {
-                const msg = (payload && payload.message) || (payload && payload.error) || 'Request failed. Please check your inputs and try again.';
+                // Extract error message from payload - prioritize server's message
+                let msg = 'Request failed. Please check your inputs and try again.';
+                if (payload) {
+                    if (typeof payload === 'object') {
+                        // Look for message field first, then error field
+                        msg = payload.message || payload.error || msg;
+                    } else if (typeof payload === 'string' && payload.trim()) {
+                        msg = payload;
+                    }
+                }
+                // Log for debugging
+                console.log('Server error response:', resp.status, payload);
                 showError(msg);
                 return;
             }
+
             if (payload && payload.success) {
                 const url = (payload.redirect) || `/progress.html?id=${payload.run_id}`;
                 window.location.href = url;
@@ -302,6 +328,7 @@ window.addEventListener('DOMContentLoaded', () => {
                 showError(msg);
             }
         } catch (err) {
+            console.error('Form submission error:', err);
             showError('Network or server error. Please try again.');
         }
     });

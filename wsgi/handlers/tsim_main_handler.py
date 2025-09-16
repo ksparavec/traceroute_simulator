@@ -148,9 +148,10 @@ class TsimMainHandler(TsimBaseHandler):
         if os.environ.get('TSIM_FACTS_INVALID') == '1':
             self.logger.error("Network analysis request rejected: Facts validation failed")
             return self.error_response(
-                start_response, 
+                start_response,
                 'Network analysis is currently unavailable. Please contact your system administrator.',
-                '503 Service Unavailable'
+                '503 Service Unavailable',
+                details={'show_to_user': True}
             )
         
         # Parse POST data

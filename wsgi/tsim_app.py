@@ -165,19 +165,31 @@ class TsimWSGIApp:
                 
         except Exception as e:
             # Log error with full traceback
-            self.logger.error(f"WSGI Error handling {method} {path}: {str(e)}", 
+            self.logger.error(f"WSGI Error handling {method} {path}: {str(e)}",
                             exc_info=True)
-            
+
             # Log to audit log if available
             try:
                 self.logger_service.log_error(
-                    f"WSGI Error: {str(e)}", 
+                    f"WSGI Error: {str(e)}",
                     traceback=traceback.format_exc()
                 )
             except:
                 pass
-            
-            # Return 500 error
+
+            # Check if facts validation failed - return user-friendly message
+            if os.environ.get('TSIM_FACTS_INVALID') == '1':
+                start_response('503 Service Unavailable', [
+                    ('Content-Type', 'application/json'),
+                    ('Cache-Control', 'no-cache')
+                ])
+                error_response = json.dumps({
+                    'error': 'Service Unavailable',
+                    'message': 'Network analysis is currently unavailable. Please contact your system administrator.'
+                }).encode('utf-8')
+                return [error_response]
+
+            # Return 500 error for other exceptions
             start_response('500 Internal Server Error', [
                 ('Content-Type', 'application/json'),
                 ('Cache-Control', 'no-cache')
@@ -226,6 +238,10 @@ class TsimWSGIApp:
             return [content]
         except Exception as e:
             self.logger.error(f"Error serving static file {path}: {e}")
+            # Check if facts validation failed
+            if os.environ.get('TSIM_FACTS_INVALID') == '1':
+                start_response('503 Service Unavailable', [('Content-Type', 'text/plain')])
+                return [b'Network analysis is currently unavailable. Please contact your system administrator.']
             start_response('500 Internal Server Error', [('Content-Type', 'text/plain')])
             return [b'Error reading file']
     
@@ -322,6 +338,10 @@ class TsimWSGIApp:
             return [content]
         except Exception as e:
             self.logger.error(f"Error serving HTML page {path}: {e}")
+            # Check if facts validation failed
+            if os.environ.get('TSIM_FACTS_INVALID') == '1':
+                start_response('503 Service Unavailable', [('Content-Type', 'text/plain')])
+                return [b'Network analysis is currently unavailable. Please contact your system administrator.']
             start_response('500 Internal Server Error', [('Content-Type', 'text/plain')])
             return [b'Error reading page']
 

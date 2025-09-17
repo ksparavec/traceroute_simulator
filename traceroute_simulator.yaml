@@ -112,16 +112,31 @@ json_output: false                             # Output results in JSON format
 enable_mtr_fallback: true                      # Enable MTR fallback for incomplete paths
 enable_reverse_trace: true                     # Enable reverse path tracing when forward fails
 
-# Network discovery (required for reverse path tracing)
-controller_ip: "127.0.0.1"                            # Ansible controller IP (required for reverse tracing)
+# Network discovery and execution environment
+ansible_controller: false                      # Set to true if this code runs on the Ansible controller
+controller_ip: "127.0.0.1"                     # Ansible controller IP (required when ansible_controller is false)
 
-# SSH configuration for remote execution
+# SSH configuration for remote execution to routers
 ssh:
   ssh_mode: user                               # Mode: 'user' or 'standard' (default: standard)
   ssh_user: traceuser                         # SSH username for user mode
   ssh_key: /opt/tsim/wsgi/conf/ssh_user.key   # SSH private key path for user mode
-  ssh_options:                                # Additional SSH options for user mode
-    ConnectTimeout: 3
+  ssh_options:                                # SSH options for router connections
+    BatchMode: "yes"
+    LogLevel: "ERROR"
+    ConnectTimeout: 5
     StrictHostKeyChecking: "no"
     UserKnownHostsFile: "/dev/null"
+
+# SSH configuration for Ansible controller connections
+ssh_controller:
+  ssh_mode: user                               # Mode: 'user' or 'standard' (default: standard)
+  ssh_user: traceuser                         # SSH username for user mode
+  ssh_key: /opt/tsim/wsgi/conf/ssh_user.key   # SSH private key path for user mode
+  ssh_options:                                # SSH options for controller connections
+    BatchMode: "yes"
+    LogLevel: "ERROR"
+    ConnectTimeout: 10
+    StrictHostKeyChecking: "yes"             # Validate host key for security
+    UserKnownHostsFile: "~/.ssh/known_hosts" # Use standard known hosts file
 

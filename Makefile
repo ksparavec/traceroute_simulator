@@ -1,6 +1,9 @@
 # Makefile for Traceroute Simulator Project
 # Provides targets for dependency checking, testing, and routing data collection
 
+# Include build configuration
+-include Configuration.mk
+
 # Project configuration
 PYTHON := python3
 PYTHON_OPTIONS := -B -u
@@ -52,24 +55,24 @@ APACHE_ENABLE_CMD := $(shell if [ -d "/etc/apache2/sites-available" ]; then echo
 # Get unix_group from configuration file (defaults to tsim-users if not found)
 UNIX_GROUP := $(shell $(PYTHON) -c "import yaml; import os; conf_file='traceroute_simulator.yaml' if os.path.exists('traceroute_simulator.yaml') else None; print(yaml.safe_load(open(conf_file))['system']['unix_group'] if conf_file else 'tsim-users')" 2>/dev/null || echo "tsim-users")
 
-# Python modules required by the project
-REQUIRED_MODULES := json sys argparse ipaddress os glob typing subprocess re difflib matplotlib numpy
-
 # Colors removed for better terminal compatibility
 
-.PHONY: help check-deps test test-iptables-enhanced test-policy-routing test-ipset-enhanced test-raw-facts-loading test-mtr-options test-iptables-logging test-packet-tracing test-network facts clean-shell tsim ifa netsetup nettest netclean netshow netstatus test-namespace hostadd hostdel hostlist hostclean netnsclean service-start service-stop service-restart service-status service-test service-clean test-services svctest svcstart svcstop svclist svcclean install-wrapper install-shell install-venv install-pipx uninstall-shell uninstall-pipx list-package show-sudoers
+.PHONY: help check-deps test test-iptables-enhanced test-policy-routing test-ipset-enhanced test-raw-facts-loading test-mtr-options test-iptables-logging test-packet-tracing test-network facts clean-shell tsim ifa netsetup nettest netclean netshow netstatus test-namespace hostadd hostdel hostlist hostclean netnsclean service-start service-stop service-restart service-status service-test service-clean test-services svctest svcstart svcstop svclist svcclean install-wrapper build-shell package shell install-shell install-venv install-pipx uninstall-shell uninstall-pipx list-package show-sudoers
 
 # Default target
 help:
 	@echo "Traceroute Simulator - Available Make Targets"
 	@echo "=============================================="
+	@echo "Configuration: Edit Configuration.mk or set VERSION=x.x.x"
 	@echo "check-deps        - Check for required Python modules and provide installation hints"
 	@echo "test              - Execute all test scripts with test setup and report results (includes make targets tests)"
 	@echo "facts             - Run Ansible playbook to collect network facts (requires INVENTORY_FILE or INVENTORY)"
 	@echo "clean-shell       - Clean up generated files and cache for shell build"
 	@echo "show-sudoers      - Display sudoers configuration for namespace operations"
 	@echo "install-wrapper   - Build and install the netns_reader wrapper with proper capabilities (requires sudo)"
-	@echo "package           - Build pip-installable tsim package (creates wheel and source distributions)"
+	@echo "build-shell       - Build pip-installable tsim shell package (creates wheel and source distributions)"
+	@echo "package           - Alias for build-shell (backwards compatibility)"
+	@echo "shell             - Complete shell workflow: clean, build, and install (use USER=1 for user install, BREAK_SYSTEM=1 to force)"
 	@echo "install-shell     - Build and install tsim shell package (use USER=1 for user install, BREAK_SYSTEM=1 to force)"
 	@echo "install-venv      - Bootstrap Python $(TSIM_PYTHON_SERIES) with uv into TSIM_VENV and install requirements + tsimsh"
 	@echo "install-pipx      - Install tsim package using pipx (recommended for command-line applications)"
@@ -167,14 +170,29 @@ check-deps:
 	@echo "Python version: $$($(PYTHON) $(PYTHON_OPTIONS) --version 2>&1)"
 	@echo ""
 	@missing_modules=""; \
-	for module in $(REQUIRED_MODULES); do \
-		if $(PYTHON) $(PYTHON_OPTIONS) -c "import $$module" 2>/dev/null; then \
-			echo "✓ $$module"; \
-		else \
-			echo "✗ $$module"; \
-			missing_modules="$$missing_modules $$module"; \
+	if [ ! -f requirements.txt ]; then \
+		echo "Error: requirements.txt not found"; \
+		exit 1; \
+	fi; \
+	while IFS= read -r line; do \
+		req_name=$$(echo "$$line" | sed 's/[>=<].*//g' | sed 's/^[[:space:]]*//;s/[[:space:]]*$$//'); \
+		if [ -n "$$req_name" ] && [ "$${req_name#\#}" = "$$req_name" ]; then \
+			case "$$req_name" in \
+				PyPDF2) import_name="PyPDF2" ;; \
+				PyHyphen) import_name="hyphen" ;; \
+				PyYAML) import_name="yaml" ;; \
+				NetworkX) import_name="networkx" ;; \
+				python-pam) import_name="pam" ;; \
+				*) import_name=$$(echo "$$req_name" | tr 'A-Z-' 'a-z_') ;; \
+			esac; \
+			if $(PYTHON) $(PYTHON_OPTIONS) -c "import $$import_name" 2>/dev/null; then \
+				echo "✓ $$import_name"; \
+			else \
+				echo "✗ $$import_name"; \
+				missing_modules="$$missing_modules $$import_name"; \
+			fi; \
 		fi; \
-	done; \
+	done < requirements.txt; \
 	if [ -n "$$missing_modules" ]; then \
 		echo ""; \
 		echo "Missing modules detected!"; \
@@ -1268,14 +1286,25 @@ PACKAGE_SOURCES := $(shell find src -name "*.py" 2>/dev/null) \
 # Package timestamp file to track last build
 PACKAGE_TIMESTAMP := dist/.package.timestamp
 
-# Build pip-installable package
-# Usage: make package
-package: $(PACKAGE_TIMESTAMP)
+# Build pip-installable shell package
+# Usage: make build-shell
+build-shell: $(PACKAGE_TIMESTAMP)
+
+# Alias for backwards compatibility
+package: build-shell
+
+# Complete shell workflow: clean, build, and install
+# Usage: make shell [USER=1] [BREAK_SYSTEM=1]
+shell: clean-shell build-shell install-shell
 
 # Build package only if sources have changed
 $(PACKAGE_TIMESTAMP): $(PACKAGE_SOURCES)
 	@echo "Building tsim package..."
 	@echo "========================================"
+	@echo "Package version: $(VERSION)"
+	@# Update version in source code
+	@sed -i "s/__version__ = .*/__version__ = '$(VERSION)'/" src/__init__.py
+	@echo "✓ Updated version to $(VERSION) in src/__init__.py"
 	@# Clean any previous builds
 	@rm -rf build/ dist/ *.egg-info
 	@echo "✓ Cleaned previous build artifacts"
@@ -1299,79 +1328,41 @@ $(PACKAGE_TIMESTAMP): $(PACKAGE_SOURCES)
 install-shell: $(PACKAGE_TIMESTAMP)
 	@echo "Installing tsim package..."
 	@echo "========================================"
-	@# Check if we're in a virtual environment
 	@if [ -n "$$VIRTUAL_ENV" ]; then \
-		echo "Detected virtual environment: $$VIRTUAL_ENV"; \
-		echo "Installing in virtual environment..."; \
-		PYTHONDONTWRITEBYTECODE=1 $(PYTHON) $(PYTHON_OPTIONS) -m pip install --no-compile --upgrade dist/tsim-*.whl; \
+		echo "Installing in virtual environment: $$VIRTUAL_ENV" \
+			&& { PYTHONDONTWRITEBYTECODE=1 $(PYTHON) $(PYTHON_OPTIONS) -m pip install --no-compile --upgrade dist/tsim-*.whl 2>&1 | grep -v "Requirement already satisfied:" || exit $${PIPESTATUS[0]}; }; \
 	elif [ -n "$(BREAK_SYSTEM)" ]; then \
-		echo "⚠️  Installing with --break-system-packages (use at your own risk)"; \
-		PYTHONDONTWRITEBYTECODE=1 $(PYTHON) $(PYTHON_OPTIONS) -m pip install --no-compile --upgrade --break-system-packages dist/tsim-*.whl; \
+		echo "Installing with --break-system-packages (use at your own risk)" \
+			&& { PYTHONDONTWRITEBYTECODE=1 $(PYTHON) $(PYTHON_OPTIONS) -m pip install --no-compile --upgrade --break-system-packages dist/tsim-*.whl 2>&1 | grep -v "Requirement already satisfied:" || exit $${PIPESTATUS[0]}; }; \
 	elif [ -n "$(USER)" ]; then \
-		echo "Installing in user site-packages..."; \
-		PYTHONDONTWRITEBYTECODE=1 $(PYTHON) $(PYTHON_OPTIONS) -m pip install --no-compile --upgrade --user dist/tsim-*.whl || { \
-			echo ""; \
-			echo "❌ User installation failed."; \
-			echo ""; \
-			echo "Recommended alternatives:"; \
-			echo "  1. Use pipx (best for command-line applications):"; \
-			echo "     pipx install dist/tsim-*.whl"; \
-			echo ""; \
-			echo "  2. Create and use a virtual environment:"; \
-			echo "     python3 -m venv ~/tsim-venv"; \
-			echo "     source ~/tsim-venv/bin/activate"; \
-			echo "     make install-shell"; \
-			echo ""; \
-			echo "  3. Force installation (override system protection):"; \
-			echo "     make install-shell BREAK_SYSTEM=1"; \
-			exit 1; \
-		}; \
+		echo "Installing in user site-packages" \
+			&& { PYTHONDONTWRITEBYTECODE=1 $(PYTHON) $(PYTHON_OPTIONS) -m pip install --no-compile --upgrade --user dist/tsim-*.whl 2>&1 | grep -v "Requirement already satisfied:" || exit $${PIPESTATUS[0]}; } \
+			|| { echo "❌ User installation failed. Options:"; \
+				echo "  make install-shell with pipx: pipx install dist/tsim-*.whl"; \
+				echo "  make install-shell with venv: python3 -m venv ~/tsim-venv && source ~/tsim-venv/bin/activate"; \
+				echo "  make install-shell BREAK_SYSTEM=1 (force system install)"; \
+				exit 1; }; \
 	else \
-		echo "Attempting standard installation..."; \
-		PYTHONDONTWRITEBYTECODE=1 $(PYTHON) $(PYTHON_OPTIONS) -m pip install --no-compile --upgrade dist/tsim-*.whl || { \
-			echo ""; \
-			echo "❌ Installation failed due to externally-managed environment."; \
-			echo ""; \
-			echo "Options:"; \
-			echo "  1. Install in user directory:"; \
-			echo "     make install-shell USER=1"; \
-			echo ""; \
-			echo "  2. Use pipx (recommended for applications):"; \
-			echo "     pipx install dist/tsim-*.whl"; \
-			echo ""; \
-			echo "  3. Use a virtual environment:"; \
-			echo "     python3 -m venv venv"; \
-			echo "     source venv/bin/activate"; \
-			echo "     make install-shell"; \
-			echo ""; \
-			echo "  4. Force system installation (not recommended):"; \
-			echo "     make install-shell BREAK_SYSTEM=1"; \
-			exit 1; \
-		}; \
+		echo "Attempting standard installation" \
+			&& { PYTHONDONTWRITEBYTECODE=1 $(PYTHON) $(PYTHON_OPTIONS) -m pip install --no-compile --upgrade dist/tsim-*.whl 2>&1 | grep -v "Requirement already satisfied:" || exit $${PIPESTATUS[0]}; } \
+			|| { echo "❌ Installation failed. Options:"; \
+				echo "  make install-shell USER=1 (user install)"; \
+				echo "  pipx install dist/tsim-*.whl (recommended)"; \
+				echo "  make install-shell BREAK_SYSTEM=1 (force system)"; \
+				exit 1; }; \
 	fi
-	@# Fix the shebang line in the installed tsimsh script
-	@echo "Fixing shebang line in tsimsh..."
-	@if [ -n "$$VIRTUAL_ENV" ]; then \
-		TSIMSH_PATH="$$VIRTUAL_ENV/bin/tsimsh"; \
-	else \
-		TSIMSH_PATH="$$($(PYTHON) -m site --user-base)/bin/tsimsh"; \
-		if [ ! -f "$$TSIMSH_PATH" ]; then \
-			TSIMSH_PATH="$$(which tsimsh 2>/dev/null)"; \
-		fi; \
-	fi; \
-	if [ -f "$$TSIMSH_PATH" ]; then \
-		sed -i '1s|^#!.*|#!/usr/bin/env -S python3 -B -u|' "$$TSIMSH_PATH" && \
-		echo "✓ Fixed shebang in $$TSIMSH_PATH"; \
-	else \
-		echo "⚠ Could not find tsimsh to fix shebang"; \
-	fi
-	@echo ""
-	@echo "✓ Package installed successfully!"
-	@echo ""
-	@echo "The following command is now available in your PATH:"
-	@echo "  tsimsh - Traceroute Simulator Shell"
-	@echo ""
-	@echo "Try running: tsimsh"
+	@echo "Fixing shebang line in tsimsh..." \
+		&& if [ -n "$$VIRTUAL_ENV" ]; then \
+			TSIMSH_PATH="$$VIRTUAL_ENV/bin/tsimsh"; \
+		else \
+			TSIMSH_PATH="$$($(PYTHON) -m site --user-base)/bin/tsimsh"; \
+			[ ! -f "$$TSIMSH_PATH" ] && TSIMSH_PATH="$$(which tsimsh 2>/dev/null)"; \
+		fi \
+		&& if [ -f "$$TSIMSH_PATH" ]; then \
+			sed -i '1s|^#!.*|#!/usr/bin/env -S python3 -B -u|' "$$TSIMSH_PATH"; \
+		fi \
+		|| echo "⚠ Could not find or fix tsimsh shebang"
+	@echo "✓ Package installed successfully! Command available: tsimsh"
 
 # Install using pipx (recommended for applications)
 # Usage: make install-pipx
@@ -1509,7 +1500,7 @@ list-package:
 	@echo "Listing files in tsim package..."
 	@echo "========================================"
 	@if [ ! -f dist/tsim-*.whl ]; then \
-		echo "Error: No package found. Run 'make package' first."; \
+		echo "Error: No package found. Run 'make build-shell' first."; \
 		exit 1; \
 	fi
 	@echo "Files in wheel package:"
@@ -1602,7 +1593,12 @@ install-web:
 	
 	# Copy configuration files
 	@echo "Installing configuration..."
-	@cp traceroute_simulator.yaml "$(WEB_ROOT)/conf/"
+	@if [ -f "$(WEB_ROOT)/conf/traceroute_simulator.yaml" ]; then \
+		cp traceroute_simulator.yaml "$(WEB_ROOT)/conf/traceroute_simulator.yaml.example"; \
+		echo "Existing traceroute_simulator.yaml preserved, new example saved as traceroute_simulator.yaml.example"; \
+	else \
+		cp traceroute_simulator.yaml "$(WEB_ROOT)/conf/"; \
+	fi
 	@cp web/conf/config.json.example "$(WEB_ROOT)/conf/"
 	
 	# Create config.json from example if doesn't exist
@@ -1715,7 +1711,12 @@ install-wsgi:
 	
 	# Copy configuration files to conf directory
 	@echo "Installing configuration files..."
-	@cp traceroute_simulator.yaml "$(TSIM_WEB_ROOT)/conf/"
+	@if [ -f "$(TSIM_WEB_ROOT)/conf/traceroute_simulator.yaml" ]; then \
+		cp traceroute_simulator.yaml "$(TSIM_WEB_ROOT)/conf/traceroute_simulator.yaml.example"; \
+		echo "Existing traceroute_simulator.yaml preserved, new example saved as traceroute_simulator.yaml.example"; \
+	else \
+		cp traceroute_simulator.yaml "$(TSIM_WEB_ROOT)/conf/"; \
+	fi
 	
 	# Install config.json to conf directory
 	@if [ -f "$(TSIM_WEB_ROOT)/conf/config.json" ]; then \

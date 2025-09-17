@@ -4,7 +4,6 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "tsim"
-version = "1.0.0"
 description = "Traceroute Simulator - Network path discovery and simulation tool"
 readme = "README.md"
 requires-python = ">=3.6"
@@ -29,7 +28,7 @@ classifiers = [
     "Topic :: System :: Systems Administration",
 ]
 
-dynamic = ["dependencies"]
+dynamic = ["version", "dependencies"]
 
 [project.optional-dependencies]
 dev = [
@@ -45,6 +44,7 @@ ansible = [
 Homepage = "https://github.com/yourusername/traceroute_simulator"
 
 [tool.setuptools.dynamic]
+version = {attr = "tsim.__version__"}
 dependencies = {file = ["requirements.txt"]}
 
 [tool.setuptools]

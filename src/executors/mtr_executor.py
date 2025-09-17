@@ -222,36 +222,121 @@ class MTRExecutor:
         except ipaddress.AddressValueError:
             raise ValueError(f"Invalid destination IP address: {destination_ip}")
 
-        # Construct SSH command based on mode
-        if self.ssh_mode == 'user' and self.ssh_user and self.ssh_key:
-            # User mode: simplified SSH command with specific user and key
-            ssh_command = ['ssh']
+        # Determine execution mode based on ansible_controller parameter
+        try:
+            from tsim.core.config_loader import load_traceroute_config, get_ssh_controller_config
+            config = load_traceroute_config()
+            ansible_controller = config.get('ansible_controller', False)
+            controller_ip = config.get('controller_ip', '127.0.0.1')
+        except ImportError:
+            ansible_controller = False
+            controller_ip = '127.0.0.1'
 
-            # Add identity file
-            ssh_command.extend(['-i', self.ssh_key])
+        if self.verbose:
+            print(f"Configuration: ansible_controller={ansible_controller}, controller_ip={controller_ip}", file=sys.stderr)
 
-            # Add user
-            ssh_command.extend(['-l', self.ssh_user])
+        if ansible_controller:
+            # We're ON the controller - execute SSH directly to routers (or locally if source_router is localhost/controller_ip)
+            if source_router in ['localhost', '127.0.0.1'] or source_router == controller_ip:
+                # Execute mtr locally
+                if self.ssh_mode == 'user':
+                    ssh_command = ['trace', destination_ip]
+                    if self.verbose:
+                        print(f"Executing trace locally to {destination_ip}", file=sys.stderr)
+                else:
+                    ssh_command = ['mtr', '--report', '--no-dns', '-c', '1', '-m', '30', destination_ip]
+                    if self.verbose:
+                        print(f"Executing mtr locally to {destination_ip}", file=sys.stderr)
+            else:
+                # SSH directly to router using router SSH config
+                ssh_command = ['ssh']
+                for option, value in self.ssh_options.items():
+                    ssh_command.extend(['-o', f'{option}={value}'])
 
-            # Add SSH options
-            for option, value in self.ssh_options.items():
-                ssh_command.extend(['-o', f'{option}={value}'])
-
-            # Add router and destination IP (no mtr command in user mode)
-            ssh_command.extend([source_router, destination_ip])
-
-            if self.verbose:
-                print(f"Executing trace in user mode from {source_router} to {destination_ip}", file=sys.stderr)
-                print(f"SSH user: {self.ssh_user}, Key: {self.ssh_key}", file=sys.stderr)
+                if self.ssh_mode == 'user' and self.ssh_user and self.ssh_key:
+                    ssh_command.extend(['-i', self.ssh_key])
+                    ssh_command.extend(['-l', self.ssh_user])
+                    ssh_command.extend([source_router, destination_ip])
+                    if self.verbose:
+                        print(f"Executing trace in user mode from {source_router} to {destination_ip}", file=sys.stderr)
+                        print(f"SSH user: {self.ssh_user}, Key: {self.ssh_key}", file=sys.stderr)
+                else:
+                    ssh_command.extend([source_router, f'mtr --report --no-dns -c 1 -m 30 {destination_ip}'])
+                    if self.verbose:
+                        print(f"Executing mtr tool from {source_router} to {destination_ip}", file=sys.stderr)
         else:
-            # Standard mode: use mtr command
-            ssh_command = [
-                'ssh', source_router,
-                f'mtr --report --no-dns -c 1 -m 30 {destination_ip}'
-            ]
+            # We're NOT on the controller - need to connect via controller_ip using controller SSH config
+            if source_router == controller_ip:
+                # Target is the controller itself - use controller SSH config
+                try:
+                    controller_ssh_config = get_ssh_controller_config()
+                    controller_ssh_mode = controller_ssh_config.get('ssh_mode', 'standard')
+                    controller_ssh_user = controller_ssh_config.get('ssh_user')
+                    controller_ssh_key = controller_ssh_config.get('ssh_key')
+                    controller_ssh_options = controller_ssh_config.get('ssh_options', {})
+                except ImportError:
+                    controller_ssh_mode = 'standard'
+                    controller_ssh_user = None
+                    controller_ssh_key = None
+                    controller_ssh_options = {'BatchMode': 'yes', 'ConnectTimeout': '10'}
 
-            if self.verbose:
-                print(f"Executing mtr tool from {source_router} to {destination_ip}", file=sys.stderr)
+                ssh_command = ['ssh']
+                for option, value in controller_ssh_options.items():
+                    ssh_command.extend(['-o', f'{option}={value}'])
+
+                if controller_ssh_mode == 'user' and controller_ssh_user and controller_ssh_key:
+                    ssh_command.extend(['-i', controller_ssh_key])
+                    ssh_command.extend(['-l', controller_ssh_user])
+                    ssh_command.extend([source_router, destination_ip])
+                    if self.verbose:
+                        print(f"Executing trace via controller in user mode from {source_router} to {destination_ip}", file=sys.stderr)
+                        print(f"Controller SSH user: {controller_ssh_user}, Key: {controller_ssh_key}", file=sys.stderr)
+                else:
+                    ssh_command.extend([source_router, f'mtr --report --no-dns -c 1 -m 30 {destination_ip}'])
+                    if self.verbose:
+                        print(f"Executing mtr via controller from {source_router} to {destination_ip}", file=sys.stderr)
+            else:
+                # Target is a router - use nested SSH (controller -> router)
+                try:
+                    controller_ssh_config = get_ssh_controller_config()
+                    controller_ssh_mode = controller_ssh_config.get('ssh_mode', 'standard')
+                    controller_ssh_user = controller_ssh_config.get('ssh_user')
+                    controller_ssh_key = controller_ssh_config.get('ssh_key')
+                    controller_ssh_options = controller_ssh_config.get('ssh_options', {})
+                except ImportError:
+                    controller_ssh_mode = 'standard'
+                    controller_ssh_user = None
+                    controller_ssh_key = None
+                    controller_ssh_options = {'BatchMode': 'yes', 'ConnectTimeout': '10'}
+
+                # Build outer SSH command to controller
+                ssh_command = ['ssh']
+                for option, value in controller_ssh_options.items():
+                    ssh_command.extend(['-o', f'{option}={value}'])
+
+                if controller_ssh_mode == 'user' and controller_ssh_user and controller_ssh_key:
+                    ssh_command.extend(['-i', controller_ssh_key])
+                    ssh_command.extend(['-l', controller_ssh_user])
+
+                # Build inner SSH command with router options
+                inner_ssh_opts = []
+                for option, value in self.ssh_options.items():
+                    inner_ssh_opts.extend(['-o', f'{option}={value}'])
+
+                if self.ssh_mode == 'user' and self.ssh_user and self.ssh_key:
+                    # User mode: nested SSH with trace command
+                    inner_ssh_opts.extend(['-i', self.ssh_key, '-l', self.ssh_user])
+                    inner_cmd = f"ssh {' '.join(inner_ssh_opts)} {source_router} {destination_ip}"
+                    ssh_command.extend([controller_ip, inner_cmd])
+                    if self.verbose:
+                        print(f"Executing nested trace via controller from {source_router} to {destination_ip}", file=sys.stderr)
+                        print(f"Controller SSH user: {controller_ssh_user}, Router SSH user: {self.ssh_user}", file=sys.stderr)
+                else:
+                    # Standard mode: nested SSH with mtr command
+                    inner_cmd = f"ssh {' '.join(inner_ssh_opts)} {source_router} 'mtr --report --no-dns -c 1 -m 30 {destination_ip}'"
+                    ssh_command.extend([controller_ip, inner_cmd])
+                    if self.verbose:
+                        print(f"Executing nested mtr via controller from {source_router} to {destination_ip}", file=sys.stderr)
 
         if self.verbose:
             print(f"Command: {' '.join(ssh_command)}", file=sys.stderr)

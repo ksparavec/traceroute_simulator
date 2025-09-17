@@ -15,14 +15,12 @@ posix_ipc
 psutil
 pyaml
 pycurl
-pyhyphen
+PyHyphen
 pyparsing
 pyperclip
 PyPDF2
-PySimpleSOAP
 python-pam
 PyYAML
-reportbug
 reportlab
 requests
 setuptools

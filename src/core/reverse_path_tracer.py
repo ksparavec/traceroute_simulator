@@ -802,53 +802,89 @@ class ReversePathTracer:
         import subprocess
         import socket
         
-        # Check if we're running on the ansible controller
-        # Try to match by checking all local IPs
+        # Load configuration to determine if we're on the ansible controller
         on_controller = False
         try:
-            import netifaces
-            for interface in netifaces.interfaces():
-                addrs = netifaces.ifaddresses(interface)
-                if netifaces.AF_INET in addrs:
-                    for addr in addrs[netifaces.AF_INET]:
-                        if addr['addr'] == self.ansible_controller_ip:
-                            on_controller = True
-                            break
-                if on_controller:
-                    break
+            from tsim.core.config_loader import load_traceroute_config
+            config = load_traceroute_config()
+            on_controller = config.get('ansible_controller', False)
         except ImportError:
-            # Fallback to simple hostname check
-            hostname = socket.gethostname()
-            try:
-                my_ip = socket.gethostbyname(hostname)
-                on_controller = (my_ip == self.ansible_controller_ip)
-            except:
-                # If we can't determine, assume we're not on controller
-                on_controller = False
-        
+            # Default to False if config loader not available
+            on_controller = False
+
         if self.verbose_level >= 2:
             try:
                 hostname = socket.gethostname()
                 print(f"Current host: {hostname}")
             except:
                 print(f"Current host: unknown")
-            print(f"Ansible controller: {self.ansible_controller_ip}")
-            print(f"Running on controller: {on_controller}")
+            print(f"Ansible controller IP: {self.ansible_controller_ip}")
+            print(f"Running on controller (configured): {on_controller}")
         
-        # SSH options for router connections (accept unknown hosts)
-        ssh_opts_routers = [
-            "-o", "StrictHostKeyChecking=no",
-            "-o", "UserKnownHostsFile=/dev/null", 
-            "-o", "BatchMode=yes",
-            "-o", "ConnectTimeout=5",
-            "-o", "LogLevel=ERROR"  # Suppress warnings about adding host to known hosts
-        ]
-        
-        # SSH options for ansible controller (keep default host key checking)
-        ssh_opts_controller = [
-            "-o", "BatchMode=yes",
-            "-o", "ConnectTimeout=10"
-        ]
+        # Load SSH configuration from config file for routers
+        ssh_config = {}
+        try:
+            from tsim.core.config_loader import get_ssh_config
+            ssh_config = get_ssh_config()
+        except ImportError:
+            # Fallback to defaults if config loader not available
+            ssh_config = {
+                'ssh_mode': 'standard',
+                'ssh_user': None,
+                'ssh_key': None,
+                'ssh_options': {
+                    'BatchMode': 'yes',
+                    'LogLevel': 'ERROR',
+                    'ConnectTimeout': '5',
+                    'StrictHostKeyChecking': 'no',
+                    'UserKnownHostsFile': '/dev/null'
+                }
+            }
+
+        ssh_mode = ssh_config.get('ssh_mode', 'standard')
+        ssh_user = ssh_config.get('ssh_user')
+        ssh_key = ssh_config.get('ssh_key')
+
+        # Build SSH options from configuration for router connections
+        ssh_opts_routers = []
+        for option, value in ssh_config.get('ssh_options', {}).items():
+            ssh_opts_routers.extend(['-o', f'{option}={value}'])
+
+        # Add user and key options for user mode (routers)
+        if ssh_mode == 'user' and ssh_user and ssh_key:
+            ssh_opts_routers.extend(['-i', ssh_key, '-l', ssh_user])
+
+        # Load SSH configuration for controller connections
+        ssh_controller_config = {}
+        try:
+            from tsim.core.config_loader import get_ssh_controller_config
+            ssh_controller_config = get_ssh_controller_config()
+        except ImportError:
+            # Fallback to defaults if config loader not available
+            ssh_controller_config = {
+                'ssh_mode': 'standard',
+                'ssh_user': None,
+                'ssh_key': None,
+                'ssh_options': {
+                    'BatchMode': 'yes',
+                    'ConnectTimeout': '10',
+                    'StrictHostKeyChecking': 'yes',
+                    'UserKnownHostsFile': '~/.ssh/known_hosts'
+                }
+            }
+
+        ssh_controller_mode = ssh_controller_config.get('ssh_mode', 'standard')
+        ssh_controller_user = ssh_controller_config.get('ssh_user')
+        ssh_controller_key = ssh_controller_config.get('ssh_key')
+
+        # Build SSH options from configuration for controller connections
+        ssh_opts_controller = []
+        for option, value in ssh_controller_config.get('ssh_options', {}).items():
+            ssh_opts_controller.extend(['-o', f'{option}={value}'])
+
+        # Add user and key options for user mode (controller)
+        if ssh_controller_mode == 'user' and ssh_controller_user and ssh_controller_key:
+            ssh_opts_controller.extend(['-i', ssh_controller_key, '-l', ssh_controller_user])
         
         updated_path = []
         
@@ -879,11 +915,11 @@ class ReversePathTracer:
                 cmd_outgoing = f"ip route get {destination_ip} | head -1"
                 
                 if on_controller:
-                    # Direct SSH from controller to router
+                    # ansible_controller=true: Direct SSH to routers
                     ssh_cmd_incoming = ["ssh"] + ssh_opts_routers + [ip, cmd_incoming]
                     ssh_cmd_outgoing = ["ssh"] + ssh_opts_routers + [ip, cmd_outgoing]
                 else:
-                    # Nested SSH: local -> controller -> router
+                    # ansible_controller=false: Route through controller using nested SSH
                     # Escape the command for nested execution
                     escaped_cmd_incoming = cmd_incoming.replace('"', '\\"')
                     escaped_cmd_outgoing = cmd_outgoing.replace('"', '\\"')

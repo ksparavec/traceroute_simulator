@@ -34,6 +34,7 @@ def load_traceroute_config() -> Dict[str, Any]:
         'enable_reverse_trace': True,
         'force_forward_trace': False,
         'software_simulation_only': False,
+        'ansible_controller': False,
         'controller_ip': None
     }
     
@@ -261,5 +262,40 @@ def get_ssh_config() -> Dict[str, Any]:
     # Merge with defaults
     result = defaults.copy()
     result.update(ssh_config)
+
+    return result
+
+
+def get_ssh_controller_config() -> Dict[str, Any]:
+    """
+    Get SSH configuration settings for Ansible controller connections.
+    Returns:
+        Dictionary with SSH controller configuration including:
+        - ssh_mode: 'user' or 'standard' mode
+        - ssh_user: Username for SSH connections (user mode)
+        - ssh_key: Path to SSH private key (user mode)
+        - ssh_options: Dictionary of SSH options
+    """
+    config = load_traceroute_config()
+
+    # Default SSH controller configuration (standard mode by default)
+    defaults = {
+        'ssh_mode': 'standard',
+        'ssh_user': None,
+        'ssh_key': None,
+        'ssh_options': {
+            'BatchMode': 'yes',
+            'ConnectTimeout': '10',
+            'StrictHostKeyChecking': 'yes',
+            'UserKnownHostsFile': '~/.ssh/known_hosts'
+        }
+    }
+
+    # Get SSH controller config from loaded configuration
+    ssh_controller_config = config.get('ssh_controller', {})
+
+    # Merge with defaults
+    result = defaults.copy()
+    result.update(ssh_controller_config)
 
     return result

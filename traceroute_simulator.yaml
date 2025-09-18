@@ -127,6 +127,7 @@ ssh:
     ConnectTimeout: 5
     StrictHostKeyChecking: "no"
     UserKnownHostsFile: "/dev/null"
+    PasswordAuthentication: "no"
 
 # SSH configuration for Ansible controller connections
 ssh_controller:
@@ -139,4 +140,5 @@ ssh_controller:
     ConnectTimeout: 10
     StrictHostKeyChecking: "yes"             # Validate host key for security
     UserKnownHostsFile: "~/.ssh/known_hosts" # Use standard known hosts file
+    PasswordAuthentication: "no"
 

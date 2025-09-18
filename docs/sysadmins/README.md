@@ -1,61 +1,121 @@
-# System Administrator Guide
+# Traceroute Simulator - System Administrator Guide
 
 ## Table of Contents
 
-1. [System Overview](#system-overview)
-2. [Installation and Setup](#installation-and-setup)
-3. [tsimsh - The Interactive Shell](#tsimsh---the-interactive-shell)
-4. [Network Configuration](#network-configuration)
-5. [Data Collection with Ansible](#data-collection-with-ansible)
-6. [Linux Namespace Simulation](#linux-namespace-simulation)
-7. [Security Configuration](#security-configuration)
-8. [Make Targets Reference](#make-targets-reference)
-9. [Python Scripts Direct Usage](#python-scripts-direct-usage)
-10. [Troubleshooting and Maintenance](#troubleshooting-and-maintenance)
+1. [System Architecture](#system-architecture)
+2. [User Interfaces](#user-interfaces)
+3. [Installation and Setup](#installation-and-setup)
+4. [tsimsh - The Interactive Shell](#tsimsh---the-interactive-shell)
+5. [Network Configuration](#network-configuration)
+6. [Data Collection with Ansible](#data-collection-with-ansible)
+7. [Linux Namespace Simulation](#linux-namespace-simulation)
+8. [Security Configuration](#security-configuration)
+9. [Make Targets Reference](#make-targets-reference)
+10. [Python Scripts Direct Usage](#python-scripts-direct-usage)
+11. [Troubleshooting and Maintenance](#troubleshooting-and-maintenance)
 
-## System Overview
+## System Architecture
 
-### Architecture Components
+The Traceroute Simulator is a comprehensive network simulation platform designed for testing and analyzing network routing behavior. The system provides two primary user interfaces: a command-line interface (tsimsh) and a web-based WSGI interface.
 
-The Traceroute Simulator consists of several integrated subsystems:
+![Overall Architecture](overall_architecture.png)
 
-```
-┌─────────────────────────────────────────────────────────┐
-│                    User Interfaces                       │
-├──────────────┬──────────────┬──────────────┬───────────┤
-│   tsimsh     │ Web Interface│ Command Line │  Ansible  │
-│ Interactive  │   (Apache)   │   (Direct)   │ Playbooks │
-└──────┬───────┴──────┬───────┴──────┬───────┴─────┬─────┘
-       │              │              │             │
-┌──────▼───────────────▼──────────────▼─────────────▼─────┐
-│                  Core Engine (Python)                    │
-│  • TracerouteSimulator  • IptablesAnalyzer              │
-│  • NamespaceManager     • ServiceManager                │
-│  • PacketTracer         • MTRExecutor                   │
-└───────────────────────┬──────────────────────────────────┘
-                        │
-┌───────────────────────▼──────────────────────────────────┐
-│                    Data Layer                            │
-│  • Router Facts (JSON)  • Raw Facts (Text)              │
-│  • Network Topology     • Host Registry                  │
-└──────────────────────────────────────────────────────────┘
-```
+### Architecture Overview
+
+The system is organized into four main layers:
+
+1. **User Interface Layer**: Provides access through tsimsh CLI and WSGI web interface
+2. **Core Simulation Layer**: Contains the simulation engine, command system, and queue management
+3. **Infrastructure Layer**: Manages network namespaces, services, and monitoring
+4. **Data Layer**: Handles raw facts, configuration, session storage, and namespace data
+
+### Key Design Principles
+
+- **Dual Interface Design**: Both CLI and web interfaces share the same core simulation engine
+- **Queue-Based Execution**: All simulation tasks are queued and scheduled for optimal resource usage
+- **Network Namespace Isolation**: Each simulation runs in isolated network namespaces
+- **Real-Time Monitoring**: Progress tracking and SSE streaming for live updates
+- **Ansible Integration**: Facts collection through Ansible playbooks for network discovery
+
+## User Interfaces
+
+The system provides two distinct user interfaces, both accessing the same core simulation engine:
+
+### tsimsh CLI Interface
+
+The tsimsh (Traceroute Simulator Shell) provides an interactive command-line interface built on the cmd2 framework.
+
+![tsimsh Architecture](tsimsh_architecture.png)
+
+#### Components
+
+- **Entry Point** (`tsimsh`): Main executable that initializes the shell
+- **TracerouteSimulatorShell**: Core shell implementation with cmd2 framework
+- **Command Handlers**: Modular command implementations
+  - `network`: Network namespace management
+  - `host`: Host configuration and setup
+  - `service`: Service control and testing
+  - `trace`: Traceroute execution
+  - `facts`: Ansible facts collection and processing
+  - `nettest`: Network connectivity testing
+
+#### Usage Modes
+
+1. **Interactive Mode**: Direct command entry with tab completion and history
+2. **Batch Mode**: Script execution via stdin redirection
+3. **Quick Mode** (`-q`): Skip network checks and initialization for faster startup
+
+### WSGI Web Interface
+
+The web interface provides a browser-based access to the simulator through Apache mod_wsgi.
+
+![WSGI Architecture](wsgi_architecture.png)
+
+#### Components
+
+- **Apache/mod_wsgi**: Web server and WSGI container
+- **TsimWSGIApp**: Main WSGI application dispatcher
+- **Request Handlers**: URL-specific request processors
+  - `/login`: Authentication and session management
+  - `/main`: Primary simulation interface
+  - `/progress`: Real-time progress monitoring
+  - `/pdf`: PDF report generation
+  - `/admin-queue`: Queue administration
+  - `/services-config`: Service configuration management
+
+#### Core Services
+
+- **Session Manager**: User authentication and session handling
+- **Config Service**: Configuration management and validation
+- **Queue System**: Job queuing, scheduling, and lock management
+- **Execution System**: Hybrid executor with progress tracking
+
+### Ansible Facts Integration
+
+The system includes comprehensive Ansible integration for network facts collection:
+
+- **Facts Collection Command** (`tsimsh> facts collect`): Executes Ansible playbook
+- **Playbook** (`ansible/get_tsim_facts.yml`): Collects network topology data
+- **Processing** (`tsimsh> facts process`): Converts raw facts to simulator format
+- **Validation** (`tsimsh> facts validate`): Ensures facts integrity
+
+The architecture eliminates the classical CGI web interface and SSH-restricted access components, focusing on the modern WSGI web interface and comprehensive CLI.
 
 ### Key Directories
 
 ```bash
 /home/user/traceroute-simulator/
 ├── src/                  # Core Python modules
-├── web/                  # Web interface components
+├── wsgi/                 # WSGI web interface components
 ├── ansible/              # Data collection playbooks
 ├── tests/                # Test suites and test data
 ├── docs/                 # Documentation
 └── scripts/              # Utility scripts
 ```
 
-### Environment Variables
+### Environment Variables and Configuration
 
-Critical environment variables that control system behavior:
+Critical environment variables and configuration files:
 
 ```bash
 # Required: Points to router facts directory
@@ -63,10 +123,149 @@ export TRACEROUTE_SIMULATOR_FACTS=/path/to/facts
 
 # Optional: Raw facts for enhanced analysis
 export TRACEROUTE_SIMULATOR_RAW_FACTS=/path/to/raw_facts
-
-# Optional: Custom configuration file
-export TRACEROUTE_SIMULATOR_CONF=/path/to/config.yaml
 ```
+
+### Configuration Files
+
+The system uses YAML configuration files with user-specific and system-wide settings:
+
+**Configuration File Precedence:**
+1. `~/traceroute_simulator.yaml` (current user's home directory)
+2. `./traceroute_simulator.yaml` (current directory)
+3. Built-in defaults
+
+**User Configuration**: `~/traceroute_simulator.yaml`
+- Used by tsimsh CLI when run by current user
+- Contains personal settings for command-line operations
+- SSH configuration for connecting to routers and controllers
+
+**Web Interface Configuration**: `/opt/tsim/wsgi/conf/traceroute_simulator.yaml`
+- Used by Apache/WSGI web interface
+- Contains system-wide settings for web operations
+- SSH configuration for web user (typically `apache`)
+
+Both files share the same format but serve different execution contexts.
+
+#### Configuration Parameters
+
+**System Configuration:**
+```yaml
+system:
+  unix_group: tsim-users              # Group for file ownership and permissions
+  file_permissions: "0664"            # Default file permissions (rw-rw-r--)
+  directory_permissions: "0775"       # Default directory permissions (rwxrwxr-x)
+```
+
+**Logging Configuration:**
+```yaml
+logging:
+  base_directory: /var/log/tsim       # Log directory location
+  format: json                        # Log format: json or text
+  file_level: DEBUG                   # File logging level (DEBUG/INFO/WARNING/ERROR/CRITICAL)
+  console_levels:                     # Console output levels by verbosity
+    0: CRITICAL                       # No -v flag: only critical errors
+    1: WARNING                        # -v: warnings and errors
+    2: INFO                           # -vv: info, warnings, errors
+    3: DEBUG                          # -vvv: all messages including debug
+  batch_generator:
+    log_file_pattern: "batch_generator_%Y%m%d_%H%M%S.json"
+    log_commands: true                # Log all command executions
+    log_outputs: true                 # Log command outputs (stdout/stderr)
+    max_output_size: 10000           # Maximum output size per command (bytes)
+```
+
+**Shared Memory Configuration:**
+```yaml
+shared_memory:
+  registries:
+    routers:
+      size: 2097152                   # 2MB for router registry
+      persist: true                   # Keep across operations
+    interfaces:
+      size: 4194304                   # 4MB for interface registry
+      persist: true
+    bridges:
+      size: 2097152                   # 2MB for bridge registry
+      persist: true
+    hosts:
+      size: 1048576                   # 1MB for host registry
+      persist: true
+  batch_segments:
+    max_size: 10485760                # 10MB maximum batch segment size
+    cleanup_policy: manual            # Cleanup policy: manual/on_exit/never
+```
+
+**Network Setup:**
+```yaml
+network_setup:
+  hidden_namespace: tsim-hidden       # Name for hidden infrastructure namespace
+  batch_processing:
+    enabled: true                     # Enable batch processing optimization
+    parallel_limit: 50                # Maximum parallel operations per batch
+```
+
+**Output Control:**
+```yaml
+verbose: false                        # Default verbosity
+verbose_level: 0                      # Default verbosity level
+quiet: false                          # Quiet mode (exit codes only)
+json_output: false                    # JSON output format
+```
+
+**Tracing Behavior:**
+```yaml
+enable_mtr_fallback: true             # Use MTR when path incomplete
+enable_reverse_trace: true            # Try reverse tracing on forward failure
+ansible_controller: false             # Set true if running on Ansible controller
+controller_ip: "127.0.0.1"           # Ansible controller IP address
+```
+
+**SSH Configuration (Critical for ssh_mode):**
+
+The `ssh_mode` parameter determines how SSH connections are made to routers:
+
+```yaml
+ssh:
+  ssh_mode: user                      # Mode: 'user' or 'standard'
+  ssh_user: traceuser                 # Username for user mode
+  ssh_key: /opt/tsim/wsgi/conf/ssh_user.key  # Private key path for user mode
+  ssh_options:
+    BatchMode: "yes"                  # No interactive prompts
+    LogLevel: "ERROR"                 # Minimal SSH logging
+    ConnectTimeout: 5                 # Connection timeout (seconds)
+    StrictHostKeyChecking: "no"       # Skip host key verification
+    UserKnownHostsFile: "/dev/null"   # Don't save host keys
+    PasswordAuthentication: "no"      # Key-based auth only
+
+ssh_controller:                       # SSH to Ansible controller
+  ssh_mode: user
+  ssh_user: traceuser
+  ssh_key: /opt/tsim/wsgi/conf/ssh_user.key
+  ssh_options:
+    BatchMode: "yes"
+    LogLevel: "ERROR"
+    ConnectTimeout: 10                # Longer timeout for controller
+    StrictHostKeyChecking: "yes"      # Verify controller host key
+    UserKnownHostsFile: "~/.ssh/known_hosts"  # Standard known hosts
+    PasswordAuthentication: "no"
+```
+
+**SSH Mode Explanation:**
+- **`user` mode**: Uses restricted SSH user with limited shell access (recommended)
+- **`standard` mode**: Uses full SSH access with standard shell
+
+**Key Differences Between User and Web Configurations:**
+
+**User Configuration (`~/traceroute_simulator.yaml`):**
+- SSH keys typically in user's home directory (`~/.ssh/`)
+- Logs may go to user-accessible locations
+- Personal preferences for output formats and verbosity
+
+**Web Configuration (`/opt/tsim/wsgi/conf/traceroute_simulator.yaml`):**
+- SSH keys in web-accessible location (`/opt/tsim/wsgi/conf/`)
+- Logs directed to system directories (`/var/log/tsim/`)
+- Optimized for web interface operations
+- Must be readable by web server user (`apache`)
 
 ## Installation and Setup
 
@@ -74,105 +273,243 @@ export TRACEROUTE_SIMULATOR_CONF=/path/to/config.yaml
 
 ```bash
 # Operating System
-- Linux (Ubuntu 20.04+, Debian 11+, RHEL 8+, Fedora 34+)
+- Red Hat Enterprise Linux 7, 8, or 9
 - Kernel with namespace support (3.8+)
 
-# Python
-- Python 3.7 or higher
-- pip3 package manager
-
-# System Packages
-sudo apt-get install -y \
+# System Packages (RHEL 7/8/9)
+sudo yum install -y \
+    python3 \
     python3-pip \
-    python3-venv \
-    iproute2 \
+    python3-devel \
+    iproute \
     iptables \
     ipset \
     socat \
     gcc \
-    make
+    make \
+    git \
+    httpd \
+    httpd-devel
+
+# For RHEL 8/9, you can also use dnf:
+sudo dnf install -y \
+    python3 \
+    python3-pip \
+    python3-devel \
+    iproute \
+    iptables \
+    ipset \
+    socat \
+    gcc \
+    make \
+    git \
+    httpd \
+    httpd-devel
 ```
 
-### Python Dependencies Installation
+### Virtual Environment Setup
+
+The project uses a dedicated virtual environment with Python 3.11 managed by uv:
 
 ```bash
-# Core dependencies
-pip3 install matplotlib numpy PyYAML
+# Create tsim-users group (required for shared operations)
+sudo groupadd -f tsim-users
+sudo usermod -a -G tsim-users $USER
 
-# Interactive shell
-pip3 install cmd2 colorama tabulate
+# Logout and login again for group membership to take effect
+# Then install the virtual environment and tsimsh
+make install-venv
 
-# Web interface (optional)
-pip3 install networkx pyhyphen
-
-# Development/Testing
-pip3 install pytest pytest-cov
+# This creates:
+# - Virtual environment at /opt/tsim/venv
+# - Python 3.11 installation via uv
+# - All required dependencies including mod_wsgi built from source
+# - tsimsh command available at /opt/tsim/venv/bin/tsimsh
+# - mod_wsgi compiled for 100% compatibility with the Python binary
 ```
 
-### Building System Components
+### tsimsh CLI Installation
+
+After virtual environment setup, tsimsh is available:
 
 ```bash
-# Check all dependencies
+# Activate the virtual environment
+source /opt/tsim/venv/bin/activate
+
+# Use tsimsh directly
+tsimsh
+
+# Or use the full path without activation
+/opt/tsim/venv/bin/tsimsh
+
+# Check tsimsh version
+tsimsh -V
+```
+
+
+### WSGI Web Interface Setup
+
+The WSGI interface requires the virtual environment to be set up first:
+
+```bash
+# 1. Install WSGI application (requires virtual environment)
+sudo make install-wsgi
+
+# This installs to:
+# - Application files: /opt/tsim/wsgi/
+# - Static files: /opt/tsim/htdocs/
+# - Configuration: /opt/tsim/wsgi/conf/
+# - Updates config.json to use /opt/tsim/venv
+```
+
+### Apache Configuration
+
+```bash
+# 2. Configure Apache for WSGI
+# The install-wsgi target generates mod_wsgi configuration from the virtual environment
+# This ensures 100% compatibility with the Python binary used
+
+# Copy the generated Apache configuration
+sudo cp /opt/tsim/wsgi/conf/apache-tsim-wsgi.conf /etc/httpd/conf.d/
+
+# The mod_wsgi.conf file contains the LoadModule directive for the built mod_wsgi
+# Include it in your Apache configuration
+echo "Include /opt/tsim/wsgi/mod_wsgi.conf" | sudo tee -a /etc/httpd/conf.d/tsim-mod_wsgi.conf
+
+# Edit main configuration if needed (paths are automatically configured)
+sudo vim /etc/httpd/conf.d/apache-tsim-wsgi.conf
+
+# Enable and start Apache
+sudo systemctl enable httpd
+sudo systemctl start httpd
+
+# Configure firewall
+sudo firewall-cmd --permanent --add-service=http
+sudo firewall-cmd --permanent --add-service=https
+sudo firewall-cmd --reload
+```
+
+### WSGI Configuration
+
+The web interface uses two main configuration files installed during `make install-wsgi`:
+
+#### WSGI Application Configuration (`/opt/tsim/wsgi/conf/config.json`)
+
+This JSON file contains web-specific settings:
+
+```json
+{
+  "venv_path": "/opt/tsim/venv",                    // Virtual environment path (auto-configured)
+  "traceroute_simulator_conf": "/opt/tsim/wsgi/conf/traceroute_simulator.yaml",
+  "data_dir": "/dev/shm/tsim",                      // Shared memory data directory
+  "log_dir": "/var/log/tsim",                       // Application log directory
+  "session": {
+    "timeout": 1800,                                // Session timeout (30 minutes)
+    "secure_cookie": true,                          // Use secure cookies (HTTPS)
+    "httponly": true,                               // HTTP-only cookies (no JS access)
+    "samesite": "strict"                            // CSRF protection
+  },
+  "queue": {
+    "max_jobs": 100,                                // Maximum queued jobs
+    "job_timeout": 3600,                            // Job timeout (1 hour)
+    "cleanup_interval": 300                         // Queue cleanup interval (5 minutes)
+  },
+  "authentication": {
+    "method": "pam",                                // Authentication method: pam/ldap/local
+    "pam_service": "tsim-web",                      // PAM service name
+    "session_secret": "auto-generated-secret",     // Session encryption secret
+    "require_https": false                          // Require HTTPS for authentication
+  },
+  "progress_tracking": {
+    "update_interval": 1.0,                         // Progress update frequency (seconds)
+    "retention_hours": 24,                          // Keep progress data (hours)
+    "max_entries": 1000                             // Maximum progress entries
+  },
+  "performance": {
+    "enable_caching": true,                         // Enable response caching
+    "cache_timeout": 300,                           // Cache timeout (5 minutes)
+    "max_concurrent_jobs": 10                       // Maximum concurrent executions
+  }
+}
+```
+
+#### Configuration File Installation and Editing
+
+**Automatic Installation:**
+```bash
+# Files are installed during make install-wsgi:
+# - Copies traceroute_simulator.yaml to /opt/tsim/wsgi/conf/
+# - Creates config.json with proper paths
+# - Sets ownership to apache:tsim-users
+# - Updates venv_path to /opt/tsim/venv automatically
+```
+
+**Manual Configuration Steps:**
+
+```bash
+# 1. Edit WSGI application configuration
+sudo vim /opt/tsim/wsgi/conf/config.json
+
+# Key settings to verify/modify:
+# - authentication.method: Set to "pam", "ldap", or "local"
+# - session.secure_cookie: Set to true for HTTPS
+# - authentication.require_https: Set to true for production
+
+# 2. Edit system configuration for web interface
+sudo vim /opt/tsim/wsgi/conf/traceroute_simulator.yaml
+
+# Key settings for web interface:
+# - ssh.ssh_key: Path to SSH private key for web user
+# - ssh.ssh_user: SSH username for router connections
+# - logging.base_directory: Must be writable by apache user
+
+# 3. Set proper permissions
+sudo chown apache:tsim-users /opt/tsim/wsgi/conf/config.json
+sudo chmod 640 /opt/tsim/wsgi/conf/config.json
+sudo chown apache:tsim-users /opt/tsim/wsgi/conf/traceroute_simulator.yaml
+sudo chmod 640 /opt/tsim/wsgi/conf/traceroute_simulator.yaml
+
+# 4. Create SSH key for web interface (if using SSH mode)
+sudo -u apache ssh-keygen -t rsa -b 2048 -f /opt/tsim/wsgi/conf/ssh_user.key -N ""
+sudo chmod 600 /opt/tsim/wsgi/conf/ssh_user.key
+sudo chown apache:tsim-users /opt/tsim/wsgi/conf/ssh_user.key*
+
+# 5. Restart Apache to load new configuration
+sudo systemctl restart httpd
+```
+
+**Configuration Differences Summary:**
+
+| Aspect | User Config (`~/traceroute_simulator.yaml`) | Web Config (`/opt/tsim/wsgi/conf/`) |
+|--------|---------------------------------------------|-------------------------------------|
+| **Owner** | Current user | `apache:tsim-users` |
+| **SSH Keys** | `~/.ssh/` | `/opt/tsim/wsgi/conf/` |
+| **Log Directory** | User-writable paths | `/var/log/tsim/` |
+| **Permissions** | User read/write | Group readable, web writable |
+| **Purpose** | CLI operations | Web interface operations |
+| **Session Management** | Not applicable | config.json parameters |
+| **Authentication** | Direct user context | PAM/LDAP via web server |
+
+### Verification
+
+After installation, verify the setup:
+
+```bash
+# Check virtual environment
+source /opt/tsim/venv/bin/activate
+python -c "import tsim; print('tsimsh installed successfully')"
+
+# Test tsimsh
+/opt/tsim/venv/bin/tsimsh -V
+
+# Check WSGI installation
+ls -la /opt/tsim/wsgi/app.wsgi
+
+# Test Apache configuration
+sudo httpd -t
+
+# Check dependency status
 make check-deps
-
-# Build netns_reader wrapper (for namespace operations)
-sudo make install-wrapper
-
-# Verify installation
-which netns_reader
-getcap $(which netns_reader)
-```
-
-### Web Interface Setup
-
-1. **Apache Configuration**:
-```bash
-# Copy template
-sudo cp web/conf/apache-site.conf.template \
-    /etc/apache2/sites-available/traceroute-sim.conf
-
-# Edit configuration
-sudo nano /etc/apache2/sites-available/traceroute-sim.conf
-
-# Enable required modules
-sudo a2enmod cgi rewrite auth_basic
-
-# Enable site
-sudo a2ensite traceroute-sim
-sudo systemctl reload apache2
-```
-
-2. **Application Configuration**:
-```bash
-# Create configuration from template
-cp web/conf/config.json.example web/conf/config.json
-
-# Edit configuration
-nano web/conf/config.json
-```
-
-3. **User Management**:
-```bash
-# Create web user
-./web/scripts/create_user.sh username
-
-# Change password
-./web/scripts/change_password.sh username
-```
-
-### SSSD Authentication (Optional)
-
-For enterprise integration with Active Directory or LDAP:
-
-```bash
-# Configure PAM
-sudo make pam-config
-
-# Verify SSSD is running
-systemctl status sssd
-
-# Test authentication
-pamtester traceroute-web username authenticate
 ```
 
 ## tsimsh - The Interactive Shell
@@ -213,35 +550,41 @@ echo $?  # Check exit code
 # Basic trace
 tsimsh> trace -s 10.1.1.1 -d 10.2.1.1
 
-# With port and protocol
-tsimsh> trace -s 10.1.1.1 -d 10.2.1.1 -p tcp -dp 443
-
 # JSON output
 tsimsh> trace -s 10.1.1.1 -d 10.2.1.1 -j
 
-# Verbose mode
+# Verbose mode (can be used multiple times)
 tsimsh> trace -s 10.1.1.1 -d 10.2.1.1 -v
+tsimsh> trace -s 10.1.1.1 -d 10.2.1.1 -vv
 
-# With MTR execution
+# With controller IP for MTR execution
 tsimsh> trace -s 10.1.1.1 -d 8.8.8.8 --controller-ip 10.1.2.3
 ```
 
 #### Network Management
 ```bash
-# Setup namespace network
-tsimsh> network setup
-tsimsh> network setup -v      # Verbose
-tsimsh> network setup -vv     # More verbose
-tsimsh> network setup -vvv    # Debug level
+# Setup namespace network (batch mode - faster)
+tsimsh> network setup --create
+tsimsh> network setup --clean --create    # Clean and create
+tsimsh> network setup --clean --create --verify  # With verification
+
+# Setup namespace network (serial mode - slower but more stable)
+tsimsh> network setup-serial
+tsimsh> network setup-serial --verify
 
 # Check status
-tsimsh> network status all
-tsimsh> network status hq-gw
-tsimsh> network status interfaces --limit hq-gw,br-gw
+tsimsh> network status                     # Show summary
+tsimsh> network status all                 # Show all details
+tsimsh> network status interfaces          # Show interfaces only
+tsimsh> network status interfaces --limit hq-*  # Specific routers
+
+# Test network connectivity
+tsimsh> network test --source 10.1.1.1 --destination 10.2.1.1
+tsimsh> network test --source 10.1.1.1 --destination 10.2.1.1 --test-type mtr
 
 # Clean up
-tsimsh> network clean
-tsimsh> network clean --force  # Skip confirmation
+tsimsh> network clean                      # Batch cleanup
+tsimsh> network clean-serial --force       # Serial cleanup
 ```
 
 #### Service Management
@@ -255,40 +598,39 @@ tsimsh> service list
 tsimsh> service list -j  # JSON output
 
 # Test connectivity
-tsimsh> service test --source 10.1.1.1 --destination 10.2.1.1:8080
-tsimsh> service test --source 10.1.1.1 --destination 10.2.1.1:53 --protocol udp
+tsimsh> service test -s 10.1.1.1 -d 10.2.1.1:8080
+tsimsh> service test -s 10.1.1.1 -d 10.2.1.1:53 --protocol udp
 
 # Stop services
 tsimsh> service stop --ip 10.1.1.1 --port 8080
-tsimsh> service stop all  # Stop all services
+tsimsh> service clean  # Stop all services
 ```
 
 #### Host Management
 ```bash
 # Add dynamic host
-tsimsh> host add --name web1 --ip 10.1.1.100/24 --connect-to hq-gw
-tsimsh> host add --name db1 --ip 10.2.1.50/24 --connect-to br-core --gateway 10.2.1.1
+tsimsh> host add --name web1 --primary-ip 10.1.1.100/24 --connect-to hq-gw
+tsimsh> host add --name db1 --primary-ip 10.2.1.50/24 --connect-to br-core --secondary-ips 192.168.1.1/24
 
 # List hosts
 tsimsh> host list
 tsimsh> host list -j  # JSON output
 
 # Remove host
-tsimsh> host del --name web1
-tsimsh> host del all  # Remove all hosts
+tsimsh> host remove --name web1 -f
+tsimsh> host clean -f  # Remove all hosts
 ```
 
 #### Facts Management
 ```bash
-# Process raw facts
-tsimsh> facts process --input /path/to/raw --output /path/to/json
+# Collect facts from network devices
+tsimsh> facts collect --inventory hosts.ini --output-dir prod_facts
 
-# Update facts
-tsimsh> facts update --router hq-gw --facts-file new_facts.json
+# Process raw facts into structured JSON
+tsimsh> facts process --input-dir raw_facts --output-dir json_facts --validate
 
-# Show facts
-tsimsh> facts show --router hq-gw
-tsimsh> facts show --router hq-gw --section interfaces
+# Validate processed facts files
+tsimsh> facts validate --facts-dir json_facts --verbose
 ```
 
 ### Advanced Shell Features
@@ -400,34 +742,36 @@ Branch (10.100.3.1) <---wg1---> DC (10.100.3.2)
 
 2. **Update Network Setup**:
 ```bash
+# Add facts file to facts directory
+cp new-router.json $TRACEROUTE_SIMULATOR_FACTS/
+
 # Regenerate namespace configuration
-./src/simulators/network_namespace_setup.py --setup
+source /opt/tsim/venv/bin/activate
+tsimsh
+tsimsh> network clean
+tsimsh> network setup --create
 
 # Verify
-sudo ip netns exec new-router ip addr show
+tsimsh> network status interfaces --limit new-router
 ```
 
 #### Modifying Firewall Rules
 
-1. **Edit Router Facts**:
+1. **Update Router Facts**:
 ```bash
-# Extract current rules
-python3 src/utils/extract_iptables.py hq-gw > hq-gw-iptables.json
+# Edit facts file directly
+vim $TRACEROUTE_SIMULATOR_FACTS/hq-gw.json
+# Update iptables section as needed
 
-# Edit rules
-nano hq-gw-iptables.json
+# Validate the updated facts
+source /opt/tsim/venv/bin/activate
+tsimsh
+tsimsh> facts validate --facts-dir $TRACEROUTE_SIMULATOR_FACTS
 
-# Update facts
-python3 src/utils/update_facts.py \
-    --router hq-gw \
-    --iptables hq-gw-iptables.json
-```
-
-2. **Apply to Namespace**:
-```bash
 # Recreate namespace with new rules
-sudo -E make netclean
-sudo -E make netsetup
+tsimsh> network clean
+tsimsh> network setup --create
+tsimsh> network status iptables --limit hq-gw
 ```
 
 ### Policy-Based Routing
@@ -510,8 +854,11 @@ sudo bash get_facts.sh > router_facts.txt
 
 # On your workstation
 scp router:router_facts.txt ./
-python3 ansible/process_facts.py router_facts.txt router.json
-cp router.json $TRACEROUTE_SIMULATOR_FACTS/
+
+# Process raw facts using tsimsh
+source /opt/tsim/venv/bin/activate
+tsimsh
+tsimsh> facts process --input-dir . --output-dir $TRACEROUTE_SIMULATOR_FACTS --validate
 ```
 
 ### Raw Facts Collection
@@ -690,20 +1037,17 @@ make show-sudoers
     /usr/bin/make svc*
 ```
 
-### Capability-Based Security
+### Access Control
 
-Using capabilities instead of full sudo:
+Network namespace operations require sudo privileges:
 
 ```bash
-# Build and install netns_reader with capabilities
-sudo make install-wrapper
+# All namespace operations use sudo
+sudo ip netns list
+sudo ip netns exec router-name command
 
-# Verify capabilities
-getcap /usr/local/bin/netns_reader
-# Should show: cap_sys_admin,cap_net_admin,cap_dac_override=ep
-
-# Use without sudo
-/usr/local/bin/netns_reader list
+# Group membership required for shared operations
+sudo usermod -a -G tsim-users $USER
 ```
 
 ### Web Interface Security
@@ -719,7 +1063,7 @@ Header always set Referrer-Policy "strict-origin-when-cross-origin"
 
 #### Session Security
 ```json
-// web/conf/config.json
+// wsgi/conf/config.json
 {
   "session": {
     "timeout": 1800,
@@ -732,191 +1076,87 @@ Header always set Referrer-Policy "strict-origin-when-cross-origin"
 
 #### File Permissions
 ```bash
-# Set proper ownership
-sudo chown -R www-data:www-data web/
-sudo chmod 750 web/cgi-bin/
-sudo chmod 640 web/conf/config.json
-sudo chmod 600 web/conf/.htpasswd
+# Set proper ownership (RHEL uses apache user)
+sudo chown -R apache:apache wsgi/
+sudo chmod 750 wsgi/
+sudo chmod 640 wsgi/conf/config.json
 
 # Protect sensitive directories
-echo "Deny from all" > web/conf/.htaccess
+sudo chmod 700 wsgi/conf/
 ```
 
-### Firewall Considerations
 
-Protect the simulator server:
+## tsimsh Command Reference
 
-```bash
-# Allow web interface
-sudo iptables -A INPUT -p tcp --dport 80 -j ACCEPT
-sudo iptables -A INPUT -p tcp --dport 443 -j ACCEPT
+All functionality is accessed through the tsimsh CLI interface. The system no longer supports direct Python script execution - all operations should use tsimsh commands.
 
-# Allow SSH from management network only
-sudo iptables -A INPUT -s 10.100.0.0/24 -p tcp --dport 22 -j ACCEPT
-
-# Default deny
-sudo iptables -P INPUT DROP
-```
-
-## Make Targets Reference
-
-### Essential Targets
+### Core Operations
 
 ```bash
-# Dependency checking
-make check-deps              # Verify all requirements
+# Activate virtual environment
+source /opt/tsim/venv/bin/activate
 
-# Testing
-make test                    # Run complete test suite
-make test-namespace          # Test namespace operations (needs sudo)
-make test-network           # Comprehensive network tests (3-5 min)
+# Start tsimsh
+tsimsh
 
-# Tracing
-make tsim ARGS='-s IP -d IP'              # Basic trace
-make tsim ARGS='-s IP -d IP -j'           # JSON output
-make tsim ARGS='-s IP -d IP -v'           # Verbose
+# Traceroute simulation
+tsimsh> trace -s 10.1.1.1 -d 10.2.1.1 -j
 
-# Firewall analysis
-make ifa ARGS='--router NAME -s IP -d IP -p tcp -dp 80'
+# Network namespace management
+tsimsh> network setup --create
+tsimsh> network status all
+tsimsh> network test --source 10.1.1.1 --destination 10.2.1.1
 
-# Namespace management
-sudo -E make netsetup        # Create simulation
-sudo -E make netstatus       # Show status
-sudo -E make netclean        # Remove simulation
-```
-
-### Advanced Targets
-
-```bash
 # Service management
-sudo -E make svcstart ARGS='IP:PORT'
-sudo -E make svctest ARGS='-s SRC_IP -d DST_IP:PORT'
-sudo -E make svclist
-sudo -E make svcclean
+tsimsh> service start --ip 10.1.1.1 --port 8080
+tsimsh> service test -s 10.2.1.1 -d 10.1.1.1:8080
+tsimsh> service list
 
 # Host management
-sudo -E make hostadd ARGS='--host NAME --primary-ip IP/MASK --connect-to ROUTER'
-sudo -E make hostlist
-sudo -E make hostdel ARGS='--host NAME'
-sudo -E make hostclean
+tsimsh> host add --name web1 --primary-ip 10.1.1.100/24 --connect-to hq-gw
+tsimsh> host list
+tsimsh> host remove --name web1 -f
 
-# Data collection
-make facts INVENTORY_FILE=hosts.ini
-make facts INVENTORY=group-name
-
-# Package management
-make package                 # Build distribution
-make install-package         # Install as package
-make install-pipx           # Install with pipx
+# Facts management
+tsimsh> facts collect --inventory hosts.ini --output-dir facts
+tsimsh> facts process --input-dir raw_facts --output-dir facts --validate
+tsimsh> facts validate --facts-dir facts
 ```
 
-### Target Arguments
-
-Most targets accept ARGS for options:
+### Advanced Operations
 
 ```bash
-# Verbosity levels
-ARGS='-v'    # Basic verbosity
-ARGS='-vv'   # Info level
-ARGS='-vvv'  # Debug level
+# Batch script execution
+cat commands.tsim | tsimsh
 
-# Output formats
-ARGS='-j'    # JSON output
-ARGS='-q'    # Quiet mode (exit code only)
+# Variables and scripting
+tsimsh> set SOURCE_IP 10.1.1.1
+tsimsh> set DEST_IP 10.2.1.1
+tsimsh> trace -s $SOURCE_IP -d $DEST_IP
 
-# Force/Skip confirmations
-ARGS='--force'
-ARGS='-f'
-```
-
-## Python Scripts Direct Usage
-
-### Core Scripts
-
-```bash
-# Traceroute simulator
-python3 src/core/traceroute_simulator.py \
-    -s 10.1.1.1 -d 10.2.1.1 \
-    -p tcp -sp 1234 -dp 80 \
-    -j  # JSON output
-
-# Iptables analyzer
-python3 src/analyzers/iptables_forward_analyzer.py \
-    --router hq-gw \
-    -s 10.1.1.0/24 -d 10.2.0.0/16 \
-    -p all \
-    -v
-
-# Namespace setup
-sudo python3 src/simulators/network_namespace_setup.py \
-    --setup \
-    --verbose
-
-# Service manager
-sudo python3 src/simulators/service_manager.py \
-    start --namespace hq-gw \
-    --ip 10.1.1.1 --port 8080 \
-    --protocol tcp
-```
-
-### Utility Scripts
-
-```bash
-# Process raw facts
-python3 ansible/process_facts.py \
-    input_file.txt output.json
-
-# Extract interfaces
-python3 ansible/extract_interfaces.py \
-    router_facts.json
-
-# Update facts
-python3 src/utils/update_tsim_facts.py \
-    --router hq-gw \
-    --field iptables \
-    --data new_rules.json
-
-# Verify setup
-python3 src/utils/verify_network_setup.py \
-    --check all
-```
-
-### Analysis Scripts
-
-```bash
-# Analyze packet counts
-python3 src/scripts/analyze_packet_counts.py \
-    --router hq-gw \
-    --chain FORWARD
-
-# Process iptables logs
-python3 src/analyzers/iptables_log_processor.py \
-    --log-file /var/log/iptables.log \
-    --source 10.1.1.1 \
-    --dest 10.2.1.1
-
-# Visualize network
-python3 src/scripts/visualize_reachability.py \
-    --trace trace.json \
-    --output network.pdf
+# Help for any command
+tsimsh> help network
+tsimsh> help trace
+tsimsh> help service
 ```
 
 ### Script Environment
 
-Set environment for scripts:
+Set environment for scripts (use virtual environment):
 
 ```bash
+# Activate virtual environment first
+source /opt/tsim/venv/bin/activate
+
 # Required environment
 export TRACEROUTE_SIMULATOR_FACTS=/path/to/facts
 export TRACEROUTE_SIMULATOR_RAW_FACTS=/path/to/raw_facts
 
-# Python path for imports
+# Python path for imports (when using repository directly)
 export PYTHONPATH=/path/to/traceroute-simulator/src:$PYTHONPATH
 
-# Disable bytecode generation
+# Script environment settings (already set in virtual environment)
 export PYTHONDONTWRITEBYTECODE=1
-
-# Unbuffered output
 export PYTHONUNBUFFERED=1
 ```
 
@@ -932,9 +1172,10 @@ echo $TRACEROUTE_SIMULATOR_FACTS
 # Verify directory exists
 ls -la $TRACEROUTE_SIMULATOR_FACTS
 
-# Check JSON files are valid
+# Check JSON files are valid (use virtual environment)
+source /opt/tsim/venv/bin/activate
 for f in $TRACEROUTE_SIMULATOR_FACTS/*.json; do
-    python3 -m json.tool "$f" > /dev/null || echo "Invalid: $f"
+    python -m json.tool "$f" > /dev/null || echo "Invalid: $f"
 done
 ```
 
@@ -943,11 +1184,11 @@ done
 # Check sudo configuration
 sudo -l | grep netns
 
-# Verify capability binary
-getcap /usr/local/bin/netns_reader
-
 # Test with explicit sudo
 sudo -E ip netns list
+
+# Verify group membership
+groups | grep tsim-users
 ```
 
 #### Namespace operations hang
@@ -964,20 +1205,21 @@ for ns in $(sudo ip netns list | awk '{print $1}'); do
 done
 ```
 
-#### Web interface errors
+#### WSGI interface errors
 ```bash
-# Check Apache error log
-sudo tail -f /var/log/apache2/error.log
+# Check Apache error log (RHEL)
+sudo tail -f /var/log/httpd/error_log
 
-# Verify CGI execution
-sudo -u www-data python3 web/cgi-bin/test_me.py
+# Verify WSGI application (use virtual environment)
+sudo -u apache /opt/tsim/venv/bin/python -c "import wsgi.tsim_app"
 
 # Check permissions
-ls -la web/cgi-bin/
-ls -la web/conf/
+ls -la /opt/tsim/wsgi/
+ls -la /opt/tsim/wsgi/conf/
 
-# Test configuration
-python3 -c "import json; json.load(open('web/conf/config.json'))"
+# Test configuration (use virtual environment)
+source /opt/tsim/venv/bin/activate
+python -c "import json; json.load(open('/opt/tsim/wsgi/conf/config.json'))"
 ```
 
 ### Performance Tuning
@@ -1034,7 +1276,7 @@ find /var/log -name "traceroute-sim*.log" -mtime +30 -delete
 tar czf facts_backup_$(date +%Y%m%d).tar.gz $TRACEROUTE_SIMULATOR_FACTS/
 
 # Backup configuration
-cp -r web/conf/ web/conf.backup.$(date +%Y%m%d)/
+cp -r /opt/tsim/wsgi/conf/ /opt/tsim/wsgi/conf.backup.$(date +%Y%m%d)/
 
 # Backup user scripts
 tar czf scripts_backup_$(date +%Y%m%d).tar.gz ~/.tsimrc *.tsim
@@ -1045,24 +1287,92 @@ tar czf scripts_backup_$(date +%Y%m%d).tar.gz ~/.tsimrc *.tsim
 # Pull latest code
 git pull origin main
 
-# Update dependencies
-pip3 install -r requirements.txt --upgrade
+# Rebuild virtual environment with latest dependencies
+make install-venv
 
-# Rebuild components
-make clean
-make check-deps
-sudo make install-wrapper
+# Rebuild WSGI installation
+sudo make install-wsgi
 
-# Run tests
+# No additional wrapper installation needed
+
+# Run tests (from virtual environment)
+source /opt/tsim/venv/bin/activate
 make test
 
-# Restart services
-sudo systemctl restart apache2
+# Restart services (RHEL)
+sudo systemctl restart httpd
 ```
 
 ### Monitoring and Logging
 
-#### System Monitoring
+#### Logging Architecture
+
+The system uses a multi-tier logging approach with different components logging to different locations:
+
+**Configuration Locations:**
+- System configuration: `/opt/tsim/wsgi/conf/traceroute_simulator.yaml`
+- WSGI configuration: `/opt/tsim/wsgi/conf/config.json`
+
+#### Log Directories and Files
+
+Based on Configuration.mk and traceroute_simulator.yaml:
+
+```bash
+# Primary log directory (TSIM_LOG_DIR)
+/var/log/tsim/
+├── batch_generator_YYYYMMDD_HHMMSS.json  # Batch command execution logs
+├── network_setup.json                    # Network namespace setup logs
+├── host_operations.json                  # Host management operation logs
+├── service_manager.json                  # Service control and testing logs
+├── session_*.json                        # Individual session logs
+└── debug/                                 # Debug-level logs when enabled
+
+# Apache/WSGI logs (RHEL)
+/var/log/httpd/
+├── access_log                            # HTTP access logs
+├── error_log                             # Apache/WSGI error logs
+└── ssl_access_log                        # HTTPS access logs (if enabled)
+```
+
+#### What Gets Logged Where
+
+**1. Application Logs (`/var/log/tsim/`)**
+
+JSON-formatted logs with configurable levels:
+
+```yaml
+# From traceroute_simulator.yaml
+logging:
+  file_level: DEBUG                       # All events logged to files
+  format: json                           # Structured JSON format
+  console_levels:
+    0: CRITICAL  # -v0: Only critical errors to console
+    1: WARNING   # -v:  Warnings and errors to console
+    2: INFO      # -vv: Info, warnings, errors to console
+    3: DEBUG     # -vvv: Everything to console
+```
+
+- **Batch Generator Logs**: Command execution, outputs, timing
+- **Network Setup Logs**: Namespace creation, interface configuration, routing
+- **Host Operations**: Dynamic host addition/removal, configuration changes
+- **Service Manager**: Service start/stop, connectivity tests, port management
+
+**2. WSGI Application Logs**
+
+```bash
+# WSGI application logs in Apache error log
+tail -f /var/log/httpd/error_log | grep -E "tsim|WSGI"
+
+# Common WSGI log entries:
+# - Session management (login/logout)
+# - Queue operations (job submission, status)
+# - Progress tracking updates
+# - Configuration validation
+# - Authentication events
+```
+
+**3. System Monitoring Commands**
+
 ```bash
 # Monitor namespace memory usage
 ps aux | grep netns | awk '{sum+=$6} END {print sum/1024 " MB"}'
@@ -1070,22 +1380,74 @@ ps aux | grep netns | awk '{sum+=$6} END {print sum/1024 " MB"}'
 # Check network namespace count
 sudo ip netns list | wc -l
 
-# Monitor socat services
+# Monitor socat services (port listeners in namespaces)
 ps aux | grep socat | wc -l
+
+# Check shared memory usage (TSIM_DATA_DIR)
+df -h /dev/shm
+ls -la /dev/shm/tsim*/
+
+# Monitor log directory usage
+du -sh /var/log/tsim/
+ls -lt /var/log/tsim/ | head -10
 ```
 
-#### Application Logging
+#### TSIM_DATA_DIR: Shared Memory Storage
+
+**Location**: `/dev/shm/tsim` (configurable via TSIM_DATA_DIR)
+
+This directory uses shared memory (tmpfs) for high-performance temporary data:
+
 ```bash
-# Enable debug logging in tsimsh
-export TRACEROUTE_SIMULATOR_DEBUG=1
-./tsimsh
+/dev/shm/tsim/
+├── registries/                           # Shared memory registries
+│   ├── routers.shm          (2MB)       # Router registry data
+│   ├── interfaces.shm       (4MB)       # Interface configuration data
+│   ├── bridges.shm          (2MB)       # Bridge network data
+│   └── hosts.shm            (1MB)       # Dynamic host registry
+├── batch_segments/                       # Batch command data
+│   ├── segment_XXXXX.dat    (max 10MB)  # Command execution segments
+│   └── metadata_XXXXX.json              # Segment metadata
+├── session_data/                         # Active session data
+│   ├── session_ID.json                   # Session state and variables
+│   ├── progress_ID.json                  # Real-time progress tracking
+│   └── queue_state.json                  # Job queue state
+└── locks/                                # File-based coordination locks
+    ├── network_setup.lock                # Network operation locks
+    ├── service_manager.lock               # Service operation locks
+    └── batch_XXXXX.lock                  # Batch execution locks
+```
 
-# Web interface logs
-tail -f /var/log/apache2/access.log
-tail -f /var/log/apache2/error.log
+**Registry Details** (from traceroute_simulator.yaml):
 
-# Custom logging
-export TRACEROUTE_SIMULATOR_LOG=/var/log/tsim.log
+- **routers.shm** (2MB): Namespace router configurations, routing tables
+- **interfaces.shm** (4MB): Virtual interface mappings, IP assignments, bridge connections
+- **bridges.shm** (2MB): Bridge network topologies, VLAN configurations
+- **hosts.shm** (1MB): Dynamic host entries, temporary assignments
+
+**Performance Characteristics**:
+- Stored in RAM for fastest access
+- Automatically cleaned on system reboot
+- Manual cleanup policy for batch segments
+- Shared between processes for coordination
+
+#### Monitoring Log Files
+
+```bash
+# Real-time application logging
+tail -f /var/log/tsim/session_$(date +%Y%m%d).json
+
+# Monitor batch operations
+tail -f /var/log/tsim/batch_generator_*.json | jq .
+
+# Watch WSGI errors
+tail -f /var/log/httpd/error_log | grep -i tsim
+
+# Check shared memory usage patterns
+watch "ls -lah /dev/shm/tsim/ 2>/dev/null || echo 'No active data'"
+
+# Analyze log file sizes and rotation needs
+find /var/log/tsim -name "*.json" -mtime +7 -ls
 ```
 
 #### Audit Trail
@@ -1109,9 +1471,9 @@ sudo ausearch -c iptables
 sudo rm -rf /var/run/netns/*
 sudo systemctl restart systemd-networkd
 
-# If web interface is down
-sudo systemctl restart apache2
-sudo apache2ctl configtest
+# If WSGI interface is down (RHEL)
+sudo systemctl restart httpd
+sudo httpd -t
 
 # If facts are corrupted
 # Restore from backup
@@ -1124,10 +1486,8 @@ export TRACEROUTE_SIMULATOR_FACTS=/path/to/restored/facts
 # Recreate facts from routers
 make facts INVENTORY_FILE=emergency_inventory.yml
 
-# Rebuild from raw facts
-for router in $TRACEROUTE_SIMULATOR_RAW_FACTS/*; do
-    python3 ansible/process_facts.py \
-        "$router/complete_facts.txt" \
-        "$TRACEROUTE_SIMULATOR_FACTS/$(basename $router).json"
-done
+# Rebuild from raw facts using tsimsh
+source /opt/tsim/venv/bin/activate
+tsimsh
+tsimsh> facts process --input-dir $TRACEROUTE_SIMULATOR_RAW_FACTS --output-dir $TRACEROUTE_SIMULATOR_FACTS --validate
 ```

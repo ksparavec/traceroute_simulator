@@ -802,89 +802,14 @@ class ReversePathTracer:
         import subprocess
         import socket
         
-        # Load configuration to determine if we're on the ansible controller
-        on_controller = False
-        try:
-            from tsim.core.config_loader import load_traceroute_config
-            config = load_traceroute_config()
-            on_controller = config.get('ansible_controller', False)
-        except ImportError:
-            # Default to False if config loader not available
-            on_controller = False
-
+        # Using ip netns exec for interface detection - no SSH configuration needed
         if self.verbose_level >= 2:
             try:
                 hostname = socket.gethostname()
                 print(f"Current host: {hostname}")
             except:
                 print(f"Current host: unknown")
-            print(f"Ansible controller IP: {self.ansible_controller_ip}")
-            print(f"Running on controller (configured): {on_controller}")
-        
-        # Load SSH configuration from config file for routers
-        ssh_config = {}
-        try:
-            from tsim.core.config_loader import get_ssh_config
-            ssh_config = get_ssh_config()
-        except ImportError:
-            # Fallback to defaults if config loader not available
-            ssh_config = {
-                'ssh_mode': 'standard',
-                'ssh_user': None,
-                'ssh_key': None,
-                'ssh_options': {
-                    'BatchMode': 'yes',
-                    'LogLevel': 'ERROR',
-                    'ConnectTimeout': '5',
-                    'StrictHostKeyChecking': 'no',
-                    'UserKnownHostsFile': '/dev/null'
-                }
-            }
-
-        ssh_mode = ssh_config.get('ssh_mode', 'standard')
-        ssh_user = ssh_config.get('ssh_user')
-        ssh_key = ssh_config.get('ssh_key')
-
-        # Build SSH options from configuration for router connections
-        ssh_opts_routers = []
-        for option, value in ssh_config.get('ssh_options', {}).items():
-            ssh_opts_routers.extend(['-o', f'{option}={value}'])
-
-        # Add user and key options for user mode (routers)
-        if ssh_mode == 'user' and ssh_user and ssh_key:
-            ssh_opts_routers.extend(['-i', ssh_key, '-l', ssh_user])
-
-        # Load SSH configuration for controller connections
-        ssh_controller_config = {}
-        try:
-            from tsim.core.config_loader import get_ssh_controller_config
-            ssh_controller_config = get_ssh_controller_config()
-        except ImportError:
-            # Fallback to defaults if config loader not available
-            ssh_controller_config = {
-                'ssh_mode': 'standard',
-                'ssh_user': None,
-                'ssh_key': None,
-                'ssh_options': {
-                    'BatchMode': 'yes',
-                    'ConnectTimeout': '10',
-                    'StrictHostKeyChecking': 'yes',
-                    'UserKnownHostsFile': '~/.ssh/known_hosts'
-                }
-            }
-
-        ssh_controller_mode = ssh_controller_config.get('ssh_mode', 'standard')
-        ssh_controller_user = ssh_controller_config.get('ssh_user')
-        ssh_controller_key = ssh_controller_config.get('ssh_key')
-
-        # Build SSH options from configuration for controller connections
-        ssh_opts_controller = []
-        for option, value in ssh_controller_config.get('ssh_options', {}).items():
-            ssh_opts_controller.extend(['-o', f'{option}={value}'])
-
-        # Add user and key options for user mode (controller)
-        if ssh_controller_mode == 'user' and ssh_controller_user and ssh_controller_key:
-            ssh_opts_controller.extend(['-i', ssh_controller_key, '-l', ssh_controller_user])
+            print(f"Using local namespace execution for interface detection")
         
         updated_path = []
         
@@ -910,47 +835,42 @@ class ReversePathTracer:
             outgoing_interface = ""
             
             try:
-                # Build commands to get interfaces
-                cmd_incoming = f"ip route get {source_ip} | head -1"
-                cmd_outgoing = f"ip route get {destination_ip} | head -1"
-                
-                if on_controller:
-                    # ansible_controller=true: Direct SSH to routers
-                    ssh_cmd_incoming = ["ssh"] + ssh_opts_routers + [ip, cmd_incoming]
-                    ssh_cmd_outgoing = ["ssh"] + ssh_opts_routers + [ip, cmd_outgoing]
-                else:
-                    # ansible_controller=false: Route through controller using nested SSH
-                    # Escape the command for nested execution
-                    escaped_cmd_incoming = cmd_incoming.replace('"', '\\"')
-                    escaped_cmd_outgoing = cmd_outgoing.replace('"', '\\"')
-                    
-                    # Build inner SSH command with router options
-                    inner_ssh_opts = ' '.join(ssh_opts_routers)
-                    inner_ssh_incoming = f"ssh {inner_ssh_opts} {ip} \"{escaped_cmd_incoming}\""
-                    inner_ssh_outgoing = f"ssh {inner_ssh_opts} {ip} \"{escaped_cmd_outgoing}\""
-                    
-                    # Outer SSH to controller uses controller options
-                    ssh_cmd_incoming = ["ssh"] + ssh_opts_controller + [self.ansible_controller_ip, inner_ssh_incoming]
-                    ssh_cmd_outgoing = ["ssh"] + ssh_opts_controller + [self.ansible_controller_ip, inner_ssh_outgoing]
-                
-                # Execute commands
-                if self.verbose_level >= 3:
-                    print(f"Getting incoming interface: {' '.join(ssh_cmd_incoming)}")
-                
-                result_incoming = subprocess.run(ssh_cmd_incoming, capture_output=True, text=True, timeout=10)
+                # Get the namespace name for this router (router name is used as namespace name)
+                # The router_name should be available from the hop data or we need to find it by IP
+                namespace = router_name if router_name else self.simulator.comprehensive_ip_lookup.get(ip)
+
+                if not namespace:
+                    if self.verbose:
+                        print(f"  Warning: Could not determine namespace for IP {ip}")
+                    # Try to use IP as namespace name as fallback
+                    namespace = ip
+
+                # Build commands to get interfaces using sudo ip netns exec
+                cmd_incoming = ["sudo", "-E", "ip", "netns", "exec", namespace, "ip", "route", "get", source_ip]
+                cmd_outgoing = ["sudo", "-E", "ip", "netns", "exec", namespace, "ip", "route", "get", destination_ip]
+
+                # Execute commands locally using ip netns
+                if self.verbose:
+                    print(f"Getting incoming interface: {' '.join(cmd_incoming)}")
+
+                result_incoming = subprocess.run(cmd_incoming, capture_output=True, text=True, timeout=10)
                 if result_incoming.returncode == 0:
-                    incoming_interface = self._extract_interface_from_route(result_incoming.stdout)
+                    # Only use the first line of output
+                    first_line = result_incoming.stdout.split('\n')[0] if result_incoming.stdout else ""
+                    incoming_interface = self._extract_interface_from_route(first_line)
                     if self.verbose_level >= 2:
                         print(f"  Incoming interface: {incoming_interface}")
                 elif self.verbose:
                     print(f"  Failed to get incoming interface: {result_incoming.stderr.strip()}")
-                
-                if self.verbose_level >= 3:
-                    print(f"Getting outgoing interface: {' '.join(ssh_cmd_outgoing)}")
-                
-                result_outgoing = subprocess.run(ssh_cmd_outgoing, capture_output=True, text=True, timeout=10)
+
+                if self.verbose:
+                    print(f"Getting outgoing interface: {' '.join(cmd_outgoing)}")
+
+                result_outgoing = subprocess.run(cmd_outgoing, capture_output=True, text=True, timeout=10)
                 if result_outgoing.returncode == 0:
-                    outgoing_interface = self._extract_interface_from_route(result_outgoing.stdout)
+                    # Only use the first line of output
+                    first_line = result_outgoing.stdout.split('\n')[0] if result_outgoing.stdout else ""
+                    outgoing_interface = self._extract_interface_from_route(first_line)
                     if self.verbose_level >= 2:
                         print(f"  Outgoing interface: {outgoing_interface}")
                 elif self.verbose:
@@ -958,7 +878,7 @@ class ReversePathTracer:
                     
             except subprocess.TimeoutExpired:
                 if self.verbose:
-                    print(f"  SSH timeout for router {router_name}")
+                    print(f"  Command timeout for router {router_name}")
             except Exception as e:
                 if self.verbose:
                     print(f"  Error detecting interfaces for {router_name}: {e}")

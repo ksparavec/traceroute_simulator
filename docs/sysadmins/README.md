@@ -20,6 +20,15 @@ The Traceroute Simulator is a comprehensive network simulation platform designed
 
 ![Overall Architecture](overall_architecture.png)
 
+**Key Features:**
+- **Dual interface design** (CLI and Web) - Both interfaces share the same core simulation engine
+- **Ansible integration for data collection** - Automated network facts gathering via playbooks
+- **Queue-based execution system** - All operations queued for optimal resource utilization
+- **Network namespace isolation** - Each simulation runs in isolated Linux namespaces
+- **Real-time monitoring and progress tracking** - Live updates via SSE streaming
+- **Shared memory registries for performance** - Fast access to router/interface/bridge data
+- **SSH-based router connectivity** - Secure connection to network devices
+
 ### Architecture Overview
 
 The system is organized into four main layers:
@@ -47,6 +56,14 @@ The tsimsh (Traceroute Simulator Shell) provides an interactive command-line int
 
 ![tsimsh Architecture](tsimsh_architecture.png)
 
+**Execution Flow:**
+1. **User input via tsimsh command line interface** - Interactive shell with tab completion
+2. **cmd2 framework parses and validates commands** - Built-in command validation and help
+3. **Command handler processes the specific request** - Modular handlers for each command type
+4. **Core components execute simulation or management tasks** - Simulation engine, namespace manager, or Ansible facts
+5. **Data layer provides facts, configuration, and namespace access** - Persistent storage and configuration
+6. **Results returned through shell interface with optional JSON output** - Human-readable or machine-parseable formats
+
 #### Components
 
 - **Entry Point** (`tsimsh`): Main executable that initializes the shell
@@ -70,6 +87,16 @@ The tsimsh (Traceroute Simulator Shell) provides an interactive command-line int
 The web interface provides a browser-based access to the simulator through Apache mod_wsgi.
 
 ![WSGI Architecture](wsgi_architecture.png)
+
+**Request Flow:**
+1. **HTTP request received by Apache web server** - Standard web server handling
+2. **WSGI application dispatches to appropriate handler** - URL-based routing
+3. **Handler processes request and validates parameters** - Input validation and sanitization
+4. **Service orchestration manages session, config, and queue operations** - Coordination layer
+5. **Queue system schedules execution or retrieves results** - Asynchronous job management
+6. **Core simulation engine executes traceroute operations** - Actual simulation processing
+7. **Real-time progress updates via SSE streaming** - Server-sent events for live updates
+8. **Results formatted and returned to client** - HTML, JSON, or PDF output formats
 
 #### Components
 

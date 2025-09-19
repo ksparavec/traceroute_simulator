@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Network Reachability Test</title>
+    <title>Network Service Reachability Analyzer</title>
     <link rel="stylesheet" href="/css/style.css">
     <script src="/js/mode_title.js"></script>
     <script src="/js/form.js"></script>
@@ -9,10 +9,21 @@
 <body>
     <div class="container">
         <header>
-            <h1>Network Reachability Test</h1>
+            <h1>Network Service Reachability Analyzer</h1>
             <a href="/admin_queue.html" target="_blank" id="queueAdminLink" class="test-me" style="display:none; margin-right: 12px;">Admin</a>
             <a href="/logout" class="logout">Logout</a>
         </header>
+
+        <table id="userInfo" style="width: 100%; margin: 15px 0; border-collapse: collapse; font-size: 14px;">
+            <tr>
+                <td style="padding: 8px; border: 1px solid #ccc; text-align: left; font-weight: bold;">Mode: <span id="modeDisplay" style="font-weight: normal;">Loading...</span></td>
+                <td style="padding: 8px; border: 1px solid #ccc; text-align: right; font-weight: bold;">Authentication Method: <span id="authMethodDisplay" style="font-weight: normal;">Loading...</span></td>
+            </tr>
+            <tr>
+                <td style="padding: 8px; border: 1px solid #ccc; text-align: left; font-weight: bold;">Username: <span id="usernameDisplay" style="font-weight: normal;">Loading...</span></td>
+                <td style="padding: 8px; border: 1px solid #ccc; text-align: right; font-weight: bold;">Logged in since: <span id="loginTimestampDisplay" style="font-weight: normal;">Loading...</span></td>
+            </tr>
+        </table>
         
         <form id="reachability-form" action="/main" method="POST">
             <div class="form-group">

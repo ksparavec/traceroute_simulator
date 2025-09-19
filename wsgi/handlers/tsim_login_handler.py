@@ -67,7 +67,9 @@ class TsimLoginHandler(TsimBaseHandler):
                 'success': True,
                 'logged_in': True,
                 'username': session.get('username'),
-                'role': session.get('role', 'user')
+                'role': session.get('role', 'user'),
+                'auth_method': session.get('auth_method', 'local'),
+                'login_timestamp': session.get('login_timestamp')
             })
         else:
             # User is not logged in
@@ -134,7 +136,8 @@ class TsimLoginHandler(TsimBaseHandler):
             session_id, cookie_header = self.session_manager.create_session(
                 username,
                 client_ip,
-                user_data.get('role', 'user')
+                user_data.get('role', 'user'),
+                user_data.get('auth_type', 'local')
             )
             
             # Log successful login

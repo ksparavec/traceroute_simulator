@@ -130,13 +130,8 @@ window.addEventListener('DOMContentLoaded', () => {
     // Toggle body class for mode-specific styling
     document.body.classList.toggle('tsim-mode-prod', window.TSIM_MODE === 'prod');
     document.body.classList.toggle('tsim-mode-test', window.TSIM_MODE === 'test');
-    // Update page titles based on mode
-    const modeTitle = window.TSIM_MODE === 'test'
-        ? 'Network Reachability Test (Mode: Testing)'
-        : 'Network Reachability Test (Mode: Production)';
-    document.title = modeTitle;
-    const h1 = document.querySelector('header h1');
-    if (h1) h1.textContent = modeTitle;
+    // No longer update titles here - handled by mode_title.js
+    // Just keep the mode for other logic
     if (window.TSIM_MODE === 'test') {
         // Hide and disable IP inputs; show trace upload
         setVisible(src, false); setDisabled(src, true);

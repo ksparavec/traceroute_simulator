@@ -1,15 +1,26 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Network Reachability Test</title>
+    <title>Network Service Reachability Analyzer</title>
     <link rel="stylesheet" href="/css/style.css">
     <script src="/js/mode_title.js"></script>
 </head>
 <body>
     <div class="container">
         <header>
-            <h1>Network Reachability Test in Progress</h1>
+            <h1>Network Service Reachability Analyzer</h1>
         </header>
+
+        <table id="userInfo" style="width: 100%; margin: 15px 0; border-collapse: collapse; font-size: 14px;">
+            <tr>
+                <td style="padding: 8px; border: 1px solid #ccc; text-align: left; font-weight: bold;">Mode: <span id="modeDisplay" style="font-weight: normal;">Loading...</span></td>
+                <td style="padding: 8px; border: 1px solid #ccc; text-align: right; font-weight: bold;">Authentication Method: <span id="authMethodDisplay" style="font-weight: normal;">Loading...</span></td>
+            </tr>
+            <tr>
+                <td style="padding: 8px; border: 1px solid #ccc; text-align: left; font-weight: bold;">Username: <span id="usernameDisplay" style="font-weight: normal;">Loading...</span></td>
+                <td style="padding: 8px; border: 1px solid #ccc; text-align: right; font-weight: bold;">Logged in since: <span id="loginTimestampDisplay" style="font-weight: normal;">Loading...</span></td>
+            </tr>
+        </table>
         
         <div class="progress-container">
             <div class="progress-bar">

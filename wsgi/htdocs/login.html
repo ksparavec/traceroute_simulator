@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Network Reachability Test</title>
+    <title>Network Service Reachability Analyzer</title>
     <link rel="stylesheet" href="/css/style.css">
     <script src="/js/mode_title.js"></script>
     <style>
@@ -115,7 +115,10 @@
 </head>
 <body>
     <div class="login-container">
-        <h1>Network Reachability Test</h1>
+        <h1>Network Service Reachability Analyzer</h1>
+        <div id="modeInfo" style="font-size: 14px; margin: 10px 0; font-weight: bold; text-align: center;">
+            Mode: <span id="modeDisplay">Loading...</span>
+        </div>
         <h2>Login</h2>
         <form method="POST" action="/login">
             <label>Username: <input type="text" name="username" required></label>

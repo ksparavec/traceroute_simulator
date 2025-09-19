@@ -20,7 +20,7 @@ TSIM_PYTHON_SERIES ?= 3.11
 # Build directories and paths
 WEB_ROOT ?= /var/www/traceroute-web
 TSIM_WEB_ROOT ?= /opt/tsim/wsgi
-TSIM_HTDOCS ?= /var/www/html/tsim
+TSIM_HTDOCS ?= /opt/tsim/htdocs
 TSIM_VENV ?= /opt/tsim/venv
 TSIM_LOG_DIR ?= /var/log/tsim
 TSIM_DATA_DIR ?= /dev/shm/tsim

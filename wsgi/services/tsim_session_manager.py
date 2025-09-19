@@ -44,22 +44,23 @@ class TsimSessionManager:
             self.session_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
             self.logger.warning(f"Using fallback session directory: {self.session_dir}")
     
-    def create_session(self, username: str, ip_address: Optional[str] = None, 
-                      role: str = 'user') -> tuple:
+    def create_session(self, username: str, ip_address: Optional[str] = None,
+                      role: str = 'user', auth_method: str = 'local') -> tuple:
         """Create a new session
-        
+
         Args:
             username: Username for the session
             ip_address: Client IP address
             role: User role (user/admin)
-            
+            auth_method: Authentication method (local/pam)
+
         Returns:
             Tuple of (session_id, cookie_header)
         """
         # Generate secure session ID
         session_id = secrets.token_urlsafe(32)
         session_file = self.session_dir / f"{session_id}.json"
-        
+
         # Create session data
         session_data = {
             'session_id': session_id,
@@ -67,6 +68,8 @@ class TsimSessionManager:
             'role': role,
             'created': time.time(),
             'last_access': time.time(),
+            'login_timestamp': time.strftime('%Y-%m-%d %H:%M:%S', time.localtime()),
+            'auth_method': auth_method,
             'ip_address': ip_address or 'unknown',
             'form_data': {},
             'test_results': {},

@@ -842,7 +842,7 @@ Type 'set' to see all variables.
             self.completion_handler = CompletionCommands(self)
             self.trace_handler = TraceCommands(self)
             self.nettest_handler = NetTestCommands(self)
-            
+
         except Exception as e:
             import traceback
             self.poutput(f"{Fore.RED}Error loading command handlers: {e}{Style.RESET_ALL}")
@@ -852,6 +852,8 @@ Type 'set' to see all variables.
             else:
                 self.poutput(f"{Fore.YELLOW}Run tsimsh with -v for verbose error details{Style.RESET_ALL}")
             # Continue with basic shell functionality
+        # Defer ksms_tester handler import until first use to avoid impacting startup
+        self.ksms_tester_handler = None
     
     def _setup_completion(self):
         """Setup tab completion for commands."""
@@ -1027,6 +1029,29 @@ Type 'set' to see all variables.
         if hasattr(self, 'service_handler'):
             return self.service_handler.complete_command(text, line, begidx, endidx)
         return []
+
+    def do_ksms_tester(self, args):
+        """Kernel-space multi-service tester (fast YES/NO per router)."""
+        try:
+            if self.ksms_tester_handler is None:
+                from .commands.ksms_tester import KsmsTesterCommand
+                self.ksms_tester_handler = KsmsTesterCommand(self)
+            ret = self.ksms_tester_handler.handle_command(args)
+            self.variable_manager.set_variable('TSIM_RETURN_VALUE', str(ret if ret is not None else 0))
+            return None
+        except Exception as e:
+            self.poutput(f"{Fore.RED}ksms_tester command not available: {e}{Style.RESET_ALL}")
+            self.variable_manager.set_variable('TSIM_RETURN_VALUE', '1')
+            return None
+
+    def complete_ksms_tester(self, text, line, begidx, endidx):
+        try:
+            if self.ksms_tester_handler is None:
+                from .commands.ksms_tester import KsmsTesterCommand
+                self.ksms_tester_handler = KsmsTesterCommand(self)
+            return self.ksms_tester_handler.complete_command(text, line, begidx, endidx)
+        except Exception:
+            return []
     
     
     def do_completion(self, args):
@@ -1214,6 +1239,7 @@ Type 'set' to see all variables.
                 'ping': self.help_ping,
                 'mtr': self.help_mtr,
                 'traceroute': self.help_traceroute,
+                'ksms_tester': self.help_ksms_tester,
                 'completion': self.help_completion
             }
             
@@ -1558,6 +1584,38 @@ Type 'set' to see all variables.
         self.poutput("\n  Verbose output with timing:")
         self.poutput("    trace -s 10.1.1.100 -d 10.2.1.200 -vv")
         
+    def help_ksms_tester(self):
+        """Help for ksms_tester command."""
+        self.poutput(f"\n{Fore.CYAN}COMMAND:{Style.RESET_ALL}")
+        self.poutput("  ksms_tester - Kernel-space multi-service tester (fast YES/NO per router)")
+
+        self.poutput(f"\n{Fore.CYAN}USAGE:{Style.RESET_ALL}")
+        self.poutput("  ksms_tester -s SOURCE_IP -d DESTINATION_IP -P \"PORT_SPEC\" [options]")
+        self.poutput("  ksms_tester --help | -h")
+
+        self.poutput(f"\n{Fore.CYAN}MANDATORY OPTIONS:{Style.RESET_ALL}")
+        self.poutput(f"  {Fore.YELLOW}-s, --source IP{Style.RESET_ALL}           Source IP address")
+        self.poutput(f"  {Fore.YELLOW}-d, --destination IP{Style.RESET_ALL}      Destination IP address")
+        self.poutput(f"  {Fore.YELLOW}-P, --ports SPEC{Style.RESET_ALL}         Port spec (e.g., 80,443/tcp,53/udp,22-25)")
+
+        self.poutput(f"\n{Fore.CYAN}OPTIONAL OPTIONS:{Style.RESET_ALL}")
+        self.poutput("  --default-proto PROTO       Default protocol for bare ports: tcp|udp (default: tcp)")
+        self.poutput("  --max-services N            Max services to expand (default: 10)")
+        self.poutput("  --tcp-timeout SEC           TCP SYN timeout per service (default: 1.0)")
+        self.poutput("  -j, --json                  Output in JSON format")
+        self.poutput("  -v, --verbose               Increase verbosity (-v, -vv)")
+
+        self.poutput(f"\n{Fore.CYAN}DESCRIPTION:{Style.RESET_ALL}")
+        self.poutput("  Runs a minimal kernel-space style test by emitting one TCP SYN or UDP datagram per service")
+        self.poutput("  from the source namespace with DSCP tagging, while counting at PREROUTING/POSTROUTING on")
+        self.poutput("  each involved router. If POSTROUTING increases, the packet was forwarded (YES); if only")
+        self.poutput("  PREROUTING increases, it was dropped in FORWARD (NO). Routers are inferred from registries")
+        self.poutput("  based on source IP; egress per router is determined via 'ip route get <dest>'.")
+
+        self.poutput(f"\n{Fore.CYAN}EXAMPLES:{Style.RESET_ALL}")
+        self.poutput("  ksms_tester -s 10.1.1.100 -d 10.2.1.200 -P \"80,443/tcp,53/udp\" --tcp-timeout 1.0")
+        self.poutput("")
+
         self.poutput("\n  Store JSON result in variable:")
         self.poutput("    trace -s 10.1.1.100 -d 10.2.1.200 -j")
         self.poutput("    # Result automatically stored in $TSIM_RESULT")

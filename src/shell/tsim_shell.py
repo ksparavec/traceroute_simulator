@@ -558,16 +558,101 @@ Type 'set' to see all variables.
     
     def _initialize_history(self, persistent_history_file=None):
         """
-        Override cmd2's history initialization to respect our custom history limit.
+        Override cmd2's history initialization to respect our custom history limit
+        and filter out excessively large history items.
         This is called during shell initialization.
         """
+        import lzma
+        import json
+        from cmd2.history import History
+        
         # Set our custom persistent history length before cmd2 loads history
         # This ensures cmd2 loads the full history up to our limit
         if hasattr(self, '_configured_history_length'):
             self._persistent_history_length = self._configured_history_length
         
-        # Now let cmd2 initialize history with our custom limit
-        super()._initialize_history(persistent_history_file)
+        # Initialize empty history first
+        self.history = History()
+        
+        # Maximum size for individual history items (1KB)
+        MAX_HISTORY_ITEM_SIZE = 1024
+        
+        # Handle persistent history file ourselves to filter large items
+        if persistent_history_file and self.is_interactive:
+            hist_file = os.path.abspath(os.path.expanduser(persistent_history_file))
+            self.persistent_history_file = hist_file
+            
+            # Check if file exists and is not a directory
+            if os.path.exists(hist_file) and not os.path.isdir(hist_file):
+                try:
+                    # Read the compressed history file
+                    with open(hist_file, 'rb') as fobj:
+                        compressed_bytes = fobj.read()
+                    
+                    if compressed_bytes:
+                        # Decompress
+                        try:
+                            history_json = lzma.decompress(compressed_bytes).decode(encoding='utf-8')
+                            history_data = json.loads(history_json)
+                            
+                            # Filter history items by size
+                            if isinstance(history_data, dict) and 'history_items' in history_data:
+                                filtered_items = []
+                                skipped_count = 0
+                                
+                                for item in history_data['history_items']:
+                                    # Check the size of the raw command
+                                    if isinstance(item, dict) and 'statement' in item:
+                                        stmt = item['statement']
+                                        if isinstance(stmt, dict) and 'raw' in stmt:
+                                            raw_cmd = stmt['raw']
+                                            if len(raw_cmd) <= MAX_HISTORY_ITEM_SIZE:
+                                                filtered_items.append(item)
+                                            else:
+                                                skipped_count += 1
+                                        else:
+                                            # Keep items without 'raw' field
+                                            filtered_items.append(item)
+                                    else:
+                                        # Keep items without proper structure
+                                        filtered_items.append(item)
+                                
+                                # Recreate history with filtered items
+                                if skipped_count > 0:
+                                    self.poutput(f"{Fore.YELLOW}Note: Skipped {skipped_count} oversized history items{Style.RESET_ALL}")
+                                
+                                # Create new history data with filtered items
+                                filtered_history_data = {
+                                    'history_version': history_data.get('history_version', '1.0.0'),
+                                    'history_items': filtered_items
+                                }
+                                
+                                # Load the filtered history
+                                filtered_json = json.dumps(filtered_history_data)
+                                self.history = History.from_json(filtered_json)
+                            else:
+                                # Try to load as-is if structure is different
+                                self.history = History.from_json(history_json)
+                                
+                        except (lzma.LZMAError, json.JSONDecodeError, KeyError, ValueError) as ex:
+                            # If there's an error, start with empty history
+                            self.poutput(f"{Fore.YELLOW}Warning: Could not load history: {ex}{Style.RESET_ALL}")
+                            self.history = History()
+                        
+                except OSError as ex:
+                    # Can't read file, start with empty history
+                    self.poutput(f"{Fore.YELLOW}Warning: Cannot read history file: {ex}{Style.RESET_ALL}")
+            
+            # Register function to save history on exit
+            import atexit
+            atexit.register(self._persist_history)
+            
+            # Start a new session in history
+            if hasattr(self.history, 'start_session'):
+                self.history.start_session()
+        else:
+            # No persistent history file
+            self.persistent_history_file = None
     
     def _persist_history(self) -> None:
         """
@@ -798,16 +883,45 @@ Type 'set' to see all variables.
     def precmd(self, statement: cmd2.Statement) -> cmd2.Statement:
         """
         This hook is called before the command is executed.
-        It handles variable substitutions.
+        It handles variable substitutions while preserving original command in history.
         """
         # statement.raw is the raw input line
         line = statement.raw
+        
+        # Skip variable substitution if variable_manager isn't ready yet
+        # This can happen during initialization
+        if not hasattr(self, 'variable_manager'):
+            return super().precmd(statement)
+            
         substituted_line = self.variable_manager.substitute_variables(line)
         
-        # Create a new statement with the substituted line
+        # If no substitution occurred, just return the original statement
+        if line == substituted_line:
+            return super().precmd(statement)
+        
+        # Parse the substituted line to get the actual command to execute
         new_statement = self.statement_parser.parse(substituted_line)
         
-        return super().precmd(new_statement)
+        # IMPORTANT: To preserve the original command in history (not the substituted version),
+        # we need to create a new Statement with the substituted content for execution
+        # but keep the original raw field for history.
+        
+        try:
+            # Use dataclasses.replace to create a modified copy while preserving the original raw
+            import dataclasses
+            
+            # Create a new statement with substituted values for execution but original raw for history
+            # This prevents memory issues when variables contain large values
+            final_statement = dataclasses.replace(
+                new_statement,
+                raw=line  # Keep original command for history (e.g., "print $LARGE_VAR" not expanded)
+            )
+            
+            return super().precmd(final_statement)
+        except Exception:
+            # If there's any issue with statement manipulation, just use the new statement as-is
+            # This ensures the command still executes even if we can't preserve the original in history
+            return super().precmd(new_statement)
     
     
     def do_EOF(self, line):

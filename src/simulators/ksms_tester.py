@@ -15,6 +15,7 @@ import re
 import shlex
 import subprocess
 import sys
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Dict, List, Tuple, Optional
@@ -122,11 +123,15 @@ def infer_routers_for_source(src_ip: str, bridges: Dict, hosts: Dict, ip_map: Di
     return routers
 
 
-def parse_ports(port_spec: str, default_proto: str, max_services: int) -> List[Tuple[int, str]]:
+def parse_ports(port_spec: str, default_proto: str, max_services: int, range_limit: int = 100, force: bool = False) -> List[Tuple[int, str]]:
     """Parse port spec using the same logic as WSGI TsimPortParserService.
     Import the service by adding the wsgi dir to sys.path to avoid requiring 'wsgi' as a package.
     """
     try:
+        # For large ranges, skip WSGI service and use our enhanced parser
+        if range_limit > 100:
+            raise Exception("Using enhanced parser for large range limits")
+        
         # Project root = .../src/.. (two levels up from this file)
         project_root = Path(__file__).resolve().parents[2]
         wsgi_dir = project_root / 'wsgi'
@@ -136,21 +141,64 @@ def parse_ports(port_spec: str, default_proto: str, max_services: int) -> List[T
         parser = TsimPortParserService()
         return parser.parse_port_spec(port_spec, default_proto, max_services)
     except Exception as e:
-        # Fallback: basic parser for simple comma-separated list of port[/proto]
-        _dbg(f"[WARN] Falling back to basic port parser: {e}", 1)
+        # Fallback: enhanced parser supporting port ranges and WSGI formats
+        _dbg(f"[WARN] Falling back to enhanced port parser: {e}", 1)
         result: List[Tuple[int, str]] = []
+        
         for part in [p.strip() for p in port_spec.split(',') if p.strip()]:
-            if '/' in part:
-                p_str, pr = part.split('/', 1)
-                p = int(p_str)
-                pr = pr.lower()
+            # Handle port ranges: 1000-2000/udp or 1000-2000
+            if '-' in part and '/' in part:
+                # Range with protocol: 1000-2000/udp
+                range_part, proto = part.split('/', 1)
+                start_str, end_str = range_part.split('-', 1)
+                start_port, end_port = int(start_str), int(end_str)
+                proto = proto.lower()
+                if start_port > end_port:
+                    raise ValueError(f"Invalid port range: {start_port}-{end_port}")
+                
+                range_size = end_port - start_port + 1
+                if range_size > range_limit and not force:
+                    # Cap the range to the limit if not forced
+                    end_port = start_port + range_limit - 1
+                
+                for port in range(start_port, end_port + 1):
+                    result.append((port, proto))
+            elif '-' in part:
+                # Range with default protocol: 1000-2000
+                start_str, end_str = part.split('-', 1)
+                start_port, end_port = int(start_str), int(end_str)
+                if start_port > end_port:
+                    raise ValueError(f"Invalid port range: {start_port}-{end_port}")
+                
+                range_size = end_port - start_port + 1
+                if range_size > range_limit and not force:
+                    # Cap the range to the limit if not forced
+                    end_port = start_port + range_limit - 1
+                
+                for port in range(start_port, end_port + 1):
+                    result.append((port, default_proto))
+            elif '/' in part:
+                # Single port with protocol: 80/tcp
+                p_str, proto = part.split('/', 1)
+                port = int(p_str)
+                proto = proto.lower()
+                result.append((port, proto))
             else:
-                p = int(part)
-                pr = default_proto
-            result.append((p, pr))
-        if len(result) > max_services:
-            result = result[:max_services]
-        return result
+                # Single port with default protocol: 80
+                port = int(part)
+                result.append((port, default_proto))
+        
+        # Remove duplicates while preserving order
+        seen = set()
+        unique_result = []
+        for item in result:
+            if item not in seen:
+                seen.add(item)
+                unique_result.append(item)
+        
+        if len(unique_result) > max_services:
+            unique_result = unique_result[:max_services]
+        return unique_result
 
 
 def egress_iface_and_nexthop_for(router: str, dst_ip: str) -> Tuple[Optional[str], Optional[str]]:
@@ -215,87 +263,32 @@ def iptables_save_mangle(router: str, with_counters: bool = True) -> str:
 
 
 def build_insert_payload_from_existing(existing_save: str, insert_lines: List[str], with_counters: bool = True) -> str:
-    """Take iptables-save output for mangle table and add our rules at the beginning of chains."""
+    """SIMPLIFIED: Create clean iptables-restore payload, removing all TSIM_KSMS rules first."""
     lines = existing_save.splitlines()
     out: List[str] = []
     
-    # Track whether we've added our chain and rules
-    has_tsim_chain = ':TSIM_TAP_FW' in existing_save
-    added_chain = False
-    added_flush = False
-    added_our_rules = False
-    existing_prerouting = []
-    existing_postrouting = []
-    
-    # First pass: collect existing PREROUTING and POSTROUTING rules
-    # BUT skip any old TSIM_KSMS rules - we don't want to preserve those!
-    in_prerouting = False
-    in_postrouting = False
+    # Simply copy everything EXCEPT TSIM_KSMS rules and TSIM_TAP_FW chain stuff
+    # This prevents recursive rule explosion
     for ln in lines:
-        # Skip any TSIM_KSMS rules - we'll add fresh ones
+        # Skip any line containing TSIM_KSMS (our old rules)
         if 'TSIM_KSMS=' in ln:
             continue
-            
-        if ln.startswith('-A PREROUTING'):
-            # Add default counters if needed and not already present
-            if with_counters and not ln.startswith('['):
-                ln = '[0:0] ' + ln
-            existing_prerouting.append(ln)
-        elif ln.startswith('-A POSTROUTING'):
-            # Add default counters if needed and not already present
-            if with_counters and not ln.startswith('['):
-                ln = '[0:0] ' + ln
-            existing_postrouting.append(ln)
-    
-    # Second pass: rebuild with our rules first
-    for ln in lines:
-        # After the *mangle line
-        if ln.startswith('*mangle'):
-            out.append(ln)
+        # Skip TSIM_TAP_FW chain declarations and rules (we'll re-add if needed)
+        if ':TSIM_TAP_FW' in ln or (ln.startswith('-') and 'TSIM_TAP_FW' in ln):
             continue
             
-        # Handle chain declarations
-        if ln.startswith(':'):
-            out.append(ln)
-            if ln.startswith(':PREROUTING') and not has_tsim_chain:
-                # Add our chain declaration right after PREROUTING
+        # Before COMMIT, insert our new rules
+        if ln.strip() == 'COMMIT':
+            # Add TSIM_TAP_FW chain if we have rules to insert
+            if insert_lines:
                 out.append(':TSIM_TAP_FW - [0:0]')
-                added_chain = True
-            continue
-        
-        # After chains, add flush/return for TSIM_TAP_FW if needed
-        if not ln.startswith(':') and not ln.startswith('#') and not ln.startswith('*') and not added_flush:
-            if added_chain or not has_tsim_chain:
-                if not has_tsim_chain:
-                    out.append('-F TSIM_TAP_FW')
                 out.append('-A TSIM_TAP_FW -j RETURN')
-                added_flush = True
-        
-        # Skip existing -A PREROUTING and -A POSTROUTING lines (we'll re-add them after our rules)
-        if ln.startswith('-A PREROUTING') or ln.startswith('-A POSTROUTING'):
-            continue
-            
-        # Before COMMIT, add all rules in the right order
-        if ln.strip() == 'COMMIT' and not added_our_rules:
-            # Add our PREROUTING rules first (with counters if needed)
-            for rule in insert_lines:
-                if 'PREROUTING' in rule:
+                
+                # Add our new rules with counters
+                for rule in insert_lines:
                     if with_counters and not rule.startswith('['):
                         rule = '[0:0] ' + rule
                     out.append(rule)
-            # Then existing PREROUTING rules
-            for rule in existing_prerouting:
-                out.append(rule)
-            # Add our POSTROUTING rules (with counters if needed)
-            for rule in insert_lines:
-                if 'POSTROUTING' in rule:
-                    if with_counters and not rule.startswith('['):
-                        rule = '[0:0] ' + rule
-                    out.append(rule)
-            # Then existing POSTROUTING rules
-            for rule in existing_postrouting:
-                out.append(rule)
-            added_our_rules = True
             
         out.append(ln)
     
@@ -366,6 +359,9 @@ def emit_probes_in_source_ns(source_ns: str, dst_ip: str, services: List[Tuple[i
     # Build a small python helper which sends all probes
     helper = r"""
 import socket, sys, json, time
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
 dst_ip = sys.argv[1]
 tcp_timeout = float(sys.argv[2])
 spec = json.loads(sys.argv[3])  # list of {port,proto,tos}
@@ -408,12 +404,57 @@ def send_udp(port, tos):
         if verbose >= 2:
             print(f"[probe] UDP socket error: {e}", file=sys.stderr)
 
-for item in spec:
-    port = int(item['port']); proto = item['proto']; tos = int(item['tos'])
+def probe_service(item):
+    port = int(item['port'])
+    proto = item['proto'] 
+    tos = int(item['tos'])
     if proto == 'tcp':
         send_tcp(port, tos)
     else:
         send_udp(port, tos)
+
+# Separate TCP and UDP services for different handling
+tcp_services = [item for item in spec if item['proto'] == 'tcp']
+udp_services = [item for item in spec if item['proto'] == 'udp']
+
+# Process TCP services with full parallelism (fast, reliable)
+tcp_workers = min(100, len(tcp_services)) if tcp_services else 0
+if tcp_services:
+    with ThreadPoolExecutor(max_workers=tcp_workers) as executor:
+        tcp_futures = [executor.submit(probe_service, item) for item in tcp_services]
+        for future in as_completed(tcp_futures):
+            try:
+                future.result()
+            except Exception as e:
+                if verbose >= 1:
+                    print(f"[probe] TCP error in thread: {e}", file=sys.stderr)
+
+# Process UDP services with controlled bursting to reduce packet loss
+if udp_services:
+    batch_size = 50  # Send UDP in batches of 50
+    batch_delay = 0.01  # 10ms delay between batches
+    
+    for i in range(0, len(udp_services), batch_size):
+        batch = udp_services[i:i + batch_size]
+        batch_num = i // batch_size + 1
+        total_batches = (len(udp_services) + batch_size - 1) // batch_size
+        
+        if verbose >= 2:
+            print(f"[probe] UDP batch {batch_num}/{total_batches}: {len(batch)} packets", file=sys.stderr)
+        
+        # Process this batch in parallel
+        with ThreadPoolExecutor(max_workers=min(50, len(batch))) as executor:
+            batch_futures = [executor.submit(probe_service, item) for item in batch]
+            for future in as_completed(batch_futures):
+                try:
+                    future.result()
+                except Exception as e:
+                    if verbose >= 1:
+                        print(f"[probe] UDP error in thread: {e}", file=sys.stderr)
+        
+        # Small delay between batches (except for last batch)
+        if i + batch_size < len(udp_services):
+            time.sleep(batch_delay)
 """
     spec = [ {'port': p, 'proto': pr, 'tos': svc_tokens[(p,pr)]['tos']} for (p,pr) in services ]
     argv = ['ip', 'netns', 'exec', source_ns, sys.executable, '-c', helper, dst_ip, str(tcp_timeout), json.dumps(spec), str(VERBOSE)]
@@ -436,19 +477,73 @@ for item in spec:
 
 def main():
     global VERBOSE
-    ap = argparse.ArgumentParser(description='KSMS Tester backend')
-    ap.add_argument('--source', required=True)
-    ap.add_argument('--destination', required=True)
-    ap.add_argument('--ports', required=True)
-    ap.add_argument('--default-proto', choices=['tcp','udp'], default='tcp')
-    ap.add_argument('--max-services', type=int, default=10)
-    ap.add_argument('--tcp-timeout', type=float, default=1.0)
-    ap.add_argument('-j', '--json', action='store_true')
-    ap.add_argument('-v', '--verbose', action='count', default=0)
+    ap = argparse.ArgumentParser(
+        description='KSMS Tester - Fast YES/NO service reachability testing using kernel-space packet counting',
+        epilog='''
+Examples:
+  # Test single port TCP connectivity
+  ksms_tester -s 10.1.1.100 -d 10.2.1.200 -P "80"
+  
+  # Test multiple TCP ports with verbose output
+  ksms_tester -s 10.1.1.100 -d 10.2.1.200 -P "80,443,8080" -v
+  
+  # Test UDP services
+  ksms_tester -s 10.1.1.100 -d 10.2.1.200 -P "53,123" --default-proto udp
+  
+  # Test mixed protocols (specify per service)
+  ksms_tester -s 10.1.1.100 -d 10.2.1.200 -P "80/tcp,53/udp,443/tcp"
+  
+  # Test port ranges
+  ksms_tester -s 10.1.1.100 -d 10.2.1.200 -P "8000-8005/tcp,1000-1010/udp"
+  
+  # JSON output for automation
+  ksms_tester -s 10.1.1.100 -d 10.2.1.200 -P "80,443" -j
+  
+  # Maximum verbosity for debugging
+  ksms_tester -s 10.1.1.100 -d 10.2.1.200 -P "80" -vvv
+  
+  # Large port range with custom limit and force
+  ksms_tester -s 10.1.1.100 -d 10.2.1.200 -P "1000-2000/tcp" --range-limit 1001 --force
+
+The command tests service reachability by:
+1. Installing iptables PREROUTING/POSTROUTING counters on involved routers
+2. Emitting test probes (TCP SYN or UDP packets) with DSCP marking
+3. Analyzing packet counter deltas to determine forwarding behavior
+4. Results: YES (forwarded), NO (blocked), UNKNOWN (no packets seen)
+
+Routers are automatically inferred from source IP using network registries.
+''',
+        formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    ap.add_argument('-s', '--source', required=True, metavar='IP',
+                    help='Source IP address')
+    ap.add_argument('-d', '--destination', required=True, metavar='IP', 
+                    help='Destination IP address')
+    ap.add_argument('-P', '--ports', required=True, metavar='PORTS',
+                    help='Port specification: "80" or "80,443,8080" or "80/tcp,53/udp" or "1000-2000/udp"')
+    ap.add_argument('--default-proto', choices=['tcp','udp'], default='tcp',
+                    help='Default protocol when not specified per-port (default: tcp)')
+    ap.add_argument('--max-services', type=int, default=10, metavar='N',
+                    help='Maximum number of services to test (default: 10)')
+    ap.add_argument('--range-limit', type=int, default=100, metavar='N',
+                    help='Maximum ports per range (default: 100, max: 65535)')
+    ap.add_argument('--tcp-timeout', type=float, default=1.0, metavar='SEC',
+                    help='TCP connection timeout in seconds (default: 1.0)')
+    ap.add_argument('--force', action='store_true',
+                    help='Force large ranges without confirmation prompts')
+    ap.add_argument('-j', '--json', action='store_true',
+                    help='Output results in JSON format')
+    ap.add_argument('-v', '--verbose', action='count', default=0,
+                    help='Increase verbosity (-v, -vv, -vvv)')
     args = ap.parse_args()
     
     # Set global verbosity level
     VERBOSE = args.verbose
+    
+    # Validate range-limit parameter
+    if args.range_limit < 1 or args.range_limit > 65535:
+        print("Error: --range-limit must be between 1 and 65535", file=sys.stderr)
+        sys.exit(1)
 
     bridges, hosts = load_registries()
     ip_map = build_ip_to_namespaces(bridges, hosts)
@@ -475,7 +570,9 @@ def main():
 
     # Parse services
     try:
-        services = parse_ports(args.ports, args.default_proto, args.max_services)
+        services = parse_ports(args.ports, args.default_proto, args.max_services, args.range_limit, args.force)
+        
+        
     except Exception as e:
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
@@ -485,11 +582,15 @@ def main():
         print(f"[INFO] Testing {len(services)} service(s): {svc_str}", file=sys.stderr)
     _dbg(f"[DEBUG] Services: {services}", 2)
 
-    # Assign DSCP/TOS per service
+    # Assign DSCP/TOS per service (cycle through valid DSCP range)
     svc_tokens: Dict[Tuple[int,str], Dict] = {}
     for idx, (port, proto) in enumerate(services):
-        dscp = 0x20 + idx
+        # Cycle DSCP values through 0x20-0x3F (32-63) to stay within 6-bit limit
+        dscp = 0x20 + (idx % 32)
         svc_tokens[(port, proto)] = {'dscp': dscp, 'tos': dscp << 2}
+        
+        if VERBOSE >= 3:
+            _dbg(f"  Service {port}/{proto}: DSCP={dscp} (0x{dscp:02x}), TOS={dscp << 2}", 3)
 
     run_id = f"KSMS{os.getpid()}"
     
@@ -812,6 +913,23 @@ def main():
         print(f"[CLEANUP] Removing test rules...", file=sys.stderr)
     
     def cleanup_router(rname: str):
+        # Remove static ARP entry that was configured during setup
+        if rname in router_results:
+            nexthop = router_results[rname].get('nexthop')
+            iface = router_results[rname].get('egress')
+            if nexthop and iface:
+                # Remove the static ARP entry we added
+                result = run(['ip', 'netns', 'exec', rname, 'ip', 'neigh', 'del', nexthop, 'dev', iface])
+                if VERBOSE >= 2:
+                    if result.returncode == 0:
+                        print(f"  [{rname}] Removed static ARP entry for {nexthop} on {iface}", file=sys.stderr)
+                    else:
+                        # Only warn if it's not just "no such entry" (which is fine)
+                        stderr_msg = result.stderr.strip() if result.stderr else ""
+                        if "No such file or directory" not in stderr_msg and "Cannot assign requested address" not in stderr_msg:
+                            if VERBOSE >= 1:
+                                print(f"  [{rname}] ARP cleanup warning: {stderr_msg}", file=sys.stderr)
+        
         # Remove all our TSIM_KSMS rules with our run_id
         snap = iptables_save_mangle(rname, with_counters=False)
         clean_lines = []
@@ -845,7 +963,7 @@ def main():
                 if VERBOSE >= 3:
                     _dbg(f"  [{rname}] Removed {removed} test rules", 3)
             else:
-                _dbg(f"  [{rname}] WARNING: Failed to cleanup: {result.stderr}", 1)
+                _dbg(f"  [{rname}] WARNING: Failed to cleanup iptables rules: {result.stderr}", 1)
     
     # Cleanup in parallel
     with ThreadPoolExecutor(max_workers=len(routers)) as ex:

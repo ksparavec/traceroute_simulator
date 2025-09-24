@@ -19,3 +19,4 @@ This file provides guidance for Claude Code (claude.ai/code) when working with c
 - never try to use 'ls' outside of your working directory. use 'find' with filtering and -exec option instead.
 - always use tsimsh from PATH, never from repository
 - for all searches, edits, updates use code from repository only
+- always use -q option to tsimsh when executing batch commands

@@ -396,6 +396,84 @@ Type 'set' to see all variables.
                 truncated = self._truncate_value(str(value), is_env_only, parsed_args.verbose)
                 self.poutput(f"{prefix} {Fore.GREEN}{key}{Style.RESET_ALL} = \"{truncated}\"")
 
+    def do_export(self, args):
+        """Set environment variables for subprocesses."""
+        import argparse
+        
+        # Parse arguments
+        parser = argparse.ArgumentParser(prog='export', add_help=False)
+        parser.add_argument('-h', '--help', action='store_true',
+                          help='Show this help message')
+        parser.add_argument('assignments', nargs='*', 
+                          help='Variable assignments (VAR=value) or variable names to export')
+        
+        try:
+            parsed_args = parser.parse_args(args.split() if args else [])
+        except SystemExit:
+            return
+        
+        if parsed_args.help:
+            self.poutput("NAME:")
+            self.poutput("  export - Set environment variables for subprocesses")
+            self.poutput("\nUSAGE:")
+            self.poutput("  export [VAR=value ...]     # Set environment variables")
+            self.poutput("  export [VAR ...]           # Export shell variables to environment")
+            self.poutput("  export -h|--help           # Show this help")
+            self.poutput("\nDESCRIPTION:")
+            self.poutput("  Sets environment variables that will be inherited by subprocess commands")
+            self.poutput("  like ksms_tester. Variables set with 'export' affect subprocess execution,")
+            self.poutput("  unlike 'set' which only affects shell variable substitution.")
+            self.poutput("\nEXAMPLES:")
+            self.poutput(f"  {Fore.GREEN}export KSMS_JOB_DSCP=35{Style.RESET_ALL}              # Set DSCP for ksms_tester")
+            self.poutput(f"  {Fore.GREEN}export DEBUG=1 VERBOSE=2{Style.RESET_ALL}             # Set multiple variables")
+            self.poutput(f"  {Fore.GREEN}export PATH{Style.RESET_ALL}                          # Export shell variable to env")
+            return
+        
+        if not parsed_args.assignments:
+            # No arguments - show all exported environment variables
+            self.poutput(f"{Fore.CYAN}Environment variables:{Style.RESET_ALL}")
+            env_vars = dict(os.environ)
+            for key in sorted(env_vars.keys()):
+                value = env_vars[key]
+                # Truncate long values
+                if len(value) > 80:
+                    display_value = value[:77] + "..."
+                else:
+                    display_value = value
+                self.poutput(f"  {Fore.GREEN}{key}{Style.RESET_ALL}={display_value}")
+            return
+        
+        # Process assignments
+        for assignment in parsed_args.assignments:
+            if '=' in assignment:
+                # VAR=value format
+                try:
+                    var_name, var_value = assignment.split('=', 1)
+                    var_name = var_name.strip()
+                    
+                    # Validate variable name
+                    if not var_name.isidentifier():
+                        self.poutput(f"{Fore.RED}Error: Invalid variable name '{var_name}'{Style.RESET_ALL}")
+                        continue
+                    
+                    # Set environment variable
+                    os.environ[var_name] = var_value
+                    self.poutput(f"Exported: {Fore.GREEN}{var_name}{Style.RESET_ALL}={var_value}")
+                    
+                except ValueError:
+                    self.poutput(f"{Fore.RED}Error: Invalid assignment '{assignment}'{Style.RESET_ALL}")
+            else:
+                # Just variable name - export from shell variables
+                var_name = assignment.strip()
+                
+                if var_name in self.variable_manager.variables:
+                    # Export shell variable to environment
+                    value = str(self.variable_manager.variables[var_name])
+                    os.environ[var_name] = value
+                    self.poutput(f"Exported: {Fore.GREEN}{var_name}{Style.RESET_ALL}={value}")
+                else:
+                    self.poutput(f"{Fore.RED}Error: Shell variable '{var_name}' not found{Style.RESET_ALL}")
+
     def do_show(self, args):
         """Display the contents of a specific shell variable."""
         import argparse
@@ -708,10 +786,14 @@ Type 'set' to see all variables.
     def onecmd_plus_hooks(self, line: str, *, add_to_history: bool = True, **kwargs) -> bool:
         """Override to capture command output and return values."""
         import io
+        import time
         from contextlib import redirect_stdout
         
         # Initialize return value
         self.variable_manager.set_variable('TSIM_RETURN_VALUE', '0')
+        
+        # Start timing the command execution
+        start_time = time.time()
         
         # Check if this is a tsimsh command (not a variable assignment or shell command)
         if not self.variable_manager.process_command_for_assignment(line):
@@ -763,6 +845,10 @@ Type 'set' to see all variables.
                     original_stdout.write(output)
                     
                     
+                    # Calculate command duration and set TSIM_COMMAND_DURATION
+                    duration_ms = int((time.time() - start_time) * 1000)
+                    self.variable_manager.set_variable('TSIM_COMMAND_DURATION', str(duration_ms))
+                    
                     # Never return True to exit shell (except for exit/quit commands)
                     if statement.command in ['exit', 'quit', 'EOF', 'eof']:
                         return result
@@ -776,14 +862,24 @@ Type 'set' to see all variables.
                 try:
                     # Try with add_to_history parameter (newer cmd2 versions)
                     result = super().onecmd_plus_hooks(line, add_to_history=add_to_history, **kwargs)
+                    # Calculate command duration and set TSIM_COMMAND_DURATION
+                    duration_ms = int((time.time() - start_time) * 1000)
+                    self.variable_manager.set_variable('TSIM_COMMAND_DURATION', str(duration_ms))
                     # Never exit shell unless it's exit/quit
                     return result if statement.command in ['exit', 'quit', 'EOF', 'eof'] else False
                 except TypeError:
                     # Fall back to without parameter (older cmd2 versions)
                     result = super().onecmd_plus_hooks(line)
+                    # Calculate command duration and set TSIM_COMMAND_DURATION
+                    duration_ms = int((time.time() - start_time) * 1000)
+                    self.variable_manager.set_variable('TSIM_COMMAND_DURATION', str(duration_ms))
                     return result if statement.command in ['exit', 'quit', 'EOF', 'eof'] else False
         
         # Variable assignment was already handled
+        # Calculate command duration and set TSIM_COMMAND_DURATION
+        duration_ms = int((time.time() - start_time) * 1000)
+        self.variable_manager.set_variable('TSIM_COMMAND_DURATION', str(duration_ms))
+        
         # Add to history if needed
         if add_to_history and self.is_interactive:
             # Create a Statement from the line and then a HistoryItem

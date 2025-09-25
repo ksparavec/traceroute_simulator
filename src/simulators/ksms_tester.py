@@ -544,6 +544,7 @@ Routers are automatically inferred from source IP using network registries.
     if args.range_limit < 1 or args.range_limit > 65535:
         print("Error: --range-limit must be between 1 and 65535", file=sys.stderr)
         sys.exit(1)
+    
 
     bridges, hosts = load_registries()
     ip_map = build_ip_to_namespaces(bridges, hosts)
@@ -582,17 +583,27 @@ Routers are automatically inferred from source IP using network registries.
         print(f"[INFO] Testing {len(services)} service(s): {svc_str}", file=sys.stderr)
     _dbg(f"[DEBUG] Services: {services}", 2)
 
-    # Assign DSCP/TOS per service (cycle through valid DSCP range)
+    # Generate unique run ID for this job
+    run_id = f"KSMS{os.getpid()}_{int(time.time() * 1000) % 100000}"
+    
+    # Get DSCP value from environment (set by WSGI DSCP registry) or default to 32
+    job_dscp = int(os.environ.get('KSMS_JOB_DSCP', '32'))
+    
+    # Validate DSCP range (use reserved range 32-63 for KSMS)
+    if not (32 <= job_dscp <= 63):
+        raise ValueError(f"Invalid DSCP value {job_dscp} (must be 32-63, 0x20-0x3F)")
+    
+    # Assign single DSCP value to all services in this job
     svc_tokens: Dict[Tuple[int,str], Dict] = {}
-    for idx, (port, proto) in enumerate(services):
-        # Cycle DSCP values through 0x20-0x3F (32-63) to stay within 6-bit limit
-        dscp = 0x20 + (idx % 32)
-        svc_tokens[(port, proto)] = {'dscp': dscp, 'tos': dscp << 2}
+    for port, proto in services:
+        # All services in this job use the same DSCP value
+        svc_tokens[(port, proto)] = {'dscp': job_dscp, 'tos': job_dscp << 2}
         
         if VERBOSE >= 3:
-            _dbg(f"  Service {port}/{proto}: DSCP={dscp} (0x{dscp:02x}), TOS={dscp << 2}", 3)
-
-    run_id = f"KSMS{os.getpid()}"
+            _dbg(f"  Service {port}/{proto}: DSCP={job_dscp} (0x{job_dscp:02x}), TOS={job_dscp << 2}", 3)
+    
+    if VERBOSE >= 2:
+        _dbg(f"[INFO] Job {run_id}: Using DSCP={job_dscp} for all {len(services)} services", 2)
     
     if VERBOSE >= 1:
         _dbg(f"[INFO] Using run ID: {run_id}", 1)

@@ -96,6 +96,18 @@
     "cleanup_age": 86400,
     
     "hmac_expiry": 86400,
+    
+    "dscp_registry": {
+        "enabled": true,
+        "dscp_range_min": 32,
+        "dscp_range_max": 63, 
+        "max_concurrent_jobs": 32,
+        "allocation_timeout": 3600,
+        "cleanup_interval": 300
+    },
+    
+    "ksms_parallel_execution": true,
+    "max_parallel_fast_jobs": 8,
 
     "cors": {
         "enabled": false,

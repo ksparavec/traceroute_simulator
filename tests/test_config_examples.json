@@ -1,0 +1,149 @@
+{
+  "basic_test_config": {
+    "test_jobs": [
+      {
+        "job_id": "basic_tcp_1",
+        "source_ip": "10.1.1.100",
+        "dest_ip": "10.2.1.200",
+        "ports": "80/tcp",
+        "expected_results": {
+          "80/tcp": "YES"
+        },
+        "timeout": 60
+      },
+      {
+        "job_id": "basic_udp_1", 
+        "source_ip": "10.1.1.100",
+        "dest_ip": "10.2.1.200",
+        "ports": "53/udp",
+        "expected_results": {
+          "53/udp": "YES"
+        },
+        "timeout": 60
+      },
+      {
+        "job_id": "multi_service_1",
+        "source_ip": "10.1.1.100", 
+        "dest_ip": "10.2.1.200",
+        "ports": "80/tcp,443/tcp,22/tcp,53/udp",
+        "expected_results": {
+          "80/tcp": "YES",
+          "443/tcp": "YES", 
+          "22/tcp": "NO",
+          "53/udp": "UNKNOWN"
+        },
+        "timeout": 120
+      }
+    ],
+    "validation_jobs": [
+      {
+        "job_id": "validation_web_services",
+        "source_ip": "10.1.1.100",
+        "dest_ip": "10.2.1.200", 
+        "ports": "80/tcp,443/tcp",
+        "expected_results": {
+          "80/tcp": "YES",
+          "443/tcp": "YES"
+        },
+        "timeout": 60
+      },
+      {
+        "job_id": "validation_blocked_services",
+        "source_ip": "10.1.1.100",
+        "dest_ip": "10.2.1.200",
+        "ports": "23/tcp,135/tcp", 
+        "expected_results": {
+          "23/tcp": "NO",
+          "135/tcp": "NO"
+        },
+        "timeout": 60
+      }
+    ],
+    "test_serial_execution": true,
+    "test_parallel_execution": true,
+    "test_dscp_exhaustion": false,
+    "test_queue_management": true,
+    "test_error_handling": true,
+    "test_correctness": true
+  },
+
+  "stress_test_config": {
+    "test_jobs": [
+      {
+        "job_id": "stress_large_range_1",
+        "source_ip": "10.1.1.100",
+        "dest_ip": "10.2.1.200",
+        "ports": "8000-8100/tcp",
+        "expected_results": {},
+        "timeout": 300
+      },
+      {
+        "job_id": "stress_mixed_protocols_1", 
+        "source_ip": "10.1.1.100",
+        "dest_ip": "10.2.1.200",
+        "ports": "80/tcp,443/tcp,8080/tcp,53/udp,123/udp,514/udp",
+        "expected_results": {},
+        "timeout": 180
+      }
+    ],
+    "validation_jobs": [],
+    "test_serial_execution": false,
+    "test_parallel_execution": true,
+    "test_dscp_exhaustion": true,
+    "test_queue_management": true,
+    "test_error_handling": false,
+    "test_correctness": false
+  },
+
+  "parallel_performance_config": {
+    "test_jobs": [
+      {
+        "job_id": "parallel_test_1",
+        "source_ip": "10.1.1.100",
+        "dest_ip": "10.2.1.200", 
+        "ports": "80/tcp,443/tcp",
+        "expected_results": {},
+        "timeout": 60
+      },
+      {
+        "job_id": "parallel_test_2",
+        "source_ip": "10.1.1.101",
+        "dest_ip": "10.2.1.201",
+        "ports": "22/tcp,23/tcp", 
+        "expected_results": {},
+        "timeout": 60
+      },
+      {
+        "job_id": "parallel_test_3",
+        "source_ip": "10.1.1.102",
+        "dest_ip": "10.2.1.202",
+        "ports": "53/udp,123/udp",
+        "expected_results": {},
+        "timeout": 60
+      },
+      {
+        "job_id": "parallel_test_4",
+        "source_ip": "10.1.1.103", 
+        "dest_ip": "10.2.1.203",
+        "ports": "3306/tcp,5432/tcp",
+        "expected_results": {},
+        "timeout": 60
+      },
+      {
+        "job_id": "parallel_test_5",
+        "source_ip": "10.1.1.104",
+        "dest_ip": "10.2.1.204",
+        "ports": "8080/tcp,8443/tcp",
+        "expected_results": {},
+        "timeout": 60
+      }
+    ],
+    "validation_jobs": [],
+    "test_serial_execution": true,
+    "test_parallel_execution": true,
+    "test_dscp_exhaustion": false,
+    "test_queue_management": true,
+    "test_error_handling": false,
+    "test_correctness": false
+  }
+}

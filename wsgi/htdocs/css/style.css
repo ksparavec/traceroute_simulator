@@ -51,6 +51,7 @@
 /* Center specific labels for clarity */
 label[for="source_port"],
 label[for="port_mode"],
+label[for="analysis_mode"],
 label[for="default_protocol"] {
     text-align: center;
 }
@@ -527,4 +528,21 @@ button[type="button"]:hover {
 .tsim-mode-prod label[for="source_ip"],
 .tsim-mode-prod label[for="dest_ip"] {
     text-align: center;
+}
+
+/* Hide IP input fields in test mode */
+.tsim-mode-test #source_ip,
+.tsim-mode-test #dest_ip,
+.tsim-mode-test #source_port,
+.tsim-mode-test label[for="source_ip"],
+.tsim-mode-test label[for="dest_ip"], 
+.tsim-mode-test label[for="source_port"] {
+    display: none !important;
+}
+
+/* Hide entire form groups in test mode (fallback for older browsers) */
+.tsim-mode-test .form-group:has(#source_ip),
+.tsim-mode-test .form-group:has(#dest_ip),
+.tsim-mode-test .form-group:has(#source_port) {
+    display: none !important;
 }

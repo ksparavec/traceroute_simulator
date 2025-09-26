@@ -20,3 +20,4 @@ This file provides guidance for Claude Code (claude.ai/code) when working with c
 - always use tsimsh from PATH, never from repository
 - for all searches, edits, updates use code from repository only
 - always use -q option to tsimsh when executing batch commands
+- NEVER UPDATE INSTALLATION!!!!!

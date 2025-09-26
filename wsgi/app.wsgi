@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S python3 -B -u
 """
 TSIM WSGI Application Entry Point
 PERFORMANCE CRITICAL: ALL modules are preloaded at startup for maximum performance

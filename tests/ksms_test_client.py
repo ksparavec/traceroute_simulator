@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S python3 -B -u
 """
 KSMS Test Suite Client
 Comprehensive testing of KSMS tester with parallel job execution, queueing, and correctness validation.

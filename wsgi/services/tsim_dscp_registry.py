@@ -236,6 +236,30 @@ class TsimDscpRegistry:
             self.logger.error(f"Failed to get allocation status: {e}")
             return {'error': str(e)}
     
+    def get_dscp_for_job(self, job_id: str) -> Optional[int]:
+        """Get DSCP value for a specific job
+        
+        Args:
+            job_id: Job identifier
+            
+        Returns:
+            DSCP value or None if not found/not allocated
+        """
+        if not self.enabled:
+            return None
+        
+        try:
+            registry = self._load_registry()
+            allocations = registry['allocations']
+            
+            if job_id in allocations:
+                return allocations[job_id]['dscp']
+            
+            return None
+        except Exception as e:
+            self.logger.error(f"Failed to get DSCP for job {job_id}: {e}")
+            return None
+    
     def cleanup_stale_allocations(self) -> int:
         """Clean up stale allocations (public method)
         

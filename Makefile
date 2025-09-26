@@ -1695,9 +1695,9 @@ install-wsgi:
 		echo "Warning: Cannot create $(TSIM_LOG_DIR) without root privileges"; \
 	fi
 	
-	# Copy WSGI application files (excluding htdocs, documentation, templates, and config.json)
+	# Copy WSGI application files (excluding htdocs, documentation, templates, config.json, and Python cache)
 	@echo "Installing WSGI application..."
-	@rsync -av --exclude='htdocs' --exclude='*.md' --exclude='*.template' --exclude='config.json' wsgi/ "$(TSIM_WEB_ROOT)/"
+	@rsync -av --exclude='htdocs' --exclude='*.md' --exclude='*.template' --exclude='config.json' --exclude='__pycache__' --exclude='*.pyc' wsgi/ "$(TSIM_WEB_ROOT)/"
 	
 	# Remove old subprocess-based files that have been replaced
 	@echo "Removing obsolete files..."
@@ -1741,7 +1741,7 @@ install-wsgi:
 	
 	# Copy htdocs to $(TSIM_HTDOCS)
 	@echo "Installing htdocs..."
-	@rsync -av --delete wsgi/htdocs/ "$(TSIM_HTDOCS)/"
+	@rsync -av --delete --exclude='__pycache__' --exclude='*.pyc' wsgi/htdocs/ "$(TSIM_HTDOCS)/"
 	
 	# Set proper permissions
 	@echo "Setting permissions..."
@@ -1793,76 +1793,6 @@ install-wsgi:
 	
 	@echo ""
 	@echo "✓ WSGI installation complete!"
-	@echo ""
-	@echo "Next steps:"
-	@echo ""
-	@echo "1. Ensure TSIM venv is installed:"
-	@echo "   make install-venv"
-	@echo "   This will install Python $(TSIM_PYTHON_SERIES) and all requirements including mod-wsgi"
-	@echo ""
-	@echo "2. Review configuration:"
-	@echo "   Configuration has been updated with your paths:"
-	@echo "   - TSIM venv: $(TSIM_VENV)"
-	@echo "   - Web root: $(TSIM_WEB_ROOT)"
-	@echo "   - Data dir: $(TSIM_DATA_DIR)"
-	@echo "   - Log dir: $(TSIM_LOG_DIR)"
-	@echo "   Edit $(TSIM_WEB_ROOT)/conf/config.json if you need to adjust any settings"
-	@echo ""
-	@echo "3. Install mod_wsgi configuration:"
-	@if [ -f "$(TSIM_WEB_ROOT)/mod_wsgi.conf" ]; then \
-		echo "   sudo cp $(TSIM_WEB_ROOT)/mod_wsgi.conf /etc/apache2/mods-available/wsgi_tsim.load"; \
-		echo "   sudo a2enmod wsgi_tsim"; \
-	else \
-		echo "   Warning: mod_wsgi.conf not found. Run 'make install-venv' first to install mod-wsgi"; \
-	fi
-	@echo ""
-	@echo "4. Install Apache site configuration:"
-	@echo "   a. Copy the prepared configuration:"
-	@echo "      sudo cp $(TSIM_WEB_ROOT)/apache-site.conf $(APACHE_CONF_DIR)/tsim-wsgi.conf"
-	@echo "   b. Edit the configuration: sudo nano $(APACHE_CONF_DIR)/tsim-wsgi.conf"
-	@echo "      Update the following:"
-	@echo "      - ServerName: Change 'tsim.example.com' to your domain"
-	@echo "      - SSL paths: Update certificate and key file paths"
-	@echo "      - Verify all 'Define' paths match your setup (especially if not using defaults)"
-	@echo "   c. Enable the site: $(APACHE_ENABLE_CMD)"
-	@if [ "$(APACHE_CONF_DIR)" = "/etc/apache2/sites-available" ]; then \
-		echo "   d. Disable default site if needed: sudo a2dissite 000-default"; \
-	fi
-	@echo ""
-	@echo "5. Enable required Apache modules:"
-	@if [ "$(APACHE_CONF_DIR)" = "/etc/apache2/sites-available" ]; then \
-		echo "   sudo a2enmod ssl headers expires"; \
-	else \
-		echo "   # Modules should be already enabled in httpd.conf"; \
-		echo "   # Verify with: sudo httpd -M | grep -E 'ssl|headers|expires'"; \
-	fi
-	@echo ""
-	@echo "6. Create SSL certificate (for testing):"
-	@echo "   sudo openssl req -x509 -nodes -days 365 -newkey rsa:2048 \\"
-	@echo "     -keyout /etc/ssl/private/tsim.key \\"
-	@echo "     -out /etc/ssl/certs/tsim.crt"
-	@echo ""
-	@echo "7. Restart Apache:"
-	@if [ "$(APACHE_CONF_DIR)" = "/etc/apache2/sites-available" ]; then \
-		echo "   sudo systemctl restart apache2"; \
-	else \
-		echo "   sudo systemctl restart httpd"; \
-	fi
-	@echo ""
-	@echo "8. Create initial admin user:"
-	@echo "   cd $(TSIM_WEB_ROOT)/scripts"
-	@echo "   ./create_user.sh"
-	@echo "   # Enter username: admin, role: admin, and choose a password"
-	@echo ""
-	@echo "9. Test the installation:"
-	@echo "   https://$$(hostname -f)/"
-	@echo ""
-	@echo "User Management Scripts:"
-	@echo "   Create user: $(TSIM_WEB_ROOT)/scripts/create_user.sh"
-	@echo "   Change password: $(TSIM_WEB_ROOT)/scripts/change_password.sh"
-	@echo ""
-	@echo "Note: If migrating from CGI, disable the old CGI site first:"
-	@echo "   sudo a2dissite <old-cgi-site-name>"
 
 # PAM configuration for SSSD authentication
 pam-config:

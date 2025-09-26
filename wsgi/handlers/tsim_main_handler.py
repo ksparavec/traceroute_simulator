@@ -169,6 +169,7 @@ class TsimMainHandler(TsimBaseHandler):
         port_mode = data.get('port_mode', 'quick')
         default_protocol = data.get('default_protocol', 'tcp')
         user_trace_data = data.get('user_trace_data', '').strip() or None
+        analysis_mode = data.get('analysis_mode', self.config.get('ksms_mode_default', 'quick'))
 
         # Enforce allowed execution paths by mode
         if mode == 'prod':
@@ -284,10 +285,13 @@ class TsimMainHandler(TsimBaseHandler):
                 'run_id': run_id,
                 'source_ip': source_ip,
                 'dest_ip': dest_ip,
+                'session_id': session.get('session_id'),  # Add for KSMS caching
                 'source_port': source_port,
                 'port_protocol_list': port_protocol_list,
                 'user_trace_data': user_trace_data,
-                'run_dir': str(self.config.get('run_dir', '/dev/shm/tsim/runs'))
+                'run_dir': str(self.config.get('run_dir', '/dev/shm/tsim/runs')),
+                'analysis_mode': analysis_mode,
+                'services': port_protocol_list  # Add for KSMS compatibility
             }
 
             position = self.queue_service.enqueue(run_id, username, params)

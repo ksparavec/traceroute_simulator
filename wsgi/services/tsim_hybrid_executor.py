@@ -162,10 +162,13 @@ class TsimHybridExecutor:
                 - dest_ip: Destination IP
                 - port_protocol_list: List of (port, protocol) tuples
                 - user_trace_data: Optional user trace data
+                - analysis_mode: 'quick' or 'detailed' (optional)
                 
         Returns:
             Dictionary with test results
         """
+        # Continue with normal analysis (both test and production modes)
+        # Quick/Detailed analysis mode will be handled within the normal flow
         run_id = params['run_id']
         run_dir = Path(params['run_dir'])
         run_dir.mkdir(parents=True, exist_ok=True)

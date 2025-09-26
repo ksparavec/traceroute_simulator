@@ -108,6 +108,10 @@
     
     "ksms_parallel_execution": true,
     "max_parallel_fast_jobs": 8,
+    
+    "ksms_enabled": true,
+    "ksms_mode_default": "quick",
+    "ksms_timeout": 300,
 
     "cors": {
         "enabled": false,

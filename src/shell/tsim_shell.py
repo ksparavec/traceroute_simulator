@@ -396,6 +396,84 @@ Type 'set' to see all variables.
                 truncated = self._truncate_value(str(value), is_env_only, parsed_args.verbose)
                 self.poutput(f"{prefix} {Fore.GREEN}{key}{Style.RESET_ALL} = \"{truncated}\"")
 
+    def do_export(self, args):
+        """Set environment variables for subprocesses."""
+        import argparse
+        
+        # Parse arguments
+        parser = argparse.ArgumentParser(prog='export', add_help=False)
+        parser.add_argument('-h', '--help', action='store_true',
+                          help='Show this help message')
+        parser.add_argument('assignments', nargs='*', 
+                          help='Variable assignments (VAR=value) or variable names to export')
+        
+        try:
+            parsed_args = parser.parse_args(args.split() if args else [])
+        except SystemExit:
+            return
+        
+        if parsed_args.help:
+            self.poutput("NAME:")
+            self.poutput("  export - Set environment variables for subprocesses")
+            self.poutput("\nUSAGE:")
+            self.poutput("  export [VAR=value ...]     # Set environment variables")
+            self.poutput("  export [VAR ...]           # Export shell variables to environment")
+            self.poutput("  export -h|--help           # Show this help")
+            self.poutput("\nDESCRIPTION:")
+            self.poutput("  Sets environment variables that will be inherited by subprocess commands")
+            self.poutput("  like ksms_tester. Variables set with 'export' affect subprocess execution,")
+            self.poutput("  unlike 'set' which only affects shell variable substitution.")
+            self.poutput("\nEXAMPLES:")
+            self.poutput(f"  {Fore.GREEN}export KSMS_JOB_DSCP=35{Style.RESET_ALL}              # Set DSCP for ksms_tester")
+            self.poutput(f"  {Fore.GREEN}export DEBUG=1 VERBOSE=2{Style.RESET_ALL}             # Set multiple variables")
+            self.poutput(f"  {Fore.GREEN}export PATH{Style.RESET_ALL}                          # Export shell variable to env")
+            return
+        
+        if not parsed_args.assignments:
+            # No arguments - show all exported environment variables
+            self.poutput(f"{Fore.CYAN}Environment variables:{Style.RESET_ALL}")
+            env_vars = dict(os.environ)
+            for key in sorted(env_vars.keys()):
+                value = env_vars[key]
+                # Truncate long values
+                if len(value) > 80:
+                    display_value = value[:77] + "..."
+                else:
+                    display_value = value
+                self.poutput(f"  {Fore.GREEN}{key}{Style.RESET_ALL}={display_value}")
+            return
+        
+        # Process assignments
+        for assignment in parsed_args.assignments:
+            if '=' in assignment:
+                # VAR=value format
+                try:
+                    var_name, var_value = assignment.split('=', 1)
+                    var_name = var_name.strip()
+                    
+                    # Validate variable name
+                    if not var_name.isidentifier():
+                        self.poutput(f"{Fore.RED}Error: Invalid variable name '{var_name}'{Style.RESET_ALL}")
+                        continue
+                    
+                    # Set environment variable
+                    os.environ[var_name] = var_value
+                    self.poutput(f"Exported: {Fore.GREEN}{var_name}{Style.RESET_ALL}={var_value}")
+                    
+                except ValueError:
+                    self.poutput(f"{Fore.RED}Error: Invalid assignment '{assignment}'{Style.RESET_ALL}")
+            else:
+                # Just variable name - export from shell variables
+                var_name = assignment.strip()
+                
+                if var_name in self.variable_manager.variables:
+                    # Export shell variable to environment
+                    value = str(self.variable_manager.variables[var_name])
+                    os.environ[var_name] = value
+                    self.poutput(f"Exported: {Fore.GREEN}{var_name}{Style.RESET_ALL}={value}")
+                else:
+                    self.poutput(f"{Fore.RED}Error: Shell variable '{var_name}' not found{Style.RESET_ALL}")
+
     def do_show(self, args):
         """Display the contents of a specific shell variable."""
         import argparse
@@ -793,10 +871,14 @@ Type 'set' to see all variables.
     def onecmd_plus_hooks(self, line: str, *, add_to_history: bool = True, **kwargs) -> bool:
         """Override to capture command output and return values."""
         import io
+        import time
         from contextlib import redirect_stdout
         
         # Initialize return value
         self.variable_manager.set_variable('TSIM_RETURN_VALUE', '0')
+        
+        # Start timing the command execution
+        start_time = time.time()
         
         # Check if this is a tsimsh command (not a variable assignment or shell command)
         if not self.variable_manager.process_command_for_assignment(line):
@@ -848,6 +930,10 @@ Type 'set' to see all variables.
                     original_stdout.write(output)
                     
                     
+                    # Calculate command duration and set TSIM_COMMAND_DURATION
+                    duration_ms = int((time.time() - start_time) * 1000)
+                    self.variable_manager.set_variable('TSIM_COMMAND_DURATION', str(duration_ms))
+                    
                     # Never return True to exit shell (except for exit/quit commands)
                     if statement.command in ['exit', 'quit', 'EOF', 'eof']:
                         return result
@@ -861,14 +947,24 @@ Type 'set' to see all variables.
                 try:
                     # Try with add_to_history parameter (newer cmd2 versions)
                     result = super().onecmd_plus_hooks(line, add_to_history=add_to_history, **kwargs)
+                    # Calculate command duration and set TSIM_COMMAND_DURATION
+                    duration_ms = int((time.time() - start_time) * 1000)
+                    self.variable_manager.set_variable('TSIM_COMMAND_DURATION', str(duration_ms))
                     # Never exit shell unless it's exit/quit
                     return result if statement.command in ['exit', 'quit', 'EOF', 'eof'] else False
                 except TypeError:
                     # Fall back to without parameter (older cmd2 versions)
                     result = super().onecmd_plus_hooks(line)
+                    # Calculate command duration and set TSIM_COMMAND_DURATION
+                    duration_ms = int((time.time() - start_time) * 1000)
+                    self.variable_manager.set_variable('TSIM_COMMAND_DURATION', str(duration_ms))
                     return result if statement.command in ['exit', 'quit', 'EOF', 'eof'] else False
         
         # Variable assignment was already handled
+        # Calculate command duration and set TSIM_COMMAND_DURATION
+        duration_ms = int((time.time() - start_time) * 1000)
+        self.variable_manager.set_variable('TSIM_COMMAND_DURATION', str(duration_ms))
+        
         # Add to history if needed
         if add_to_history and self.is_interactive:
             # Create a Statement from the line and then a HistoryItem
@@ -956,7 +1052,7 @@ Type 'set' to see all variables.
             self.completion_handler = CompletionCommands(self)
             self.trace_handler = TraceCommands(self)
             self.nettest_handler = NetTestCommands(self)
-            
+
         except Exception as e:
             import traceback
             self.poutput(f"{Fore.RED}Error loading command handlers: {e}{Style.RESET_ALL}")
@@ -966,6 +1062,8 @@ Type 'set' to see all variables.
             else:
                 self.poutput(f"{Fore.YELLOW}Run tsimsh with -v for verbose error details{Style.RESET_ALL}")
             # Continue with basic shell functionality
+        # Defer ksms_tester handler import until first use to avoid impacting startup
+        self.ksms_tester_handler = None
     
     def _setup_completion(self):
         """Setup tab completion for commands."""
@@ -1141,6 +1239,29 @@ Type 'set' to see all variables.
         if hasattr(self, 'service_handler'):
             return self.service_handler.complete_command(text, line, begidx, endidx)
         return []
+
+    def do_ksms_tester(self, args):
+        """Kernel-space multi-service tester (fast YES/NO per router)."""
+        try:
+            if self.ksms_tester_handler is None:
+                from .commands.ksms_tester import KsmsTesterCommand
+                self.ksms_tester_handler = KsmsTesterCommand(self)
+            ret = self.ksms_tester_handler.handle_command(args)
+            self.variable_manager.set_variable('TSIM_RETURN_VALUE', str(ret if ret is not None else 0))
+            return None
+        except Exception as e:
+            self.poutput(f"{Fore.RED}ksms_tester command not available: {e}{Style.RESET_ALL}")
+            self.variable_manager.set_variable('TSIM_RETURN_VALUE', '1')
+            return None
+
+    def complete_ksms_tester(self, text, line, begidx, endidx):
+        try:
+            if self.ksms_tester_handler is None:
+                from .commands.ksms_tester import KsmsTesterCommand
+                self.ksms_tester_handler = KsmsTesterCommand(self)
+            return self.ksms_tester_handler.complete_command(text, line, begidx, endidx)
+        except Exception:
+            return []
     
     
     def do_completion(self, args):
@@ -1328,6 +1449,7 @@ Type 'set' to see all variables.
                 'ping': self.help_ping,
                 'mtr': self.help_mtr,
                 'traceroute': self.help_traceroute,
+                'ksms_tester': self.help_ksms_tester,
                 'completion': self.help_completion
             }
             
@@ -1672,9 +1794,88 @@ Type 'set' to see all variables.
         self.poutput("\n  Verbose output with timing:")
         self.poutput("    trace -s 10.1.1.100 -d 10.2.1.200 -vv")
         
-        self.poutput("\n  Store JSON result in variable:")
-        self.poutput("    trace -s 10.1.1.100 -d 10.2.1.200 -j")
-        self.poutput("    # Result automatically stored in $TSIM_RESULT")
+    def help_ksms_tester(self):
+        """Help for ksms_tester command."""
+        self.poutput(f"\n{Fore.CYAN}COMMAND:{Style.RESET_ALL}")
+        self.poutput("  ksms_tester - Kernel-space multi-service tester (fast YES/NO per router)")
+
+        self.poutput(f"\n{Fore.CYAN}USAGE:{Style.RESET_ALL}")
+        self.poutput("  ksms_tester -s SOURCE_IP -d DESTINATION_IP -P \"PORT_SPEC\" [options]")
+        self.poutput("  ksms_tester --help | -h")
+
+        self.poutput(f"\n{Fore.CYAN}MANDATORY OPTIONS:{Style.RESET_ALL}")
+        self.poutput(f"  {Fore.YELLOW}-s, --source IP{Style.RESET_ALL}           Source IP address")
+        self.poutput(f"  {Fore.YELLOW}-d, --destination IP{Style.RESET_ALL}      Destination IP address")
+        self.poutput(f"  {Fore.YELLOW}-P, --ports SPEC{Style.RESET_ALL}         Port spec (e.g., 80,443/tcp,1000-2000/udp,22-25)")
+
+        self.poutput(f"\n{Fore.CYAN}OPTIONAL OPTIONS:{Style.RESET_ALL}")
+        self.poutput("  --default-proto PROTO       Default protocol for bare ports: tcp|udp (default: tcp)")
+        self.poutput("  --max-services N            Max services to expand (default: 10)")
+        self.poutput("  --range-limit N             Max ports per range (default: 100, max: 65535)")
+        self.poutput("  --tcp-timeout SEC           TCP SYN timeout per service (default: 1.0)")
+        self.poutput("  --force                     Force large ranges without confirmation")
+        self.poutput("  -j, --json                  Output in JSON format")
+        self.poutput("  -v, --verbose               Increase verbosity (-v, -vv, -vvv)")
+
+        self.poutput(f"\n{Fore.CYAN}DESCRIPTION:{Style.RESET_ALL}")
+        self.poutput("  Tests service reachability using kernel-space packet counters. Emits DSCP-marked probes")
+        self.poutput("  (TCP SYN or UDP packets) and analyzes PREROUTING/POSTROUTING counter deltas on routers.")
+        self.poutput("  Results: YES (forwarded), NO (blocked), UNKNOWN (no packets seen).")
+        self.poutput("  Routers are automatically inferred from source IP using network registries.")
+
+        self.poutput(f"\n{Fore.CYAN}EXAMPLES:{Style.RESET_ALL}")
+        self.poutput(f"  {Fore.GREEN}# Test single port{Style.RESET_ALL}")
+        self.poutput("  ksms_tester -s 10.1.1.100 -d 10.2.1.200 -P \"80\"")
+        self.poutput("")
+        self.poutput(f"  {Fore.GREEN}# Test multiple TCP ports with verbose output{Style.RESET_ALL}")
+        self.poutput("  ksms_tester -s 10.1.1.100 -d 10.2.1.200 -P \"80,443,8080\" -v")
+        self.poutput("")
+        self.poutput(f"  {Fore.GREEN}# Test UDP services{Style.RESET_ALL}")
+        self.poutput("  ksms_tester -s 10.1.1.100 -d 10.2.1.200 -P \"53,123\" --default-proto udp")
+        self.poutput("")
+        self.poutput(f"  {Fore.GREEN}# Test mixed protocols{Style.RESET_ALL}")
+        self.poutput("  ksms_tester -s 10.1.1.100 -d 10.2.1.200 -P \"80/tcp,53/udp,443/tcp\"")
+        self.poutput("")
+        self.poutput(f"  {Fore.GREEN}# Test port ranges{Style.RESET_ALL}")
+        self.poutput("  ksms_tester -s 10.1.1.100 -d 10.2.1.200 -P \"8000-8005/tcp,1000-1010/udp\"")
+        self.poutput("")
+        self.poutput(f"  {Fore.GREEN}# JSON output for automation{Style.RESET_ALL}")
+        self.poutput("  ksms_tester -s 10.1.1.100 -d 10.2.1.200 -P \"80,443\" -j")
+        self.poutput("")
+        self.poutput(f"  {Fore.GREEN}# Maximum verbosity for debugging{Style.RESET_ALL}")
+        self.poutput("  ksms_tester -s 10.1.1.100 -d 10.2.1.200 -P \"80\" -vvv")
+        self.poutput("")
+        self.poutput(f"  {Fore.GREEN}# Large port range with custom limit and force{Style.RESET_ALL}")
+        self.poutput("  ksms_tester -s 10.1.1.100 -d 10.2.1.200 -P \"1000-2000/tcp\" --range-limit 1001 --force")
+        self.poutput("")
+        self.poutput(f"  {Fore.GREEN}# Advanced: Test 1000+ TCP ports (fast with parallel probes){Style.RESET_ALL}")
+        self.poutput("  ksms_tester -s 10.1.1.100 -d 10.2.1.200 -P \"1000-2000/tcp\" --max-services 2000 --force")
+        self.poutput("")
+        self.poutput(f"  {Fore.GREEN}# Advanced: Test 1000+ UDP ports (burst control prevents packet loss){Style.RESET_ALL}")
+        self.poutput("  ksms_tester -s 10.1.1.100 -d 10.2.1.200 -P \"1000-2000/udp\" --max-services 2000 --force")
+        self.poutput("")
+        self.poutput(f"  {Fore.GREEN}# Performance: Fast timeout for blocked services{Style.RESET_ALL}")
+        self.poutput("  ksms_tester -s 10.1.1.100 -d 10.2.1.200 -P \"1-1000/tcp\" --tcp-timeout 0.1 --force")
+        self.poutput("")
+        self.poutput(f"  {Fore.GREEN}# Production: Large-scale mixed protocol testing with JSON output{Style.RESET_ALL}")
+        self.poutput("  ksms_tester -s 10.1.1.100 -d 10.2.1.200 -P \"80-90/tcp,1000-1100/udp,443,53/udp\" --max-services 200 --force -j")
+        self.poutput("")
+        
+        self.poutput(f"\n{Fore.CYAN}PERFORMANCE NOTES:{Style.RESET_ALL}")
+        self.poutput("  • TCP services: Parallel execution (~1000 ports in ~1-2 seconds)")
+        self.poutput("  • UDP services: Burst control with batching to prevent packet loss")
+        self.poutput("  • DSCP cycling: Supports unlimited services (cycles through 32-63)")
+        self.poutput("  • Interactive confirmation: Large ranges prompt for user approval")
+        self.poutput("")
+        
+        self.poutput(f"\n{Fore.CYAN}PORT SPECIFICATION FORMATS:{Style.RESET_ALL}")
+        self.poutput("  80              Single port with default protocol")
+        self.poutput("  80/tcp          Single port with specific protocol")
+        self.poutput("  80,443,8080     Multiple ports (comma-separated)")
+        self.poutput("  80/tcp,53/udp   Mixed protocols")
+        self.poutput("  1000-2000/tcp   Port range with protocol")
+        self.poutput("  1000-2000       Port range with default protocol")
+        self.poutput("  Complex: \"80/tcp,53/udp,443,1000-1100/tcp,2000-3000/udp\"")
         self.poutput("")
     
     def help_ping(self):

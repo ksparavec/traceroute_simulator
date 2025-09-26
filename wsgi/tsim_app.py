@@ -325,6 +325,8 @@ class TsimWSGIApp:
             # Inject mode configuration into form.html
             if path == '/form.html' or file_path.endswith('form.html'):
                 mode = self.config.get('traceroute_simulator_mode', 'prod')
+                # DEBUG: Log what we're reading
+                self.logger.error(f"DEBUG: WSGI app reading mode as '{mode}' from config")
                 # Inject a script tag with the mode BEFORE form.js loads
                 original_tag = b'<script src="/js/form.js"></script>'
                 mode_script = f'<script>window.TSIM_MODE = "{mode}";</script>\n    <script src="/js/form.js"></script>'.encode('utf-8')

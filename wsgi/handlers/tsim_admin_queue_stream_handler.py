@@ -62,6 +62,19 @@ class TsimAdminQueueStreamHandler(TsimBaseHandler):
                 running['phase'] = phases[-1]['phase'] if phases else 'UNKNOWN'
             except Exception:
                 pass
+            
+            # Add DSCP information for KSMS jobs
+            try:
+                run_id = running.get('run_id')
+                if run_id and running.get('params', {}).get('analysis_mode') == 'quick':
+                    from services.tsim_dscp_registry import TsimDscpRegistry
+                    dscp_registry = TsimDscpRegistry(self.config)
+                    dscp_value = dscp_registry.get_dscp_for_job(run_id)
+                    if dscp_value:
+                        running['dscp_value'] = dscp_value
+            except Exception as e:
+                self.logger.debug(f"Could not get DSCP for job {run_id}: {e}")
+                pass
             # meta enrich
             try:
                 rd = Path(self.config.get('run_dir', '/dev/shm/tsim/runs')) / running.get('run_id', '')

@@ -28,7 +28,7 @@
     padding: 8px;
     border: 1px solid #ddd;
     border-radius: 4px;
-    font-family: monospace;
+    font-family: inherit; /* Use same font as other form elements */
     background-color: white;
 }
 
@@ -51,6 +51,7 @@
 /* Center specific labels for clarity */
 label[for="source_port"],
 label[for="port_mode"],
+label[for="analysis_mode"],
 label[for="default_protocol"] {
     text-align: center;
 }
@@ -122,6 +123,69 @@ form {
 
 .form-group {
     margin-bottom: 20px;
+}
+
+/* Three-column layout for form fields */
+div.form-group.form-row-three,
+.form-group.form-row-three {
+    display: flex !important;
+    flex-direction: row !important;
+    gap: 15px;
+    align-items: flex-end;
+    margin-bottom: 20px;
+    width: 100%;
+}
+
+.form-col-third {
+    flex: 1;
+    min-width: 0; /* Allow flex items to shrink below their content width */
+    max-width: calc(33.333% - 10px);
+}
+
+.form-col-third label {
+    display: block;
+    margin-bottom: 5px;
+    font-weight: 600;
+    text-align: center;
+}
+
+.form-col-third select,
+.form-col-third input {
+    width: 100% !important;
+    box-sizing: border-box;
+    padding: 10px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 14px;
+    text-align: center;
+}
+
+.form-col-third select option {
+    text-align: center;
+}
+
+/* Force center alignment on select elements for better browser support */
+.form-col-third select {
+    text-align-last: center;
+}
+
+/* Webkit-specific option centering */
+.form-col-third select option {
+    text-align: center;
+    padding-left: 0;
+    padding-right: 0;
+}
+
+/* Responsive: stack on smaller screens */
+@media (max-width: 768px) {
+    .form-row-three {
+        flex-direction: column;
+        gap: 10px;
+    }
+    
+    .form-col-third {
+        max-width: 100%;
+    }
 }
 
 label {
@@ -527,4 +591,18 @@ button[type="button"]:hover {
 .tsim-mode-prod label[for="source_ip"],
 .tsim-mode-prod label[for="dest_ip"] {
     text-align: center;
+}
+
+/* Hide IP input fields in test mode */
+.tsim-mode-test #source_ip,
+.tsim-mode-test #dest_ip,
+.tsim-mode-test label[for="source_ip"],
+.tsim-mode-test label[for="dest_ip"] {
+    display: none !important;
+}
+
+/* Hide entire form groups in test mode (fallback for older browsers) */
+.tsim-mode-test .form-group:has(#source_ip),
+.tsim-mode-test .form-group:has(#dest_ip) {
+    display: none !important;
 }

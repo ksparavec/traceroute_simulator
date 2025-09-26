@@ -115,7 +115,7 @@ class TsimLockManagerService:
                         # If legacy lock fails for other reasons, log and proceed with primary
                         self.logger.debug(f"Legacy lock acquisition issue: {_e}")
 
-                self.logger.debug(f"Acquired lock: {lock_name}")
+                # self.logger.debug(f"Acquired lock: {lock_name}")  # Suppressed to reduce noise
                 return True
 
             except BlockingIOError:
@@ -163,7 +163,7 @@ class TsimLockManagerService:
                 except:
                     pass  # Non-critical
                 
-                self.logger.debug(f"Released lock: {lock_name}")
+                # self.logger.debug(f"Released lock: {lock_name}")  # Suppressed to reduce noise
             except Exception as e:
                 self.logger.error(f"Error releasing file lock {lock_name}: {e}")
                 success = False

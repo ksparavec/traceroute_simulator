@@ -19,6 +19,7 @@ import multiprocessing
 import queue
 
 from .tsim_timing_service import TsimTimingService
+from .tsim_ksms_service import TsimKsmsService
 
 
 def _tsim_init_worker():
@@ -162,10 +163,13 @@ class TsimHybridExecutor:
                 - dest_ip: Destination IP
                 - port_protocol_list: List of (port, protocol) tuples
                 - user_trace_data: Optional user trace data
+                - analysis_mode: 'quick' or 'detailed' (optional)
                 
         Returns:
             Dictionary with test results
         """
+        # Continue with normal analysis (both test and production modes)
+        # Quick/Detailed analysis mode will be handled within the normal flow
         run_id = params['run_id']
         run_dir = Path(params['run_dir'])
         run_dir.mkdir(parents=True, exist_ok=True)
@@ -179,7 +183,7 @@ class TsimHybridExecutor:
             self._checkpoint(run_id, 'TRACE_START', f"{params['source_ip']}->{params['dest_ip']}")
             self._update_progress(run_id, 'MULTI_REACHABILITY_PHASE1_start', f"Path discovery from {params['source_ip']} to {params['dest_ip']}")
             trace_result = self._execute_trace(params, run_dir)
-            # After obtaining the trace, compute exact expected step count
+            # After obtaining the trace, compute exact expected step count based on analysis mode
             try:
                 router_count = 0
                 if trace_result.get('trace_file'):
@@ -187,7 +191,17 @@ class TsimHybridExecutor:
                         td = json.load(f)
                         router_count = len([h for h in td.get('path', []) if h.get('is_router')])
                 service_count = len(params.get('port_protocol_list', []))
-                expected_steps = 25 + (12 * service_count) + (2 * router_count)
+                
+                # Different step calculations for different analysis modes
+                analysis_mode = params.get('analysis_mode', 'detailed')
+                if analysis_mode == 'quick':
+                    # Quick analysis steps: 
+                    # 5 initial phases + router_count host creation steps + 4 KSMS phases + 3 completion phases
+                    expected_steps = 5 + router_count + 4 + 3
+                else:
+                    # Detailed analysis steps (original formula)
+                    expected_steps = 25 + (12 * service_count) + (2 * router_count)
+                
                 if self.progress_tracker:
                     try:
                         self.progress_tracker.set_expected_steps(params['run_id'], expected_steps)
@@ -216,16 +230,29 @@ class TsimHybridExecutor:
             self._update_progress(run_id, 'MULTI_REACHABILITY_PHASE4_complete', 'All service tests completed')
             
             # Step 3: Generate PDFs (CPU bound - use process pool)
-            self._checkpoint(run_id, 'PDF_START')
-            self._update_progress(run_id, 'PDF_GENERATION', 'Generating PDF reports')
-            params['result_files'] = reach_result.get('result_files', [])
-            pdf_result = self._execute_pdf_generation(params, run_dir)
-            self._checkpoint(run_id, 'PDF_DONE')
-            self._update_progress(run_id, 'PDF_COMPLETE', 'PDF generation completed')
+            # Skip PDF generation for KSMS as it handles its own PDF generation
+            analysis_mode = reach_result.get('analysis_mode', 'detailed')
+            if analysis_mode == 'quick':
+                # KSMS already generated PDF - extract the PDF path from results
+                pdf_result = reach_result.get('results', {}).get('pdf_result', {})
+                if pdf_result.get('success'):
+                    final_pdf_path = pdf_result.get('pdf_path')
+                    pdf_result = {'success': True, 'final_pdf': final_pdf_path}
+                else:
+                    pdf_result = {'success': False, 'error': 'KSMS PDF generation failed'}
+            else:
+                # Standard detailed analysis PDF generation
+                self._checkpoint(run_id, 'PDF_START')
+                self._update_progress(run_id, 'PDF_GENERATION', 'Generating PDF reports')
+                params['result_files'] = reach_result.get('result_files', [])
+                params['analysis_mode'] = analysis_mode
+                pdf_result = self._execute_pdf_generation(params, run_dir)
+                self._checkpoint(run_id, 'PDF_DONE')
+                self._update_progress(run_id, 'PDF_COMPLETE', 'PDF generation completed')
             
-            # Mark completion with PDF file
+            # Mark completion with PDF file and total timing
             final_pdf = pdf_result.get('final_pdf')
-            if final_pdf and self.progress_tracker:
+            if self.progress_tracker:
                 self.progress_tracker.mark_complete(run_id, True, final_pdf)
             else:
                 self._update_progress(run_id, 'COMPLETE', 'All tests completed successfully')
@@ -289,21 +316,93 @@ class TsimHybridExecutor:
         return {'trace_file': str(trace_file), 'output': output}
     
     def _execute_reachability(self, params: Dict[str, Any], run_dir: Path) -> Dict[str, Any]:
-        """Execute reachability tests directly
+        """Execute reachability tests based on analysis mode
         
         Args:
-            params: Test parameters
+            params: Test parameters including analysis_mode
             run_dir: Run directory
             
         Returns:
             Reachability test results
         """
-        # Import the network reachability test module
-        from scripts.network_reachability_test_multi import MultiServiceTester
-        
         # Create results directory
         results_dir = run_dir / 'results'
         results_dir.mkdir(exist_ok=True)
+        
+        # Get analysis mode (default to detailed for backward compatibility)  
+        analysis_mode = params.get('analysis_mode', 'detailed')
+        
+        if analysis_mode == 'quick':
+            # Use KSMS for quick analysis
+            self.logger.info(f"Starting KSMS quick analysis for {params['run_id']}")
+            return self._execute_ksms_analysis(params, results_dir)
+        else:
+            # Use MultiServiceTester for detailed analysis
+            self.logger.info(f"Starting detailed analysis for {params['run_id']}")
+            return self._execute_detailed_analysis(params, results_dir)
+    
+    def _execute_ksms_analysis(self, params: Dict[str, Any], results_dir: Path) -> Dict[str, Any]:
+        """Execute KSMS quick analysis
+        
+        Args:
+            params: Test parameters
+            results_dir: Results directory
+            
+        Returns:
+            KSMS analysis results
+        """
+        # Initialize KSMS service
+        ksms_service = TsimKsmsService(self.config)
+        
+        # Set up progress callback
+        def ksms_progress_callback(phase: str, message: str = ""):
+            self._update_progress(params['run_id'], f'KSMS_{phase}', message)
+        
+        # Execute KSMS fast scan with progress callback
+        # Set progress callback - add MULTI_REACHABILITY_ prefix to match detailed analysis
+        progress_callback = lambda phase, msg: self._update_progress(
+            params['run_id'], f'MULTI_REACHABILITY_{phase}', msg
+        )
+        
+        try:
+            # Execute KSMS in thread pool (I/O bound)
+            future = self.thread_pool.submit(
+                ksms_service.execute_quick_analysis,
+                params,
+                progress_callback
+            )
+            results = future.result(timeout=300)  # 5 minute timeout
+            
+            # KSMS service handles its own completion progress message
+            
+            # Save results to JSON file
+            result_file = results_dir / f"{params['run_id']}_ksms_results.json"
+            result_file.write_text(json.dumps(results, indent=2))
+            
+            return {
+                'results': results,
+                'result_files': [str(result_file)],
+                'results_dir': str(results_dir),
+                'analysis_mode': 'quick'
+            }
+            
+        except Exception as e:
+            self.logger.error(f"KSMS execution failed for {params['run_id']}: {e}")
+            self._update_progress(params['run_id'], 'KSMS_ERROR', f'KSMS failed: {str(e)}')
+            raise
+    
+    def _execute_detailed_analysis(self, params: Dict[str, Any], results_dir: Path) -> Dict[str, Any]:
+        """Execute detailed analysis using MultiServiceTester
+        
+        Args:
+            params: Test parameters
+            results_dir: Results directory
+            
+        Returns:
+            Detailed analysis results
+        """
+        # Import the network reachability test module
+        from scripts.network_reachability_test_multi import MultiServiceTester
         
         # Initialize tester
         tester = MultiServiceTester(
@@ -322,7 +421,7 @@ class TsimHybridExecutor:
         )
         
         # Execute tests in thread pool (I/O bound)
-        self.logger.info(f"Starting reachability tests for {params['run_id']}")
+        self.logger.info(f"Starting detailed reachability tests for {params['run_id']}")
         future = self.thread_pool.submit(tester.run)
         results = future.result(timeout=300)  # 5 minute timeout
         
@@ -341,7 +440,8 @@ class TsimHybridExecutor:
         return {
             'results': results,
             'result_files': result_files,
-            'results_dir': str(results_dir)
+            'results_dir': str(results_dir),
+            'analysis_mode': 'detailed'
         }
     
     def _execute_pdf_generation(self, params: Dict[str, Any], run_dir: Path) -> Dict[str, Any]:

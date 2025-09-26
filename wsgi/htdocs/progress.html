@@ -37,7 +37,7 @@
         </div>
         
         <div style="text-align: center; margin-top: 20px;">
-            <button id="showPdfButton" style="display: none; padding: 12px 24px; font-size: 16px; background-color: #3498db; color: white; border: none; border-radius: 4px; cursor: pointer; transition: background-color 0.3s;" 
+            <button id="showPdfButton" style="display: none; padding: 12px 24px; font-size: 16px; background-color: #3498db; color: white; border: none; border-radius: 4px; cursor: pointer; transition: background-color 0.3s; margin-right: 10px;" 
                     onmouseover="this.style.backgroundColor='#2980b9'" 
                     onmouseout="this.style.backgroundColor='#3498db'" 
                     disabled>
@@ -138,6 +138,23 @@
             'PDF_GEN_visualize_reachability.py': 'Rendering PDF',
             'PDF_GEN_TOTAL': 'PDF complete',
             
+            // KSMS Quick Analysis phases
+            'KSMS_QUICK_START': 'Starting quick analysis',
+            'KSMS_BULK_SCAN': 'Executing bulk service scan',
+            'KSMS_FORMAT_RESULTS': 'Processing scan results',
+            'KSMS_PDF_GENERATION': 'Generating summary report',
+            
+            // KSMS phase mappings (matching actual phase names from KSMS service)
+            'PHASE2_ksms_start': 'Starting quick analysis',
+            'PHASE2_host_setup': 'Creating source hosts',
+            'PHASE2_host_1': 'Adding source host',
+            'PHASE2_host_2': 'Adding source host', 
+            'PHASE3_ksms_scan': 'Executing service scan',
+            'PHASE3_cleanup': 'Cleaning up hosts',
+            'PHASE4_format': 'Processing results',
+            'PHASE4_pdf': 'Generating PDF report',
+            'PHASE4_complete': 'Service tests complete',
+            
             // Generic phases
             'COMPLETE': 'Test complete!',
             'ERROR': 'Error occurred',
@@ -212,6 +229,20 @@
                             let cleanPhaseName = getPhaseStatus(phase);
                             cleanPhaseName = sanitizeAscii(cleanPhaseName);
                             
+                            // Special handling for KSMS bulk operations
+                            if (phase.startsWith('KSMS_') && details.includes('services')) {
+                                // Extract service count from details for KSMS
+                                const serviceMatch = details.match(/(\d+)\s+services?/);
+                                if (serviceMatch) {
+                                    const serviceCount = serviceMatch[1];
+                                    if (phase === 'KSMS_BULK_SCAN') {
+                                        cleanPhaseName = `Scanning ${serviceCount} services`;
+                                    } else if (phase === 'KSMS_FORMAT_RESULTS') {
+                                        cleanPhaseName = `Processing ${serviceCount} results`;
+                                    }
+                                }
+                            }
+                            
                             // Create detailed message for log window
                             let logMessage = cleanPhaseName;
                             if (details && details.trim()) {
@@ -228,7 +259,7 @@
                             
                             // Determine log type based on phase
                             let logType = 'info';
-                            if (phase === 'COMPLETE' || phase === 'PDF_GEN_TOTAL' || phase === 'TOTAL') {
+                            if (phase === 'COMPLETE' || phase === 'PDF_GEN_TOTAL' || phase === 'TOTAL' || phase === 'KSMS_PDF_GENERATION') {
                                 logType = 'success';
                                 currentProgress = 100; // Force to 100% on completion
                             } else if (phase.includes('ERROR') || phase.includes('FAIL')) {
@@ -237,6 +268,7 @@
                             
                             // Add full details to log window
                             addProgressLogEntry(logMessage, logType);
+                            
                             
                             // If cancelled/failed, inform user and stop
                             if (phase === 'FAILED' || phase === 'ERROR') {
@@ -265,9 +297,9 @@
                         const msg = sanitizeAscii(data.error || 'Your job was cancelled.');
                         showCancelledModal(msg);
                     } else {
-                        lastMilestoneMessage = 'Test complete!';
-                        updateProgress(100, lastMilestoneMessage);
-                        addProgressLogEntry('Test completed successfully!', 'success');
+                        // Don't add duplicate "Test completed successfully!" message
+                        // The COMPLETE and TOTAL phases already provide completion messages
+                        updateProgress(100, 'Test complete!');
                         try { eventSource.close(); } catch (e) {}
                         if (data.redirect_url) {
                             pdfRedirectUrl = data.redirect_url;
@@ -318,25 +350,6 @@
     
     // Start SSE stream after a short delay to let the test start
     setTimeout(startProgressStream, 1000);
-
-    function showCancelledModal(message) {
-        const modal = document.createElement('div');
-        modal.className = 'modal';
-        modal.style.display = 'block';
-        modal.innerHTML = `
-            <div class="modal-content">
-              <div class="modal-header">
-                <h2>Job Cancelled</h2>
-              </div>
-              <div class="modal-body">
-                <p>${message}</p>
-              </div>
-              <div class="modal-footer">
-                <button type="button" onclick="window.location.href='/form.html'">OK</button>
-              </div>
-            </div>`;
-        document.body.appendChild(modal);
-    }
 
     function showCancelledModal(message) {
         const modal = document.createElement('div');

@@ -101,7 +101,18 @@ function saveFormData() {
 function setVisible(el, yes) {
     if (!el) return;
     const grp = el.closest('.form-group');
-    if (grp) grp.style.display = yes ? 'block' : 'none';
+    if (grp) {
+        if (yes) {
+            // Check if this is a flex row, preserve flex display
+            if (grp.classList.contains('form-row-three')) {
+                grp.style.display = 'flex';
+            } else {
+                grp.style.display = 'block';
+            }
+        } else {
+            grp.style.display = 'none';
+        }
+    }
 }
 
 function setDisabled(el, yes) {

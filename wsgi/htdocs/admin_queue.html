@@ -30,8 +30,8 @@
         <div class="progress-percentage"><span id="runningPercent">0</span>%</div>
       </div>
       <table class="queue-table" id="runningDetails">
-        <thead><tr><th>Run ID</th><th>User</th><th>Created</th><th>Services</th></tr></thead>
-        <tbody><tr><td id="rdRun"></td><td id="rdUser"></td><td id="rdCreated"></td><td id="rdServices"></td></tr></tbody>
+        <thead><tr><th>Run ID</th><th>User</th><th>Mode</th><th>DSCP</th><th>Created</th><th>Services</th></tr></thead>
+        <tbody><tr><td id="rdRun"></td><td id="rdUser"></td><td id="rdMode"></td><td id="rdDSCP"></td><td id="rdCreated"></td><td id="rdServices"></td></tr></tbody>
       </table>
     </div>
 
@@ -41,6 +41,7 @@
           <th>Position</th>
           <th>Run ID</th>
           <th>User</th>
+          <th>Mode</th>
           <th>Status</th>
           <th>Created</th>
           <th>Services</th>
@@ -56,6 +57,7 @@
         <tr>
           <th>Run ID</th>
           <th>User</th>
+          <th>Mode</th>
           <th>Status</th>
           <th>Finished</th>
           <th>Actions</th>
@@ -107,7 +109,13 @@
         'COMPLETE': 'Test complete!',
         'ERROR': 'Error occurred',
         'FAIL': 'Test failed',
-        'FAILED': 'Cancelled'
+        'FAILED': 'Cancelled',
+        
+        // KSMS Quick Analysis phases
+        'KSMS_QUICK_START': 'Starting quick analysis',
+        'KSMS_BULK_SCAN': 'Executing bulk service scan',
+        'KSMS_FORMAT_RESULTS': 'Processing scan results',
+        'KSMS_PDF_GENERATION': 'Generating summary report'
       };
       return map[phase] || phase;
     }
@@ -139,8 +147,14 @@
           const created = fmtDate(running.created_at);
           const servicesRun = Array.isArray(running.params?.port_protocol_list)
             ? running.params.port_protocol_list.map(p => `${p[0]}/${p[1]}`).join(', ') : '';
+          const analysisMode = running.params?.analysis_mode || 'detailed';
+          const modeDisplay = analysisMode === 'quick' ? 'Quick' : 'Detailed';
+          const dscpDisplay = running.dscp_value ? `DSCP ${running.dscp_value}` : 'N/A';
+          
           document.getElementById('rdRun').textContent = sanitizeAscii(running.run_id||'');
           document.getElementById('rdUser').textContent = sanitizeAscii(running.username||'');
+          document.getElementById('rdMode').textContent = modeDisplay;
+          document.getElementById('rdDSCP').textContent = dscpDisplay;
           document.getElementById('rdCreated').textContent = created;
           document.getElementById('rdServices').textContent = sanitizeAscii(servicesRun);
           if (!running.username) {
@@ -161,9 +175,12 @@
           const created = fmtDate(j.created_at);
           const services = Array.isArray(j.params?.port_protocol_list)
             ? j.params.port_protocol_list.map(p => `${p[0]}/${p[1]}`).join(', ') : '';
+          const queueMode = j.params?.analysis_mode || 'detailed';
+          const queueModeDisplay = queueMode === 'quick' ? 'Quick' : 'Detailed';
           tr.innerHTML = `<td>${j.position||''}</td>`+
                          `<td>${sanitizeAscii(j.run_id||'')}</td>`+
                          `<td>${sanitizeAscii(j.username||'')}</td>`+
+                         `<td>${queueModeDisplay}</td>`+
                          `<td><span class=\"status-badge\">${sanitizeAscii(j.status||'')}</span></td>`+
                          `<td>${created}</td>`+
                          `<td>${sanitizeAscii(services)}</td>`+
@@ -193,8 +210,11 @@
               status = 'CANCELLED';
             }
             const runId = sanitizeAscii(item.run_id||'');
+            const historyMode = item.params?.analysis_mode || 'detailed';
+            const historyModeDisplay = historyMode === 'quick' ? 'Quick' : 'Detailed';
             tr.innerHTML = `<td>${runId}</td>`+
                            `<td>${sanitizeAscii(item.username||'')}</td>`+
+                           `<td>${historyModeDisplay}</td>`+
                            `<td>${sanitizeAscii(status)}</td>`+
                            `<td>${finished}</td>`+
                            `<td><button class=\"details-btn\" data-run-id=\"${runId}\">Details</button></td>`;

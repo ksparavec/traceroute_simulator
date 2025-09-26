@@ -288,3 +288,60 @@ class TsimCleanupHandler(TsimBaseHandler):
             pass
 
         return removed
+    
+    def cleanup_job(self, run_id: str):
+        """Clean up a specific job, including DSCP release if KSMS job
+        
+        Args:
+            run_id: Job/run identifier to clean up
+        """
+        try:
+            # Release DSCP if this was a KSMS job
+            if self._is_ksms_job(run_id):
+                from services.tsim_dscp_registry import TsimDscpRegistry
+                dscp_registry = TsimDscpRegistry(self.config)
+                released = dscp_registry.release_dscp(run_id)
+                if released:
+                    self.logger.info(f"Released DSCP for terminated job {run_id}")
+                else:
+                    self.logger.debug(f"No DSCP allocation found for job {run_id}")
+            
+            # Continue with other cleanup (files, directories, etc.)
+            from pathlib import Path
+            run_dir = Path(self.config.get('run_dir', '/dev/shm/tsim/runs')) / run_id
+            if run_dir.exists():
+                import shutil
+                shutil.rmtree(run_dir)
+                self.logger.info(f"Cleaned up run directory for job {run_id}")
+                
+        except Exception as e:
+            self.logger.error(f"Failed to cleanup job {run_id}: {e}")
+    
+    def _is_ksms_job(self, run_id: str) -> bool:
+        """Check if a job was a KSMS job by looking for indicators
+        
+        Args:
+            run_id: Job identifier
+            
+        Returns:
+            True if this appears to be a KSMS job
+        """
+        # Implementation note: Could check run directory for KSMS artifacts,
+        # progress logs for KSMS phases, or maintain a registry of job types
+        try:
+            # Check progress logs for KSMS-specific phases
+            if hasattr(self, 'progress_tracker'):
+                # This would require access to progress tracker
+                pass
+            
+            # For now, just check if DSCP registry has/had an allocation
+            from services.tsim_dscp_registry import TsimDscpRegistry
+            dscp_registry = TsimDscpRegistry(self.config)
+            
+            # If there's an active allocation, it's likely a KSMS job
+            allocated_dscp = dscp_registry.get_job_dscp(run_id)
+            return allocated_dscp is not None
+            
+        except Exception:
+            # If we can't determine, assume it might be KSMS and try cleanup
+            return True

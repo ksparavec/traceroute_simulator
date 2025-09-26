@@ -126,7 +126,7 @@ class TsimProgressStreamHandler(TsimBaseHandler):
                             self.logger.error(f"Failed to parse progress.json for {run_id}")
                             continue
                     
-                    # Check if we have new phases
+                    # Always sync all_phases with current_phases to ensure we have the latest (including TOTAL)
                     if len(current_phases) > len(all_phases):
                         # Add new phases to our collection
                         for i in range(len(all_phases), len(current_phases)):
@@ -144,6 +144,27 @@ class TsimProgressStreamHandler(TsimBaseHandler):
                                 'details': phase.get('message', phase.get('details', '')),
                                 'duration': phase.get('duration', 0)
                             })
+                    elif is_complete and len(current_phases) == len(all_phases):
+                        # When complete, ensure the last phase (likely TOTAL) is properly included
+                        # This handles the case where TOTAL phase is added in the same write as complete=true
+                        if current_phases and all_phases:
+                            last_current = current_phases[-1]
+                            last_all = all_phases[-1] if all_phases else {}
+                            # If the last phase content differs, update it
+                            if (last_current.get('phase') != last_all.get('phase') or 
+                                last_current.get('message') != last_all.get('details')):
+                                
+                                phase_name = last_current.get('phase', 'UNKNOWN')
+                                if phase_name.startswith('MULTI_REACHABILITY_'):
+                                    phase_name = phase_name.replace('MULTI_REACHABILITY_', '')
+                                elif phase_name.startswith('REACHABILITY_'):
+                                    phase_name = phase_name.replace('REACHABILITY_', '')
+                                
+                                all_phases[-1] = {
+                                    'phase': phase_name,
+                                    'details': last_current.get('message', last_current.get('details', '')),
+                                    'duration': last_current.get('duration', 0)
+                                }
                             
                             # Send SSE event for this phase update (matching CGI format)
                             # Live queue position if waiting

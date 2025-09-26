@@ -26,12 +26,27 @@
         </table>
         
         <form id="reachability-form" action="/main" method="POST">
-            <div class="form-group">
-                <label for="analysis_mode">Analysis Mode *</label>
-                <select id="analysis_mode" name="analysis_mode" required>
-                    <option value="quick" selected>Quick Analysis</option>
-                    <option value="detailed">Detailed Analysis</option>
-                </select>
+            <!-- Three-column row for Analysis Mode, Default Protocol, and Source Port -->
+            <div class="form-group form-row-three">
+                <div class="form-col-third">
+                    <label for="analysis_mode">Analysis Mode *</label>
+                    <select id="analysis_mode" name="analysis_mode" required>
+                        <option value="quick" selected>Quick Analysis</option>
+                        <option value="detailed">Detailed Analysis</option>
+                    </select>
+                </div>
+                <div class="form-col-third">
+                    <label for="default_protocol">Default Protocol *</label>
+                    <select id="default_protocol" name="default_protocol" required>
+                        <option value="tcp" selected>TCP</option>
+                        <option value="udp">UDP</option>
+                    </select>
+                </div>
+                <div class="form-col-third">
+                    <label for="source_port">Source Port (optional)</label>
+                    <input type="number" id="source_port" name="source_port" 
+                           min="1" max="65535" placeholder="e.g., 12345">
+                </div>
             </div>
             
             <div class="form-group">
@@ -39,12 +54,6 @@
                 <input type="text" id="source_ip" name="source_ip" 
                        pattern="^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$" 
                        required placeholder="e.g., 10.1.1.1">
-            </div>
-            
-            <div class="form-group">
-                <label for="source_port">Source Port (optional)</label>
-                <input type="number" id="source_port" name="source_port" 
-                       min="1" max="65535" placeholder="e.g., 12345">
             </div>
             
             <div class="form-group">
@@ -91,13 +100,6 @@
                 </div>
             </div>
             
-            <div class="form-group">
-                <label for="default_protocol">Default Protocol (for unspecified ports) *</label>
-                <select id="default_protocol" name="default_protocol" required>
-                    <option value="tcp" selected>TCP</option>
-                    <option value="udp">UDP</option>
-                </select>
-            </div>
             
             <!-- Hidden field for user trace data -->
             <input type="hidden" id="user_trace_data" name="user_trace_data" value="">
@@ -148,13 +150,5 @@
         
     </div>
     
-    <!-- Debug mode detection -->
-    <script>
-        window.addEventListener('DOMContentLoaded', function() {
-            setTimeout(function() {
-                alert('DEBUG: window.TSIM_MODE = "' + window.TSIM_MODE + '"');
-            }, 500);
-        });
-    </script>
 </body>
 </html>

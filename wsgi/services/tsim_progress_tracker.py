@@ -325,15 +325,15 @@ class TsimProgressTracker:
         if pdf_file:
             details['pdf_file'] = str(pdf_file)
         
-        # Write final progress to file
-        self._write_progress_json(run_id)
-        
         self.log_phase(run_id, phase, message, details)
         
         # Log TOTAL phase for compatibility
         if success:
             elapsed = time.time() - self.progress.get(run_id, {}).get('start_time', time.time())
             self.log_phase(run_id, 'TOTAL', f"Total execution time: {elapsed:.2f}s", details)
+        
+        # Write final progress to file AFTER all phases are logged
+        self._write_progress_json(run_id)
     
     def cleanup_memory(self, max_age_seconds: int = 3600):
         """Clean up old in-memory progress data

@@ -144,6 +144,17 @@
             'KSMS_FORMAT_RESULTS': 'Processing scan results',
             'KSMS_PDF_GENERATION': 'Generating summary report',
             
+            // KSMS phase mappings (matching actual phase names from KSMS service)
+            'PHASE2_ksms_start': 'Starting quick analysis',
+            'PHASE2_host_setup': 'Creating source hosts',
+            'PHASE2_host_1': 'Adding source host',
+            'PHASE2_host_2': 'Adding source host', 
+            'PHASE3_ksms_scan': 'Executing service scan',
+            'PHASE3_cleanup': 'Cleaning up hosts',
+            'PHASE4_format': 'Processing results',
+            'PHASE4_pdf': 'Generating PDF report',
+            'PHASE4_complete': 'Service tests complete',
+            
             // Generic phases
             'COMPLETE': 'Test complete!',
             'ERROR': 'Error occurred',
@@ -286,9 +297,9 @@
                         const msg = sanitizeAscii(data.error || 'Your job was cancelled.');
                         showCancelledModal(msg);
                     } else {
-                        lastMilestoneMessage = 'Test complete!';
-                        updateProgress(100, lastMilestoneMessage);
-                        addProgressLogEntry('Test completed successfully!', 'success');
+                        // Don't add duplicate "Test completed successfully!" message
+                        // The COMPLETE and TOTAL phases already provide completion messages
+                        updateProgress(100, 'Test complete!');
                         try { eventSource.close(); } catch (e) {}
                         if (data.redirect_url) {
                             pdfRedirectUrl = data.redirect_url;

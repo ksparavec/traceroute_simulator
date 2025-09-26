@@ -21,3 +21,4 @@ This file provides guidance for Claude Code (claude.ai/code) when working with c
 - for all searches, edits, updates use code from repository only
 - always use -q option to tsimsh when executing batch commands
 - NEVER UPDATE INSTALLATION!!!!!
+- always add -q flag when executing tsimsh

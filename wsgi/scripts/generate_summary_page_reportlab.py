@@ -27,6 +27,45 @@ def load_json_file(filepath: str) -> Dict[str, Any]:
         return json.load(f)
 
 
+def extract_ksms_summary(ksms_results: Dict[str, Any]) -> Tuple[List[Dict[str, Any]], List[str], Dict[str, str]]:
+    """Extract summary information from KSMS results."""
+    summary = []
+    routers = []
+    traceroute_status = {}  # Empty for KSMS (no traceroute)
+    
+    # Extract routers and services from KSMS format
+    for router_data in ksms_results.get('routers', []):
+        router_name = router_data['name']
+        if router_name not in routers:
+            routers.append(router_name)
+        
+        for service_data in router_data.get('services', []):
+            port = service_data['port']
+            protocol = service_data['protocol']
+            result = service_data['result']  # YES/NO/UNKNOWN
+            
+            # Find or create service summary
+            service_summary = None
+            for s in summary:
+                if s['port'] == port and s['protocol'] == protocol:
+                    service_summary = s
+                    break
+            
+            if not service_summary:
+                service_summary = {
+                    'port': port,
+                    'protocol': protocol,
+                    'router_results': {}
+                }
+                summary.append(service_summary)
+            
+            # Convert KSMS result to status
+            status = 'PASS' if result == 'YES' else 'FAIL'
+            service_summary['router_results'][router_name] = status
+    
+    return summary, routers, traceroute_status
+
+
 def extract_test_summary(results_files: List[Tuple[int, str, str]]) -> Tuple[List[Dict[str, Any]], List[str], Dict[str, str]]:
     """Extract summary information from all result files."""
     summary = []
@@ -95,12 +134,10 @@ def extract_test_summary(results_files: List[Tuple[int, str, str]]) -> Tuple[Lis
     return summary, routers, traceroute_status
 
 
-def create_summary_page(output_file: str, form_data: Dict[str, Any], 
-                       results_files: List[Tuple[int, str, str]]) -> None:
-    """Create the summary page PDF using ReportLab."""
-    
-    # Extract summary from all results
-    services_summary, routers, traceroute_status = extract_test_summary(results_files)
+def create_summary_page_from_data(output_file: str, form_data: Dict[str, Any],
+                                 services_summary: List[Dict[str, Any]], 
+                                 routers: List[str], traceroute_status: Dict[str, str]) -> None:
+    """Create the summary page PDF from extracted data using ReportLab."""
     
     # Create the PDF document
     doc = SimpleDocTemplate(output_file, pagesize=A4,
@@ -191,12 +228,14 @@ def create_summary_page(output_file: str, form_data: Dict[str, Any],
     table_headers = ['Service'] + [router.split('.')[0] for router in routers]
     table_data = [table_headers]
     
-    # Add traceroute row
-    traceroute_row = ['TRACEROUTE']
-    for router in routers:
-        status = traceroute_status.get(router, 'N/A')
-        traceroute_row.append(status)
-    table_data.append(traceroute_row)
+    # Add traceroute row (skip for KSMS quick analysis)
+    analysis_mode = form_data.get('analysis_mode', 'detailed')
+    if analysis_mode != 'quick':
+        traceroute_row = ['TRACEROUTE']
+        for router in routers:
+            status = traceroute_status.get(router, 'N/A')
+            traceroute_row.append(status)
+        table_data.append(traceroute_row)
     
     # Add service rows
     for service in services_summary:
@@ -251,21 +290,34 @@ def create_summary_page(output_file: str, form_data: Dict[str, Any],
     results_table.setStyle(TableStyle(table_style_commands))
     elements.append(results_table)
     
-    # Footer
-    elements.append(Spacer(1, 0.5*inch))
-    footer_style = ParagraphStyle(
-        'Footer',
-        parent=styles['Normal'],
-        fontSize=10,
-        textColor=colors.HexColor('#7F8C8D'),
-        alignment=TA_CENTER,
-        fontName='Helvetica-Oblique'
-    )
-    elements.append(Paragraph('Detailed analysis for each service follows on subsequent pages', footer_style))
+    # Footer (only for detailed analysis)
+    analysis_mode = form_data.get('analysis_mode', 'detailed')
+    if analysis_mode != 'quick':
+        elements.append(Spacer(1, 0.5*inch))
+        footer_style = ParagraphStyle(
+            'Footer',
+            parent=styles['Normal'],
+            fontSize=10,
+            textColor=colors.HexColor('#7F8C8D'),
+            alignment=TA_CENTER,
+            fontName='Helvetica-Oblique'
+        )
+        elements.append(Paragraph('Detailed analysis for each service follows on subsequent pages', footer_style))
     
     # Build PDF
     doc.build(elements)
+
+
+def create_summary_page(output_file: str, form_data: Dict[str, Any], 
+                       results_files: List[Tuple[int, str, str]]) -> None:
+    """Create the summary page PDF using ReportLab (MultiServiceTester format)."""
     
+    # Extract summary from all results
+    services_summary, routers, traceroute_status = extract_test_summary(results_files)
+    
+    # Create PDF from extracted data
+    create_summary_page_from_data(output_file, form_data, services_summary, routers, traceroute_status)
+
 
 def main():
     parser = argparse.ArgumentParser(description='Generate summary page for multi-service test results')
@@ -281,7 +333,18 @@ def main():
     # Load list of result files
     results_info = load_json_file(args.results)
     
-    # Convert to expected format
+    # Check if this is KSMS format (single file with ksms_results)
+    if len(results_info) == 1 and 'file' in results_info[0]:
+        result_data = load_json_file(results_info[0]['file'])
+        if 'ksms_results' in result_data:
+            # This is KSMS format - extract data directly
+            ksms_results = result_data['ksms_results']
+            services_summary, routers, traceroute_status = extract_ksms_summary(ksms_results)
+            create_summary_page_from_data(args.output, form_data, services_summary, routers, traceroute_status)
+            print(f"KSMS Summary page generated: {args.output}")
+            return
+    
+    # Standard MultiServiceTester format
     results_files = []
     for item in results_info:
         results_files.append((item['port'], item['protocol'], item['file']))

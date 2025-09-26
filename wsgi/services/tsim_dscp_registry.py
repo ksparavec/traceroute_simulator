@@ -26,11 +26,10 @@ class TsimDscpRegistry:
         self.config = config_service
         self.logger = logging.getLogger('tsim.dscp_registry')
         
-        # Registry files
+        # Registry files - same pattern as other registries (directly in data_dir)
         base_dir = Path(config_service.get('data_dir', '/dev/shm/tsim'))
-        self.registry_dir = base_dir / 'dscp_registry'
-        self.registry_file = self.registry_dir / 'registry.json'
-        self.lock_file = self.registry_dir / 'registry.lock'
+        self.registry_file = base_dir / 'dscp_registry.json'
+        self.lock_file = base_dir / 'dscp_registry.lock'
         
         # Thread safety
         self.semaphore = threading.Semaphore(1)
@@ -46,11 +45,11 @@ class TsimDscpRegistry:
         if self.dscp_min < 0 or self.dscp_max > 63 or self.dscp_min > self.dscp_max:
             raise ValueError(f"Invalid DSCP range: {self.dscp_min}-{self.dscp_max} (must be 0-63)")
         
-        # Create registry directory
+        # Ensure base directory exists (should already exist)
         try:
-            self.registry_dir.mkdir(parents=True, exist_ok=True, mode=0o775)
+            base_dir.mkdir(parents=True, exist_ok=True, mode=0o2775)  # Set group sticky bit
         except Exception as e:
-            self.logger.warning(f"Failed to create registry directory: {e}")
+            self.logger.warning(f"Failed to ensure base directory exists: {e}")
         
         # Initialize registry if missing
         if not self.registry_file.exists():
@@ -362,6 +361,9 @@ class TsimDscpRegistry:
                 json.dump(registry, f, indent=2)
                 f.flush()
                 os.fsync(f.fileno())
+            
+            # Set proper permissions (group writable like other registries)
+            os.chmod(tmp_file, 0o664)  # rw-rw-r--
             
             # Atomic rename
             tmp_file.replace(self.registry_file)

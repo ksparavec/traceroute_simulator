@@ -61,7 +61,7 @@ class TsimExecutor:
     
     def execute(self, run_id: str, source_ip: str, dest_ip: str,
                 source_port: Optional[str], port_protocol_list: List[Tuple[int, str]],
-                user_trace_data: Optional[str] = None) -> Dict[str, Any]:
+                user_trace_data: Optional[str] = None, analysis_mode: str = 'detailed') -> Dict[str, Any]:
         """Execute complete test pipeline using hybrid executor
         
         Args:
@@ -71,6 +71,7 @@ class TsimExecutor:
             source_port: Optional source port
             port_protocol_list: List of (port, protocol) tuples
             user_trace_data: Optional user-provided trace data
+            analysis_mode: Analysis mode ('quick' or 'detailed')
             
         Returns:
             Dictionary with execution results
@@ -86,6 +87,8 @@ class TsimExecutor:
             'source_port': source_port,
             'port_protocol_list': port_protocol_list,
             'user_trace_data': user_trace_data,
+            'analysis_mode': analysis_mode,
+            'services': [{'port': port, 'protocol': protocol} for port, protocol in port_protocol_list],  # Add for KSMS compatibility
             'run_dir': str(self.run_dir / run_id),
             'summary': {
                 'source_ip': source_ip,

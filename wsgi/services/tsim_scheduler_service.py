@@ -124,7 +124,8 @@ class TsimSchedulerService:
                             params.get('dest_ip'),
                             params.get('source_port'),
                             params.get('port_protocol_list', []),
-                            params.get('user_trace_data')
+                            params.get('user_trace_data'),
+                            params.get('analysis_mode', 'detailed')
                         )
                         # Update current as running (for completeness)
                         current['status'] = 'RUNNING'

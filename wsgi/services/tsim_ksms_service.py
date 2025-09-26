@@ -402,10 +402,16 @@ class TsimKsmsService:
                 with open(results_list_file, 'w') as f:
                     json.dump(results_list, f, indent=2)
                 
-                # Use installed PDF generation script
-                import subprocess
+                # Use PDF generation script from same directory (when installed, both are in scripts/)
+                script_dir = Path(__file__).parent.parent / 'scripts'
+                script_path = script_dir / 'generate_summary_page_reportlab.py'
+                
+                if not script_path.exists():
+                    raise RuntimeError(f"generate_summary_page_reportlab.py not found at {script_path}")
+                
                 cmd = [
-                    'generate_summary_page_reportlab.py',
+                    sys.executable, "-B", "-u",
+                    str(script_path),
                     '--form-data', str(form_data_file),
                     '--results', str(results_list_file),
                     '--output', str(summary_pdf)

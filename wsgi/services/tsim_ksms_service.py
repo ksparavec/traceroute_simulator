@@ -402,11 +402,10 @@ class TsimKsmsService:
                 with open(results_list_file, 'w') as f:
                     json.dump(results_list, f, indent=2)
                 
-                # Use existing PDF generation script
+                # Use installed PDF generation script
                 import subprocess
-                script_path = "/home/sparavec/git/traceroute-simulator/wsgi/scripts/generate_summary_page_reportlab.py"
                 cmd = [
-                    'python3', script_path,
+                    'generate_summary_page_reportlab.py',
                     '--form-data', str(form_data_file),
                     '--results', str(results_list_file),
                     '--output', str(summary_pdf)

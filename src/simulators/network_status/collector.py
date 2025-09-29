@@ -6,12 +6,12 @@ Coordinates parallel execution of namespace queries using thread pool
 executor and worker instances.
 """
 
+import asyncio
 import logging
 import os
 import re
 import subprocess
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError as FutureTimeout
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Any, Callable
 
@@ -41,9 +41,19 @@ class DataCollector:
         
         # Parallelization settings
         self.parallel_enabled = config.get('enabled', True)
-        self.max_workers = config.get('max_workers', 20)
         self.timeout_per_namespace = config.get('timeout_per_namespace', 5)
-        self.batch_size = config.get('batch_size', 50)
+        
+        # Auto-calculate max_concurrent based on file descriptor limits if not set
+        max_concurrent = config.get('max_concurrent', None)
+        if max_concurrent is None:
+            import resource
+            soft_limit, _ = resource.getrlimit(resource.RLIMIT_NOFILE)
+            # Use 80% of FD limit, accounting for 3 FDs per subprocess + 100 overhead
+            available_fds = int(soft_limit * 0.8) - 100
+            max_concurrent = max(1, available_fds // 3)  # Minimum 1, respect FD limits
+            
+        
+        self.max_concurrent = max_concurrent
         
         # Performance settings
         performance = config.get('performance', {})
@@ -66,7 +76,7 @@ class DataCollector:
         )
         
         logger.info(f"DataCollector initialized: parallel={self.parallel_enabled}, "
-                   f"workers={self.max_workers}, timeout={self.timeout_per_namespace}s")
+                   f"timeout={self.timeout_per_namespace}s, max_concurrent={self.max_concurrent}")
     
     def discover_namespaces(self) -> List[str]:
         """
@@ -84,7 +94,7 @@ class DataCollector:
                 shell=True,
                 capture_output=True,
                 text=True,
-                timeout=5
+                timeout=self.timeout_per_namespace
             )
             
             if result.returncode != 0:
@@ -109,7 +119,7 @@ class DataCollector:
             logger.error(f"Error discovering namespaces: {e}")
             return []
     
-    def collect_all_data(self, namespaces: List[str], 
+    async def collect_all_data(self, namespaces: List[str], 
                         data_types: Optional[List[str]] = None) -> Dict[str, Dict]:
         """
         Collect all requested data from namespaces in parallel.
@@ -131,9 +141,9 @@ class DataCollector:
         self.stats['namespaces_queried'] = len(namespaces)
         
         if self.parallel_enabled and len(namespaces) > 1:
-            results = self._collect_parallel(namespaces, data_types)
+            results = await self._collect_parallel(namespaces, data_types)
         else:
-            results = self._collect_serial(namespaces, data_types)
+            results = await self._collect_serial(namespaces, data_types)
         
         elapsed_time = time.time() - start_time
         self.stats['total_time'] = elapsed_time
@@ -144,7 +154,7 @@ class DataCollector:
         
         return results
     
-    def collect_specific(self, namespaces: List[str], data_type: str) -> Dict[str, Any]:
+    async def collect_specific(self, namespaces: List[str], data_type: str) -> Dict[str, Any]:
         """
         Collect specific data type from namespaces.
         
@@ -155,80 +165,82 @@ class DataCollector:
         Returns:
             Dictionary mapping namespace -> data
         """
-        results = self.collect_all_data(namespaces, [data_type])
+        results = await self.collect_all_data(namespaces, [data_type])
         return {ns: data.get(data_type, {}) for ns, data in results.items()}
     
-    def _collect_parallel(self, namespaces: List[str], 
+    async def _collect_parallel(self, namespaces: List[str], 
                          data_types: List[str]) -> Dict[str, Dict]:
-        """Collect data using parallel execution."""
+        """Collect data using parallel execution with concurrency limits."""
         results = {}
         
-        # Process in batches if needed
-        batches = [namespaces[i:i + self.batch_size] 
-                  for i in range(0, len(namespaces), self.batch_size)]
+        # Create semaphore for concurrency control if max_concurrent is set
+        semaphore = None
+        if self.max_concurrent:
+            semaphore = asyncio.Semaphore(self.max_concurrent)
         
-        for batch in batches:
-            batch_results = self._collect_batch_parallel(batch, data_types)
-            results.update(batch_results)
+        # Create wrapped tasks with semaphore
+        tasks = []
+        task_metadata = []
         
-        return results
-    
-    def _collect_batch_parallel(self, namespaces: List[str], 
-                                data_types: List[str]) -> Dict[str, Dict]:
-        """Collect data for a batch of namespaces in parallel."""
-        results = {}
-        futures = {}
-        
-        with ThreadPoolExecutor(max_workers=min(self.max_workers, len(namespaces))) as executor:
-            # Submit all tasks
-            for ns in namespaces:
-                ns_futures = {}
+        for ns in namespaces:
+            for data_type in data_types:
+                if data_type == 'interfaces':
+                    coro = self.worker.query_interfaces(ns)
+                elif data_type == 'routes':
+                    coro = self.worker.query_routes(ns)
+                elif data_type == 'rules':
+                    coro = self.worker.query_rules(ns)
+                elif data_type == 'iptables':
+                    coro = self.worker.query_iptables(ns)
+                elif data_type == 'ipsets':
+                    coro = self.worker.query_ipsets(ns)
+                else:
+                    continue
                 
-                for data_type in data_types:
-                    if data_type == 'interfaces':
-                        future = executor.submit(self.worker.query_interfaces, ns)
-                    elif data_type == 'routes':
-                        future = executor.submit(self.worker.query_routes, ns)
-                    elif data_type == 'rules':
-                        future = executor.submit(self.worker.query_rules, ns)
-                    elif data_type == 'iptables':
-                        future = executor.submit(self.worker.query_iptables, ns)
-                    elif data_type == 'ipsets':
-                        future = executor.submit(self.worker.query_ipsets, ns)
-                    else:
-                        continue
-                    
-                    ns_futures[data_type] = future
+                # Wrap with semaphore if available
+                if semaphore:
+                    task = self._limited_task(semaphore, coro)
+                else:
+                    task = coro
                 
-                futures[ns] = ns_futures
+                tasks.append(task)
+                task_metadata.append((ns, data_type))
+        
+        # Execute all tasks concurrently (timeout handled at worker level)
+        try:
+            task_results = await asyncio.gather(*tasks, return_exceptions=True)
+        except Exception as e:
+            logger.error(f"Error in parallel collection: {e}")
+            return {}
+        
+        # Process results
+        for i, result in enumerate(task_results):
+            ns, data_type = task_metadata[i]
             
-            # Collect results with timeout
-            for ns, ns_futures in futures.items():
-                ns_results = {}
-                
-                for data_type, future in ns_futures.items():
-                    try:
-                        # Individual timeout per query
-                        result = future.result(timeout=self.timeout_per_namespace)
-                        ns_results[data_type] = result
-                        self.stats['successful_queries'] += 1
-                        
-                    except FutureTimeout:
-                        logger.warning(f"Timeout collecting {data_type} for {ns}")
-                        ns_results[data_type] = {'error': 'Query timeout'}
-                        self.stats['timeouts'] += 1
-                        self.stats['failed_queries'] += 1
-                        
-                    except Exception as e:
-                        logger.error(f"Error collecting {data_type} for {ns}: {e}")
-                        ns_results[data_type] = {'error': str(e)}
-                        self.stats['failed_queries'] += 1
-                
-                results[ns] = ns_results
+            if ns not in results:
+                results[ns] = {}
+            
+            if isinstance(result, asyncio.TimeoutError):
+                logger.warning(f"Timeout collecting {data_type} for {ns}")
+                results[ns][data_type] = {'error': 'Query timeout'}
+                self.stats['timeouts'] += 1
+                self.stats['failed_queries'] += 1
+            elif isinstance(result, Exception):
+                logger.error(f"Error collecting {data_type} for {ns}: {result}")
+                results[ns][data_type] = {'error': str(result)}
+                self.stats['failed_queries'] += 1
+            else:
+                results[ns][data_type] = result
+                self.stats['successful_queries'] += 1
         
         return results
     
-    def _collect_serial(self, namespaces: List[str], 
+    async def _limited_task(self, semaphore: asyncio.Semaphore, coro):
+        """Execute a coroutine with semaphore limiting."""
+        async with semaphore:
+            return await coro
+    
+    async def _collect_serial(self, namespaces: List[str], 
                        data_types: List[str]) -> Dict[str, Dict]:
         """Collect data using serial execution (fallback)."""
         results = {}
@@ -239,15 +251,15 @@ class DataCollector:
             for data_type in data_types:
                 try:
                     if data_type == 'interfaces':
-                        result = self.worker.query_interfaces(ns)
+                        result = await self.worker.query_interfaces(ns)
                     elif data_type == 'routes':
-                        result = self.worker.query_routes(ns)
+                        result = await self.worker.query_routes(ns)
                     elif data_type == 'rules':
-                        result = self.worker.query_rules(ns)
+                        result = await self.worker.query_rules(ns)
                     elif data_type == 'iptables':
-                        result = self.worker.query_iptables(ns)
+                        result = await self.worker.query_iptables(ns)
                     elif data_type == 'ipsets':
-                        result = self.worker.query_ipsets(ns)
+                        result = await self.worker.query_ipsets(ns)
                     else:
                         continue
                     

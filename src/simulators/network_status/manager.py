@@ -6,6 +6,7 @@ Orchestrates data collection, caching, and formatting to provide
 a unified interface for network namespace status queries.
 """
 
+import asyncio
 import fnmatch
 import logging
 import os
@@ -46,21 +47,21 @@ class NetworkStatusManager:
         # Load configuration
         self.config = NetworkStatusConfig(config_path)
         
-        # Initialize components
+        # Initialize cache first
         self.cache = CacheManager(self.config.cache_config)
         
-        self.collector = DataCollector(
-            config=self.config.parallel_config
-        )
-        
-        self.formatter = DataFormatter(
-            config=self.config.formatting_config
-        )
-        
-        # Track known entities
+        # Track known entities (needed for calculating max_concurrent)
         self.known_routers: Set[str] = set()
         self.known_hosts: Set[str] = set()
         self._load_known_entities()
+        
+        # Initialize collector  
+        self.collector = DataCollector(config=self.config.parallel_config)
+        
+        # Initialize formatter
+        self.formatter = DataFormatter(
+            config=self.config.formatting_config
+        )
         
         # Statistics
         self.stats = {
@@ -70,7 +71,8 @@ class NetworkStatusManager:
         
         logger.info(f"NetworkStatusManager initialized: "
                    f"cache={self.config.cache_enabled}, "
-                   f"parallel={self.config.parallel_enabled}")
+                   f"parallel={self.config.parallel_enabled}, "
+                   f"max_concurrent={self.collector.max_concurrent}")
     
     def _setup_logging(self, verbose: int):
         """Configure logging based on verbosity level."""
@@ -266,25 +268,46 @@ class NetworkStatusManager:
         
         # Collect missing data using fine-grained plan
         if ns_fetch_plan:
-            # Collect only the missing data types for each namespace
-            for ns, missing_types in ns_fetch_plan.items():
-                if missing_types:
-                    fresh_data = self.collector.collect_all_data([ns], missing_types)
-                    
-                    # Cache the fresh data
-                    if use_cache and self.config.cache_enabled:
-                        for ns_key, ns_data in fresh_data.items():
-                            for dtype, data in ns_data.items():
-                                if not isinstance(data, dict) or 'error' not in data:
-                                    self.cache.set_namespace_data(ns_key, dtype, data)
-                    
-                    # Merge fresh data with existing cached data
-                    if ns in result:
-                        result[ns].update(fresh_data.get(ns, {}))
-                    else:
-                        result.update(fresh_data)
+            # Collect all missing data in parallel using async
+            fresh_data = asyncio.run(self._collect_missing_data_async(ns_fetch_plan))
+            
+            # Cache the fresh data
+            if use_cache and self.config.cache_enabled:
+                for ns_key, ns_data in fresh_data.items():
+                    for dtype, data in ns_data.items():
+                        if not isinstance(data, dict) or 'error' not in data:
+                            self.cache.set_namespace_data(ns_key, dtype, data)
+            
+            # Merge fresh data with existing cached data
+            for ns, ns_data in fresh_data.items():
+                if ns in result:
+                    result[ns].update(ns_data)
+                else:
+                    result[ns] = ns_data
         
         return result
+    
+    async def _collect_missing_data_async(self, ns_fetch_plan: Dict[str, List[str]]) -> Dict[str, Dict]:
+        """Collect missing data for multiple namespaces in parallel."""
+        # Flatten the plan to collect everything in one async call
+        all_namespaces = list(ns_fetch_plan.keys())
+        all_data_types = set()
+        for data_types in ns_fetch_plan.values():
+            all_data_types.update(data_types)
+        
+        # Collect all data types for all namespaces
+        all_data = await self.collector.collect_all_data(all_namespaces, list(all_data_types))
+        
+        # Filter results to only include the requested data types per namespace
+        filtered_data = {}
+        for ns, requested_types in ns_fetch_plan.items():
+            if ns in all_data:
+                filtered_data[ns] = {
+                    dtype: data for dtype, data in all_data[ns].items() 
+                    if dtype in requested_types
+                }
+        
+        return filtered_data
     
     def _format_no_namespaces(self, output_format: str) -> str:
         """Format output when no namespaces found."""
@@ -334,7 +357,7 @@ class NetworkStatusManager:
                      if enabled]
         
         # Collect and cache data
-        data = self.collector.collect_all_data(target, data_types)
+        data = asyncio.run(self.collector.collect_all_data(target, data_types))
         
         for ns, ns_data in data.items():
             for dtype, type_data in ns_data.items():

@@ -157,9 +157,7 @@ network_status:
   # Parallel execution settings
   parallelization:
     enabled: true
-    max_workers: 20  # Thread pool size
     timeout_per_namespace: 5  # Seconds per namespace query
-    batch_size: 50  # Max namespaces per batch
     
   # Data collection control
   collection:

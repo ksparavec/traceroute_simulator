@@ -30,9 +30,8 @@ class NetworkStatusConfig:
         },
         'parallelization': {
             'enabled': True,
-            'max_workers': 20,
             'timeout_per_namespace': 5,
-            'batch_size': 50
+            'max_concurrent': None  # Auto-calculated based on system limits
         },
         'collection': {
             'interfaces': True,
@@ -73,7 +72,7 @@ class NetworkStatusConfig:
         self._apply_env_overrides()
         
         logger.debug(f"Network status config loaded: cache={self.cache_enabled}, "
-                    f"parallel={self.parallel_enabled}, workers={self.max_workers}")
+                    f"parallel={self.parallel_enabled}")
     
     def _load_from_file(self, config_path: str):
         """Load configuration from specified file."""
@@ -146,9 +145,9 @@ class NetworkStatusConfig:
             'TSIM_NETWORK_STATUS_CACHE_PATH': ('cache', 'base_path', str),
             'TSIM_NETWORK_STATUS_CACHE_EXPIRATION': ('cache', 'expiration_seconds', int),
             'TSIM_NETWORK_STATUS_CACHE_BACKEND': ('cache', 'backend', str),
-            'TSIM_NETWORK_STATUS_MAX_WORKERS': ('parallelization', 'max_workers', int),
             'TSIM_NETWORK_STATUS_TIMEOUT': ('parallelization', 'timeout_per_namespace', int),
             'TSIM_NETWORK_STATUS_PARALLEL_ENABLED': ('parallelization', 'enabled', self._parse_bool),
+            'TSIM_NETWORK_STATUS_MAX_CONCURRENT': ('parallelization', 'max_concurrent', int),
         }
         
         for env_var, (section, key, converter) in env_mappings.items():
@@ -195,15 +194,20 @@ class NetworkStatusConfig:
         """Check if parallelization is enabled."""
         return self.config['parallelization']['enabled']
     
-    @property
-    def max_workers(self) -> int:
-        """Get maximum number of worker threads."""
-        return self.config['parallelization']['max_workers']
     
     @property
     def namespace_timeout(self) -> int:
         """Get timeout per namespace in seconds."""
         return self.config['parallelization']['timeout_per_namespace']
+    
+    @property
+    def max_concurrent(self) -> Optional[int]:
+        """Get maximum concurrent subprocess limit."""
+        return self.config['parallelization'].get('max_concurrent', None)
+    
+    def set_max_concurrent(self, value: int):
+        """Set maximum concurrent subprocess limit."""
+        self.config['parallelization']['max_concurrent'] = value
     
     @property
     def collection_config(self) -> Dict[str, bool]:

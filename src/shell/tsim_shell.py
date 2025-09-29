@@ -99,11 +99,18 @@ class TracerouteSimulatorShell(cmd2.Cmd):
         
         # --- Mode-specific configuration ---
         if self.is_interactive:
+            # Get version from package
+            try:
+                from .. import __version__
+                version = __version__
+            except ImportError:
+                version = "1.0"  # Fallback
+            
             # Shell configuration for interactive mode
             if self.quick_mode:
                 self.intro = f"""{Fore.CYAN}
 ╔═══════════════════════════════════════════════════════════════════════════════════╗
-║                        Traceroute Simulator Shell v1.0 (Quick Mode)               ║
+║                      Traceroute Simulator Shell v{version} (Quick Mode)               ║
 ║                    Interactive Network Simulation Interface                       ║
 ╚═══════════════════════════════════════════════════════════════════════════════════╝
 {Style.RESET_ALL}
@@ -114,7 +121,7 @@ Type 'set' to see all variables.
             else:
                 self.intro = f"""{Fore.CYAN}
 ╔═══════════════════════════════════════════════════════════════════════════════════╗
-║                        Traceroute Simulator Shell v1.0                            ║
+║                        Traceroute Simulator Shell v{version}                          ║
 ║                    Interactive Network Simulation Interface                       ║
 ╚═══════════════════════════════════════════════════════════════════════════════════╝
 {Style.RESET_ALL}
@@ -162,6 +169,10 @@ Type 'set' to see all variables.
         if self.is_interactive and intro:
             self.poutput(intro)
             
+        # Check and warn about file descriptor limits (before loading .tsimrc)
+        if self.is_interactive and not self.quick_mode:
+            self._check_fd_limits()
+            
         # Load .tsimrc after intro has been displayed (skip in quick mode)
         if self.is_interactive and not self.quick_mode:
             self._load_tsimrc()
@@ -170,6 +181,56 @@ Type 'set' to see all variables.
             
         # Now start the command loop without intro (we already displayed it)
         super().cmdloop(intro="")
+    
+    def _check_fd_limits(self):
+        """Check file descriptor limits and warn if insufficient for network status parallelism."""
+        try:
+            import resource
+            import json
+            from pathlib import Path
+            
+            # Get current FD limit
+            soft_limit, _ = resource.getrlimit(resource.RLIMIT_NOFILE)
+            
+            # Get router count from registry
+            router_count = 0
+            router_registry_file = Path('/dev/shm/tsim/router_registry.json')
+            if router_registry_file.exists():
+                try:
+                    with open(router_registry_file, 'r') as f:
+                        router_registry = json.load(f)
+                        router_count = len(router_registry)
+                except (json.JSONDecodeError, IOError):
+                    # Fallback estimate if can't read registry
+                    router_count = 100
+            else:
+                # Fallback estimate if no registry
+                router_count = 100
+            
+            # Calculate requirements (router_count × 5 data types × 3 FDs per subprocess + overhead)
+            data_types = 5
+            fds_per_subprocess = 3
+            system_overhead = 100
+            total_fds_needed = (router_count * data_types * fds_per_subprocess) + system_overhead
+            
+            # Calculate what we can actually handle
+            available_fds = int(soft_limit * 0.8) - system_overhead
+            max_concurrent = max(1, available_fds // fds_per_subprocess)
+            optimal_concurrent = router_count * data_types
+            
+            # Show warning if we can't achieve full parallelism
+            if max_concurrent < optimal_concurrent:
+                self.poutput(f"{Fore.YELLOW}[WARNING] File descriptor limit may affect network status performance!{Style.RESET_ALL}")
+                self.poutput(f"  Current limit: {soft_limit} file descriptors")
+                self.poutput(f"  Detected routers: {router_count}")
+                self.poutput(f"  Optimal parallelism needs: {total_fds_needed} FDs")
+                self.poutput(f"  Current parallelism limited to: {max_concurrent} concurrent operations")
+                self.poutput(f"  To improve performance: {Fore.GREEN}ulimit -n {total_fds_needed + 500}{Style.RESET_ALL}")
+                self.poutput("")
+                
+        except Exception:
+            # Silently ignore errors in FD limit checking - it's not critical
+            pass
     
     def _apply_history_length(self):
         """Apply the TSIM_HISTORY_LENGTH setting to the cmd2 history."""

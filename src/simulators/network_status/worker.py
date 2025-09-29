@@ -6,6 +6,7 @@ Handles individual namespace command execution with timeout
 and error handling.
 """
 
+import asyncio
 import json
 import logging
 import os
@@ -39,9 +40,9 @@ class NamespaceQueryWorker:
         self.use_json = use_json
         self.needs_sudo = os.geteuid() != 0
     
-    def execute_command(self, command: str, namespace: Optional[str] = None) -> Tuple[int, str, str]:
+    async def execute_command(self, command: str, namespace: Optional[str] = None) -> Tuple[int, str, str]:
         """
-        Execute a command optionally in a namespace.
+        Execute a command optionally in a namespace asynchronously.
         
         Args:
             command: Command to execute
@@ -65,23 +66,37 @@ class NamespaceQueryWorker:
         logger.debug(f"Executing: {full_command}")
         
         try:
-            result = subprocess.run(
+            # Use asyncio subprocess for true parallel execution
+            proc = await asyncio.create_subprocess_shell(
                 full_command,
-                shell=True,
-                capture_output=True,
-                text=True,
-                timeout=self.timeout
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
             )
-            return result.returncode, result.stdout, result.stderr
             
-        except subprocess.TimeoutExpired:
+            stdout_bytes, stderr_bytes = await asyncio.wait_for(
+                proc.communicate(), timeout=self.timeout
+            )
+            
+            stdout = stdout_bytes.decode('utf-8', errors='replace')
+            stderr = stderr_bytes.decode('utf-8', errors='replace')
+            
+            return proc.returncode, stdout, stderr
+            
+        except asyncio.TimeoutError:
             logger.warning(f"Command timeout for namespace {namespace}: {command}")
+            # Kill the process if it's still running
+            if 'proc' in locals():
+                try:
+                    proc.kill()
+                    await proc.wait()
+                except:
+                    pass
             raise TimeoutError(f"Command timeout after {self.timeout}s")
         except Exception as e:
             logger.error(f"Command execution failed: {e}")
             raise CollectionError(f"Failed to execute command: {e}")
     
-    def query_interfaces(self, namespace: str) -> Dict[str, Any]:
+    async def query_interfaces(self, namespace: str) -> Dict[str, Any]:
         """
         Query interface information for a namespace.
         
@@ -94,7 +109,7 @@ class NamespaceQueryWorker:
         try:
             if self.use_json:
                 # Try JSON output first
-                returncode, stdout, stderr = self.execute_command("ip -j addr show", namespace)
+                returncode, stdout, stderr = await self.execute_command("ip -j addr show", namespace)
                 
                 if returncode == 0 and stdout:
                     try:
@@ -104,7 +119,7 @@ class NamespaceQueryWorker:
                         logger.debug(f"Failed to parse JSON output for {namespace}, falling back to text")
             
             # Fallback to text parsing
-            returncode, stdout, stderr = self.execute_command("ip addr show", namespace)
+            returncode, stdout, stderr = await self.execute_command("ip addr show", namespace)
             
             if returncode != 0:
                 return {'error': f"Command failed: {stderr}"}
@@ -117,7 +132,7 @@ class NamespaceQueryWorker:
             logger.error(f"Failed to query interfaces for {namespace}: {e}")
             return {'error': str(e)}
     
-    def query_routes(self, namespace: str) -> Dict[str, Any]:
+    async def query_routes(self, namespace: str) -> Dict[str, Any]:
         """
         Query routing tables for a namespace.
         
@@ -131,7 +146,7 @@ class NamespaceQueryWorker:
             routes = {}
             
             # First discover routing tables from policy rules
-            tables = self._discover_routing_tables(namespace)
+            tables = await self._discover_routing_tables(namespace)
             
             for table_id, table_name in tables:
                 if self.use_json:
@@ -140,7 +155,7 @@ class NamespaceQueryWorker:
                     else:
                         cmd = f"ip -j route show table {table_id}"
                     
-                    returncode, stdout, stderr = self.execute_command(cmd, namespace)
+                    returncode, stdout, stderr = await self.execute_command(cmd, namespace)
                     
                     if returncode == 0 and stdout:
                         try:
@@ -156,7 +171,7 @@ class NamespaceQueryWorker:
                 else:
                     cmd = f"ip route show table {table_id}"
                 
-                returncode, stdout, stderr = self.execute_command(cmd, namespace)
+                returncode, stdout, stderr = await self.execute_command(cmd, namespace)
                 
                 if returncode == 0:
                     routes[table_name] = self._parse_text_routes(stdout)
@@ -171,7 +186,7 @@ class NamespaceQueryWorker:
             logger.error(f"Failed to query routes for {namespace}: {e}")
             return {'error': str(e)}
     
-    def query_rules(self, namespace: str) -> List[Dict[str, Any]]:
+    async def query_rules(self, namespace: str) -> List[Dict[str, Any]]:
         """
         Query policy routing rules for a namespace.
         
@@ -183,7 +198,7 @@ class NamespaceQueryWorker:
         """
         try:
             if self.use_json:
-                returncode, stdout, stderr = self.execute_command("ip -j rule show", namespace)
+                returncode, stdout, stderr = await self.execute_command("ip -j rule show", namespace)
                 
                 if returncode == 0 and stdout:
                     try:
@@ -192,7 +207,7 @@ class NamespaceQueryWorker:
                         pass
             
             # Fallback to text parsing
-            returncode, stdout, stderr = self.execute_command("ip rule show", namespace)
+            returncode, stdout, stderr = await self.execute_command("ip rule show", namespace)
             
             if returncode != 0:
                 return [{'error': f"Command failed: {stderr}"}]
@@ -205,7 +220,7 @@ class NamespaceQueryWorker:
             logger.error(f"Failed to query rules for {namespace}: {e}")
             return [{'error': str(e)}]
     
-    def query_iptables(self, namespace: str) -> Dict[str, Any]:
+    async def query_iptables(self, namespace: str) -> Dict[str, Any]:
         """
         Query iptables configuration for a namespace.
         
@@ -222,7 +237,7 @@ class NamespaceQueryWorker:
             for table in tables:
                 # Use iptables-save for structured output with counters
                 cmd = f"iptables-save -t {table} -c"
-                returncode, stdout, stderr = self.execute_command(cmd, namespace)
+                returncode, stdout, stderr = await self.execute_command(cmd, namespace)
                 
                 if returncode == 0:
                     iptables_data[table] = self._parse_iptables_save(stdout)
@@ -237,7 +252,7 @@ class NamespaceQueryWorker:
             logger.error(f"Failed to query iptables for {namespace}: {e}")
             return {'error': str(e)}
     
-    def query_ipsets(self, namespace: str) -> Dict[str, Any]:
+    async def query_ipsets(self, namespace: str) -> Dict[str, Any]:
         """
         Query ipset configuration for a namespace.
         
@@ -249,7 +264,7 @@ class NamespaceQueryWorker:
         """
         try:
             # Use single ipset save command to get all ipsets at once
-            returncode, stdout, stderr = self.execute_command("ipset save", namespace)
+            returncode, stdout, stderr = await self.execute_command("ipset save", namespace)
             
             if returncode != 0:
                 # No ipsets or command failed
@@ -263,7 +278,7 @@ class NamespaceQueryWorker:
             logger.error(f"Failed to query ipsets for {namespace}: {e}")
             return {'error': str(e)}
     
-    def query_all(self, namespace: str) -> Dict[str, Any]:
+    async def query_all(self, namespace: str) -> Dict[str, Any]:
         """
         Query all information for a namespace.
         
@@ -275,21 +290,21 @@ class NamespaceQueryWorker:
         """
         return {
             'namespace': namespace,
-            'interfaces': self.query_interfaces(namespace),
-            'routes': self.query_routes(namespace),
-            'rules': self.query_rules(namespace),
-            'iptables': self.query_iptables(namespace),
-            'ipsets': self.query_ipsets(namespace)
+            'interfaces': await self.query_interfaces(namespace),
+            'routes': await self.query_routes(namespace),
+            'rules': await self.query_rules(namespace),
+            'iptables': await self.query_iptables(namespace),
+            'ipsets': await self.query_ipsets(namespace)
         }
     
     # Helper methods for parsing text output
     
-    def _discover_routing_tables(self, namespace: str) -> List[Tuple[str, str]]:
+    async def _discover_routing_tables(self, namespace: str) -> List[Tuple[str, str]]:
         """Discover routing tables from policy rules."""
         discovered_tables = []
         seen_tables = set()
         
-        returncode, stdout, stderr = self.execute_command("ip rule show", namespace)
+        returncode, stdout, stderr = await self.execute_command("ip rule show", namespace)
         
         if returncode != 0:
             # Default to main table only

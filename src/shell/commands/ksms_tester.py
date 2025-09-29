@@ -75,10 +75,10 @@ class KsmsTesterCommand(BaseCommandHandler):
             description='Kernel-space multi-service tester (fast YES/NO per router)'
         )
         parser.add_argument('-s', '--source', required=True,
-                            choices_provider=self.ip_choices,
+                            # choices_provider=self.ip_choices,  # Not supported by standard argparse
                             help='Source IP address')
         parser.add_argument('-d', '--destination', required=True,
-                            choices_provider=self.ip_choices,
+                            # choices_provider=self.ip_choices,  # Not supported by standard argparse
                             help='Destination IP address')
         parser.add_argument('-P', '--ports', required=True,
                             help='Service spec (e.g., "80,443/tcp,53/udp,22-25")')

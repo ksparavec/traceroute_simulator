@@ -55,6 +55,7 @@ packages = [
     "tsim.analyzers", 
     "tsim.executors",
     "tsim.simulators",
+    "tsim.simulators.network_status",
     "tsim.utils",
     "tsim.shell",
     "tsim.shell.commands",
@@ -69,6 +70,7 @@ packages = [
 "tsim.analyzers" = "src/analyzers"
 "tsim.executors" = "src/executors"
 "tsim.simulators" = "src/simulators"
+"tsim.simulators.network_status" = "src/simulators/network_status"
 "tsim.utils" = "src/utils"
 "tsim.shell" = "src/shell"
 "tsim.shell.commands" = "src/shell/commands"

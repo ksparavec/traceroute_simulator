@@ -93,6 +93,10 @@ class TracerouteSimulatorShell(cmd2.Cmd):
         # Initialize TSIM_HISTORY_LENGTH variable from what was already set
         self.variable_manager.set_variable('TSIM_HISTORY_LENGTH', str(self._configured_history_length))
         
+        # Initialize TSIM_MAX_HISTORY_ITEM_SIZE with default value (1024 bytes = 1KB)
+        # Set to 0 to disable the limit
+        self.variable_manager.set_variable('TSIM_MAX_HISTORY_ITEM_SIZE', '1024')
+        
         # --- Mode-specific configuration ---
         if self.is_interactive:
             # Shell configuration for interactive mode
@@ -636,101 +640,16 @@ Type 'set' to see all variables.
     
     def _initialize_history(self, persistent_history_file=None):
         """
-        Override cmd2's history initialization to respect our custom history limit
-        and filter out excessively large history items.
+        Override cmd2's history initialization to respect our custom history limit.
         This is called during shell initialization.
         """
-        import lzma
-        import json
-        from cmd2.history import History
-        
         # Set our custom persistent history length before cmd2 loads history
         # This ensures cmd2 loads the full history up to our limit
         if hasattr(self, '_configured_history_length'):
             self._persistent_history_length = self._configured_history_length
         
-        # Initialize empty history first
-        self.history = History()
-        
-        # Maximum size for individual history items (1KB)
-        MAX_HISTORY_ITEM_SIZE = 1024
-        
-        # Handle persistent history file ourselves to filter large items
-        if persistent_history_file and self.is_interactive:
-            hist_file = os.path.abspath(os.path.expanduser(persistent_history_file))
-            self.persistent_history_file = hist_file
-            
-            # Check if file exists and is not a directory
-            if os.path.exists(hist_file) and not os.path.isdir(hist_file):
-                try:
-                    # Read the compressed history file
-                    with open(hist_file, 'rb') as fobj:
-                        compressed_bytes = fobj.read()
-                    
-                    if compressed_bytes:
-                        # Decompress
-                        try:
-                            history_json = lzma.decompress(compressed_bytes).decode(encoding='utf-8')
-                            history_data = json.loads(history_json)
-                            
-                            # Filter history items by size
-                            if isinstance(history_data, dict) and 'history_items' in history_data:
-                                filtered_items = []
-                                skipped_count = 0
-                                
-                                for item in history_data['history_items']:
-                                    # Check the size of the raw command
-                                    if isinstance(item, dict) and 'statement' in item:
-                                        stmt = item['statement']
-                                        if isinstance(stmt, dict) and 'raw' in stmt:
-                                            raw_cmd = stmt['raw']
-                                            if len(raw_cmd) <= MAX_HISTORY_ITEM_SIZE:
-                                                filtered_items.append(item)
-                                            else:
-                                                skipped_count += 1
-                                        else:
-                                            # Keep items without 'raw' field
-                                            filtered_items.append(item)
-                                    else:
-                                        # Keep items without proper structure
-                                        filtered_items.append(item)
-                                
-                                # Recreate history with filtered items
-                                if skipped_count > 0:
-                                    self.poutput(f"{Fore.YELLOW}Note: Skipped {skipped_count} oversized history items{Style.RESET_ALL}")
-                                
-                                # Create new history data with filtered items
-                                filtered_history_data = {
-                                    'history_version': history_data.get('history_version', '1.0.0'),
-                                    'history_items': filtered_items
-                                }
-                                
-                                # Load the filtered history
-                                filtered_json = json.dumps(filtered_history_data)
-                                self.history = History.from_json(filtered_json)
-                            else:
-                                # Try to load as-is if structure is different
-                                self.history = History.from_json(history_json)
-                                
-                        except (lzma.LZMAError, json.JSONDecodeError, KeyError, ValueError) as ex:
-                            # If there's an error, start with empty history
-                            self.poutput(f"{Fore.YELLOW}Warning: Could not load history: {ex}{Style.RESET_ALL}")
-                            self.history = History()
-                        
-                except OSError as ex:
-                    # Can't read file, start with empty history
-                    self.poutput(f"{Fore.YELLOW}Warning: Cannot read history file: {ex}{Style.RESET_ALL}")
-            
-            # Register function to save history on exit
-            import atexit
-            atexit.register(self._persist_history)
-            
-            # Start a new session in history
-            if hasattr(self.history, 'start_session'):
-                self.history.start_session()
-        else:
-            # No persistent history file
-            self.persistent_history_file = None
+        # Now let cmd2 initialize history with our custom limit
+        super()._initialize_history(persistent_history_file)
     
     def _persist_history(self) -> None:
         """
@@ -876,6 +795,23 @@ Type 'set' to see all variables.
         
         # Initialize return value
         self.variable_manager.set_variable('TSIM_RETURN_VALUE', '0')
+        
+        # Check command size and prevent oversized commands from being added to history
+        # Get configurable max size from TSIM_MAX_HISTORY_ITEM_SIZE variable (default 1024 bytes)
+        max_size_str = self.variable_manager.get_variable('TSIM_MAX_HISTORY_ITEM_SIZE')
+        if max_size_str is None:
+            max_history_item_size = 1024  # Default to 1KB
+        else:
+            try:
+                max_history_item_size = int(max_size_str)
+            except (ValueError, TypeError):
+                max_history_item_size = 1024  # Default to 1KB if invalid value
+        
+        if add_to_history and max_history_item_size > 0 and len(line) > max_history_item_size:
+            # Don't add oversized commands to history
+            add_to_history = False
+            if self.is_interactive:
+                self.poutput(f"{Fore.YELLOW}Note: Command too large ({len(line)} bytes > {max_history_item_size} limit), not added to history{Style.RESET_ALL}")
         
         # Start timing the command execution
         start_time = time.time()
@@ -1044,6 +980,7 @@ Type 'set' to see all variables.
             from .commands.completion import CompletionCommands
             from .commands.trace import TraceCommands
             from .commands.nettest import NetTestCommands
+            from .commands.ksms_tester import KsmsTesterCommand
             
             self.facts_handler = FactsCommands(self)
             self.network_handler = NetworkCommands(self)
@@ -1052,6 +989,7 @@ Type 'set' to see all variables.
             self.completion_handler = CompletionCommands(self)
             self.trace_handler = TraceCommands(self)
             self.nettest_handler = NetTestCommands(self)
+            self.ksms_tester_handler = KsmsTesterCommand(self)
 
         except Exception as e:
             import traceback
@@ -1062,8 +1000,6 @@ Type 'set' to see all variables.
             else:
                 self.poutput(f"{Fore.YELLOW}Run tsimsh with -v for verbose error details{Style.RESET_ALL}")
             # Continue with basic shell functionality
-        # Defer ksms_tester handler import until first use to avoid impacting startup
-        self.ksms_tester_handler = None
     
     def _setup_completion(self):
         """Setup tab completion for commands."""
@@ -1243,9 +1179,6 @@ Type 'set' to see all variables.
     def do_ksms_tester(self, args):
         """Kernel-space multi-service tester (fast YES/NO per router)."""
         try:
-            if self.ksms_tester_handler is None:
-                from .commands.ksms_tester import KsmsTesterCommand
-                self.ksms_tester_handler = KsmsTesterCommand(self)
             ret = self.ksms_tester_handler.handle_command(args)
             self.variable_manager.set_variable('TSIM_RETURN_VALUE', str(ret if ret is not None else 0))
             return None
@@ -1256,9 +1189,6 @@ Type 'set' to see all variables.
 
     def complete_ksms_tester(self, text, line, begidx, endidx):
         try:
-            if self.ksms_tester_handler is None:
-                from .commands.ksms_tester import KsmsTesterCommand
-                self.ksms_tester_handler = KsmsTesterCommand(self)
             return self.ksms_tester_handler.complete_command(text, line, begidx, endidx)
         except Exception:
             return []
@@ -1571,6 +1501,9 @@ Type 'set' to see all variables.
         self.poutput("  --limit PATTERN       Limit to specific namespaces (glob pattern)")
         self.poutput("  -j, --json            Output in JSON format")
         self.poutput("  -v, --verbose         Increase verbosity")
+        self.poutput("  --no-cache            Bypass cache and get fresh data")
+        self.poutput("  --invalidate-cache    Clear the cache")
+        self.poutput("  --cache-stats         Show cache statistics")
         
         self.poutput("\nCLEAN OPTIONS (batch mode):")
         self.poutput("  -v, --verbose         Increase verbosity")
@@ -1604,6 +1537,15 @@ Type 'set' to see all variables.
         
         self.poutput("\n  Show interfaces for specific router:")
         self.poutput("    network status interfaces --limit hq-*")
+        
+        self.poutput("\n  Get fresh data bypassing cache:")
+        self.poutput("    network status --no-cache")
+        
+        self.poutput("\n  Clear cache and show status:")
+        self.poutput("    network status --invalidate-cache")
+        
+        self.poutput("\n  Show cache statistics:")
+        self.poutput("    network status --cache-stats")
         
         self.poutput("\n  Test connectivity:")
         self.poutput("    network test --source 10.1.1.1 --destination 10.2.1.1")

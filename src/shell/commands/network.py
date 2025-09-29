@@ -149,7 +149,7 @@ class NetworkCommands(BaseCommandHandler):
                 # Complete function names if no -- flag yet
                 functions = ['interfaces', 'routes', 'rules', 'iptables', 'ipsets', 'all', 'summary']
                 return [f for f in functions if f.startswith(text)]
-            options = ['--limit', '-l', '--json', '-j', '--verbose', '-v']
+            options = ['--limit', '-l', '--json', '-j', '--table', '-t', '--verbose', '-v', '--no-cache', '--invalidate-cache', '--cache-stats']
         elif subcommand == 'clean':
             options = ['--force', '-f', '--verbose', '-v']
         elif subcommand == 'clean-serial':
@@ -280,8 +280,16 @@ class NetworkCommands(BaseCommandHandler):
                           help='Information to display')
         parser.add_argument('--json', '-j', action='store_true',
                           help='Output in JSON format')
+        parser.add_argument('--table', '-t', action='store_true',
+                          help='Output in table format (summary only)')
         parser.add_argument('--verbose', '-v', action='count', default=0,
                           help='Increase verbosity (-v, -vv, -vvv)')
+        parser.add_argument('--no-cache', action='store_true',
+                          help='Bypass cache and get fresh data')
+        parser.add_argument('--invalidate-cache', action='store_true',
+                          help='Clear the cache')
+        parser.add_argument('--cache-stats', action='store_true',
+                          help='Show cache statistics')
         
         try:
             parsed_args = parser.parse_args(args)
@@ -292,15 +300,15 @@ class NetworkCommands(BaseCommandHandler):
         self.current_args = parsed_args
         
         # Only show info message if not using JSON output
-        if not parsed_args.json:
+        if not parsed_args.json and not parsed_args.cache_stats and not parsed_args.invalidate_cache:
             self.info("Checking network namespace status...")
         
-        # Run the network status script
-        script_path = self.get_script_path('src/simulators/network_namespace_status.py')
+        # Use the isolated runner to avoid readline issues
+        script_path = self.get_script_path('src/simulators/network_status_command.py')
         if not self.check_script_exists(script_path):
             return 1
         
-        # Build command arguments - the script expects function as positional argument
+        # Build command arguments
         cmd_args = [parsed_args.function]
         
         if parsed_args.limit:
@@ -309,10 +317,22 @@ class NetworkCommands(BaseCommandHandler):
         if parsed_args.json:
             cmd_args.append('--json')
         
+        if parsed_args.table:
+            cmd_args.append('--table')
+        
         if parsed_args.verbose:
             cmd_args.append('-' + 'v' * parsed_args.verbose)
         
-        # Run script (sudo will be added by script for specific commands)
+        if parsed_args.no_cache:
+            cmd_args.append('--no-cache')
+        
+        if parsed_args.invalidate_cache:
+            cmd_args.append('--invalidate-cache')
+        
+        if parsed_args.cache_stats:
+            cmd_args.append('--cache-stats')
+        
+        # Run the isolated script
         returncode = self.run_script_with_output(script_path, cmd_args, use_sudo=False)
         
         return returncode

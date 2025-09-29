@@ -142,3 +142,42 @@ ssh_controller:
     UserKnownHostsFile: "~/.ssh/known_hosts" # Use standard known hosts file
     PasswordAuthentication: "no"
 
+# Network status command configuration
+network_status:
+  # Cache configuration for performance
+  cache:
+    enabled: true
+    backend: shared_memory  # Options: shared_memory, redis, sqlite
+    base_path: /dev/shm/tsim/network_status_cache  # For shared_memory backend
+    expiration_seconds: 3600  # 1 hour default
+    max_size_mb: 100
+    compression: false
+    cleanup_interval: 7200  # Clean old entries every 2 hours
+    
+  # Parallel execution settings
+  parallelization:
+    enabled: true
+    max_workers: 20  # Thread pool size
+    timeout_per_namespace: 5  # Seconds per namespace query
+    batch_size: 50  # Max namespaces per batch
+    
+  # Data collection control
+  collection:
+    interfaces: true
+    routes: true
+    rules: true
+    iptables: true
+    ipsets: true
+    
+  # Output formatting options
+  formatting:
+    translate_interface_names: true  # Convert v001 to original names
+    show_original_names: true  # Display both short and original names
+    json_indent: 2
+    
+  # Performance tuning
+  performance:
+    use_json_commands: true  # Use ip -j for JSON output where available
+    cache_warmup: false  # Pre-populate cache on startup
+    stale_cache_timeout: 300  # Return stale data if refresh takes too long
+

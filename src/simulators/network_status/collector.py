@@ -69,11 +69,16 @@ class DataCollector:
             'avg_time_per_namespace': 0.0
         }
         
+        # Track timeout details for summary
+        self.timeout_details = []
+        
         # Initialize worker
         self.worker = NamespaceQueryWorker(
             timeout=self.timeout_per_namespace,
             use_json=self.use_json
         )
+        # Set the collector reference for timeout tracking
+        self.worker.timeout_callback = self._record_timeout
         
         logger.info(f"DataCollector initialized: parallel={self.parallel_enabled}, "
                    f"timeout={self.timeout_per_namespace}s, max_concurrent={self.max_concurrent}")
@@ -298,6 +303,15 @@ class DataCollector:
     def get_stats(self) -> Dict[str, Any]:
         """Get collection statistics."""
         return self.stats.copy()
+    
+    def _record_timeout(self, command: str, namespace: str, timeout: int):
+        """Record timeout details for summary display."""
+        self.timeout_details.append({
+            'command': command,
+            'namespace': namespace,
+            'timeout': timeout
+        })
+    
     
     def reset_stats(self):
         """Reset collection statistics."""

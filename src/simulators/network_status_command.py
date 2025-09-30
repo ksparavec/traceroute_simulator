@@ -22,6 +22,8 @@ def main():
     parser.add_argument('--no-cache', action='store_true')
     parser.add_argument('--invalidate-cache', action='store_true')
     parser.add_argument('--cache-stats', action='store_true')
+    parser.add_argument('--timeout', type=int, metavar='SECONDS',
+                        help='Timeout per namespace in seconds (default: 5)')
     
     args = parser.parse_args()
     
@@ -33,7 +35,7 @@ def main():
         from tsim.simulators.network_status import NetworkStatusManager
         
         # Initialize manager
-        manager = NetworkStatusManager(verbose=args.verbose)
+        manager = NetworkStatusManager(verbose=args.verbose, timeout=args.timeout)
         
         # Handle cache operations
         if args.invalidate_cache:

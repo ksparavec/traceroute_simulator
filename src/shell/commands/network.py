@@ -149,7 +149,7 @@ class NetworkCommands(BaseCommandHandler):
                 # Complete function names if no -- flag yet
                 functions = ['interfaces', 'routes', 'rules', 'iptables', 'ipsets', 'all', 'summary']
                 return [f for f in functions if f.startswith(text)]
-            options = ['--limit', '-l', '--json', '-j', '--table', '-t', '--verbose', '-v', '--no-cache', '--invalidate-cache', '--cache-stats']
+            options = ['--limit', '-l', '--json', '-j', '--table', '-t', '--verbose', '-v', '--no-cache', '--invalidate-cache', '--cache-stats', '--timeout']
         elif subcommand == 'clean':
             options = ['--force', '-f', '--verbose', '-v']
         elif subcommand == 'clean-serial':
@@ -290,6 +290,8 @@ class NetworkCommands(BaseCommandHandler):
                           help='Clear the cache')
         parser.add_argument('--cache-stats', action='store_true',
                           help='Show cache statistics')
+        parser.add_argument('--timeout', type=int, metavar='SECONDS',
+                          help='Timeout per namespace in seconds (default: 5)')
         
         try:
             parsed_args = parser.parse_args(args)
@@ -331,6 +333,9 @@ class NetworkCommands(BaseCommandHandler):
         
         if parsed_args.cache_stats:
             cmd_args.append('--cache-stats')
+        
+        if parsed_args.timeout:
+            cmd_args.extend(['--timeout', str(parsed_args.timeout)])
         
         # Run the isolated script
         returncode = self.run_script_with_output(script_path, cmd_args, use_sudo=False)

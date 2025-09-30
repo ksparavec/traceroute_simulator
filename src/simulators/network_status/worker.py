@@ -39,6 +39,7 @@ class NamespaceQueryWorker:
         self.timeout = timeout
         self.use_json = use_json
         self.needs_sudo = os.geteuid() != 0
+        self.timeout_callback = None  # Optional callback for timeout tracking
     
     async def execute_command(self, command: str, namespace: Optional[str] = None) -> Tuple[int, str, str]:
         """
@@ -65,12 +66,15 @@ class NamespaceQueryWorker:
         
         logger.debug(f"Executing: {full_command}")
         
+        proc = None
         try:
             # Use asyncio subprocess for true parallel execution
+            # Start new process group to enable proper cleanup
             proc = await asyncio.create_subprocess_shell(
                 full_command,
                 stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
+                stderr=asyncio.subprocess.PIPE,
+                preexec_fn=os.setsid if hasattr(os, 'setsid') else None
             )
             
             stdout_bytes, stderr_bytes = await asyncio.wait_for(
@@ -83,15 +87,42 @@ class NamespaceQueryWorker:
             return proc.returncode, stdout, stderr
             
         except asyncio.TimeoutError:
-            logger.warning(f"Command timeout for namespace {namespace}: {command}")
-            # Kill the process if it's still running
-            if 'proc' in locals():
+            # Log the timeout with full command details for summary
+            timeout_msg = f"TIMEOUT after {self.timeout}s: {full_command}"
+            if namespace:
+                timeout_msg += f" (namespace: {namespace})"
+            logger.warning(timeout_msg)
+            
+            # Record timeout details for summary if callback is set
+            if self.timeout_callback and namespace:
+                self.timeout_callback(command, namespace, self.timeout)
+            
+            # Terminate the process and its children more aggressively
+            if proc:
                 try:
-                    proc.kill()
-                    await proc.wait()
-                except:
-                    pass
-            raise TimeoutError(f"Command timeout after {self.timeout}s")
+                    # Try to terminate the process group first
+                    if hasattr(os, 'killpg') and proc.pid:
+                        try:
+                            os.killpg(os.getpgid(proc.pid), 15)  # SIGTERM
+                            # Give it a moment to terminate gracefully
+                            try:
+                                await asyncio.wait_for(proc.wait(), timeout=2.0)
+                            except asyncio.TimeoutError:
+                                # Force kill if it doesn't terminate
+                                os.killpg(os.getpgid(proc.pid), 9)  # SIGKILL
+                        except (ProcessLookupError, OSError):
+                            # Process group doesn't exist or already terminated
+                            pass
+                    
+                    # Fallback: kill the main process directly
+                    if proc.returncode is None:
+                        proc.kill()
+                        await proc.wait()
+                        
+                except Exception as kill_error:
+                    logger.debug(f"Error during process cleanup: {kill_error}")
+            
+            raise TimeoutError(f"Command timeout after {self.timeout}s: {command}")
         except Exception as e:
             logger.error(f"Command execution failed: {e}")
             raise CollectionError(f"Failed to execute command: {e}")

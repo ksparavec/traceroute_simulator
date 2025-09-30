@@ -33,19 +33,24 @@ class NetworkStatusManager:
     """
     
     def __init__(self, config_path: Optional[str] = None,
-                 verbose: int = 0):
+                 verbose: int = 0, timeout: Optional[int] = None):
         """
         Initialize network status manager.
         
         Args:
             config_path: Optional path to configuration file
             verbose: Verbosity level (0=silent, 1=errors, 2=info, 3=debug)
+            timeout: Optional timeout per namespace in seconds (overrides config)
         """
         # Set up logging based on verbosity
         self._setup_logging(verbose)
         
         # Load configuration
         self.config = NetworkStatusConfig(config_path)
+        
+        # Override timeout if provided
+        if timeout is not None:
+            self.config.config['parallelization']['timeout_per_namespace'] = timeout
         
         # Initialize cache first
         self.cache = CacheManager(self.config.cache_config)
@@ -171,6 +176,11 @@ class NetworkStatusManager:
         self.stats['total_time'] += elapsed
         
         logger.info(f"Status query completed in {elapsed:.3f}s for {len(target_namespaces)} namespaces")
+        
+        # Append timeout summary if any commands were killed
+        timeout_summary = self._get_timeout_summary()
+        if timeout_summary:
+            result += timeout_summary
         
         return result
     
@@ -385,3 +395,18 @@ class NetworkStatusManager:
     def is_router(self, namespace: str) -> bool:
         """Check if namespace is a known router."""
         return namespace in self.known_routers
+    
+    def _get_timeout_summary(self) -> str:
+        """Get timeout summary from collector if any commands were killed."""
+        if not hasattr(self.collector, 'timeout_details') or not self.collector.timeout_details:
+            return ""
+        
+        timeout_details = self.collector.timeout_details
+        summary = f"\n[TIMEOUT SUMMARY] {len(timeout_details)} commands were killed after timeout:\n"
+        for detail in timeout_details:
+            summary += f"  • {detail['namespace']}: {detail['command']} (after {detail['timeout']}s)\n"
+        
+        # Clear the timeout details after displaying to avoid showing them again
+        self.collector.timeout_details.clear()
+        
+        return summary

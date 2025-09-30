@@ -29,5 +29,6 @@ tabulate
 ujson
 Unidecode
 urllib3
+uvloop
 wcwidth
 wheel

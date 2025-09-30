@@ -10,9 +10,17 @@ import asyncio
 import fnmatch
 import logging
 import os
+import sys
 import time
 from pathlib import Path
 from typing import Dict, List, Optional, Any, Set
+
+# Use uvloop for better async performance
+try:
+    import uvloop
+    asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
+except ImportError:
+    pass  # Fall back to standard asyncio
 
 from tsim.simulators.network_status.cache import CacheManager
 from tsim.simulators.network_status.collector import DataCollector
@@ -48,8 +56,12 @@ class NetworkStatusManager:
         # Load configuration
         self.config = NetworkStatusConfig(config_path)
         
-        # Override timeout if provided
+        # Override timeout if provided with validation
         if timeout is not None:
+            # Enforce minimum timeout to prevent hanging with very short values
+            if timeout < 2:
+                print(f"Warning: Timeout {timeout}s is too short, using minimum of 2s", file=sys.stderr)
+                timeout = 2
             self.config.config['parallelization']['timeout_per_namespace'] = timeout
         
         # Initialize cache first
@@ -92,10 +104,25 @@ class NetworkStatusManager:
         else:  # verbose >= 3
             level = logging.DEBUG
         
-        # Only set the level for our module loggers, don't configure root logger
+        # Set up handler if we don't have one and verbosity > 0
+        if verbose > 0 and not logger.handlers:
+            handler = logging.StreamHandler(sys.stderr)
+            formatter = logging.Formatter('[%(levelname)s] %(message)s')
+            handler.setFormatter(formatter)
+            logger.addHandler(handler)
+            logger.propagate = False  # Don't propagate to root logger
+        
+        # Set the level for our module loggers
         logger.setLevel(level)
         # Also set for all submodule loggers
-        logging.getLogger('tsim.simulators.network_status').setLevel(level)
+        network_status_logger = logging.getLogger('tsim.simulators.network_status')
+        network_status_logger.setLevel(level)
+        if verbose > 0 and not network_status_logger.handlers:
+            handler = logging.StreamHandler(sys.stderr)
+            formatter = logging.Formatter('[%(levelname)s] %(message)s')
+            handler.setFormatter(formatter)
+            network_status_logger.addHandler(handler)
+            network_status_logger.propagate = False
     
     def _load_known_entities(self):
         """Load list of known routers and hosts from registries."""
@@ -402,9 +429,18 @@ class NetworkStatusManager:
             return ""
         
         timeout_details = self.collector.timeout_details
-        summary = f"\n[TIMEOUT SUMMARY] {len(timeout_details)} commands were killed after timeout:\n"
+        
+        # Add spacing and explanation
+        summary = f"\n\n[TIMEOUT SUMMARY] {len(timeout_details)} commands were killed after timeout:\n"
         for detail in timeout_details:
             summary += f"  • {detail['namespace']}: {detail['command']} (after {detail['timeout']}s)\n"
+        
+        # Add explanation and hints
+        summary += f"\nThis indicates some commands (likely 'ipset save') are hanging longer than expected.\n"
+        summary += f"IMPACT: Data may be incomplete for affected namespaces.\n"
+        summary += f"SOLUTIONS:\n"
+        summary += f"  1. Longer timeout: network status --timeout 30\n"
+        summary += f"  2. Fix the underlying issue: Investigate why ipset commands are hanging in specific namespaces\n"
         
         # Clear the timeout details after displaying to avoid showing them again
         self.collector.timeout_details.clear()

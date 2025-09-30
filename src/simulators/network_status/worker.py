@@ -12,6 +12,8 @@ import logging
 import os
 import re
 import subprocess
+import sys
+import time
 from typing import Dict, List, Optional, Any, Tuple
 
 from tsim.simulators.network_status.exceptions import CollectionError, TimeoutError
@@ -66,6 +68,11 @@ class NamespaceQueryWorker:
         
         logger.debug(f"Executing: {full_command}")
         
+        # Timing instrumentation for -vv
+        start_time = time.time()
+        proc_start_time = None
+        proc_end_time = None
+        
         proc = None
         try:
             # Use asyncio subprocess for true parallel execution
@@ -76,13 +83,23 @@ class NamespaceQueryWorker:
                 stderr=asyncio.subprocess.PIPE,
                 preexec_fn=os.setsid if hasattr(os, 'setsid') else None
             )
+            proc_start_time = time.time()
             
             stdout_bytes, stderr_bytes = await asyncio.wait_for(
                 proc.communicate(), timeout=self.timeout
             )
+            proc_end_time = time.time()
             
             stdout = stdout_bytes.decode('utf-8', errors='replace')
             stderr = stderr_bytes.decode('utf-8', errors='replace')
+            
+            # Log detailed timing for -vv
+            total_time = proc_end_time - start_time
+            proc_creation_time = proc_start_time - start_time
+            proc_execution_time = proc_end_time - proc_start_time
+            
+            if logger.isEnabledFor(logging.INFO):
+                print(f"[TIMING] {namespace}:{command} - Total:{total_time:.3f}s Creation:{proc_creation_time:.3f}s Execution:{proc_execution_time:.3f}s", file=sys.stderr)
             
             return proc.returncode, stdout, stderr
             
@@ -92,6 +109,18 @@ class NamespaceQueryWorker:
             if namespace:
                 timeout_msg += f" (namespace: {namespace})"
             logger.warning(timeout_msg)
+            
+            # Log timing for timeout case
+            timeout_time = time.time()
+            total_time = timeout_time - start_time
+            if proc_start_time:
+                proc_creation_time = proc_start_time - start_time
+                timeout_execution_time = timeout_time - proc_start_time
+                if logger.isEnabledFor(logging.INFO):
+                    print(f"[TIMING-TIMEOUT] {namespace}:{command} - Total:{total_time:.3f}s Creation:{proc_creation_time:.3f}s Execution:{timeout_execution_time:.3f}s", file=sys.stderr)
+            else:
+                if logger.isEnabledFor(logging.INFO):
+                    print(f"[TIMING-TIMEOUT] {namespace}:{command} - Total:{total_time:.3f}s (failed to start)", file=sys.stderr)
             
             # Record timeout details for summary if callback is set
             if self.timeout_callback and namespace:
@@ -104,9 +133,10 @@ class NamespaceQueryWorker:
                     if hasattr(os, 'killpg') and proc.pid:
                         try:
                             os.killpg(os.getpgid(proc.pid), 15)  # SIGTERM
-                            # Give it a moment to terminate gracefully
+                            # Give it a moment to terminate gracefully (but not longer than original timeout)
+                            cleanup_timeout = min(2.0, max(0.5, self.timeout / 2))
                             try:
-                                await asyncio.wait_for(proc.wait(), timeout=2.0)
+                                await asyncio.wait_for(proc.wait(), timeout=cleanup_timeout)
                             except asyncio.TimeoutError:
                                 # Force kill if it doesn't terminate
                                 os.killpg(os.getpgid(proc.pid), 9)  # SIGKILL

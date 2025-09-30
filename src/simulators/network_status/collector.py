@@ -15,6 +15,13 @@ import time
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Any, Callable
 
+# Use uvloop for better async performance
+try:
+    import uvloop
+    asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
+except ImportError:
+    pass  # Fall back to standard asyncio
+
 from tsim.simulators.network_status.worker import NamespaceQueryWorker
 from tsim.simulators.network_status.exceptions import CollectionError
 
@@ -156,6 +163,8 @@ class DataCollector:
         
         logger.info(f"Collected data from {len(namespaces)} namespaces in {elapsed_time:.2f}s "
                    f"(avg {self.stats['avg_time_per_namespace']:.3f}s per namespace)")
+        logger.info(f"Collection details: timeout_per_ns={self.timeout_per_namespace}s, "
+                   f"max_concurrent={self.max_concurrent}, total_tasks={len(namespaces) * len(data_types)}")
         
         return results
     
@@ -178,12 +187,7 @@ class DataCollector:
         """Collect data using parallel execution with concurrency limits."""
         results = {}
         
-        # Create semaphore for concurrency control if max_concurrent is set
-        semaphore = None
-        if self.max_concurrent:
-            semaphore = asyncio.Semaphore(self.max_concurrent)
-        
-        # Create wrapped tasks with semaphore
+        # Create tasks directly without semaphore (max_concurrent calculated to be safe)
         tasks = []
         task_metadata = []
         
@@ -202,21 +206,19 @@ class DataCollector:
                 else:
                     continue
                 
-                # Wrap with semaphore if available
-                if semaphore:
-                    task = self._limited_task(semaphore, coro)
-                else:
-                    task = coro
-                
-                tasks.append(task)
+                tasks.append(coro)
                 task_metadata.append((ns, data_type))
         
         # Execute all tasks concurrently (timeout handled at worker level)
+        logger.info(f"Starting {len(tasks)} tasks with max_concurrent={self.max_concurrent}")
+        gather_start = time.time()
         try:
             task_results = await asyncio.gather(*tasks, return_exceptions=True)
         except Exception as e:
             logger.error(f"Error in parallel collection: {e}")
             return {}
+        gather_time = time.time() - gather_start
+        logger.info(f"asyncio.gather() completed in {gather_time:.2f}s for {len(tasks)} tasks")
         
         # Process results
         for i, result in enumerate(task_results):
@@ -240,10 +242,6 @@ class DataCollector:
         
         return results
     
-    async def _limited_task(self, semaphore: asyncio.Semaphore, coro):
-        """Execute a coroutine with semaphore limiting."""
-        async with semaphore:
-            return await coro
     
     async def _collect_serial(self, namespaces: List[str], 
                        data_types: List[str]) -> Dict[str, Dict]:

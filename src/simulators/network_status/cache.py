@@ -129,7 +129,9 @@ class SharedMemoryBackend(CacheBackend):
         self.default_ttl = default_ttl
         # Create cache directory first
         try:
-            self.base_path.mkdir(parents=True, exist_ok=True, mode=0o775)
+            self.base_path.mkdir(parents=True, exist_ok=True, mode=0o2775)
+            # Ensure setgid bit and proper permissions are set
+            os.chmod(str(self.base_path), 0o2775)
             # Set group permissions if tsim-users group exists
             try:
                 import grp

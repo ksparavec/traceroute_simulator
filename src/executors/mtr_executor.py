@@ -238,11 +238,41 @@ class MTRExecutor:
         if ansible_controller:
             # We're ON the controller - execute SSH directly to routers (or locally if source_router is localhost/controller_ip)
             if source_router in ['localhost', '127.0.0.1'] or source_router == controller_ip:
-                # Execute mtr locally
-                # Local execution is identical for both user and standard modes
-                ssh_command = ['mtr', '--report', '--no-dns', '-c', '1', '-m', '30', destination_ip]
-                if self.verbose:
-                    print(f"Executing mtr locally to {destination_ip}", file=sys.stderr)
+                # Execute locally or via SSH depending on mode
+                if self.ssh_mode == 'user':
+                    # In user mode, SSH to controller IP using controller credentials
+                    try:
+                        controller_ssh_config = get_ssh_controller_config()
+                        controller_ssh_mode = controller_ssh_config.get('ssh_mode', 'standard')
+                        controller_ssh_user = controller_ssh_config.get('ssh_user')
+                        controller_ssh_key = controller_ssh_config.get('ssh_key')
+                        controller_ssh_options = controller_ssh_config.get('ssh_options', {})
+                    except ImportError:
+                        controller_ssh_mode = 'standard'
+                        controller_ssh_user = None
+                        controller_ssh_key = None
+                        controller_ssh_options = {'BatchMode': 'yes', 'ConnectTimeout': '10'}
+
+                    ssh_command = ['ssh']
+                    for option, value in controller_ssh_options.items():
+                        ssh_command.extend(['-o', f'{option}={value}'])
+
+                    if controller_ssh_mode == 'user' and controller_ssh_user and controller_ssh_key:
+                        ssh_command.extend(['-i', controller_ssh_key])
+                        ssh_command.extend(['-l', controller_ssh_user])
+                        ssh_command.extend([controller_ip, destination_ip])
+                        if self.verbose:
+                            print(f"Executing trace via SSH to controller ({controller_ip}) in user mode to {destination_ip}", file=sys.stderr)
+                            print(f"Controller SSH user: {controller_ssh_user}, Key: {controller_ssh_key}", file=sys.stderr)
+                    else:
+                        ssh_command.extend([controller_ip, destination_ip])
+                        if self.verbose:
+                            print(f"Executing trace via SSH to controller ({controller_ip}) to {destination_ip}", file=sys.stderr)
+                else:
+                    # Standard mode: execute mtr locally
+                    ssh_command = ['mtr', '--report', '--no-dns', '-c', '1', '-m', '30', destination_ip]
+                    if self.verbose:
+                        print(f"Executing mtr locally to {destination_ip}", file=sys.stderr)
             else:
                 # SSH directly to router using router SSH config
                 ssh_command = ['ssh']

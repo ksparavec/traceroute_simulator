@@ -239,14 +239,10 @@ class MTRExecutor:
             # We're ON the controller - execute SSH directly to routers (or locally if source_router is localhost/controller_ip)
             if source_router in ['localhost', '127.0.0.1'] or source_router == controller_ip:
                 # Execute mtr locally
-                if self.ssh_mode == 'user':
-                    ssh_command = ['trace', destination_ip]
-                    if self.verbose:
-                        print(f"Executing trace locally to {destination_ip}", file=sys.stderr)
-                else:
-                    ssh_command = ['mtr', '--report', '--no-dns', '-c', '1', '-m', '30', destination_ip]
-                    if self.verbose:
-                        print(f"Executing mtr locally to {destination_ip}", file=sys.stderr)
+                # Local execution is identical for both user and standard modes
+                ssh_command = ['mtr', '--report', '--no-dns', '-c', '1', '-m', '30', destination_ip]
+                if self.verbose:
+                    print(f"Executing mtr locally to {destination_ip}", file=sys.stderr)
             else:
                 # SSH directly to router using router SSH config
                 ssh_command = ['ssh']

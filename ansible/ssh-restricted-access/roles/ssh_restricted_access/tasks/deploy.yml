@@ -38,6 +38,11 @@
     user_primary_group_name: "{{ group_info.ansible_facts.getent_group.keys() | first }}"
   tags: [user]
 
+- name: Determine SSH from_hosts for controller special case
+  set_fact:
+    effective_ssh_from_hosts: "{{ ['127.0.0.0/8'] if (is_ansible_controller | default(false) | bool) else ssh_from_hosts }}"
+  tags: [ssh]
+
 - name: Ensure directory structure exists
   block:
     - name: Ensure user home directory exists

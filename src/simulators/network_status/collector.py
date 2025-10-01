@@ -50,17 +50,20 @@ class DataCollector:
         self.parallel_enabled = config.get('enabled', True)
         self.timeout_per_namespace = config.get('timeout_per_namespace', 5)
         
-        # Auto-calculate max_concurrent based on file descriptor limits if not set
-        max_concurrent = config.get('max_concurrent', None)
-        if max_concurrent is None:
-            import resource
-            soft_limit, _ = resource.getrlimit(resource.RLIMIT_NOFILE)
-            # Use 80% of FD limit, accounting for 3 FDs per subprocess + 100 overhead
-            available_fds = int(soft_limit * 0.8) - 100
-            max_concurrent = max(1, available_fds // 3)  # Minimum 1, respect FD limits
-            
+        # Always calculate max_concurrent based on file descriptor limits
+        import resource
+        soft_limit, _ = resource.getrlimit(resource.RLIMIT_NOFILE)
+        # Use 80% of FD limit, accounting for 3 FDs per subprocess + 100 overhead
+        available_fds = int(soft_limit * 0.8) - 100
+        calculated_max_concurrent = max(1, available_fds // 3)  # Minimum 1, respect FD limits
         
-        self.max_concurrent = max_concurrent
+        # Use config max_concurrent as upper cap only
+        config_max_concurrent = config.get('max_concurrent', 65536)
+        if config_max_concurrent is None:
+            config_max_concurrent = 65536
+            
+        # Use calculated value, but cap it if config provides a lower limit
+        self.max_concurrent = min(calculated_max_concurrent, config_max_concurrent)
         
         # Performance settings
         performance = config.get('performance', {})
@@ -187,9 +190,16 @@ class DataCollector:
         """Collect data using parallel execution with concurrency limits."""
         results = {}
         
-        # Create tasks directly without semaphore (max_concurrent calculated to be safe)
+        # Create semaphore to enforce max_concurrent limit
+        semaphore = asyncio.Semaphore(self.max_concurrent)
+        
+        async def limited_query(coro, ns, data_type):
+            """Execute query with semaphore-controlled concurrency."""
+            async with semaphore:
+                return await coro, ns, data_type
+        
+        # Create tasks with semaphore-controlled execution
         tasks = []
-        task_metadata = []
         
         for ns in namespaces:
             for data_type in data_types:
@@ -206,10 +216,11 @@ class DataCollector:
                 else:
                     continue
                 
-                tasks.append(coro)
-                task_metadata.append((ns, data_type))
+                # Wrap coroutine with semaphore control
+                limited_task = limited_query(coro, ns, data_type)
+                tasks.append(limited_task)
         
-        # Execute all tasks concurrently (timeout handled at worker level)
+        # Execute all tasks with proper concurrency control
         logger.info(f"Starting {len(tasks)} tasks with max_concurrent={self.max_concurrent}")
         gather_start = time.time()
         try:
@@ -221,23 +232,34 @@ class DataCollector:
         logger.info(f"asyncio.gather() completed in {gather_time:.2f}s for {len(tasks)} tasks")
         
         # Process results
-        for i, result in enumerate(task_results):
-            ns, data_type = task_metadata[i]
+        for result in task_results:
+            if isinstance(result, Exception):
+                logger.error(f"Error in parallel collection task: {result}")
+                self.stats['failed_queries'] += 1
+                continue
+                
+            # Unpack the result tuple (data, ns, data_type)
+            try:
+                data, ns, data_type = result
+            except (ValueError, TypeError):
+                logger.error(f"Invalid result format: {result}")
+                self.stats['failed_queries'] += 1
+                continue
             
             if ns not in results:
                 results[ns] = {}
             
-            if isinstance(result, asyncio.TimeoutError):
+            if isinstance(data, asyncio.TimeoutError):
                 logger.warning(f"Timeout collecting {data_type} for {ns}")
                 results[ns][data_type] = {'error': 'Query timeout'}
                 self.stats['timeouts'] += 1
                 self.stats['failed_queries'] += 1
-            elif isinstance(result, Exception):
-                logger.error(f"Error collecting {data_type} for {ns}: {result}")
-                results[ns][data_type] = {'error': str(result)}
+            elif isinstance(data, Exception):
+                logger.error(f"Error collecting {data_type} for {ns}: {data}")
+                results[ns][data_type] = {'error': str(data)}
                 self.stats['failed_queries'] += 1
             else:
-                results[ns][data_type] = result
+                results[ns][data_type] = data
                 self.stats['successful_queries'] += 1
         
         return results

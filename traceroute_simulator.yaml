@@ -157,7 +157,8 @@ network_status:
   # Parallel execution settings
   parallelization:
     enabled: true
-    timeout_per_namespace: 5  # Seconds per namespace query
+    timeout_per_namespace: 10  # Seconds per namespace query
+    max_concurrent: 239  # Maximum concurrent tasks (for 1024 FD limit)
     
   # Data collection control
   collection:

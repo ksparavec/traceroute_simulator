@@ -40,8 +40,8 @@ set -euo pipefail
 
 # Configuration
 readonly TRACEROUTE_PATH="{{ tracersh_traceroute_path }}"
-readonly MTR_PATH="{{ tracersh.mtr_path | default('/usr/bin/mtr') }}"
-readonly PREFERRED_TOOL="{{ tracersh.preferred_tool | default('traceroute') }}"
+readonly MTR_PATH="{{ tracersh_mtr_path }}"
+readonly PREFERRED_TOOL="{{ tracersh_preferred_tool }}"
 
 {% if tracersh_validation_enabled %}
 # Validation pattern: Only accept 10.x.x.x IPv4 addresses
@@ -49,11 +49,11 @@ readonly VALIDATION_PATTERN="{{ tracersh_validation_pattern }}"
 {% endif %}
 {% if tracersh_logging_enabled %}
 # Ensure log file path is defined and secure
-readonly LOG_FILE="{{ tracersh.logging.path | default('/var/log/tracersh.log') }}"
+readonly LOG_FILE="{{ tracersh_logging_path }}"
 readonly ENABLE_LOGGING=true
 {% else %}
 # Logging disabled - define LOG_FILE to avoid undefined variable errors
-readonly LOG_FILE="/var/log/tracersh.log"
+readonly LOG_FILE="{{ tracersh_logging_path }}"
 readonly ENABLE_LOGGING=false
 {% endif %}
 
@@ -372,14 +372,14 @@ main() {
             build_traceroute_command "$target" tr_cmd
             log_message "INFO" "Executing: ${tr_cmd[*]}"
             # Execute with timeout and parse to CSV format
-            /usr/bin/timeout --kill-after=5s 60s "${tr_cmd[@]}" 2>&1 | parse_traceroute_output
+            timeout --kill-after=5s 60s "${tr_cmd[@]}" 2>&1 | parse_traceroute_output
             ;;
         mtr)
             local mtr_cmd
             build_mtr_command "$target" mtr_cmd
             log_message "INFO" "Executing: ${mtr_cmd[*]}"
             # Execute with timeout and parse to CSV format
-            /usr/bin/timeout --kill-after=5s 60s "${mtr_cmd[@]}" 2>&1 | parse_mtr_output
+            timeout --kill-after=5s 60s "${mtr_cmd[@]}" 2>&1 | parse_mtr_output
             ;;
         *)
             error_exit "Unknown tool: ${tool}" 6

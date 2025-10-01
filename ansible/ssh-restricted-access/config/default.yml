@@ -3,14 +3,10 @@
 # Copy this file to production.yml and customize for your environment
 
 # User account configuration
+# Note: username must be provided via command line: -e "username=your_user"
 restricted_user:
-  name: traceuser
-  comment: "Production traceroute execution account"
-  shell: /usr/local/bin/tracersh
-  home: /home/traceuser
-  state: present
-  # Set to true if user is managed by FreeIPA/LDAP/SSSD
-  centrally_managed: false
+  name: "{{ username }}"
+  home: "/home/{{ username }}"
 
 # SSH configuration
 ssh_config:
@@ -20,22 +16,12 @@ ssh_config:
   # Production network restrictions
   from_hosts:
     - "10.0.0.0/8"        # Internal network
-    - "192.168.0.0/16"    # Management network
-    - "203.0.113.0/24"    # Monitoring network
-    
-  # Command to execute
-  command: "/usr/local/bin/tracersh"
-  
-  # Path to SSH public key file (compatible with ssh-keygen output format)
-  # File should contain: <key-type> <base64-key> <comment>
-  # Example: ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExample... tracersh@example.com
-  pkey_file: "/tmp/id_traceuser.pub"
 
 # Tracersh (wrapper script) configuration
 tracersh:
   enabled: yes
   # Full path to tracersh script
-  path: "/usr/local/bin/tracersh"
+  path: "/home/{{ username }}/bin/tracersh"
   
   # Preferred tool (traceroute or mtr) - can be overridden per host in inventory
   # Tracersh will automatically fallback if preferred tool is not available
@@ -81,33 +67,13 @@ tracersh:
 
 # Security settings
 security:
-  # Home directory permissions
-  home_dir_owner: "root"
-  home_dir_group: "tracegroup"
+  # File and directory permissions (all owned by root)
   home_dir_mode: "0750"
-  
-  # SSH directory permissions
-  ssh_dir_owner: "root"
-  ssh_dir_group: "tracegroup"
   ssh_dir_mode: "0750"
-  
-  # authorized_keys permissions
-  authorized_keys_owner: "root"
-  authorized_keys_group: "tracegroup"
   authorized_keys_mode: "0640"
-  
-  # Tracersh script permissions
-  tracersh_owner: "root"
-  tracersh_group: "tracegroup"
   tracersh_mode: "0750"
-  
-  # Log file permissions (if logging enabled)
-  log_file_mode: "0660"
-  
-  # Log directory permissions (if logging enabled)
-  log_dir_owner: "root"
-  log_dir_group: "tracegroup"
-  log_dir_mode: "0770"
+  log_file_mode: "0664"
+  log_dir_mode: "0750"
 
 # Testing configuration
 testing:

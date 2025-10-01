@@ -1,69 +1,50 @@
 ---
-# Playbook to remove SSH restricted access
-- name: Remove SSH restricted access
+# Playbook to clean home directory contents only
+- name: Clean trace user home directory contents
   hosts: all
   gather_facts: yes
-  strategy: linear  # Use linear strategy for pause module
   
   vars_files:
     - "{{ config_file | default('config/default.yml') }}"
   
-  vars:
-    # Override state to ensure removal
-    restricted_user_state: absent
-  
   pre_tasks:
-    - name: Check if configuration file exists
-      stat:
-        path: "{{ config_file | default('config/default.yml') }}"
-      register: config_check
-      delegate_to: localhost
-      run_once: true
+    - name: Validate required variables
+      assert:
+        that:
+          - username is defined
+          - username != ""
+        fail_msg: |
+          CRITICAL ERROR: Username must be provided via command line
+          
+          Usage: ansible-playbook -i "host," remove.yml -e "username=your_user"
+        success_msg: "Username provided: {{ username }}"
+      tags: [always]
 
-    - name: Fail if configuration file is missing
+    - name: Check if trace user exists
+      getent:
+        database: passwd
+        key: "{{ restricted_user.name }}"
+      register: user_exists
+      failed_when: false
+      changed_when: false
+      tags: [user]
+
+    - name: Fail if trace user does not exist
       fail:
         msg: |
-          Configuration file not found: {{ config_file | default('config/default.yml') }}
-          
-          Please create your configuration file:
-          1. Copy the example: cp config/default.yml.example config/default.yml
-          2. Edit config/default.yml with your settings
-          3. Run this playbook again
-      when: not config_check.stat.exists
-      delegate_to: localhost
-      run_once: true
+          User '{{ restricted_user.name }}' does not exist on this system.
+          Cannot clean home directory for non-existent user.
+      when: not (user_exists.ansible_facts is defined and user_exists.ansible_facts.getent_passwd is defined and restricted_user.name in user_exists.ansible_facts.getent_passwd)
+      tags: [user]
+
+    - name: Get user home directory
+      set_fact:
+        actual_user_home: "{{ user_exists.ansible_facts.getent_passwd[restricted_user.name][4] }}"
+      tags: [user]
     
-    - name: Confirm removal
-      pause:
-        prompt: |
-          
-          WARNING: This will remove the restricted SSH user and all associated configurations.
-          
-          The following will be removed:
-          - User account: {{ restricted_user.name }}
-          - Home directory: {{ restricted_user.home }}
-          - Tracersh script: /usr/local/bin/tracersh
-          - All SSH keys and configurations
-          
-          Type 'yes' to continue or 'no' to abort
-      register: confirm_removal
-      when: 
-        - confirm_prompt | default(true)
-        - inventory_hostname == ansible_play_hosts[0]  # Only prompt once for all hosts
-      run_once: true
-      
-    - name: Abort if not confirmed
-      fail:
-        msg: "Removal aborted by user"
-      when: 
-        - confirm_prompt | default(true)
-        - confirm_removal is defined
-        - confirm_removal.user_input is defined
-        - confirm_removal.user_input != 'yes'
-      run_once: true
   
   tasks:
-    - name: Create backup before removal
+    - name: Create backup before cleanup
       block:
         - name: Create backup directory
           file:
@@ -72,123 +53,77 @@
             mode: '0700'
           become: yes
             
-        - name: Backup authorized_keys if exists
-          copy:
-            src: "{{ restricted_user.home }}/.ssh/authorized_keys"
-            dest: "{{ backup.path }}/authorized_keys.{{ inventory_hostname }}.{{ ansible_date_time.epoch }}.bak"
-            remote_src: yes
-            mode: '0600'
+        - name: Backup home directory contents
+          archive:
+            path: "{{ actual_user_home }}"
+            dest: "{{ backup.path | default('/root/ansible-backups/ssh-restricted') }}/home-{{ restricted_user.name }}-{{ inventory_hostname }}-{{ ansible_date_time.epoch }}.tar.gz"
+            format: gz
           ignore_errors: yes
           become: yes
           
-        - name: Save removal record
+        - name: Save cleanup record
           copy:
             content: |
-              Removal Date: {{ ansible_date_time.iso8601 }}
-              Removed By: {{ ansible_user_id }}
+              Cleanup Date: {{ ansible_date_time.iso8601 }}
+              Cleaned By: {{ ansible_user_id }}
               Target Host: {{ inventory_hostname }}
-              User Removed: {{ restricted_user.name }}
-              Configuration at removal:
-                - Home Directory: {{ restricted_user.home }}
-                - Tracersh Script: /usr/local/bin/tracersh
-            dest: "{{ backup.path }}/removal-{{ inventory_hostname }}-{{ ansible_date_time.epoch }}.log"
+              User: {{ restricted_user.name }}
+              Home Directory Cleaned: {{ actual_user_home }}
+              User Account: NOT REMOVED (still exists)
+            dest: "{{ backup.path | default('/root/ansible-backups/ssh-restricted') }}/cleanup-{{ inventory_hostname }}-{{ ansible_date_time.epoch }}.log"
           become: yes
       when: backup.enabled | default(true)
       tags: [backup]
     
+    - name: Clean home directory contents
+      file:
+        path: "{{ actual_user_home }}"
+        state: absent
+      become: yes
+      tags: [cleanup]
+    
     - name: Remove tracersh script
       file:
-        path: "/usr/local/bin/tracersh"
+        path: "{{ tracersh.path }}"
         state: absent
-      when: tracersh.enabled | default(true)
+      when: tracersh.enabled
       become: yes
       tags: [remove_tracersh]
     
     - name: Remove tracersh from /etc/shells
       lineinfile:
         path: /etc/shells
-        line: "/usr/local/bin/tracersh"
+        line: "{{ tracersh.path }}"
         state: absent
       become: yes
       tags: [remove_tracersh]
     
-    - name: Remove tracersh script log file
+    - name: Remove logrotate configuration
       file:
-        path: "{{ restricted_user.home }}/{{ tracersh.logging.path | default('log/tracersh.log') }}"
+        path: "/etc/logrotate.d/tracersh-{{ restricted_user.name }}"
         state: absent
-      when: 
-        - tracersh.enabled | default(true)
-        - tracersh.logging.enabled | default(false)
+      when: tracersh.logging.enabled | default(false)
       become: yes
-      tags: [remove_logs]
+      tags: [remove_config]
     
-    - name: Remove user home directory
-      file:
-        path: "{{ restricted_user.home }}"
-        state: absent
+    - name: Verify home directory is removed
+      stat:
+        path: "{{ actual_user_home }}"
+      register: home_dir_check
       become: yes
-      tags: [remove_home]
-    
-    - name: Remove restricted user account
-      user:
-        name: "{{ restricted_user.name }}"
-        state: absent
-        remove: yes
-        force: yes
-      become: yes
-      tags: [remove_user]
-    
-    - name: Remove user from sudoers if exists
-      file:
-        path: "/etc/sudoers.d/{{ restricted_user.name }}"
-        state: absent
-      become: yes
-      tags: [remove_sudo]
-    
-    - name: Clean up any remaining files
-      file:
-        path: "{{ item }}"
-        state: absent
-      loop:
-        - "/var/log/{{ restricted_user.name }}"
-        - "/tmp/{{ restricted_user.name }}"
-      ignore_errors: yes
-      become: yes
-      tags: [cleanup]
-    
-    - name: Verify user removal
-      getent:
-        database: passwd
-        key: "{{ restricted_user.name }}"
-      register: user_check
-      failed_when: false
-      changed_when: false
       tags: [verify]
     
-    - name: Display removal status
+    - name: Display cleanup status
       debug:
         msg:
           - "======================================"
-          - "SSH Restricted Access Removal Complete"
+          - "Home Directory Cleanup Complete"
           - "======================================"
           - "Host: {{ inventory_hostname }}"
-          - "User removed: {{ 'Yes' if (user_check.ansible_facts is not defined or user_check.ansible_facts.getent_passwd is not defined or restricted_user.name not in user_check.ansible_facts.getent_passwd) else 'No - ERROR' }}"
-          - "Tracersh script removed: {{ 'Yes' if tracersh.enabled | default(true) else 'N/A' }}"
-          - "Backup created: {{ 'Yes' if backup.enabled else 'No' }}"
+          - "User: {{ restricted_user.name }}"
+          - "Home Directory: {{ actual_user_home }}"
+          - "Home Directory Exists: {{ 'No' if not home_dir_check.stat.exists else 'Yes' }}"
+          - "User Account: PRESERVED (not removed)"
+          - "Backup Created: {{ 'Yes' if backup.enabled | default(true) else 'No' }}"
           - "======================================"
       tags: [always]
-    
-    - name: Fail if user still exists
-      fail:
-        msg: "ERROR: User {{ restricted_user.name }} still exists on {{ inventory_hostname }}"
-      when: 
-        - user_check.ansible_facts is defined
-        - user_check.ansible_facts.getent_passwd is defined
-        - restricted_user.name in user_check.ansible_facts.getent_passwd
-      tags: [verify]
-  
-  handlers:
-    - name: restart sshd
-      service:
-        name: sshd
-        state: restarted

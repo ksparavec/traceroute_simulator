@@ -5,9 +5,46 @@
   gather_facts: yes
   
   vars_files:
-    - "{{ config_file | default('config/default.yml') }}"
+    - "config/default.yml"
+  
+  vars:
+    # Debug: show which config file is being loaded
+    debug_config_file: "{{ config_file | default('config/default.yml') }}"
   
   pre_tasks:
+    - name: Validate required variables
+      assert:
+        that:
+          - username is defined
+          - username != ""
+        fail_msg: |
+          CRITICAL ERROR: Username must be provided via command line
+          
+          Usage: ansible-playbook -i "host," deploy.yml -e "username=your_user"
+        success_msg: "Username provided: {{ username }}"
+      tags: [always]
+
+    - name: Check if trace user exists (CRITICAL - must exist before proceeding)
+      getent:
+        database: passwd
+        key: "{{ restricted_user.name }}"
+      register: user_exists
+      failed_when: false
+      changed_when: false
+      tags: [user, critical]
+
+    - name: FAIL IMMEDIATELY if trace user does not exist
+      fail:
+        msg: |
+          CRITICAL ERROR: User '{{ restricted_user.name }}' does not exist on this system.
+          
+          This playbook requires the trace user to be pre-created before deployment.
+          Please ensure the user account exists with appropriate permissions and try again.
+          
+          No further actions will be performed until this requirement is met.
+      when: not (user_exists.ansible_facts is defined and user_exists.ansible_facts.getent_passwd is defined and restricted_user.name in user_exists.ansible_facts.getent_passwd)
+      tags: [user, critical]
+
     - name: Check if configuration file exists
       stat:
         path: "{{ config_file | default('config/default.yml') }}"
@@ -28,41 +65,117 @@
       delegate_to: localhost
       run_once: true
 
-    - name: Override pkey_file from environment variable if set
-      set_fact:
-        ssh_config: "{{ ssh_config | combine({'pkey_file': lookup('env', 'TRACEROUTE_SIMULATOR_TRACEUSER_PKEY_FILE')}) }}"
-      when: lookup('env', 'TRACEROUTE_SIMULATOR_TRACEUSER_PKEY_FILE') != ''
+
+    - name: Load traceroute simulator config for SSH key path
+      slurp:
+        src: "/opt/tsim/wsgi/conf/traceroute_simulator.yaml"
+      register: tsim_config_content
+      delegate_to: localhost
+      run_once: true
+      failed_when: false
       tags: [always]
 
-    - name: Override from_hosts from environment variable if set
+    - name: Parse traceroute simulator config
       set_fact:
-        ssh_config: "{{ ssh_config | combine({'from_hosts': lookup('env', 'TRACEROUTE_SIMULATOR_TRACEUSER_FROM_HOSTS').split(',')}) }}"
-      when: lookup('env', 'TRACEROUTE_SIMULATOR_TRACEUSER_FROM_HOSTS') != ''
+        tsim_config: "{{ (tsim_config_content.content | b64decode | from_yaml) if tsim_config_content.content is defined else {} }}"
+      delegate_to: localhost
+      run_once: true
+      tags: [always]
+
+    - name: Use SSH key path from traceroute simulator config
+      set_fact:
+        ssh_config: "{{ ssh_config | combine({
+          'pkey_file': (tsim_config.ssh.ssh_key | regex_replace('\\.key$', '.pub'))
+        }) }}"
+      when: 
+        - tsim_config.ssh is defined
+        - tsim_config.ssh.ssh_key is defined
+      delegate_to: localhost
+      run_once: true
       tags: [always]
 
     - name: Check if public key file exists
       stat:
-        path: "{{ ssh_config.pkey_file | default('/tmp/id_traceuser.pub') }}"
+        path: "{{ ssh_config.pkey_file | default('/tmp/id_' + restricted_user_name + '.pub') }}"
       register: pkey_file_check
       delegate_to: localhost
       run_once: true
 
-    - name: Fail if public key file is missing
-      fail:
-        msg: |
-          Public key file not found: {{ ssh_config.pkey_file | default('/tmp/id_traceuser.pub') }}
-          
-          Please ensure the public key file exists at the specified location.
-          You can set it via:
-          - config file: ssh_config.pkey_file
-          - environment: TRACEROUTE_SIMULATOR_TRACEUSER_PKEY_FILE
+    - name: Generate SSH key pair if missing
+      block:
+        - name: Set key file paths
+          set_fact:
+            private_key_path: "{{ (ssh_config.pkey_file | default('/tmp/id_' + restricted_user_name + '.pub')) | regex_replace('\\.pub$', '') }}"
+            public_key_path: "{{ ssh_config.pkey_file | default('/tmp/id_' + restricted_user_name + '.pub') }}"
+          delegate_to: localhost
+          run_once: true
+
+        - name: Check if private key directory exists
+          stat:
+            path: "{{ private_key_path | dirname }}"
+          register: key_dir_check
+          delegate_to: localhost
+          run_once: true
+
+        - name: Fail if private key directory does not exist
+          fail:
+            msg: |
+              CRITICAL ERROR: Directory for private key does not exist: {{ private_key_path | dirname }}
+              
+              Please ensure the directory exists before running this playbook.
+              The playbook will not create missing directories for security reasons.
+              
+              Private key path: {{ private_key_path }}
+              Public key path: {{ public_key_path }}
+          when: not key_dir_check.stat.exists
+          delegate_to: localhost
+          run_once: true
+
+        - name: Generate SSH key pair
+          openssh_keypair:
+            path: "{{ private_key_path }}"
+            type: ed25519
+            size: 256
+            comment: "{{ restricted_user_name }}@{{ ansible_hostname }}"
+            force: false
+          delegate_to: localhost
+          run_once: true
+          become: yes
+
+        - name: Determine web user name
+          set_fact:
+            web_user: "{{ 'apache' if (ansible_os_family == 'RedHat') else 'www-data' }}"
+          delegate_to: localhost
+          run_once: true
+
+        - name: Set private key permissions
+          file:
+            path: "{{ private_key_path }}"
+            mode: "0600"
+            owner: "{{ web_user }}"
+            group: "{{ tsim_config.system.unix_group | default('tsim-users') }}"
+          delegate_to: localhost
+          run_once: true
+          become: yes
+
+        - name: Set public key permissions
+          file:
+            path: "{{ public_key_path }}"
+            mode: "0640"
+            owner: "{{ web_user }}"
+            group: "{{ tsim_config.system.unix_group | default('tsim-users') }}"
+          delegate_to: localhost
+          run_once: true
+          become: yes
+
       when: not pkey_file_check.stat.exists
       delegate_to: localhost
       run_once: true
+      tags: [ssh, keygen]
 
     - name: Read public key file
       slurp:
-        src: "{{ ssh_config.pkey_file | default('/tmp/id_traceuser.pub') }}"
+        src: "{{ ssh_config.pkey_file | default('/tmp/id_' + restricted_user_name + '.pub') }}"
       register: pkey_content
       delegate_to: localhost
       run_once: true
@@ -87,29 +200,7 @@
       delegate_to: localhost
       run_once: true
 
-    - name: Debug SSH configuration
-      debug:
-        msg:
-          - "ssh_config.pkey_file: {{ ssh_config.pkey_file | default('NOT SET') }}"
-          - "Parsed key_type: {{ ssh_config.key_type | default('NOT SET') }}"
-          - "Parsed public_key: {{ ssh_config.public_key | default('NOT SET') | truncate(50) }}..."
-          - "Parsed key_comment: {{ ssh_config.key_comment | default('NOT SET') }}"
-          - "from_hosts: {{ ssh_config.from_hosts | default([]) | join(', ') }}"
-      tags: [debug, always]
-      when: ssh_config is defined
 
-    - name: Validate configuration
-      assert:
-        that:
-          - ssh_config is defined
-          - ssh_config.public_key is defined
-          - ssh_config.public_key != ""
-          - ssh_config.public_key is string
-          - restricted_user.name is defined
-          - restricted_user.name != ""
-        fail_msg: "SSH public key and user name must be configured. Ensure ssh_config.public_key contains the base64-encoded key data."
-        success_msg: "Configuration validated successfully"
-      tags: [always]
       
     - name: Check OpenSSH version for restrict support
       shell: ssh -V 2>&1 | grep -oE 'OpenSSH_[0-9]+\.[0-9]+' | cut -d_ -f2
@@ -122,56 +213,10 @@
         supports_restrict: "{{ openssh_version.stdout is version('7.2', '>=') }}"
       tags: [always]
       
-    - name: Display OpenSSH version information
-      debug:
-        msg: 
-          - "OpenSSH version: {{ openssh_version.stdout }}"
-          - "Supports 'restrict' option: {{ supports_restrict }}"
-      tags: [always]
   
   roles:
     - role: ssh_restricted_access
       tags: [deploy]
   
   post_tasks:
-    - name: Validate deployment
-      include_tasks: roles/ssh_restricted_access/tasks/validate.yml
-      tags: [validate]
-      
-    - name: Display deployment summary
-      debug:
-        msg:
-          - "======================================"
-          - "SSH Restricted Access Deployment Complete"
-          - "======================================"
-          - "User: {{ restricted_user.name }}"
-          - "Home: {{ restricted_user.home }}"
-          - "Command: {{ ssh_config.command }}"
-          - "Allowed from: {{ ssh_config.from_hosts | join(', ') | default('anywhere', true) }}"
-          - "Tracersh script: {{ 'enabled' if tracersh.enabled | default(true) else 'disabled' }}"
-          - "======================================"
-      tags: [always]
-      
-    - name: Save deployment record
-      copy:
-        content: |
-          Deployment Date: {{ ansible_date_time.iso8601 }}
-          Deployed By: {{ ansible_user_id }}
-          Target Host: {{ inventory_hostname }}
-          User Created: {{ restricted_user.name }}
-          Configuration:
-            - OpenSSH Version: {{ openssh_version.stdout | default('unknown') }}
-            - Restrict Option: {{ 'enabled' if (supports_restrict | default(false)) else 'disabled (fallback to traditional)' }}
-            - Command: {{ ssh_config.command }}
-            - From Hosts: {{ ssh_config.from_hosts | join(', ') | default('any', true) }}
-            - Wrapper Script: {{ 'enabled' if tracersh.enabled | default(true) else 'disabled' }}
-        dest: "{{ backup.path | default('/var/backups/ansible/ssh-restricted') }}/deployment-{{ inventory_hostname }}-{{ ansible_date_time.epoch }}.log"
-      when: backup.enabled | default(true)
-      become: yes
-      tags: [backup]
 
-- name: Run basic connectivity test
-  import_playbook: test.yml
-  vars:
-    run_quick_test: yes
-  tags: [test]

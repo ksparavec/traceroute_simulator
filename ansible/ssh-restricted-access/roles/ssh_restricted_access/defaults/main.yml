@@ -1,61 +1,47 @@
 ---
-# Default variables for ssh_restricted_access role
+# Variables for ssh_restricted_access role - all values from config/default.yml
 
-# User account defaults
-restricted_user_name: "{{ restricted_user.name | default('traceuser') }}"
-restricted_user_comment: "{{ restricted_user.comment | default('Production traceroute execution account') }}"
-restricted_user_shell: "{{ restricted_user.shell | default('/usr/local/bin/tracersh') }}"
-restricted_user_home: "{{ restricted_user.home | default('/home/traceuser') }}"
-restricted_user_state: "{{ restricted_user.state | default('present') }}"
-restricted_user_centrally_managed: "{{ restricted_user.centrally_managed | default(false) }}"
+# User account variables
+restricted_user_name: "{{ restricted_user.name }}"
+restricted_user_comment: "{{ restricted_user.comment }}"
+restricted_user_shell: "{{ restricted_user.shell }}"
+restricted_user_home: "{{ restricted_user.home }}"
+restricted_user_state: "{{ restricted_user.state }}"
 
-# SSH configuration defaults
-ssh_restrict_option: "{{ ssh_config.restrict | default(true) }}"
-ssh_from_hosts: "{{ ssh_config.from_hosts | default([]) }}"
-ssh_command: "{{ ssh_config.command | default('/usr/local/bin/tracersh') }}"
-# Public key file path (can be overridden by TRACEROUTE_SIMULATOR_TRACEUSER_PKEY_FILE env var)
-ssh_pkey_file: "{{ ssh_config.pkey_file | default('/tmp/id_traceuser.pub') }}"
-# Construct full SSH public key from components (extracted from pkey_file in deploy.yml)
-ssh_public_key: "{{ ssh_config.key_type | default('ssh-ed25519') }} {{ ssh_config.public_key }} {{ ssh_config.key_comment | default('tracersh') }}"
-ssh_key_type: "{{ ssh_config.key_type | default('ssh-ed25519') }}"
-ssh_key_comment: "{{ ssh_config.key_comment | default('tracersh') }}"
+# SSH configuration variables
+ssh_restrict_option: "{{ ssh_config.restrict }}"
+ssh_from_hosts: "{{ ssh_config.from_hosts }}"
+ssh_pkey_file: "{{ ssh_config.pkey_file }}"
+ssh_public_key: "{{ ssh_config.key_type }} {{ ssh_config.public_key }} {{ ssh_config.key_comment }}"
+ssh_key_type: "{{ ssh_config.key_type }}"
+ssh_key_comment: "{{ ssh_config.key_comment }}"
 
-# Tracersh (wrapper script) defaults
-tracersh_enabled: "{{ tracersh.enabled | default(true) }}"
-tracersh_path: "{{ tracersh.path | default('/usr/local/bin/tracersh') }}"
-tracersh_preferred_tool: "{{ tracersh.preferred_tool | default('traceroute') }}"
-tracersh_traceroute_path: "{{ tracersh.traceroute_path | default('/usr/bin/traceroute') }}"
-tracersh_mtr_path: "{{ tracersh.mtr_path | default('/usr/bin/mtr') }}"
-tracersh_validation_enabled: "{{ tracersh.validation.enabled | default(true) }}"
-tracersh_validation_pattern: "{{ tracersh.validation.pattern | default('^10\\.([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])\\.([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])\\.([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])$') }}"
-tracersh_logging_enabled: "{{ tracersh.logging.enabled | default(false) }}"
-tracersh_logging_path: "{{ tracersh.logging.path | default('/var/log/tracersh.log') }}"
+# Tracersh (wrapper script) variables
+tracersh_enabled: "{{ tracersh.enabled }}"
+tracersh_path: "{{ tracersh.path }}"
+tracersh_preferred_tool: "{{ tracersh.preferred_tool }}"
+tracersh_traceroute_path: "{{ tracersh.traceroute_path }}"
+tracersh_mtr_path: "{{ tracersh.mtr_path }}"
+tracersh_validation_enabled: "{{ tracersh.validation.enabled }}"
+tracersh_validation_pattern: "{{ tracersh.validation.pattern }}"
+tracersh_logging_enabled: "{{ tracersh.logging.enabled }}"
+tracersh_logging_path: "{{ tracersh.logging.path }}"
 
-# Security settings defaults
-security_home_dir_owner: "{{ security.home_dir_owner | default('root') }}"
-security_home_dir_group: "{{ security.home_dir_group | default('tracegroup') }}"
-security_home_dir_mode: "{{ security.home_dir_mode | default('0750') }}"
-security_ssh_dir_owner: "{{ security.ssh_dir_owner | default('root') }}"
-security_ssh_dir_group: "{{ security.ssh_dir_group | default('tracegroup') }}"
-security_ssh_dir_mode: "{{ security.ssh_dir_mode | default('0750') }}"
-security_authorized_keys_owner: "{{ security.authorized_keys_owner | default('root') }}"
-security_authorized_keys_group: "{{ security.authorized_keys_group | default('tracegroup') }}"
-security_authorized_keys_mode: "{{ security.authorized_keys_mode | default('0640') }}"
-security_tracersh_owner: "{{ security.tracersh_owner | default('root') }}"
-security_tracersh_group: "{{ security.tracersh_group | default('tracegroup') }}"
-security_tracersh_mode: "{{ security.tracersh_mode | default('0750') }}"
-security_log_file_mode: "{{ security.log_file_mode | default('0660') }}"
-security_log_dir_owner: "{{ security.log_dir_owner | default('root') }}"
-security_log_dir_group: "{{ security.log_dir_group | default('tracegroup') }}"
-security_log_dir_mode: "{{ security.log_dir_mode | default('0770') }}"
+# Security settings variables
+security_home_dir_mode: "{{ security.home_dir_mode }}"
+security_ssh_dir_mode: "{{ security.ssh_dir_mode }}"
+security_authorized_keys_mode: "{{ security.authorized_keys_mode }}"
+security_tracersh_mode: "{{ security.tracersh_mode }}"
+security_log_file_mode: "{{ security.log_file_mode }}"
+security_log_dir_mode: "{{ security.log_dir_mode }}"
 
-# Backup defaults
-backup_enabled: "{{ backup.enabled | default(false) }}"
-backup_path: "{{ backup.path | default('/var/backups/ansible/ssh-restricted') }}"
+# Backup variables
+backup_enabled: "{{ backup.enabled }}"
+backup_path: "{{ backup.path }}"
 
-# Notification defaults
-notification_enabled: "{{ notification.enabled | default(false) }}"
-notification_email: "{{ notification.email | default('') }}"
-notification_on_deploy: "{{ notification.on_deploy | default(false) }}"
-notification_on_remove: "{{ notification.on_remove | default(false) }}"
-notification_on_error: "{{ notification.on_error | default(false) }}"
+# Notification variables
+notification_enabled: "{{ notification.enabled }}"
+notification_email: "{{ notification.email }}"
+notification_on_deploy: "{{ notification.on_deploy }}"
+notification_on_remove: "{{ notification.on_remove }}"
+notification_on_error: "{{ notification.on_error }}"

@@ -199,32 +199,36 @@ Override configuration without modifying files:
 
 ### 1. Deployment
 
+**IMPORTANT**: The username must be provided via command line. The target user account must already exist on the system.
+
 ```bash
-# Deploy with inline inventory (recommended)
-ansible-playbook -i "192.168.122.230," deploy.yml
+# Deploy with inline inventory (REQUIRED: specify username)
+ansible-playbook -i "192.168.122.230," deploy.yml -e "username=traceuser"
 
 # Deploy to multiple hosts
-ansible-playbook -i "host1,host2,host3," deploy.yml
+ansible-playbook -i "host1,host2,host3," deploy.yml -e "username=traceuser"
 
-# With specific user
-ansible-playbook -i "192.168.122.230," deploy.yml -u admin_user
+# With specific admin user
+ansible-playbook -i "192.168.122.230," deploy.yml -e "username=traceuser" -u admin_user
 
 # Dry run (check mode)
-ansible-playbook -i "192.168.122.230," deploy.yml --check
+ansible-playbook -i "192.168.122.230," deploy.yml -e "username=traceuser" --check
 
 # Deploy specific components
-ansible-playbook -i "192.168.122.230," deploy.yml --tags ssh
-ansible-playbook -i "192.168.122.230," deploy.yml --tags tracersh
+ansible-playbook -i "192.168.122.230," deploy.yml -e "username=traceuser" --tags ssh
+ansible-playbook -i "192.168.122.230," deploy.yml -e "username=traceuser" --tags tracersh
 ```
 
 ### 2. Testing
+
+**IMPORTANT**: The username must be provided via command line for all test operations.
 
 The test playbook supports two modes:
 
 #### Quick Test (connectivity only)
 Tests basic SSH connectivity and authentication:
 ```bash
-ansible-playbook -i "192.168.122.230," test.yml -e "run_quick_test=true"
+ansible-playbook -i "192.168.122.230," test.yml -e "username=traceuser" -e "run_quick_test=true"
 ```
 
 #### Full Test Suite (default)
@@ -235,12 +239,12 @@ Runs comprehensive tests including:
 
 ```bash
 # Run full test suite
-ansible-playbook -i "192.168.122.230," test.yml
+ansible-playbook -i "192.168.122.230," test.yml -e "username=traceuser"
 
 # Run specific test categories
-ansible-playbook -i "192.168.122.230," test.yml --tags connectivity
-ansible-playbook -i "192.168.122.230," test.yml --tags commands
-ansible-playbook -i "192.168.122.230," test.yml --tags restrictions
+ansible-playbook -i "192.168.122.230," test.yml -e "username=traceuser" --tags connectivity
+ansible-playbook -i "192.168.122.230," test.yml -e "username=traceuser" --tags commands
+ansible-playbook -i "192.168.122.230," test.yml -e "username=traceuser" --tags restrictions
 ```
 
 Test results are saved to `/tmp/ssh-restricted-test-<hostname>-<timestamp>.txt`
@@ -267,12 +271,14 @@ ssh -i /tmp/id_traceuser traceuser@192.168.122.230
 
 ### 4. Removal
 
+**IMPORTANT**: The username must be provided via command line for removal operations.
+
 ```bash
 # Remove from all specified hosts
-ansible-playbook -i "192.168.122.230," remove.yml
+ansible-playbook -i "192.168.122.230," remove.yml -e "username=traceuser"
 
 # Remove from specific host
-ansible-playbook -i "host1,host2," remove.yml --limit host1
+ansible-playbook -i "host1,host2," remove.yml -e "username=traceuser" --limit host1
 ```
 
 ## Logging Configuration

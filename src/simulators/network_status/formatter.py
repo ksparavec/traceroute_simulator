@@ -148,6 +148,19 @@ class DataFormatter:
         if self.translate_names and self.name_translator:
             data = self._apply_name_translation_to_dict(data)
         
+        # Special handling for iptables single router queries to maintain compatibility
+        # with firewall analyzer that expects old format: {"namespace": "name", "iptables": {...}}
+        if (function == 'iptables' and len(data) == 1 and 
+            isinstance(data, dict)):
+            # Single router iptables query - return old format
+            namespace = next(iter(data.keys()))
+            ns_data = data[namespace]
+            if isinstance(ns_data, dict) and 'iptables' in ns_data:
+                return json.dumps({
+                    'namespace': namespace,
+                    'iptables': ns_data['iptables']
+                }, indent=self.json_indent, sort_keys=True)
+        
         return json.dumps(data, indent=self.json_indent, sort_keys=True)
     
     def format_text(self, data: Dict, function: str) -> str:

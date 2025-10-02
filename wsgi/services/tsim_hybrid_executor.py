@@ -307,34 +307,53 @@ class TsimHybridExecutor:
         self.logger.info(f"Trace command: {trace_command.strip()}")
         
         # Run in thread pool for I/O operation
-        future = self.thread_pool.submit(self._run_tsimsh_command, trace_command, run_id)
+        future = self.thread_pool.submit(self._run_tsimsh_command, trace_command, run_id, str(run_dir))
         output = future.result(timeout=120)  # 2 minute timeout
         
-        # Debug logging: log the raw output and parsed JSON
-        self.logger.info(f"Trace raw output for {run_id}: {repr(output)}")
-        self.logger.info(f"Trace output length: {len(output)} characters")
+        # Write complete trace output to debug file
+        debug_file = run_dir / f"{run_id}_trace_debug.txt"
+        try:
+            with open(debug_file, 'w') as f:
+                f.write(f"=== TRACE DEBUG OUTPUT FOR {run_id} ===\n")
+                f.write(f"Command: {trace_command.strip()}\n")
+                f.write(f"Output length: {len(output)} characters\n")
+                f.write(f"Raw output:\n{output}\n")
+                f.write("=== END RAW OUTPUT ===\n")
+        except Exception as e:
+            self.logger.error(f"Failed to write debug file: {e}")
+        
+        # Debug logging: log basic info only
+        self.logger.info(f"Trace output length: {len(output)} characters - see {debug_file}")
         
         # Try to parse the JSON output for detailed logging
         try:
             import json
             trace_data = json.loads(output)
             self.logger.info(f"Trace JSON success field: {trace_data.get('success')}")
-            self.logger.info(f"Trace JSON source: {trace_data.get('source')}")
-            self.logger.info(f"Trace JSON destination: {trace_data.get('destination')}")
             path = trace_data.get('path', [])
-            self.logger.info(f"Trace JSON path length: {len(path)}")
-            
-            # Log each hop in detail
-            for i, hop in enumerate(path):
-                self.logger.info(f"Hop {i}: {hop}")
-                
-            # Count routers specifically
             router_count = sum(1 for hop in path if hop.get('is_router', False))
             self.logger.info(f"Total routers found in trace: {router_count}")
             
+            # Write parsed data to debug file
+            with open(debug_file, 'a') as f:
+                f.write(f"\n=== PARSED JSON DATA ===\n")
+                f.write(f"Success: {trace_data.get('success')}\n")
+                f.write(f"Source: {trace_data.get('source')}\n")
+                f.write(f"Destination: {trace_data.get('destination')}\n")
+                f.write(f"Path length: {len(path)}\n")
+                f.write(f"Router count: {router_count}\n")
+                for i, hop in enumerate(path):
+                    f.write(f"Hop {i}: {hop}\n")
+            
         except json.JSONDecodeError as e:
             self.logger.error(f"Failed to parse trace JSON output for {run_id}: {e}")
-            self.logger.error(f"Invalid JSON content: {output}")
+            try:
+                with open(debug_file, 'a') as f:
+                    f.write(f"\n=== JSON PARSE ERROR ===\n")
+                    f.write(f"Error: {e}\n")
+                    f.write(f"Output that failed to parse:\n{output}\n")
+            except:
+                pass
         except Exception as e:
             self.logger.error(f"Error analyzing trace output for {run_id}: {e}")
         
@@ -639,7 +658,7 @@ class TsimHybridExecutor:
             'pdf_files': pdf_files
         }
     
-    def _run_tsimsh_command(self, command: str, run_id: str) -> str:
+    def _run_tsimsh_command(self, command: str, run_id: str, run_dir: str = None) -> str:
         """Run tsimsh command directly (no bash wrapper)
         
         Args:
@@ -675,13 +694,22 @@ class TsimHybridExecutor:
                 env=env
             )
             
+            # Write complete stderr to debug file if available
+            if run_dir:
+                stderr_file = Path(run_dir) / f"{run_id}_tsimsh_stderr.txt"
+                try:
+                    with open(stderr_file, 'w') as f:
+                        f.write(f"=== TSIMSH STDERR FOR {run_id} ===\n")
+                        f.write(f"Return code: {result.returncode}\n")
+                        f.write(f"Stderr length: {len(result.stderr)} characters\n")
+                        f.write(f"Stderr content:\n{result.stderr}\n")
+                except Exception:
+                    pass
+            
             # Debug logging: log the execution results
             self.logger.info(f"tsimsh return code for {run_id}: {result.returncode}")
             self.logger.info(f"tsimsh stdout length for {run_id}: {len(result.stdout)} characters")
             self.logger.info(f"tsimsh stderr length for {run_id}: {len(result.stderr)} characters")
-            
-            if result.stderr:
-                self.logger.info(f"tsimsh stderr content for {run_id}: {repr(result.stderr)}")
             
             if result.returncode != 0:
                 self.logger.error(f"tsimsh command failed for {run_id}: {result.stderr}")

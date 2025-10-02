@@ -38,9 +38,9 @@
     user_primary_group_name: "{{ group_info.ansible_facts.getent_group.keys() | first }}"
   tags: [user]
 
-- name: Determine SSH from_hosts for controller special case
+- name: Add localhost network to SSH from_hosts for all hosts
   set_fact:
-    effective_ssh_from_hosts: "{{ ['127.0.0.0/8'] if (is_ansible_controller | default(false) | bool) else ssh_from_hosts }}"
+    effective_ssh_from_hosts: "{{ ssh_from_hosts + ['127.0.0.0/8'] }}"
   tags: [ssh]
 
 - name: Ensure directory structure exists

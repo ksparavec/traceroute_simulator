@@ -328,19 +328,20 @@ class ReversePathTracer:
                                     destination_rtt = hop.get('rtt', 0.0)
                                     break
                         
-                        # If destination was not reached, this should be treated as unreachable
-                        if not destination_reached:
-                            raise ValueError(f"Destination {original_src} not reachable via mtr tool")
-                        
-                        # Create simple destination path with timing information
+                        # If destination was not reached, original source is unreachable
+                        # But we still have valuable information: the Linux router executing the trace
+                        # Create simple destination path (with or without timing information)
                         # Note: Don't include last_linux_router here as it's already in forward_path
                         # Try to resolve original source IP to name
                         src_label = self.simulator._resolve_ip_to_name(original_src)
                         simple_path = [
-                            (1, src_label, original_src, "", False, "", "", destination_rtt)
+                            (1, src_label, original_src, "", False, "", "", destination_rtt if destination_reached else 0.0)
                         ]
                         if self.verbose_level >= 2:
-                            print("Reverse mtr tool successful: direct path (no Linux routers found)")
+                            if destination_reached:
+                                print("Reverse mtr tool successful: direct path (no Linux routers found)")
+                            else:
+                                print("Reverse mtr tool successful: original source unreachable, but path information available")
                         return True, simple_path, 0
                 else:
                     # mtr tool execution failed

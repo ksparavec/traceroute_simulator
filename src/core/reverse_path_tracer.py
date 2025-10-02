@@ -847,8 +847,8 @@ class ReversePathTracer:
                     namespace = ip
 
                 # Build commands to get interfaces using sudo ip netns exec
-                cmd_incoming = ["sudo", "-E", "ip", "netns", "exec", namespace, "ip", "route", "get", source_ip]
-                cmd_outgoing = ["sudo", "-E", "ip", "netns", "exec", namespace, "ip", "route", "get", destination_ip]
+                cmd_incoming = ["sudo", "ip", "netns", "exec", namespace, "ip", "route", "get", source_ip]
+                cmd_outgoing = ["sudo", "ip", "netns", "exec", namespace, "ip", "route", "get", destination_ip]
 
                 # Execute commands locally using ip netns
                 if self.verbose:

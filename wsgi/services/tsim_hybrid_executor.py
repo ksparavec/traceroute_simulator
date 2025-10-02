@@ -304,10 +304,39 @@ class TsimHybridExecutor:
         trace_command = f"trace -s {source_ip} -d {dest_ip} -j\n"
         
         self.logger.info(f"Executing trace for {run_id}: {source_ip} -> {dest_ip}")
+        self.logger.info(f"Trace command: {trace_command.strip()}")
         
         # Run in thread pool for I/O operation
         future = self.thread_pool.submit(self._run_tsimsh_command, trace_command, run_id)
         output = future.result(timeout=120)  # 2 minute timeout
+        
+        # Debug logging: log the raw output and parsed JSON
+        self.logger.info(f"Trace raw output for {run_id}: {repr(output)}")
+        self.logger.info(f"Trace output length: {len(output)} characters")
+        
+        # Try to parse the JSON output for detailed logging
+        try:
+            import json
+            trace_data = json.loads(output)
+            self.logger.info(f"Trace JSON success field: {trace_data.get('success')}")
+            self.logger.info(f"Trace JSON source: {trace_data.get('source')}")
+            self.logger.info(f"Trace JSON destination: {trace_data.get('destination')}")
+            path = trace_data.get('path', [])
+            self.logger.info(f"Trace JSON path length: {len(path)}")
+            
+            # Log each hop in detail
+            for i, hop in enumerate(path):
+                self.logger.info(f"Hop {i}: {hop}")
+                
+            # Count routers specifically
+            router_count = sum(1 for hop in path if hop.get('is_router', False))
+            self.logger.info(f"Total routers found in trace: {router_count}")
+            
+        except json.JSONDecodeError as e:
+            self.logger.error(f"Failed to parse trace JSON output for {run_id}: {e}")
+            self.logger.error(f"Invalid JSON content: {output}")
+        except Exception as e:
+            self.logger.error(f"Error analyzing trace output for {run_id}: {e}")
         
         # Save trace output
         trace_file = run_dir / f"{run_id}.trace"
@@ -628,6 +657,13 @@ class TsimHybridExecutor:
             env.setdefault('PYTHONDONTWRITEBYTECODE', '1')
             env.setdefault('PYTHONPYCACHEPREFIX', '/dev/shm/tsim/pycache')
             
+            # Debug logging: log the execution details
+            self.logger.info(f"Running tsimsh command for {run_id}")
+            self.logger.info(f"tsimsh path: {self.tsimsh_path}")
+            self.logger.info(f"Command input: {repr(command)}")
+            self.logger.info(f"Environment TRACEROUTE_SIMULATOR_CONF: {env.get('TRACEROUTE_SIMULATOR_CONF')}")
+            self.logger.info(f"Environment TRACEROUTE_SIMULATOR_RAW_FACTS: {env.get('TRACEROUTE_SIMULATOR_RAW_FACTS')}")
+            
             # Direct execution - capture stdout only, let stderr go to logs
             result = subprocess.run(
                 [self.tsimsh_path],
@@ -638,6 +674,14 @@ class TsimHybridExecutor:
                 timeout=120,
                 env=env
             )
+            
+            # Debug logging: log the execution results
+            self.logger.info(f"tsimsh return code for {run_id}: {result.returncode}")
+            self.logger.info(f"tsimsh stdout length for {run_id}: {len(result.stdout)} characters")
+            self.logger.info(f"tsimsh stderr length for {run_id}: {len(result.stderr)} characters")
+            
+            if result.stderr:
+                self.logger.info(f"tsimsh stderr content for {run_id}: {repr(result.stderr)}")
             
             if result.returncode != 0:
                 self.logger.error(f"tsimsh command failed for {run_id}: {result.stderr}")

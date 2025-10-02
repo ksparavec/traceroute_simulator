@@ -69,7 +69,6 @@ class TsimLockManagerService:
         
         # Try to acquire thread lock
         if not thread_lock.acquire(timeout=timeout):
-            self.logger.warning(f"Failed to acquire thread lock: {lock_name}")
             return False
         
         # Now try file-based lock for inter-process synchronization
@@ -131,10 +130,6 @@ class TsimLockManagerService:
         
         # Timeout reached
         thread_lock.release()
-        if lock_name == 'scheduler_leader':
-            self.logger.debug(f"Timeout acquiring lock: {lock_name}")
-        else:
-            self.logger.warning(f"Timeout acquiring lock: {lock_name}")
         return False
     
     def release_lock(self, lock_name: str) -> bool:

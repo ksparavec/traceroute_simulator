@@ -322,9 +322,35 @@ class MTRExecutor:
                     if self.verbose:
                         print(f"Executing mtr via controller from {source_router} to {destination_ip}", file=sys.stderr)
             else:
-                # Target is a router
+                # Target is a router - use nested SSH (controller -> router)
+                try:
+                    controller_ssh_config = get_ssh_controller_config()
+                    controller_ssh_mode = controller_ssh_config.get('ssh_mode', 'standard')
+                    controller_ssh_user = controller_ssh_config.get('ssh_user')
+                    controller_ssh_key = controller_ssh_config.get('ssh_key')
+                    controller_ssh_options = controller_ssh_config.get('ssh_options', {})
+                except ImportError:
+                    controller_ssh_mode = 'standard'
+                    controller_ssh_user = None
+                    controller_ssh_key = None
+                    controller_ssh_options = {'BatchMode': 'yes', 'ConnectTimeout': '10'}
+
+                # Build outer SSH command to controller
+                ssh_command = ['ssh']
+                for option, value in controller_ssh_options.items():
+                    ssh_command.extend(['-o', f'{option}={value}'])
+
+                if controller_ssh_mode == 'user' and controller_ssh_user and controller_ssh_key:
+                    ssh_command.extend(['-i', controller_ssh_key])
+                    ssh_command.extend(['-l', controller_ssh_user])
+
+                # Build inner SSH command with router options
+                inner_ssh_opts = []
+                for option, value in self.ssh_options.items():
+                    inner_ssh_opts.extend(['-o', f'{option}={value}'])
+
                 if self.ssh_mode == 'user' and self.ssh_user and self.ssh_key:
-                    # User mode: SSH directly to router (no nesting)
+                    # User mode: SSH directly to router (same as controller does)
                     ssh_command = ['ssh']
                     for option, value in self.ssh_options.items():
                         ssh_command.extend(['-o', f'{option}={value}'])
@@ -336,33 +362,6 @@ class MTRExecutor:
                         print(f"Executing trace directly to router {source_router} in user mode to {destination_ip}", file=sys.stderr)
                         print(f"Router SSH user: {self.ssh_user}, Key: {self.ssh_key}", file=sys.stderr)
                 else:
-                    # Standard mode: use nested SSH (controller -> router)
-                    try:
-                        controller_ssh_config = get_ssh_controller_config()
-                        controller_ssh_mode = controller_ssh_config.get('ssh_mode', 'standard')
-                        controller_ssh_user = controller_ssh_config.get('ssh_user')
-                        controller_ssh_key = controller_ssh_config.get('ssh_key')
-                        controller_ssh_options = controller_ssh_config.get('ssh_options', {})
-                    except ImportError:
-                        controller_ssh_mode = 'standard'
-                        controller_ssh_user = None
-                        controller_ssh_key = None
-                        controller_ssh_options = {'BatchMode': 'yes', 'ConnectTimeout': '10'}
-
-                    # Build outer SSH command to controller
-                    ssh_command = ['ssh']
-                    for option, value in controller_ssh_options.items():
-                        ssh_command.extend(['-o', f'{option}={value}'])
-
-                    if controller_ssh_mode == 'user' and controller_ssh_user and controller_ssh_key:
-                        ssh_command.extend(['-i', controller_ssh_key])
-                        ssh_command.extend(['-l', controller_ssh_user])
-
-                    # Build inner SSH command with router options
-                    inner_ssh_opts = []
-                    for option, value in self.ssh_options.items():
-                        inner_ssh_opts.extend(['-o', f'{option}={value}'])
-
                     # Standard mode: nested SSH with mtr command
                     inner_cmd = f"ssh {' '.join(inner_ssh_opts)} {source_router} 'mtr --report --no-dns -c 1 -m 30 {destination_ip}'"
                     ssh_command.extend([controller_ip, inner_cmd])
@@ -543,38 +542,22 @@ class MTRExecutor:
                 try:
                     hop_num = int(parts[0])
                     ip = parts[1].strip()
-                    rtt_str = parts[2].strip()
+                    rtt = float(parts[2])
                     status = int(parts[3])
 
-                    # Handle unreachable routers (empty IP and/or RTT)
-                    if not ip:
-                        # No response from router - use placeholder
-                        ip = "*"
-                        hostname = "*"
-                        rtt = 0.0
-                        loss_pct = 100.0
-                    else:
-                        # Parse RTT (handle empty RTT for unreachable hosts)
-                        if not rtt_str:
-                            rtt = 0.0
-                        else:
-                            rtt = float(rtt_str)
+                    # Validate IP address
+                    try:
+                        ipaddress.ip_address(ip)
+                    except ipaddress.AddressValueError:
+                        if self.verbose:
+                            print(f"Warning: Invalid IP in user mode output: {ip}", file=sys.stderr)
+                        continue
 
-                        # Validate IP address
-                        try:
-                            ipaddress.ip_address(ip)
-                            # Perform reverse DNS lookup for hostname
-                            hostname = self._perform_reverse_dns(ip)
-                        except ipaddress.AddressValueError:
-                            # Invalid IP format - treat as unreachable
-                            if self.verbose:
-                                print(f"Warning: Invalid IP in user mode output: {ip}", file=sys.stderr)
-                            ip = "*"
-                            hostname = "*"
-                            rtt = 0.0
+                    # Perform reverse DNS lookup for hostname
+                    hostname = self._perform_reverse_dns(ip)
 
-                        # Convert status code to loss percentage (0=success, other=100% loss)
-                        loss_pct = 0.0 if status == 0 else 100.0
+                    # Convert status code to loss percentage (0=success, other=100% loss)
+                    loss_pct = 0.0 if status == 0 else 100.0
 
                     hops.append({
                         'hop': hop_num,
@@ -595,18 +578,9 @@ class MTRExecutor:
                 if self.verbose_level >= 2:
                     print(f"Skipping malformed line (expected 4+ fields): {line}", file=sys.stderr)
 
-        # Handle case where destination is unreachable (similar to standard MTR parser)
         if not hops:
-            # No hops at all - this could be a network issue or invalid target
             raise ValueError("No valid hop data found in user mode output")
-        
-        # Check if last hop indicates unreachable destination
-        last_hop = hops[-1]
-        if last_hop['ip'] == "*" and last_hop['loss'] == 100.0:
-            if self.verbose_level >= 2:
-                print(f"Destination appears unreachable (last hop: {last_hop['hop']} is *)"), file=sys.stderr)
-            # This is fine - destination unreachable is a valid traceroute result
-        
+
         return hops
 
     def filter_linux_hops(self, hops: List[Dict]) -> List[Dict]:

@@ -542,22 +542,38 @@ class MTRExecutor:
                 try:
                     hop_num = int(parts[0])
                     ip = parts[1].strip()
-                    rtt = float(parts[2])
+                    rtt_str = parts[2].strip()
                     status = int(parts[3])
 
-                    # Validate IP address
-                    try:
-                        ipaddress.ip_address(ip)
-                    except ipaddress.AddressValueError:
-                        if self.verbose:
-                            print(f"Warning: Invalid IP in user mode output: {ip}", file=sys.stderr)
-                        continue
+                    # Handle unreachable routers (empty IP and/or RTT)
+                    if not ip:
+                        # No response from router - use placeholder (consistent with standard MTR)
+                        ip = "???"
+                        hostname = "???"
+                        rtt = 0.0
+                        loss_pct = 100.0
+                    else:
+                        # Parse RTT (handle empty RTT for unreachable hosts)
+                        if not rtt_str:
+                            rtt = 0.0
+                        else:
+                            rtt = float(rtt_str)
 
-                    # Perform reverse DNS lookup for hostname
-                    hostname = self._perform_reverse_dns(ip)
+                        # Validate IP address
+                        try:
+                            ipaddress.ip_address(ip)
+                            # Perform reverse DNS lookup for hostname
+                            hostname = self._perform_reverse_dns(ip)
+                        except ipaddress.AddressValueError:
+                            # Invalid IP format - treat as unreachable
+                            if self.verbose:
+                                print(f"Warning: Invalid IP in user mode output: {ip}", file=sys.stderr)
+                            ip = "???"
+                            hostname = "???"
+                            rtt = 0.0
 
-                    # Convert status code to loss percentage (0=success, other=100% loss)
-                    loss_pct = 0.0 if status == 0 else 100.0
+                        # Convert status code to loss percentage (0=success, other=100% loss)
+                        loss_pct = 0.0 if status == 0 else 100.0
 
                     hops.append({
                         'hop': hop_num,
@@ -578,9 +594,18 @@ class MTRExecutor:
                 if self.verbose_level >= 2:
                     print(f"Skipping malformed line (expected 4+ fields): {line}", file=sys.stderr)
 
+        # Handle case where destination is unreachable (similar to standard MTR parser)
         if not hops:
+            # No hops at all - this could be a network issue or invalid target
             raise ValueError("No valid hop data found in user mode output")
-
+        
+        # Check if last hop indicates unreachable destination
+        last_hop = hops[-1]
+        if last_hop['ip'] == "???" and last_hop['loss'] == 100.0:
+            if self.verbose_level >= 2:
+                print(f"Destination appears unreachable (last hop: {last_hop['hop']} is ???)", file=sys.stderr)
+            # This is fine - destination unreachable is a valid traceroute result
+        
         return hops
 
     def filter_linux_hops(self, hops: List[Dict]) -> List[Dict]:

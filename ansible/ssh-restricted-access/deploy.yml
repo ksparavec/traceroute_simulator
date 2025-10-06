@@ -3,13 +3,14 @@
 - name: Deploy SSH restricted access for traceroute
   hosts: all
   gather_facts: yes
-  
+  become: no
+
   vars_files:
-    - "config/default.yml"
-  
+    - "{{ playbook_dir }}/config/default.yml"
+
   vars:
     # Debug: show which config file is being loaded
-    debug_config_file: "{{ config_file | default('config/default.yml') }}"
+    debug_config_file: "{{ playbook_dir }}/config/default.yml"
   
   pre_tasks:
     - name: Validate required variables
@@ -47,7 +48,7 @@
 
     - name: Check if configuration file exists
       stat:
-        path: "{{ config_file | default('config/default.yml') }}"
+        path: "{{ playbook_dir }}/config/default.yml"
       register: config_check
       delegate_to: localhost
       run_once: true
@@ -55,8 +56,8 @@
     - name: Fail if configuration file is missing
       fail:
         msg: |
-          Configuration file not found: {{ config_file | default('config/default.yml') }}
-          
+          Configuration file not found: {{ playbook_dir }}/config/default.yml
+
           Please create your configuration file:
           1. Copy the example: cp config/default.yml.example config/default.yml
           2. Edit config/default.yml with your settings (especially the SSH public key)
@@ -65,45 +66,6 @@
       delegate_to: localhost
       run_once: true
 
-
-    - name: Load and parse SSH public key on localhost ONCE
-      block:
-        - name: Determine config file path
-          set_fact:
-            tsim_yaml_path: "{{ lookup('env', 'TSIM_CONFIG_PATH') | default('/opt/tsim/wsgi/conf/traceroute_simulator.yaml', true) }}"
-
-        - name: Load traceroute simulator config
-          slurp:
-            src: "{{ tsim_yaml_path }}"
-          register: tsim_config_slurp
-          failed_when: false
-
-        - name: Parse YAML config
-          set_fact:
-            tsim_yaml: "{{ (tsim_config_slurp.content | b64decode | from_yaml) if (tsim_config_slurp.content is defined) else {} }}"
-
-        - name: Determine public key file path
-          set_fact:
-            pub_key_path: "{{ (tsim_yaml.ssh.ssh_key + '.pub') if (tsim_yaml.ssh is defined and tsim_yaml.ssh.ssh_key is defined) else ('/tmp/id_' + restricted_user.name + '.pub') }}"
-
-        - name: Read public key file
-          slurp:
-            src: "{{ pub_key_path }}"
-          register: pub_key_slurp
-
-        - name: Parse public key line
-          set_fact:
-            pub_key_parts: "{{ (pub_key_slurp.content | b64decode).strip().split() }}"
-
-        - name: Extract individual key components
-          set_fact:
-            parsed_ssh_key_type: "{{ pub_key_parts[0] }}"
-            parsed_ssh_key_data: "{{ pub_key_parts[1] }}"
-            parsed_ssh_key_comment: "{{ pub_key_parts[2] | default('tracersh') }}"
-
-      run_once: true
-      delegate_to: localhost
-      tags: [always]
 
     - name: Check OpenSSH version for restrict support
       shell: ssh -V 2>&1 | grep -oE 'OpenSSH_[0-9]+\.[0-9]+' | cut -d_ -f2
@@ -119,47 +81,6 @@
 
   roles:
     - role: ssh_restricted_access
-      vars:
-        # User variables
-        restricted_user_name: "{{ username }}"
-        restricted_user_comment: "{{ restricted_user.comment }}"
-        restricted_user_shell: "{{ restricted_user.shell }}"
-        restricted_user_home: "{{ restricted_user.home }}"
-        restricted_user_state: "{{ restricted_user.state }}"
-        # SSH key components from localhost parsing
-        ssh_key_type: "{{ hostvars['localhost']['parsed_ssh_key_type'] }}"
-        ssh_key_data: "{{ hostvars['localhost']['parsed_ssh_key_data'] }}"
-        ssh_key_comment: "{{ hostvars['localhost']['parsed_ssh_key_comment'] }}"
-        ssh_public_key: "{{ hostvars['localhost']['parsed_ssh_key_type'] }} {{ hostvars['localhost']['parsed_ssh_key_data'] }} {{ hostvars['localhost']['parsed_ssh_key_comment'] }}"
-        # SSH configuration
-        ssh_restrict_option: "{{ ssh_config.restrict }}"
-        ssh_from_hosts: "{{ ssh_config.from_hosts }}"
-        # Tracersh variables
-        tracersh_enabled: "{{ tracersh.enabled }}"
-        tracersh_path: "{{ tracersh.path }}"
-        tracersh_preferred_tool: "{{ tracersh.preferred_tool }}"
-        tracersh_traceroute_path: "{{ tracersh.traceroute_path }}"
-        tracersh_mtr_path: "{{ tracersh.mtr_path }}"
-        tracersh_validation_enabled: "{{ tracersh.validation.enabled }}"
-        tracersh_validation_pattern: "{{ tracersh.validation.pattern }}"
-        tracersh_logging_enabled: "{{ tracersh.logging.enabled }}"
-        tracersh_logging_path: "{{ tracersh.logging.path }}"
-        # Security settings
-        security_home_dir_mode: "{{ security.home_dir_mode }}"
-        security_ssh_dir_mode: "{{ security.ssh_dir_mode }}"
-        security_authorized_keys_mode: "{{ security.authorized_keys_mode }}"
-        security_tracersh_mode: "{{ security.tracersh_mode }}"
-        security_log_file_mode: "{{ security.log_file_mode }}"
-        security_log_dir_mode: "{{ security.log_dir_mode }}"
-        # Backup settings
-        backup_enabled: "{{ backup.enabled }}"
-        backup_path: "{{ backup.path }}"
-        # Notification settings
-        notification_enabled: "{{ notification.enabled }}"
-        notification_email: "{{ notification.email }}"
-        notification_on_deploy: "{{ notification.on_deploy }}"
-        notification_on_remove: "{{ notification.on_remove }}"
-        notification_on_error: "{{ notification.on_error }}"
       tags: [deploy]
   
   post_tasks:

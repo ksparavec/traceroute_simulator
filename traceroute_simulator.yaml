@@ -120,7 +120,7 @@ controller_ip: "127.0.0.1"                     # Ansible controller IP (required
 ssh:
   ssh_mode: user                               # Mode: 'user' or 'standard' (default: standard)
   ssh_user: traceuser                         # SSH username for user mode
-  ssh_key: /opt/tsim/wsgi/conf/ssh_user.key   # SSH private key path for user mode
+  ssh_key: /opt/tsim/wsgi/conf/ssh_user       # SSH private key path for user mode
   ssh_options:                                # SSH options for router connections
     BatchMode: "yes"
     LogLevel: "ERROR"

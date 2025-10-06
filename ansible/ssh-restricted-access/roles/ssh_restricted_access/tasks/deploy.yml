@@ -1,6 +1,141 @@
 ---
 # Deployment tasks for SSH restricted access
 
+- name: Load and parse SSH public key
+  block:
+    - name: Load traceroute simulator config
+      slurp:
+        src: "/opt/tsim/wsgi/conf/traceroute_simulator.yaml"
+      register: tsim_config_slurp
+      delegate_to: localhost
+
+    - name: Parse YAML config
+      set_fact:
+        tsim_yaml: "{{ tsim_config_slurp.content | b64decode | from_yaml }}"
+
+    - name: Determine SSH key paths
+      set_fact:
+        ssh_private_key_path: "{{ tsim_yaml.ssh.ssh_key }}"
+        pub_key_path: "{{ tsim_yaml.ssh.ssh_key }}.pub"
+      delegate_to: localhost
+
+    - name: Check if SSH key pair exists
+      stat:
+        path: "{{ pub_key_path }}"
+      register: pub_key_check
+      delegate_to: localhost
+
+    - name: Generate SSH key pair if missing
+      block:
+        - name: Check if private key directory exists
+          stat:
+            path: "{{ ssh_private_key_path | dirname }}"
+          register: key_dir_check
+          delegate_to: localhost
+
+        - name: Fail if private key directory does not exist
+          fail:
+            msg: |
+              CRITICAL ERROR: Directory for private key does not exist: {{ ssh_private_key_path | dirname }}
+
+              Please ensure the directory exists before running this playbook.
+              The playbook will not create missing directories for security reasons.
+
+              Private key path: {{ ssh_private_key_path }}
+              Public key path: {{ pub_key_path }}
+          when: not key_dir_check.stat.exists
+          delegate_to: localhost
+
+        - name: Determine web user name
+          shell: "getent passwd www-data > /dev/null 2>&1 && echo 'www-data' || echo 'apache'"
+          register: web_user_check
+          delegate_to: localhost
+          changed_when: false
+
+        - name: Set web user fact
+          set_fact:
+            web_user: "{{ web_user_check.stdout }}"
+          delegate_to: localhost
+
+        - name: Generate SSH key pair
+          openssh_keypair:
+            path: "{{ ssh_private_key_path }}"
+            type: ed25519
+            size: 256
+            comment: "{{ tsim_yaml.ssh.ssh_user }}@traceroute-simulator"
+            force: false
+            owner: "{{ web_user }}"
+            group: "{{ tsim_yaml.system.unix_group | default('tsim-users') }}"
+            mode: "0600"
+          delegate_to: localhost
+          become: yes
+
+        - name: Set public key permissions
+          file:
+            path: "{{ pub_key_path }}"
+            mode: "0640"
+            owner: "{{ web_user }}"
+            group: "{{ tsim_yaml.system.unix_group | default('tsim-users') }}"
+          delegate_to: localhost
+          become: yes
+
+      when: not pub_key_check.stat.exists
+      delegate_to: localhost
+
+    - name: Read public key file
+      slurp:
+        src: "{{ pub_key_path }}"
+      register: pub_key_slurp
+      delegate_to: localhost
+
+    - name: Parse public key into components
+      set_fact:
+        pub_key_parts: "{{ (pub_key_slurp.content | b64decode).strip().split() }}"
+
+    - name: Set SSH key variables
+      set_fact:
+        ssh_key_type: "{{ pub_key_parts[0] }}"
+        ssh_key_data: "{{ pub_key_parts[1] }}"
+        ssh_key_comment: "{{ pub_key_parts[2] | default('tracersh') }}"
+        ssh_public_key: "{{ pub_key_parts[0] }} {{ pub_key_parts[1] }} {{ pub_key_parts[2] | default('tracersh') }}"
+
+  run_once: true
+  delegate_to: localhost
+  tags: [ssh, always]
+
+- name: Set role variables from config
+  set_fact:
+    restricted_user_name: "{{ username }}"
+    restricted_user_comment: "{{ restricted_user.comment | default('Traceroute execution account') }}"
+    restricted_user_shell: "{{ restricted_user.shell | default('/home/' + username + '/bin/tracersh') }}"
+    restricted_user_home: "{{ restricted_user.home | default('/home/' + username) }}"
+    restricted_user_state: "{{ restricted_user.state | default('present') }}"
+    ssh_restrict_option: "{{ ssh_config.restrict | default(true) }}"
+    ssh_from_hosts: "{{ ssh_config.from_hosts | default(['10.0.0.0/8']) }}"
+    tracersh_enabled: "{{ tracersh.enabled | default(true) }}"
+    tracersh_path: "{{ tracersh.path | default('/home/' + username + '/bin/tracersh') }}"
+    tracersh_preferred_tool: "{{ tracersh.preferred_tool | default('traceroute') }}"
+    tracersh_traceroute_path: "{{ tracersh.traceroute_path | default('/usr/bin/traceroute') }}"
+    tracersh_mtr_path: "{{ tracersh.mtr_path | default('/usr/bin/mtr') }}"
+    tracersh_validation_enabled: "{{ tracersh.validation.enabled | default(true) }}"
+    tracersh_validation_pattern: "{{ tracersh.validation.pattern | default('^10\\.') }}"
+    tracersh_logging_enabled: "{{ tracersh.logging.enabled | default(false) }}"
+    tracersh_logging_path: "{{ tracersh.logging.path | default('/var/log/tracersh.log') }}"
+    security_home_dir_mode: "{{ security.home_dir_mode | default('0750') }}"
+    security_ssh_dir_mode: "{{ security.ssh_dir_mode | default('0750') }}"
+    security_authorized_keys_mode: "{{ security.authorized_keys_mode | default('0640') }}"
+    security_tracersh_mode: "{{ security.tracersh_mode | default('0750') }}"
+    security_log_file_mode: "{{ security.log_file_mode | default('0664') }}"
+    security_log_dir_mode: "{{ security.log_dir_mode | default('0750') }}"
+    backup_enabled: "{{ backup.enabled | default(false) }}"
+    backup_path: "{{ backup.path | default('/var/backups/ansible/ssh-restricted') }}"
+    notification_enabled: "{{ notification.enabled | default(false) }}"
+    notification_email: "{{ notification.email | default('') }}"
+    notification_on_deploy: "{{ notification.on_deploy | default(false) }}"
+    notification_on_remove: "{{ notification.on_remove | default(false) }}"
+    notification_on_error: "{{ notification.on_error | default(false) }}"
+  tags: [always]
+
 - name: Create backup directory if enabled
   file:
     path: "{{ backup_path }}"

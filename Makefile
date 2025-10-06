@@ -1697,7 +1697,7 @@ install-wsgi:
 	
 	# Copy WSGI application files (excluding htdocs, documentation, templates, config.json, and Python cache)
 	@echo "Installing WSGI application..."
-	@rsync -av --exclude='htdocs' --exclude='*.md' --exclude='*.template' --exclude='config.json' --exclude='__pycache__' --exclude='*.pyc' wsgi/ "$(TSIM_WEB_ROOT)/"
+	@rsync -av --delete --exclude='htdocs' --exclude='conf' --exclude='*.md' --exclude='*.template' --exclude='config.json' --exclude='__pycache__' --exclude='*.pyc' wsgi/ "$(TSIM_WEB_ROOT)/"
 	
 	# Remove old subprocess-based files that have been replaced
 	@echo "Removing obsolete files..."

@@ -66,156 +66,82 @@
       run_once: true
 
 
+    - name: Determine public key file path
+      set_fact:
+        public_key_file_path: "{{ lookup('env', 'TSIM_CONFIG_PATH') | default('/opt/tsim/wsgi/conf/traceroute_simulator.yaml', true) }}"
+      delegate_to: localhost
+      run_once: true
+      tags: [always]
+
     - name: Load traceroute simulator config for SSH key path
       slurp:
-        src: "/opt/tsim/wsgi/conf/traceroute_simulator.yaml"
+        src: "{{ public_key_file_path }}"
       register: tsim_config_content
       delegate_to: localhost
       run_once: true
       failed_when: false
       tags: [always]
 
-    - name: Parse traceroute simulator config
-      set_fact:
-        tsim_config: "{{ (tsim_config_content.content | b64decode | from_yaml) if tsim_config_content.content is defined else {} }}"
-      delegate_to: localhost
-      run_once: true
-      tags: [always]
-
-    - name: Use SSH key path from traceroute simulator config
-      set_fact:
-        ssh_config: "{{ ssh_config | combine({
-          'pkey_file': (tsim_config.ssh.ssh_key | regex_replace('\\.key$', '.pub'))
-        }) }}"
-      when: 
-        - tsim_config.ssh is defined
-        - tsim_config.ssh.ssh_key is defined
-      delegate_to: localhost
-      run_once: true
-      tags: [always]
-
-    - name: Check if public key file exists
-      stat:
-        path: "{{ ssh_config.pkey_file | default('/tmp/id_' + restricted_user_name + '.pub') }}"
-      register: pkey_file_check
-      delegate_to: localhost
-      run_once: true
-
-    - name: Generate SSH key pair if missing
+    - name: Build complete ssh_config on localhost
       block:
-        - name: Set key file paths
+        - name: Parse traceroute simulator config
           set_fact:
-            private_key_path: "{{ (ssh_config.pkey_file | default('/tmp/id_' + restricted_user_name + '.pub')) | regex_replace('\\.pub$', '') }}"
-            public_key_path: "{{ ssh_config.pkey_file | default('/tmp/id_' + restricted_user_name + '.pub') }}"
-          delegate_to: localhost
-          run_once: true
+            tsim_config_parsed: "{{ tsim_config_content.content | b64decode | from_yaml }}"
+          when: tsim_config_content.content is defined
 
-        - name: Check if private key directory exists
-          stat:
-            path: "{{ private_key_path | dirname }}"
-          register: key_dir_check
-          delegate_to: localhost
-          run_once: true
-
-        - name: Fail if private key directory does not exist
-          fail:
-            msg: |
-              CRITICAL ERROR: Directory for private key does not exist: {{ private_key_path | dirname }}
-              
-              Please ensure the directory exists before running this playbook.
-              The playbook will not create missing directories for security reasons.
-              
-              Private key path: {{ private_key_path }}
-              Public key path: {{ public_key_path }}
-          when: not key_dir_check.stat.exists
-          delegate_to: localhost
-          run_once: true
-
-        - name: Generate SSH key pair
-          openssh_keypair:
-            path: "{{ private_key_path }}"
-            type: ed25519
-            size: 256
-            comment: "{{ restricted_user_name }}@{{ ansible_hostname }}"
-            force: false
-          delegate_to: localhost
-          run_once: true
-          become: yes
-
-        - name: Determine web user name
+        - name: Determine public key path from config
           set_fact:
-            web_user: "{{ 'apache' if (ansible_os_family == 'RedHat') else 'www-data' }}"
-          delegate_to: localhost
-          run_once: true
+            resolved_public_key_path: "{{ tsim_config_parsed.ssh.ssh_key }}.pub"
+          when:
+            - tsim_config_parsed is defined
+            - tsim_config_parsed.ssh is defined
+            - tsim_config_parsed.ssh.ssh_key is defined
 
-        - name: Set private key permissions
-          file:
-            path: "{{ private_key_path }}"
-            mode: "0600"
-            owner: "{{ web_user }}"
-            group: "{{ tsim_config.system.unix_group | default('tsim-users') }}"
-          delegate_to: localhost
-          run_once: true
-          become: yes
+        - name: Use default public key path if not in config
+          set_fact:
+            resolved_public_key_path: "/tmp/id_{{ restricted_user.name }}.pub"
+          when: resolved_public_key_path is not defined
 
-        - name: Set public key permissions
-          file:
-            path: "{{ public_key_path }}"
-            mode: "0640"
-            owner: "{{ web_user }}"
-            group: "{{ tsim_config.system.unix_group | default('tsim-users') }}"
-          delegate_to: localhost
-          run_once: true
-          become: yes
+        - name: Read public key file
+          slurp:
+            src: "{{ resolved_public_key_path }}"
+          register: public_key_content
 
-      when: not pkey_file_check.stat.exists
+        - name: Parse public key into components
+          set_fact:
+            parsed_public_key: "{{ (public_key_content.content | b64decode).strip().split() }}"
+
+        - name: Build final ssh_config with all components
+          set_fact:
+            complete_ssh_config:
+              restrict: "{{ ssh_config.restrict }}"
+              from_hosts: "{{ ssh_config.from_hosts }}"
+              pkey_file: "{{ resolved_public_key_path }}"
+              key_type: "{{ parsed_public_key[0] }}"
+              public_key: "{{ parsed_public_key[1] }}"
+              key_comment: "{{ parsed_public_key[2] | default('tracersh') }}"
+
       delegate_to: localhost
       run_once: true
-      tags: [ssh, keygen]
-
-    - name: Read public key file
-      slurp:
-        src: "{{ ssh_config.pkey_file | default('/tmp/id_' + restricted_user_name + '.pub') }}"
-      register: pkey_content
-      delegate_to: localhost
-      run_once: true
-
-    - name: Parse public key components
-      set_fact:
-        parsed_key: "{{ (pkey_content.content | b64decode).strip().split() }}"
-      delegate_to: localhost
-      run_once: true
-
-    - name: Extract key components
-      set_fact:
-        ssh_key_type: "{{ parsed_key[0] }}"
-        ssh_key_data: "{{ parsed_key[1] }}"
-        ssh_key_comment: "{{ parsed_key[2] | default('tracersh') }}"
-      delegate_to: localhost
-      run_once: true
-
-    - name: Update ssh_config with parsed key data
-      set_fact:
-        ssh_config: "{{ ssh_config | combine({'key_type': ssh_key_type, 'public_key': ssh_key_data, 'key_comment': ssh_key_comment}) }}"
-      delegate_to: localhost
-      run_once: true
+      tags: [always]
 
 
-      
     - name: Check OpenSSH version for restrict support
       shell: ssh -V 2>&1 | grep -oE 'OpenSSH_[0-9]+\.[0-9]+' | cut -d_ -f2
       register: openssh_version
       changed_when: false
       tags: [always]
-      
+
     - name: Set restrict support fact
       set_fact:
         supports_restrict: "{{ openssh_version.stdout is version('7.2', '>=') }}"
       tags: [always]
-      
-  
+
+
   roles:
     - role: ssh_restricted_access
+      vars:
+        ssh_config: "{{ hostvars['localhost']['complete_ssh_config'] }}"
       tags: [deploy]
   
   post_tasks:

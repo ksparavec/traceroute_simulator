@@ -652,7 +652,7 @@ class TsimHybridExecutor:
             
             # Direct execution - capture stdout only, let stderr go to logs
             result = subprocess.run(
-                [self.tsimsh_path],
+                [self.tsimsh_path, '-q'],
                 input=command,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,  # Capture but don't mix with stdout

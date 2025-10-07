@@ -126,20 +126,21 @@ class Router:
     def _extract_all_interfaces(self) -> Dict[str, List[str]]:
         """
         Extract comprehensive interface to IP addresses mapping from facts data.
-        
+
         Parses the network.interfaces section to extract all IP addresses
         (primary and secondary) configured on each interface.
-        
+        Excludes loopback addresses (127.0.0.0/8) from the mapping.
+
         Returns:
             Dict mapping interface names to lists of all their IP addresses
             Example: {'eth0': ['192.168.1.1', '192.168.1.2'], 'wg0': ['10.0.0.1']}
         """
         all_interfaces = {}
-        
+
         # Extract from network.interfaces section
         network_data = self.facts_data.get('network', {})
         interfaces_data = network_data.get('interfaces', [])
-        
+
         # Handle different interface data formats
         if isinstance(interfaces_data, dict):
             # Format: network.interfaces.parsed structure
@@ -147,11 +148,20 @@ class Router:
             for interface_name, interface_info in parsed_interfaces.items():
                 ip_addresses = []
                 addresses = interface_info.get('addresses', [])
-                
+
                 for addr_info in addresses:
                     if addr_info.get('family') == 'inet':  # IPv4 only
-                        ip_addresses.append(addr_info.get('address'))
-                
+                        ip_addr = addr_info.get('address')
+                        if ip_addr:
+                            # Skip loopback addresses (127.0.0.0/8)
+                            try:
+                                ip_obj = ipaddress.ip_address(ip_addr)
+                                if not ip_obj.is_loopback:
+                                    ip_addresses.append(ip_addr)
+                            except ValueError:
+                                # Invalid IP format, skip it
+                                pass
+
                 if ip_addresses:
                     all_interfaces[interface_name] = ip_addresses
         elif isinstance(interfaces_data, list):
@@ -160,11 +170,20 @@ class Router:
                 if 'dev' in interface_entry and 'prefsrc' in interface_entry:
                     dev = interface_entry['dev']
                     prefsrc = interface_entry['prefsrc']
-                    
+
+                    # Skip loopback addresses (127.0.0.0/8)
+                    try:
+                        ip_obj = ipaddress.ip_address(prefsrc)
+                        if ip_obj.is_loopback:
+                            continue
+                    except ValueError:
+                        # Invalid IP format, skip it
+                        continue
+
                     # Initialize interface if not seen before
                     if dev not in all_interfaces:
                         all_interfaces[dev] = []
-                    
+
                     # Add IP if not already present
                     if prefsrc not in all_interfaces[dev]:
                         all_interfaces[dev].append(prefsrc)
@@ -715,10 +734,11 @@ class TracerouteSimulator:
     def _build_comprehensive_ip_lookup(self) -> Dict[str, str]:
         """
         Build comprehensive IP address to router name lookup table.
-        
+
         Creates a reverse mapping from all IP addresses (primary and secondary)
         to router names, allowing complete determination of router ownership.
-        
+        Excludes loopback addresses (127.0.0.0/8) from the mapping.
+
         Returns:
             Dictionary mapping all IP addresses to router names
             Example: {'192.168.1.1': 'router1', '192.168.1.2': 'router1', '10.0.0.1': 'router2'}
@@ -729,6 +749,14 @@ class TracerouteSimulator:
             all_ips = router.get_all_ip_addresses()
             for ip in all_ips:
                 if ip:  # Skip None/empty IPs
+                    # Skip loopback addresses (127.0.0.0/8)
+                    try:
+                        ip_obj = ipaddress.ip_address(ip)
+                        if ip_obj.is_loopback:
+                            continue
+                    except ValueError:
+                        # Invalid IP format, skip it
+                        continue
                     lookup[ip] = name
         return lookup
     

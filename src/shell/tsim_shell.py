@@ -34,6 +34,7 @@ except ImportError:
 # Import the new VariableManager
 from .utils.variable_manager import VariableManager
 from .utils.history_handler import HistoryHandler
+from .utils.prompt_builder import PromptBuilder
 
 
 class TracerouteSimulatorShell(cmd2.Cmd):
@@ -105,7 +106,10 @@ class TracerouteSimulatorShell(cmd2.Cmd):
                 version = __version__
             except ImportError:
                 version = "1.0"  # Fallback
-            
+
+            # Initialize prompt builder
+            self.prompt_builder = PromptBuilder(version)
+
             # Shell configuration for interactive mode
             if self.quick_mode:
                 self.intro = f"""{Fore.CYAN}
@@ -129,7 +133,8 @@ Type 'help' for available commands, 'help <command>' for specific command help.
 Variables are supported: VAR=value, VAR="value", VAR=$(command). Use $VAR to substitute.
 Type 'set' to see all variables.
 """
-            self.prompt = f"{self.base_prompt}> "
+            # Use bash-like prompt
+            self.prompt = self.prompt_builder.build_prompt(use_colors=True)
             # Don't exit on error in interactive mode
             self.quit_on_error = False
         else:
@@ -977,10 +982,15 @@ Type 'set' to see all variables.
         """
         This hook is called before the command is executed.
         It handles variable substitutions while preserving original command in history.
+        Also updates the prompt if in interactive mode with bash-like prompts.
         """
+        # Update prompt dynamically (directory, git status may have changed)
+        if self.is_interactive and hasattr(self, 'prompt_builder'):
+            self.prompt = self.prompt_builder.build_prompt(use_colors=True)
+
         # statement.raw is the raw input line
         line = statement.raw
-        
+
         # Skip variable substitution if variable_manager isn't ready yet
         # This can happen during initialization
         if not hasattr(self, 'variable_manager'):
@@ -1075,37 +1085,43 @@ Type 'set' to see all variables.
             pass
     
     def _load_config(self):
-        """Load configuration from file."""
-        config_paths = [
-            os.path.join(self.project_root, 'tsim_shell.yaml'),
-            os.path.expanduser('~/.tsim_shell.yaml'),
-            os.path.join(self.project_root, 'config.yaml')
-        ]
-        
-        for config_path in config_paths:
-            if os.path.exists(config_path):
-                try:
-                    import yaml
-                    with open(config_path, 'r') as f:
-                        config = yaml.safe_load(f)
-                        self._apply_config(config)
-                    break
-                except ImportError:
-                    # Continue without YAML config
-                    pass
-                except (FileNotFoundError, PermissionError) as e:
-                    self.poutput(f"{Fore.YELLOW}Warning: Could not access config file {config_path}: {e}{Style.RESET_ALL}")
-                except yaml.YAMLError as e:
-                    self.poutput(f"{Fore.YELLOW}Warning: Invalid YAML in config file {config_path}: {e}{Style.RESET_ALL}")
-                except (ValueError, TypeError) as e:
-                    self.poutput(f"{Fore.YELLOW}Warning: Invalid config data in {config_path}: {e}{Style.RESET_ALL}")
+        """Load configuration from traceroute_simulator.yaml in home directory."""
+        config_path = os.path.expanduser('~/traceroute_simulator.yaml')
+
+        if os.path.exists(config_path):
+            try:
+                import yaml
+                with open(config_path, 'r') as f:
+                    config = yaml.safe_load(f)
+                    self._apply_config(config)
+            except ImportError:
+                # Continue without YAML config
+                pass
+            except (FileNotFoundError, PermissionError) as e:
+                self.poutput(f"{Fore.YELLOW}Warning: Could not access config file {config_path}: {e}{Style.RESET_ALL}")
+            except yaml.YAMLError as e:
+                self.poutput(f"{Fore.YELLOW}Warning: Invalid YAML in config file {config_path}: {e}{Style.RESET_ALL}")
+            except (ValueError, TypeError) as e:
+                self.poutput(f"{Fore.YELLOW}Warning: Invalid config data in {config_path}: {e}{Style.RESET_ALL}")
     
     def _apply_config(self, config):
         """Apply configuration settings."""
         if 'shell' in config:
             shell_config = config['shell']
+
+            # Handle prompt_style configuration
+            if 'prompt_style' in shell_config and self.is_interactive and hasattr(self, 'prompt_builder'):
+                prompt_style = shell_config['prompt_style'].lower()
+                if prompt_style == 'simple':
+                    self.prompt = self.prompt_builder.build_simple_prompt()
+                elif prompt_style == 'full':
+                    self.prompt = self.prompt_builder.build_prompt(use_colors=True)
+                # else: keep the default prompt already set
+
+            # Direct prompt override (for backward compatibility)
             if 'prompt' in shell_config:
                 self.prompt = shell_config['prompt']
+
             if 'intro' in shell_config and self.is_interactive:
                 self.intro = shell_config['intro']
     

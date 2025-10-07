@@ -142,6 +142,11 @@ ssh_controller:
     UserKnownHostsFile: "~/.ssh/known_hosts" # Use standard known hosts file
     PasswordAuthentication: "no"
 
+# Interactive shell configuration
+shell:
+  # Prompt style: full (two-line with git/venv info) or simple (tsimsh-version>)
+  prompt_style: full
+
 # Network status command configuration
 network_status:
   # Cache configuration for performance

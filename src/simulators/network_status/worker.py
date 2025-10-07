@@ -284,17 +284,17 @@ class NamespaceQueryWorker:
     async def query_iptables(self, namespace: str) -> Dict[str, Any]:
         """
         Query iptables configuration for a namespace.
-        
+
         Args:
             namespace: Namespace name
-            
+
         Returns:
             Dictionary with iptables data for all tables
         """
         try:
             iptables_data = {}
             tables = ['filter', 'nat', 'mangle', 'raw']
-            
+
             for table in tables:
                 # Use iptables-save for structured output with counters
                 cmd = f"iptables-save -t {table} -c"

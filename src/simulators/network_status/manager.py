@@ -267,12 +267,12 @@ class NetworkStatusManager:
         else:
             return ['interfaces', 'routes', 'rules']  # Default
     
-    def _collect_data(self, namespaces: List[str], 
+    def _collect_data(self, namespaces: List[str],
                      data_types: List[str],
                      use_cache: bool) -> Dict[str, Dict]:
         """Collect data with caching support."""
         result = {}
-        
+
         # Build fine-grained cache/fetch plan per data type
         if use_cache and self.config.cache_enabled:
             ns_fetch_plan = {}  # namespace -> [data_types_to_fetch]
@@ -302,12 +302,16 @@ class NetworkStatusManager:
         else:
             # No cache - fetch everything
             ns_fetch_plan = {ns: data_types for ns in namespaces}
-        
+            print(f"DEBUG: No cache branch - created fetch plan for {len(ns_fetch_plan)} namespaces, data_types={data_types}", file=sys.stderr)
+
+        print(f"DEBUG: ns_fetch_plan has {len(ns_fetch_plan)} entries", file=sys.stderr)
         # Collect missing data using fine-grained plan
         if ns_fetch_plan:
+            print(f"DEBUG: Fetching fresh data for {len(ns_fetch_plan)} namespaces", file=sys.stderr)
             # Collect all missing data in parallel using async
             fresh_data = asyncio.run(self._collect_missing_data_async(ns_fetch_plan))
-            
+            print(f"DEBUG: Got fresh data, sample FORWARD packets: {fresh_data.get(list(fresh_data.keys())[0], {}).get('iptables', {}).get('filter', {}).get('chains', {}).get('FORWARD', {}).get('packets', 'N/A') if fresh_data else 'NO DATA'}", file=sys.stderr)
+
             # Cache the fresh data
             if use_cache and self.config.cache_enabled:
                 for ns_key, ns_data in fresh_data.items():

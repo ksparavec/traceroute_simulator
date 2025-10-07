@@ -1572,7 +1572,14 @@ Environment Variables:
         action='store_true',
         help='Output in JSON format'
     )
-    
+
+    # Accept but ignore cache-related flags for backward compatibility
+    parser.add_argument('--no-cache', action='store_true', help=argparse.SUPPRESS)
+    parser.add_argument('--invalidate-cache', action='store_true', help=argparse.SUPPRESS)
+    parser.add_argument('--cache-stats', action='store_true', help=argparse.SUPPRESS)
+    parser.add_argument('--timeout', type=int, help=argparse.SUPPRESS)
+    parser.add_argument('--table', '-t', action='store_true', help=argparse.SUPPRESS)
+
     args = parser.parse_args()
     
     # Get facts directory from environment (required)

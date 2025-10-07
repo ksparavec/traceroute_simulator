@@ -375,7 +375,7 @@ class MultiServiceTester:
             iptables_before = {}
             from concurrent.futures import ThreadPoolExecutor, as_completed
             def _fetch_before(r):
-                cmd = f"network status --json --limit {r} iptables --no-cache"
+                cmd = f"network status --json --limit {r} iptables"
                 return r, tsimsh_exec(cmd, capture_output=True, verbose=self.verbose)
             with ThreadPoolExecutor(max_workers=min(4, len(routers))) as pool:
                 futures = [pool.submit(_fetch_before, r) for r in routers]
@@ -421,7 +421,7 @@ class MultiServiceTester:
         iptables_after = {}
         from concurrent.futures import ThreadPoolExecutor, as_completed
         def _fetch_after(r):
-            cmd = f"network status --json --limit {r} iptables --no-cache"
+            cmd = f"network status --json --limit {r} iptables"
             return r, tsimsh_exec(cmd, capture_output=True, verbose=self.verbose)
         with ThreadPoolExecutor(max_workers=min(4, len(routers))) as pool:
             futures = [pool.submit(_fetch_after, r) for r in routers]

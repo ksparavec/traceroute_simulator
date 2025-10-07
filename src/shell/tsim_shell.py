@@ -1562,9 +1562,6 @@ Type 'set' to see all variables.
         self.poutput("  --limit PATTERN       Limit to specific namespaces (glob pattern)")
         self.poutput("  -j, --json            Output in JSON format")
         self.poutput("  -v, --verbose         Increase verbosity")
-        self.poutput("  --no-cache            Bypass cache and get fresh data")
-        self.poutput("  --invalidate-cache    Clear the cache")
-        self.poutput("  --cache-stats         Show cache statistics")
         
         self.poutput("\nCLEAN OPTIONS (batch mode):")
         self.poutput("  -v, --verbose         Increase verbosity")
@@ -1598,15 +1595,6 @@ Type 'set' to see all variables.
         
         self.poutput("\n  Show interfaces for specific router:")
         self.poutput("    network status interfaces --limit hq-*")
-        
-        self.poutput("\n  Get fresh data bypassing cache:")
-        self.poutput("    network status --no-cache")
-        
-        self.poutput("\n  Clear cache and show status:")
-        self.poutput("    network status --invalidate-cache")
-        
-        self.poutput("\n  Show cache statistics:")
-        self.poutput("    network status --cache-stats")
         
         self.poutput("\n  Test connectivity:")
         self.poutput("    network test --source 10.1.1.1 --destination 10.2.1.1")

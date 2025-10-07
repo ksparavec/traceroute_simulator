@@ -280,66 +280,41 @@ class NetworkCommands(BaseCommandHandler):
                           help='Information to display')
         parser.add_argument('--json', '-j', action='store_true',
                           help='Output in JSON format')
-        parser.add_argument('--table', '-t', action='store_true',
-                          help='Output in table format (summary only)')
         parser.add_argument('--verbose', '-v', action='count', default=0,
                           help='Increase verbosity (-v, -vv, -vvv)')
-        parser.add_argument('--no-cache', action='store_true',
-                          help='Bypass cache and get fresh data')
-        parser.add_argument('--invalidate-cache', action='store_true',
-                          help='Clear the cache')
-        parser.add_argument('--cache-stats', action='store_true',
-                          help='Show cache statistics')
-        parser.add_argument('--timeout', type=int, metavar='SECONDS',
-                          help='Timeout per namespace in seconds (default: 5)')
-        
+
         try:
             parsed_args = parser.parse_args(args)
         except SystemExit:
             return 1
-        
+
         # Store current args for JSON output detection
         self.current_args = parsed_args
-        
+
         # Only show info message if not using JSON output
-        if not parsed_args.json and not parsed_args.cache_stats and not parsed_args.invalidate_cache:
+        if not parsed_args.json:
             self.info("Checking network namespace status...")
-        
-        # Use the isolated runner to avoid readline issues
-        script_path = self.get_script_path('src/simulators/network_status_command.py')
+
+        # Run the network status script directly (pre-cache version)
+        script_path = self.get_script_path('src/simulators/network_namespace_status.py')
         if not self.check_script_exists(script_path):
             return 1
-        
+
         # Build command arguments
         cmd_args = [parsed_args.function]
-        
+
         if parsed_args.limit:
             cmd_args.extend(['--limit', parsed_args.limit])
-        
+
         if parsed_args.json:
             cmd_args.append('--json')
-        
-        if parsed_args.table:
-            cmd_args.append('--table')
-        
+
         if parsed_args.verbose:
             cmd_args.append('-' + 'v' * parsed_args.verbose)
-        
-        if parsed_args.no_cache:
-            cmd_args.append('--no-cache')
-        
-        if parsed_args.invalidate_cache:
-            cmd_args.append('--invalidate-cache')
-        
-        if parsed_args.cache_stats:
-            cmd_args.append('--cache-stats')
-        
-        if parsed_args.timeout:
-            cmd_args.extend(['--timeout', str(parsed_args.timeout)])
-        
-        # Run the isolated script
+
+        # Run the script
         returncode = self.run_script_with_output(script_path, cmd_args, use_sudo=False)
-        
+
         return returncode
     
     def _clean_network(self, args: list) -> int:

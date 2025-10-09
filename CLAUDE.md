@@ -25,3 +25,4 @@ This file provides guidance for Claude Code (claude.ai/code) when working with c
 - do not support running in development mode - just package mode
 - search and work on files in repo only
 - do not commit without asking
+- don't use emojis when writing documents

@@ -1,0 +1,174 @@
+// Job Scheduling Flow with Race Condition Elimination
+digraph {
+	bgcolor=white dpi=300 fontname=Arial fontsize=10 nodesep=0.15 rankdir=TB ranksep=0.3 ratio=compress splines=ortho
+	node [fillcolor=lightblue fontname=Arial fontsize=9 shape=box style=filled]
+	edge [fontname=Arial fontsize=8]
+	subgraph cluster_submission {
+		color=gray label="Job Submission" margin=4 style=dashed
+		start [label="User Submits Job
+(Quick or Detailed)" fillcolor=lightgreen shape=ellipse]
+		submit [label="Handler receives request
+Generates run_id" fillcolor=lightyellow]
+		enqueue [label="Enqueue job to
+TsimQueueService
+(FIFO, simple)" fillcolor=lightyellow]
+	}
+	start -> submit
+	submit -> enqueue
+	subgraph cluster_scheduler {
+		color=blue label="Router-Agnostic Scheduler" margin=4 style=dashed
+		sched_loop [label="Scheduler Leader Loop
+(no global lock,
+no router tracking)" fillcolor=lightcyan]
+		sched_cleanup [label="Cleanup completed jobs" fillcolor=lightcyan]
+		sched_count [label="Count running
+quick jobs" fillcolor=lightcyan shape=parallelogram]
+		sched_decide [label="Can start
+more jobs?" fillcolor=yellow shape=diamond]
+		sched_pop [label="Pop jobs from queue
+(Quick jobs PRIORITY,
+respects DSCP limit)" fillcolor=lightcyan]
+		sched_allocate [label="Allocate DSCP
+for quick jobs" fillcolor=lightcyan]
+		sched_submit [label="Submit to
+thread pool" fillcolor=lightcyan]
+	}
+	enqueue -> sched_loop
+	sched_loop -> sched_cleanup
+	sched_cleanup -> sched_count
+	sched_count -> sched_decide
+	sched_decide -> sched_pop [label=Yes]
+	sched_decide -> sched_loop [label="No (wait)" style=dashed]
+	sched_pop -> sched_allocate
+	sched_allocate -> sched_submit
+	job_type [label="Job Type?" fillcolor=yellow shape=diamond]
+	sched_submit -> job_type
+	subgraph cluster_quick {
+		color=green label="Quick Job Execution (Parallel, DSCP Isolated)" margin=4 style=dashed
+		quick_start [label="Quick Job Starts
+(has unique DSCP)" fillcolor=lightgreen shape=ellipse]
+		quick_wait [label="For each router:
+RouterWaiter.wait_until_free()
+(inotify, no polling)" fillcolor=palegreen]
+		quick_locked [label="Router locked
+by detailed job?" fillcolor=yellow shape=diamond]
+		quick_block [label="Block until
+lock released
+(inotify wakeup)" fillcolor=orange]
+		quick_hosts [label="Create/acquire
+source hosts
+(physical + lease)" fillcolor=palegreen]
+		quick_iptables [label="Install iptables rules
+(--noflush, DSCP-specific)" fillcolor=palegreen]
+		quick_test [label="Run tests
+(DSCP isolated)" fillcolor=palegreen]
+		quick_cleanup_ipt [label="Cleanup iptables
+(--noflush, DSCP-specific)" fillcolor=palegreen]
+		quick_cleanup_hosts [label="Release source host leases
+ref_count--
+Delete if ref_count==0" fillcolor=palegreen]
+		quick_end [label="Quick Job Complete" fillcolor=lightgreen shape=ellipse]
+	}
+	job_type -> quick_start
+	quick_start -> quick_wait
+	quick_wait -> quick_locked
+	quick_locked -> quick_block [label=Yes]
+	quick_block -> quick_locked [label="Check again"]
+	quick_locked -> quick_hosts [label="No (free)"]
+	quick_hosts -> quick_iptables
+	quick_iptables -> quick_test
+	quick_test -> quick_cleanup_ipt
+	quick_cleanup_ipt -> quick_cleanup_hosts
+	quick_cleanup_hosts -> quick_end
+	subgraph cluster_detailed {
+		color=red label="Detailed Job Execution (All Routers in Parallel, Exclusive Access)" margin=4 style=dashed
+		det_start [label="Detailed Job Starts" fillcolor=mistyrose shape=ellipse]
+		det_check_locks [label="ALL routers
+available?" fillcolor=yellow shape=diamond]
+		det_block [label="Wait for ALL routers
+to be released
+(retry lock acquisition)" fillcolor=orange]
+		det_lock_all [label="Acquire ALL router locks
+ATOMICALLY
+(all-or-nothing)
+[DEADLOCK PREVENTION]
+Grants exclusive access
+to all routers + hosts" fillcolor=mistyrose]
+		det_src_hosts [label="Create/acquire
+source hosts
+(physical + lease)
+[tsimsh parallel]" fillcolor=mistyrose]
+		det_dst_hosts [label="Create destination hosts
+(ephemeral, no lease)
+[tsimsh parallel]" fillcolor=mistyrose]
+		det_services [label="Create and start
+services on
+destination hosts
+[tsimsh parallel]" fillcolor=mistyrose]
+		det_baseline [label="Read baseline
+FORWARD counters
+[all routers]" fillcolor=mistyrose]
+		det_test [label="Send test traffic
+[all routers]" fillcolor=mistyrose]
+		det_final [label="Read final
+FORWARD counters
+[all routers]" fillcolor=mistyrose]
+		det_calc [label="Calculate delta
+(no pollution)
+[all routers]" fillcolor=mistyrose]
+		det_cleanup_services [label="Stop and cleanup
+services
+[tsimsh parallel]" fillcolor=mistyrose]
+		det_cleanup_dst [label="Delete destination hosts
+(ephemeral)
+[tsimsh parallel]" fillcolor=mistyrose]
+		det_cleanup_src [label="Release source host leases
+ref_count--
+Delete if ref_count==0
+[all hosts]" fillcolor=mistyrose]
+		det_unlock_all [label="Release ALL router locks
+ATOMICALLY
+(touch notify files)
+[wake all waiters]" fillcolor=mistyrose]
+		det_end [label="Detailed Job Complete" fillcolor=mistyrose shape=ellipse]
+	}
+	job_type -> det_start
+	det_start -> det_check_locks
+	det_check_locks -> det_block [label="No (any locked)"]
+	det_block -> det_check_locks [label=Retry]
+	det_check_locks -> det_lock_all [label="Yes (all free)"]
+	det_lock_all -> det_src_hosts
+	det_src_hosts -> det_dst_hosts
+	det_dst_hosts -> det_services
+	det_services -> det_baseline
+	det_baseline -> det_test
+	det_test -> det_final
+	det_final -> det_calc
+	det_calc -> det_cleanup_services
+	det_cleanup_services -> det_cleanup_dst
+	det_cleanup_dst -> det_cleanup_src
+	det_cleanup_src -> det_unlock_all
+	det_unlock_all -> det_end
+	complete [label="Return results
+to user" fillcolor=lightgreen shape=ellipse]
+	quick_end -> complete
+	det_end -> complete
+	complete -> sched_loop [label="Scheduler continues" style=dashed]
+	legend_table [label=<
+<TABLE BORDER="1" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
+  <TR><TD COLSPAN="6" BGCOLOR="lightgray"><B>LEGEND</B></TD></TR>
+  <TR>
+    <TD BGCOLOR="lightgreen">Quick Job<BR/>Start/End</TD>
+    <TD BGCOLOR="palegreen">Quick Job<BR/>Process</TD>
+    <TD BGCOLOR="mistyrose">Detailed Job<BR/>(all boxes)</TD>
+    <TD BGCOLOR="yellow">Decision<BR/>(diamond)</TD>
+    <TD BGCOLOR="orange">Blocking<BR/>(waiting)</TD>
+    <TD BGCOLOR="lightblue">Scheduler<BR/>Process</TD>
+  </TR>
+</TABLE>> shape=plaintext]
+	{
+		rank=sink
+		legend_table
+	}
+	complete -> legend_table [style=invis weight=100]
+}

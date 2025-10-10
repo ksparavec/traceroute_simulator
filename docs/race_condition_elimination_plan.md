@@ -22,15 +22,45 @@ Implement host reference counting and per-router locking to eliminate race condi
 - Can disable registry coordination for single-threaded deployments
 - Lock timeouts, retry attempts, and DSCP ranges all configurable
 
-### Scheduler-Based Job Coordination
-- **Scheduler manages all concurrency** via enhanced `TsimSchedulerService`
-- Scheduler pops compatible jobs from queue:
-  - **Quick jobs**: Up to 32 in parallel (DSCP-isolated)
-  - **Detailed jobs**: One at a time (exclusive)
-- **No global lock** - parallel execution enabled
-- Jobs execute immediately when popped (no waiting/blocking in job code)
+### Router-Agnostic Scheduler with Job-Level Coordination
+- **Scheduler is router-agnostic** - does NOT track router usage
+- **No global lock** - scheduler runs jobs without global serialization
+- **Job-level coordination** via router locks and waiters:
+  - **Quick jobs**: Use `RouterWaiter` to wait (inotify, no polling) if router locked by detailed job; otherwise proceed immediately. Multiple quick jobs can run on same router concurrently.
+  - **Detailed jobs**: Acquire exclusive per-router locks for each router being processed; release immediately when that router completes.
 - DSCP allocation/deallocation handled by scheduler
+- Up to 32 concurrent quick jobs (DSCP range limit)
 - Existing queue/scheduler infrastructure leveraged
+
+### Hosts vs Routers: Fundamental Architectural Distinction
+
+**Routers are persistent** - created at system startup, remain until OS reboot:
+- Always exist during testing operations
+- Shared infrastructure across all jobs
+- Coordination via router locks
+
+**Hosts are fluid** - created, used, and removed dynamically by jobs:
+- Created on-demand when needed
+- Removed when no longer needed
+- Two categories with different lifecycles:
+
+**Source Hosts** (e.g., "destination-1"):
+- Shared resource across multiple jobs
+- Reference counted: persist while any job needs them
+- Deleted only when ref_count reaches 0
+- Access controlled by router lock: when router is locked, all hosts on that router are locked too
+
+**Destination Hosts** (e.g., service hosts):
+- Exclusive to single detailed job
+- Created at job start
+- Deleted at job end (no reference counting)
+- Access controlled by router lock: detailed job locks router, gets exclusive access to all hosts on that router
+
+**Key Principle: Router Locks Control Host Access**
+- Acquiring a router lock grants exclusive access to ALL hosts attached to that router (both source and destination)
+- Quick jobs waiting for router (via RouterWaiter) are also waiting for access to source hosts on that router
+- When router lock is released, source hosts become available for next job(s) to reuse
+- No separate host locks needed - router lock IS the host lock
 
 ---
 
@@ -62,7 +92,9 @@ if 'TSIM_KSMS=' in ln:
 
 **Result**: Job 1's iptables rules are removed by Job 2, causing Job 1 to report UNKNOWN for all services.
 
-### Race Condition #2: Host Creation/Deletion Conflicts
+**Solution**: Use `iptables-restore --noflush -n` to add/delete only this job's rules. Quick jobs wait via RouterWaiter if router is locked by detailed job, then proceed with batch operations.
+
+### Race Condition #2: Source Host Deletion While In Use
 
 **Scenario**: Quick job A is using a source host while Quick job B or Detailed job tries to delete it.
 
@@ -74,68 +106,108 @@ tsimsh_exec(f"host remove --name {src_host_name} --force")
 
 **Result**: Active job loses its network namespace mid-execution, causing connection failures.
 
-### Race Condition #3: Quick/Detailed Job Conflicts
+**Solution**:
+- Source hosts use reference counting (leases registry)
+- Delete only when ref_count reaches 0
+- Router lock controls access: if router is locked, source hosts on that router are inaccessible to other jobs
 
-**Scenario**: Detailed analysis starts while quick jobs are running on same routers.
+### Race Condition #3: Quick Job Using Source Host While Detailed Job Has Router Locked
 
-**Problem**: No conflict detection mechanism exists. Detailed analysis uses `host clean --force` which removes ALL hosts regardless of active usage.
+**Scenario**: Detailed job locks a router (for exclusive measurements), but quick job tries to use a source host on that same router.
+
+**Problem**: Without coordination, quick job could send traffic through router while detailed job is taking measurements, polluting counter readings.
+
+**Solution**:
+- RouterWaiter: Quick job waits (inotify) until router lock is released
+- Router lock implicitly locks ALL hosts on that router
+- Quick jobs cannot access source hosts on locked routers
+
+### Race Condition #4: Multiple Jobs Creating/Deleting Same Destination Host
+
+**Scenario**: Two detailed jobs try to create/delete the same destination host simultaneously.
+
+**Problem**: No coordination for destination host creation/deletion.
+
+**Solution**:
+- Destination hosts are tied to router locks
+- Only one detailed job can hold a router lock at a time
+- Therefore, only one detailed job can create/modify destination hosts on that router
+- Destination hosts are ephemeral: created and deleted within single job (no reference counting needed)
 
 ---
 
-## Phase 1: Enhance Host Registry with Reference Counting
+## Phase 1: Source Host Leases Registry with Router-Coupled Access Control
 
-### 1.1 Enhance `host_namespace_setup.py`
+**Key Architectural Points**:
+1. **Source hosts only**: Destination hosts are ephemeral (created/deleted within single job, no leases needed)
+2. **Router lock controls access**: Acquiring router lock grants exclusive access to ALL hosts on that router
+3. **Reference counting for persistence**: Source hosts persist across jobs while ref_count > 0
+4. **No separate host locks**: Router lock IS the host lock
+
+### 1.1 Source Host Leases Registry Structure
 
 **Location**: `src/simulators/host_namespace_setup.py`
 
-**Purpose**: Add reference counting and job tracking to existing host registry infrastructure.
+**Purpose**: Separate frequently-changing lease data from stable physical host registry.
 
-**Current Implementation**:
-- Registry path obtained from `config_loader.get_registry_paths()['hosts']`
-- Managed by `HostNamespaceSetup` class
-- Uses `_atomic_json_operation()` for thread-safe file locking (fcntl)
-- Current structure tracks host creation metadata
+**Key Design**:
+- **Physical host registry** (`hosts.json`): Tracks actual host creation metadata (stable, long-lived)
+- **Host leases registry** (`host_leases.json`): Tracks which jobs are using which hosts (volatile, frequently updated)
+- Separation keeps physical registry stable and makes lease reconciliation simple
 
-**Enhancements Needed**:
-- Add per-host reference counting
-- Add job tracking (which jobs are using each host)
-- Add conflict detection between job types
-- Add stale job cleanup (check if process alive)
-- Add acquire/release methods for job lifecycle
+**Source Host Leases Registry Structure** (`host_leases.json`):
+```json
+{
+  "destination-2": {
+    "router": "router-hq",
+    "leases": [
+      {
+        "run_id": "job-abc123",
+        "pid": 12345,
+        "job_type": "quick",
+        "dscp": 32,
+        "allocated_at": 1234567890.123
+      },
+      {
+        "run_id": "job-def456",
+        "pid": 12346,
+        "job_type": "quick",
+        "dscp": 33,
+        "allocated_at": 1234567891.234
+      }
+    ]
+  },
+  "source-host-1": {
+    "router": "router-branch1",
+    "leases": [
+      {
+        "run_id": "job-ghi789",
+        "pid": 12347,
+        "job_type": "detailed",
+        "dscp": null,
+        "allocated_at": 1234567892.345
+      }
+    ]
+  }
+}
+```
 
-**Enhanced Data Structure** (adds to existing fields):
+**Key Fields**:
+- **router**: The router this source host is attached to (from physical host registry's `connected_to` field)
+- **leases**: Array of active leases for this source host
+- When acquiring a lease, the caller's router lock status can be verified against the `router` field
+
+**Physical Host Registry** (unchanged - existing structure):
 ```json
 {
   "destination-2": {
     "primary_ip": "10.128.47.21/24",
-    "secondary_ips": [],
     "connected_to": "befw-00190-045.lvnbb.de",
     "router_interface": "ens2f0",
     "gateway_ip": "10.128.47.247",
-    "router_ip_added": false,
-    "dummy_interfaces": [],
     "created_at": "Thu Oct  9 04:09:39 PM CEST 2025",
     "connection_type": "sim_mesh_direct",
-    "mesh_bridge": "br0010",
-    "host_veth": "h34ba20",
-    "mesh_veth": "m34ba20",
-    "sim_namespace": "netsim",
-
-    "ref_count": 2,
-    "jobs": {
-      "job-abc123": {
-        "pid": 12345,
-        "type": "quick",
-        "dscp": 32,
-        "allocated_at": 1234567890.123
-      },
-      "job-def456": {
-        "pid": 12346,
-        "type": "quick",
-        "dscp": 33,
-        "allocated_at": 1234567891.234
-      }
-    }
+    ...
   }
 }
 ```
@@ -143,149 +215,297 @@ tsimsh_exec(f"host remove --name {src_host_name} --force")
 **New Methods to Add to `HostNamespaceSetup` class**:
 
 ```python
-def acquire_host_ref(self, job_id: str, host_name: str,
-                     job_type: str, dscp: int = None) -> Dict[str, Any]:
-    """Acquire reference to host, increment ref count
+def acquire_source_host_lease(self, run_id: str, host_name: str,
+                               job_type: str, dscp: int = None) -> int:
+    """Add lease for SOURCE host (called AFTER physical creation)
 
-    Called AFTER host is physically created. Updates registry atomically.
+    IMPORTANT: Caller MUST have acquired router lock for the router this host is attached to.
+    This method assumes the caller has proper router access control in place.
 
     Args:
-        job_id: Unique job identifier
-        host_name: Host namespace name
+        run_id: Unique job identifier
+        host_name: Source host namespace name (e.g., "destination-2")
         job_type: 'quick' or 'detailed'
         dscp: DSCP value (for quick jobs only)
 
     Returns:
-        {
-            'action': 'acquired' | 'initialized',
-            'ref_count': int,
-            'conflicts': List[str]  # Conflicting job IDs (if any)
-        }
+        Current ref_count (number of active leases for this host)
+
+    Note:
+        - Source hosts only (destination hosts are ephemeral, no leases)
+        - Router lock enforcement happens at job level (before calling this)
+        - Multiple quick jobs can have leases simultaneously (DSCP isolated)
+        - Only one detailed job can have a lease (router lock ensures exclusivity)
     """
+    with self._atomic_lease_operation():
+        leases = self._load_host_leases()
 
-def release_host_ref(self, job_id: str, host_name: str) -> Dict[str, Any]:
-    """Release host reference, decrement ref count
+        # Get router from physical registry
+        router = self._get_host_router(host_name)
 
-    Called BEFORE host is physically removed.
+        if host_name not in leases:
+            leases[host_name] = {
+                'router': router,
+                'leases': []
+            }
+
+        leases[host_name]['leases'].append({
+            'run_id': run_id,
+            'pid': os.getpid(),
+            'job_type': job_type,
+            'dscp': dscp,
+            'allocated_at': time.time()
+        })
+
+        self._save_host_leases(leases)
+        return len(leases[host_name]['leases'])
+
+def release_source_host_lease(self, run_id: str, host_name: str) -> int:
+    """Remove lease for SOURCE host (returns ref_count)
+
+    Physical removal should only happen when returned ref_count == 0.
+    If physical removal fails, just log - another job can recreate.
 
     Returns:
-        {
-            'ref_count': int,  # Remaining ref count
-            'should_remove_host': bool  # True if ref_count reached 0
-        }
+        Remaining ref_count (0 means safe to physically remove)
     """
+    with self._atomic_lease_operation():
+        leases = self._load_host_leases()
+        if host_name not in leases:
+            return 0
 
-def check_host_conflicts(self, host_name: str, job_type: str) -> Dict[str, Any]:
-    """Check for conflicts (OPTIONAL - for monitoring/debugging only)
+        # Remove this job's lease
+        leases[host_name]['leases'] = [
+            lease for lease in leases[host_name]['leases']
+            if lease['run_id'] != run_id
+        ]
 
-    NOTE: Conflict detection now handled by scheduler (Phase 2).
-    This method is optional and primarily useful for:
-    - Debugging and monitoring
-    - Unit tests
-    - Standalone mode (when not using scheduler)
+        if not leases[host_name]['leases']:
+            del leases[host_name]
+            ref_count = 0
+        else:
+            ref_count = len(leases[host_name]['leases'])
 
-    Uses existing load_host_registry() method.
+        self._save_host_leases(leases)
+        return ref_count
+
+def get_source_host_lease_count(self, host_name: str) -> int:
+    """Get current lease count for source host (0 if no leases)"""
+    leases = self._load_host_leases()
+    if host_name not in leases:
+        return 0
+    return len(leases[host_name].get('leases', []))
+
+def get_source_host_router(self, host_name: str) -> Optional[str]:
+    """Get the router this source host is attached to"""
+    leases = self._load_host_leases()
+    if host_name in leases:
+        return leases[host_name].get('router')
+    # Fallback: check physical registry
+    return self._get_host_router(host_name)
+
+def reconcile_stale_source_host_leases(self) -> Dict[str, int]:
+    """Periodic cleanup of stale source host leases
+
+    - Drops leases where PID is dead (os.kill(pid, 0) fails)
+    - Drops leases older than timeout (e.g., 1 hour)
+    - Optionally removes hosts with zero leases but still exist physically
 
     Returns:
-        {
-            'has_conflict': bool,
-            'conflict_type': 'quick_vs_detailed' | 'detailed_vs_quick' | None,
-            'active_jobs': List[Dict]  # Conflicting job info
-        }
+        {'stale_pids': count, 'stale_timeout': count, 'orphaned_hosts': count}
     """
-
-def get_host_ref_count(self, host_name: str) -> int:
-    """Get current reference count for host
-
-    Returns 0 if host not found or has no ref_count field."""
-
-def cleanup_stale_job_refs(self) -> int:
-    """Remove references for dead processes across all hosts
-
-    Checks if PIDs are alive using os.kill(pid, 0).
-    Returns count of stale jobs cleaned."""
-
-def get_active_jobs_for_host(self, host_name: str) -> List[Dict]:
-    """Get all active jobs using specific host"""
 ```
 
-**Host Registry Usage**:
-- **Primary purpose**: Reference counting for shared host reuse
-- **NOT used for**: Job conflict detection (handled by scheduler)
-- Jobs acquire/release host references via `acquire_host_ref()` and `release_host_ref()`
-- Registry tracks which jobs are using each host to prevent premature deletion
-- Stale job references cleaned up automatically via PID checking
+**Source Host Leases Registry Usage**:
+- **Router lock MUST be acquired before** calling `acquire_source_host_lease()`
+- **Physical creation happens BEFORE** `acquire_source_host_lease()`
+- **Physical removal only when** `release_source_host_lease()` returns 0
+- If physical removal fails, just log it - no lease remains, another job can recreate
+- Reconciler periodically drops stale leases (dead PIDs, expired timeouts)
+- Physical host registry remains stable and unchanged
 
-**Job Conflict Detection** (router-level, handled by scheduler):
+**Destination Host Handling** (no leases):
+- Created by detailed job at job start
+- Deleted by detailed job at job end
+- No lease tracking needed (ephemeral, job-scoped)
+- Access controlled by router lock (detailed job has exclusive router lock)
 
-Router locks enable fine-grained parallelism:
+### 1.3 Neighbor Leases Registry with Reference Counting
 
-1. **Quick vs Quick**: ALLOWED (DSCP isolated, any routers)
-   - Up to 32 concurrent, no router overlap checking needed
+**Problem**: ARP neighbor entries can be deleted prematurely while other jobs still need them, causing connectivity issues.
 
-2. **Quick vs Detailed**: ALLOWED if router sets are disjoint
-   - Example: Quick uses routers {A,B}, Detailed uses {X,Y} -> parallel OK
-   - Example: Quick uses routers {A,B}, Detailed uses {B,C} -> BLOCKED (router B overlap)
+**Solution**: Separate neighbor leases registry with reference counting (same pattern as host leases).
 
-3. **Detailed vs Quick**: ALLOWED if router sets are disjoint
-   - Same logic as (2)
+**Neighbor Leases Registry Structure** (`/dev/shm/tsim/neighbor_leases.json`):
 
-4. **Detailed vs Detailed**: ALLOWED if router sets are disjoint
-   - Example: Detailed1 uses {A,B,C}, Detailed2 uses {X,Y,Z} -> parallel OK
-   - Example: Detailed1 uses {A,B,C}, Detailed2 uses {C,D,E} -> BLOCKED (router C overlap)
+```json
+{
+  "router-hq__10.0.1.1": [
+    {
+      "run_id": "job-abc123",
+      "pid": 12345,
+      "job_type": "quick",
+      "allocated_at": 1234567890.123
+    }
+  ],
+  "router-branch1__10.0.2.1": [
+    {
+      "run_id": "job-def456",
+      "pid": 12346,
+      "job_type": "detailed",
+      "allocated_at": 1234567891.456
+    }
+  ]
+}
+```
 
-**Router Overlap Rules**:
-- Quick jobs: Don't need router locks, but scheduler tracks their routers
-- Detailed jobs: Need exclusive router access (via locks)
-- Conflict = ANY router used by both jobs
+**Key**: `{router_name}__{neighbor_ip}`
+
+**New Methods to Add to Neighbor Management class**:
+
+```python
+def acquire_neighbor_lease(self, run_id: str, router_name: str,
+                           neighbor_ip: str, job_type: str) -> int:
+    """Add lease for ARP neighbor entry (called AFTER physical creation)
+
+    Args:
+        run_id: Unique job identifier
+        router_name: Router namespace name
+        neighbor_ip: Neighbor IP address
+        job_type: 'quick' or 'detailed'
+
+    Returns:
+        Current ref_count (number of active leases for this neighbor)
+    """
+    with self._atomic_lease_operation():
+        leases = self._load_neighbor_leases()
+        key = f"{router_name}__{neighbor_ip}"
+
+        if key not in leases:
+            leases[key] = []
+
+        leases[key].append({
+            'run_id': run_id,
+            'pid': os.getpid(),
+            'job_type': job_type,
+            'allocated_at': time.time()
+        })
+
+        self._save_neighbor_leases(leases)
+        return len(leases[key])
+
+def release_neighbor_lease(self, run_id: str, router_name: str,
+                           neighbor_ip: str) -> int:
+    """Remove lease for neighbor (returns ref_count)
+
+    Physical removal (ip neigh del) should only happen when returned ref_count == 0.
+
+    Returns:
+        Remaining ref_count (0 means safe to physically remove)
+    """
+    with self._atomic_lease_operation():
+        leases = self._load_neighbor_leases()
+        key = f"{router_name}__{neighbor_ip}"
+
+        if key not in leases:
+            return 0
+
+        # Remove this job's lease
+        leases[key] = [
+            lease for lease in leases[key]
+            if lease['run_id'] != run_id
+        ]
+
+        if not leases[key]:
+            del leases[key]
+            ref_count = 0
+        else:
+            ref_count = len(leases[key])
+
+        self._save_neighbor_leases(leases)
+        return ref_count
+
+def get_neighbor_lease_count(self, router_name: str, neighbor_ip: str) -> int:
+    """Get current lease count for neighbor (0 if no leases)"""
+    leases = self._load_neighbor_leases()
+    key = f"{router_name}__{neighbor_ip}"
+    return len(leases.get(key, []))
+
+def reconcile_stale_neighbor_leases(self) -> Dict[str, int]:
+    """Periodic cleanup of stale neighbor leases
+
+    - Drops leases where PID is dead (os.kill(pid, 0) fails)
+    - Drops leases older than timeout (e.g., 1 hour)
+
+    Returns:
+        {'stale_pids': count, 'stale_timeout': count}
+    """
+```
+
+**Neighbor Leases Registry Usage**:
+- **Physical creation (ip neigh add) happens BEFORE** `acquire_neighbor_lease()`
+- **Physical removal (ip neigh del) only when** `release_neighbor_lease()` returns 0
+- If physical removal fails, just log it - no lease remains, another job can recreate
+- Reconciler periodically drops stale leases (dead PIDs, expired timeouts)
+- Multiple jobs can safely use the same neighbor entry (reference counted)
+
+**Router-Level Coordination** (job-level, NOT scheduler):
+
+**Key principle**: Scheduler is router-agnostic. Jobs coordinate at router level.
+
+1. **Quick vs Quick**: Multiple quick jobs run concurrently on same router (DSCP isolated)
+   - Up to 32 concurrent quick jobs system-wide
+   - No router conflicts between quick jobs
+
+2. **Quick vs Detailed**: Quick job waits if router is locked by detailed job
+   - Quick job calls `RouterWaiter.wait_until_free(router)` before touching router
+   - Blocks using inotify (no polling) until detailed job releases that router's lock
+   - Then proceeds with batch operations
+
+3. **Detailed vs Detailed**: Each detailed job acquires exclusive per-router locks
+   - Holds lock only while actively processing that specific router
+   - Releases lock immediately when router work completes
+   - May hold multiple router locks if processing routers in parallel
+   - Two detailed jobs can run concurrently if using different routers
 
 **Implementation**:
-- **Phase 2 (Scheduler/Queue)**: Scheduler tracks router usage per job, checks for overlaps
-- **Phase 3 (Router Locks)**: Detailed jobs acquire locks per router (enforcement)
-- **Phase 5 (ksms_tester.py)**: NO conflict checking - executes when called
-- **Phase 6 (network_reachability_test_multi.py)**: Acquires router locks before each router measurement
-- Scheduler ensures no router conflicts before starting jobs
+- **Phase 2 (Scheduler)**: Router-agnostic, no router tracking, no global lock
+- **Phase 3 (Router Locks & Waiter)**: Detailed jobs acquire exclusive locks; quick jobs use RouterWaiter
+- **Phase 4 (ksms_tester.py)**: Quick jobs wait via RouterWaiter, use batch --noflush operations
+- **Phase 5 (network_reachability_test_multi.py)**: Detailed jobs acquire per-router locks
 
-### 1.2 Enhance `_batch_register_host()` Method
+### 1.4 Leases Registry Path Configuration
 
-**Location**: `host_namespace_setup.py:644`
+**No modification to `_batch_register_host()` needed** - physical host registry remains unchanged.
 
-**Current Behavior**: Atomically adds host to registry with physical metadata only
-
-**Enhancement**: Initialize ref_count and jobs fields when creating new host
-
-**Modification** (line 695):
+**New configuration for leases**:
 ```python
-def add_host_op(registry):
-    # ... existing collision checks (lines 654-693) ...
-
-    # All checks passed, safe to add
-    registry[host_name] = host_config
-
-    # NEW: Initialize reference counting fields
-    registry[host_name]['ref_count'] = 0
-    registry[host_name]['jobs'] = {}
-
-    return True, registry
+# In config_loader.py or config
+def get_registry_paths():
+    return {
+        'hosts': '/dev/shm/tsim/hosts.json',  # Existing
+        'host_leases': '/dev/shm/tsim/host_leases.json',  # NEW
+        'neighbor_leases': '/dev/shm/tsim/neighbor_leases.json'  # NEW
+    }
 ```
-
-**Backward Compatibility**: Existing hosts without these fields will be handled gracefully in `acquire_host_ref()` by initializing them on first access.
 
 ---
 
-## Phase 2: Enhance Scheduler for Parallel Execution
+## Phase 2: Router-Agnostic Scheduler with Parallel Execution
 
-### 2.1 Enhance `TsimQueueService`
+**Key Principle**: Scheduler is router-agnostic - does NOT track routers or make router-level conflict decisions. Router coordination happens at job level (Phase 3 and Phase 4).
+
+### 2.1 Simplify `TsimQueueService`
 
 **Location**: `wsgi/services/tsim_queue_service.py` (existing file)
 
-**Purpose**: Add intelligent job selection for parallel execution
+**Purpose**: Simple FIFO queue with multiple job tracking (no router logic)
 
 **Current Behavior**: Simple FIFO queue with `pop_next()` returning single job
 
 **Enhancements**:
 
-**Add `analysis_mode` and `routers` to queued job metadata:**
+**Add `analysis_mode` to queued job metadata:**
 
 ```python
 def enqueue(self, run_id: str, username: str, params: Dict[str, Any]) -> int:
@@ -305,8 +525,8 @@ def enqueue(self, run_id: str, username: str, params: Dict[str, Any]) -> int:
             'created_at': time.time(),
             'status': 'QUEUED',
             'params': params,
-            'analysis_mode': params.get('analysis_mode', 'detailed'),  # NEW
-            'routers': params.get('routers', [])  # NEW - from trace analysis
+            'analysis_mode': params.get('analysis_mode', 'detailed')  # NEW
+            # NOTE: No routers field - scheduler is router-agnostic
         })
         q['jobs'] = jobs
         q['updated_at'] = time.time()
@@ -314,18 +534,17 @@ def enqueue(self, run_id: str, username: str, params: Dict[str, Any]) -> int:
         return len(jobs)
 ```
 
-**Add router-aware job popping:**
+**Add simple multi-job popping with DSCP limit check only:**
 
 ```python
-def pop_compatible_jobs(self, running_jobs: Dict[str, Dict]) -> List[Dict[str, Any]]:
-    """Pop compatible jobs based on router overlap with running jobs.
+def pop_next_jobs(self, max_jobs: int = 32) -> List[Dict[str, Any]]:
+    """Pop next jobs from queue (simple FIFO, no router logic).
 
     Args:
-        running_jobs: Dict of {run_id: {'type': 'quick'|'detailed',
-                                        'dscp': int, 'routers': List[str]}}
+        max_jobs: Maximum number of jobs to pop
 
     Returns:
-        List of job dicts to execute (no router conflicts)
+        List of job dicts to execute (up to max_jobs)
     """
     with self._lock():
         q = self._load_queue()
@@ -333,48 +552,12 @@ def pop_compatible_jobs(self, running_jobs: Dict[str, Dict]) -> List[Dict[str, A
         if not jobs:
             return []
 
-        # Collect all routers currently in use
-        used_routers = set()
-        for job_info in running_jobs.values():
-            used_routers.update(job_info.get('routers', []))
-
-        # Count running quick jobs for DSCP limit
-        quick_count = sum(1 for j in running_jobs.values() if j['type'] == 'quick')
-
-        to_pop = []
-        for job in jobs:
-            job_routers = set(job.get('routers', []))
-            job_type = job.get('analysis_mode', 'detailed')
-
-            # Check router overlap
-            has_router_conflict = bool(job_routers & used_routers)
-
-            if has_router_conflict:
-                # Router conflict - cannot start this job
-                continue
-
-            # No router conflict - check type-specific limits
-            if job_type == 'quick':
-                if quick_count >= 32:
-                    # Hit DSCP limit
-                    continue
-                # Can start this quick job
-                to_pop.append(job)
-                quick_count += 1
-                used_routers.update(job_routers)
-
-            else:  # detailed
-                # Can start this detailed job (no router conflicts)
-                to_pop.append(job)
-                used_routers.update(job_routers)
-
-            # Limit how many jobs we pop at once
-            if len(to_pop) >= 32:
-                break
+        # Simple FIFO: pop up to max_jobs
+        to_pop = jobs[:max_jobs]
 
         # Remove popped jobs from queue
         if to_pop:
-            remaining = [j for j in jobs if j not in to_pop]
+            remaining = jobs[len(to_pop):]
             q['jobs'] = remaining
             q['updated_at'] = time.time()
             self._save_queue(q)
@@ -383,12 +566,10 @@ def pop_compatible_jobs(self, running_jobs: Dict[str, Dict]) -> List[Dict[str, A
 ```
 
 **Key Logic**:
-- Iterate through queued jobs (FIFO order preserved)
-- For each job, check if its routers overlap with any running job's routers
-- If no overlap: allow job to start (add to `to_pop`)
-- If overlap: skip job (stays in queue)
-- Respect DSCP limit (32 max quick jobs)
-- Can pop multiple detailed jobs if they use different routers!
+- Simple FIFO queue (no router conflict checking)
+- Pop up to max_jobs at once
+- Scheduler decides how many to pop based on available DSCP slots
+- Router coordination happens at job level (not scheduler level)
 
 **Add running jobs tracking (replaces single `current` job):**
 
@@ -440,9 +621,15 @@ def remove_running(self, run_id: str):
             tmp.replace(self.current_file)
         except Exception:
             pass
+
+def count_running_quick_jobs(self) -> int:
+    """Count how many quick jobs are currently running (for DSCP limit check)"""
+    with self._lock():
+        running = self.get_running()
+        return sum(1 for j in running if j.get('type') == 'quick')
 ```
 
-### 2.2 Enhance `TsimSchedulerService`
+### 2.2 Simplify `TsimSchedulerService` (Router-Agnostic)
 
 **Location**: `wsgi/services/tsim_scheduler_service.py` (existing file)
 
@@ -458,7 +645,7 @@ with self.lock_manager.lock('network_test', timeout=3600):
 
 **Enhancements**:
 
-**Track running jobs:**
+**Track running jobs (no router tracking):**
 
 ```python
 class TsimSchedulerService:
@@ -473,43 +660,39 @@ class TsimSchedulerService:
         self.executor_pool = ThreadPoolExecutor(max_workers=33, thread_name_prefix='job-executor')
 ```
 
-**Replace leader loop to remove global lock:**
+**Replace leader loop (remove global lock, no router checking):**
 
 ```python
 def _leader_loop(self):
-    """While leader, manage parallel job execution with router-level conflict detection"""
+    """While leader, manage parallel job execution (router-agnostic)"""
     while not self._stop_event.is_set():
         # Clean up completed jobs
         self._cleanup_completed_jobs()
 
-        # Pop compatible jobs based on router overlap
-        with self.running_lock:
-            running_jobs_info = {
-                run_id: {
-                    'type': info['type'],
-                    'dscp': info.get('dscp'),
-                    'routers': info.get('routers', [])  # NEW - for router conflict detection
-                }
-                for run_id, info in self.running_jobs.items()
-            }
+        # Count running quick jobs to respect DSCP limit
+        quick_count = self.queue.count_running_quick_jobs()
 
-        jobs_to_start = self.queue.pop_compatible_jobs(running_jobs_info)
+        # Calculate how many jobs we can start
+        # Max 32 quick jobs total (DSCP limit 32-63)
+        max_new_quick = max(0, 32 - quick_count)
+
+        # Pop jobs from queue (simple FIFO, no router logic)
+        jobs_to_start = self.queue.pop_next_jobs(max_jobs=max_new_quick + 10)
 
         if not jobs_to_start:
             time.sleep(0.5)
             continue
 
-        # Start all compatible jobs in parallel (no router conflicts!)
+        # Start jobs (scheduler does NOT check router conflicts)
         for job in jobs_to_start:
             self._start_job(job)
 
         time.sleep(0.25)
 
 def _start_job(self, job: Dict[str, Any]):
-    """Start a single job in thread pool"""
+    """Start a single job in thread pool (no router tracking)"""
     run_id = job.get('run_id')
     analysis_mode = job.get('analysis_mode', 'detailed')
-    routers = job.get('routers', [])  # NEW - track routers for conflict detection
 
     # Allocate DSCP for quick jobs
     dscp = None
@@ -521,14 +704,14 @@ def _start_job(self, job: Dict[str, Any]):
             self.logger.error(f"No DSCP available for quick job {run_id}")
             return
 
-    # Add to running jobs tracking
+    # Add to running jobs tracking (no routers)
     with self.running_lock:
         self.running_jobs[run_id] = {
             'type': analysis_mode,
             'dscp': dscp,
-            'routers': routers,  # NEW - track routers
             'started_at': time.time(),
             'job': job
+            # NOTE: No routers field - scheduler is router-agnostic
         }
 
     # Update queue service with running jobs list
@@ -550,6 +733,7 @@ def _execute_job_wrapper(self, job: Dict[str, Any], dscp: Optional[int]) -> Dict
             params['job_dscp'] = dscp
 
         # Execute job (without global lock - parallelism enabled!)
+        # Router coordination happens INSIDE the job (Phase 3, Phase 4)
         result = self.executor.execute(
             run_id,
             params.get('source_ip'),
@@ -611,147 +795,83 @@ def _update_queue_running(self):
 
 **Key Changes**:
 - Removed global `network_test` lock
-- Added `running_jobs` dict for tracking multiple jobs (with routers)
+- Added `running_jobs` dict for tracking multiple jobs (NO routers tracking)
 - Added `executor_pool` ThreadPoolExecutor for parallel execution
-- Scheduler now pops multiple compatible jobs based on router overlap
-- Router-level conflict detection enables maximum parallelism
+- Scheduler pops jobs in simple FIFO order (no router conflict checking)
 - DSCP allocation/deallocation handled by scheduler
-
-### 2.3 Two-Phase Job Execution
-
-**Critical Design Point**: Tracing step has NO conflicts and runs immediately in parallel.
-
-**Phase A: Trace Execution** (always parallel, no queueing)
-- Job submitted → trace executed immediately (or provided by user)
-- Multiple trace executions can run in parallel without any synchronization
-- No router conflicts during tracing (only reading topology, not testing)
-- Applies to both quick and detailed analysis modes
-
-**Phase B: Router List Extraction and Queueing** (after trace available)
-- Once trace completes: extract router list
-- Update queue entry with router list
-- Scheduler makes conflict decisions based on router lists
-
-**Implementation**:
-
-**Location**: `wsgi/handlers/tsim_main_handler.py`
-
-```python
-def _handle_post(self, environ, start_response, session):
-    # ... existing validation ...
-
-    # Generate run ID
-    run_id = str(uuid.uuid4())
-
-    # Phase A: Execute trace IMMEDIATELY (no queueing, always parallel)
-    routers = []
-    if user_trace_data:
-        # Testing mode: user provides trace
-        try:
-            trace_json = json.loads(user_trace_data)
-            path = trace_json.get('path', [])
-            routers = [hop.get('name') for hop in path if hop.get('is_router')]
-        except Exception as e:
-            self.logger.warning(f"Could not extract routers from trace: {e}")
-    else:
-        # Production mode: execute trace immediately (fully parallel, no conflicts)
-        try:
-            trace_result = self._execute_trace_immediately(
-                source_ip, dest_ip, run_id
-            )
-            # Extract routers from completed trace
-            path = trace_result.get('path', [])
-            routers = [hop.get('name') for hop in path if hop.get('is_router')]
-        except Exception as e:
-            self.logger.error(f"Trace execution failed: {e}")
-            # Could enqueue with empty routers (scheduler will be conservative)
-            # or return error to user
-
-    # Phase B: Enqueue job with router list
-    # Now scheduler can make intelligent decisions about conflicts
-    params = {
-        'run_id': run_id,
-        'source_ip': source_ip,
-        'dest_ip': dest_ip,
-        'source_port': source_port,
-        'port_protocol_list': port_protocol_list,
-        'user_trace_data': user_trace_data or trace_result,  # Save trace result
-        'analysis_mode': analysis_mode,
-        'routers': routers  # Always populated after Phase A
-    }
-
-    # Enqueue job - scheduler will pop based on router conflicts
-    position = self.queue_service.enqueue(run_id, username, params)
-
-def _execute_trace_immediately(self, source_ip: str, dest_ip: str, run_id: str) -> Dict:
-    """Execute trace immediately without queueing
-
-    Traces have no conflicts and can run in parallel without any synchronization.
-    This is called BEFORE enqueueing the job.
-
-    Args:
-        source_ip: Source IP address
-        dest_ip: Destination IP address
-        run_id: Run identifier
-
-    Returns:
-        Trace result dict with 'path' containing router list
-    """
-    # Execute trace using existing trace logic
-    # (details depend on current trace implementation)
-    trace_result = self.executor.execute_trace_only(source_ip, dest_ip, run_id)
-    return trace_result
-```
-
-**Key Points**:
-- **Testing mode** (user trace): Routers extracted from user data, job enqueued with router list
-- **Production mode** (no user trace): Trace executes immediately in handler BEFORE enqueueing
-- **All traces parallel**: Multiple trace executions can run concurrently without any conflicts
-- **Scheduler decisions**: Only made after job is enqueued with complete router list
-- **No queue updates needed**: Job always enqueued with final router list
+- Router coordination happens at job level (inside MultiServiceTester)
 
 ---
 
-## Phase 3: Per-Router Locking (MANDATORY for Detailed Jobs)
+## Phase 3: Router Coordination (Locks Control Router AND Hosts)
 
 ### 3.1 Router Lock Design
 
+**CRITICAL PRINCIPLE: Router Locks Control Access to Router AND All Hosts on That Router**
+
+When a job acquires a router lock, it gets exclusive access to:
+1. The router itself (iptables rules, counters, forwarding)
+2. ALL source hosts attached to that router
+3. ALL destination hosts attached to that router (detailed jobs only)
+
+This coupling is essential because:
+- Source hosts on a locked router are useless to other jobs (router inaccessible)
+- Destination hosts are exclusive to the detailed job that locked the router
+- Simplifies coordination: one lock controls entire router + hosts domain
+
 **Lock Requirements by Job Type**:
 
-| Job Type | Needs Router Lock? | Why? |
-|----------|-------------------|------|
-| **Quick** | **NO** | Each has unique DSCP, rules don't conflict, fully parallel |
-| **Detailed** | **YES - MANDATORY** | Reads ALL FORWARD chain counters - any other traffic pollutes measurements |
+| Job Type | Router Locks? | Router Waiter? | Host Access Control |
+|----------|--------------|----------------|---------------------|
+| **Quick** | **NO** | **YES** (inotify-based wait) | Wait for router; when router free, source hosts also available |
+| **Detailed** | **YES - MANDATORY** | **NO** | Lock router; get exclusive access to all hosts on that router |
 
-**Critical Understanding**:
-- **Quick jobs**: Use DSCP marking in PREROUTING/POSTROUTING chains
-  - Each job's rules are isolated by unique DSCP value
-  - Can run fully in parallel (up to 32)
-  - **No router locks needed**
+**Quick Jobs**:
+- Use DSCP marking in PREROUTING/POSTROUTING chains
+- Each job's rules are isolated by unique DSCP value
+- Can run fully in parallel (up to 32)
+- **Do NOT acquire router locks**
+- **Use RouterWaiter to wait (inotify, no polling) if router locked by detailed job**
+- When router is free (not locked):
+  - Can use source hosts on that router
+  - Multiple quick jobs can share source hosts simultaneously (DSCP isolation)
+  - Acquire source host leases (reference counting)
 
-- **Detailed jobs**: Use FORWARD chain counters and policy
-  - Read counters for ALL traffic through router (not DSCP-specific)
-  - Measure: baseline counters → send traffic → final counters → calculate delta
-  - ANY other traffic on that router corrupts measurements!
-  - **MUST have exclusive access to router** during measurement
-  - **Router locks are MANDATORY**
+**Detailed Jobs**:
+- Use FORWARD chain counters and policy
+- Read counters for ALL traffic through router (not DSCP-specific)
+- Measure: baseline counters → send traffic → final counters → calculate delta
+- ANY other traffic on that router corrupts measurements!
+- **MUST have exclusive access to router AND hosts** during measurement
+- **Acquire exclusive per-router locks (one at a time)**
+- When router is locked:
+  - Exclusive access to source hosts on that router
+  - Create/delete destination hosts on that router
+  - No other job can use router or any hosts on that router
+- Lock manager notifies waiters on release (inotify wakeup)
 
-**Race Condition Example** (without router lock):
+**Race Condition Example** (without coordination):
 ```
 Time | Detailed Job (Router A)        | Quick Job (Router A)
 -----+--------------------------------+---------------------------
 T0   | Read baseline FORWARD counters |
-T1   |                                | Sends traffic (pollutes!)
+T1   |                                | Uses source host, sends traffic (pollutes!)
 T2   | Read final FORWARD counters    |
 T3   | Calculate delta (WRONG!)       |
 ```
 Result: Detailed job's measurements include quick job's traffic → incorrect results!
 
-### 3.2 Implementation (MANDATORY)
+**Solution**:
+- Router lock controls access to router AND hosts
+- Quick job calls `RouterWaiter.wait_until_free(router)` before accessing router or source hosts
+- Detailed job acquires exclusive router lock, gets exclusive access to all resources
+- Lock manager notifies waiters on release
+
+### 3.2 Lock Manager Implementation (Detailed Jobs)
 
 **Location**: `wsgi/services/tsim_lock_manager_service.py` (existing)
 
-**Add router lock methods**:
+**Add router lock methods with notify support**:
 
 ```python
 def acquire_router_lock(self, router_name: str, job_id: str,
@@ -773,9 +893,21 @@ def acquire_router_lock(self, router_name: str, job_id: str,
     return self.acquire_lock(lock_name, timeout)
 
 def release_router_lock(self, router_name: str, job_id: str) -> bool:
-    """Release router lock"""
+    """Release router lock and notify waiters"""
     lock_name = f"router_{router_name}_forward"
-    return self.release_lock(lock_name)
+    result = self.release_lock(lock_name)
+
+    # Notify waiters via inotify (touch notify file)
+    self._notify_router_waiters(router_name)
+    return result
+
+def _notify_router_waiters(self, router_name: str):
+    """Notify RouterWaiter instances that router is free (touch notify file)"""
+    notify_file = Path(self.lock_dir) / f"router_{router_name}_notify"
+    try:
+        notify_file.touch()
+    except Exception as e:
+        self.logger.warning(f"Could not touch notify file for {router_name}: {e}")
 
 @contextmanager
 def router_lock(self, router_name: str, job_id: str, timeout: float = 30.0):
@@ -797,37 +929,243 @@ def router_lock(self, router_name: str, job_id: str, timeout: float = 30.0):
 ```
 
 **Lock File Naming**: `{lock_dir}/router_{router_name}_forward.lock`
+**Notify File Naming**: `{lock_dir}/router_{router_name}_notify`
 
-### 3.3 When Router Locks Are Acquired
+**Add atomic multi-router lock acquisition (CRITICAL for deadlock prevention)**:
 
-**Quick jobs**: Never acquire router locks
-- Operate directly on PREROUTING/POSTROUTING chains
-- DSCP isolation prevents conflicts
-- Fully parallel
+```python
+def acquire_all_router_locks(self, router_names: List[str], job_id: str,
+                              timeout: float = 30.0) -> bool:
+    """Atomically acquire ALL router locks or none (deadlock prevention)
 
-**Detailed jobs**: MUST acquire router lock for each router
-- **Before** reading baseline FORWARD counters
-- **Hold** during entire measurement (baseline → test → final)
-- **Release** after calculating delta
-- **One router at a time per detailed job**
+    CRITICAL: This method implements "all-or-nothing" lock acquisition to prevent deadlocks.
 
-**Scheduler ensures**: Only one detailed job runs globally
-**Router locks ensure**: Within that detailed job, each router is measured atomically
+    Deadlock scenario without atomic acquisition:
+    - Job A acquires router-1, tries to acquire router-2 (blocked by Job B)
+    - Job B acquires router-2, tries to acquire router-1 (blocked by Job A)
+    - DEADLOCK!
 
-### 3.4 Configuration
+    Solution: Try to acquire ALL locks. If ANY fails, release ALL and retry/fail.
+
+    Args:
+        router_names: List of router names to lock
+        job_id: Job ID requesting locks
+        timeout: Maximum total wait time for acquiring all locks
+
+    Returns:
+        True if ALL locks acquired, False if timeout or any lock unavailable
+    """
+    acquired_locks = []
+    start_time = time.time()
+
+    try:
+        # Sort router names to ensure consistent lock ordering (additional deadlock prevention)
+        sorted_routers = sorted(router_names)
+
+        for router_name in sorted_routers:
+            remaining_time = timeout - (time.time() - start_time)
+            if remaining_time <= 0:
+                # Timeout - release all acquired locks
+                self.logger.warning(f"Timeout acquiring all router locks for {job_id}")
+                return False
+
+            lock_name = f"router_{router_name}_forward"
+
+            # Try to acquire lock with remaining timeout
+            if not self.acquire_lock(lock_name, remaining_time):
+                # Failed to acquire this lock - release all previously acquired locks
+                self.logger.warning(f"Failed to acquire lock for {router_name}, releasing all acquired locks")
+                return False
+
+            acquired_locks.append(router_name)
+
+        # Successfully acquired ALL locks
+        self.logger.info(f"Successfully acquired all {len(acquired_locks)} router locks for {job_id}")
+        return True
+
+    except Exception as e:
+        self.logger.error(f"Exception during lock acquisition for {job_id}: {e}")
+        return False
+
+    finally:
+        # If we didn't acquire ALL locks, release everything we did acquire
+        if len(acquired_locks) != len(router_names):
+            self.logger.warning(f"Releasing {len(acquired_locks)} partially acquired locks for {job_id}")
+            for router_name in acquired_locks:
+                try:
+                    self.release_router_lock(router_name, job_id)
+                except Exception as e:
+                    self.logger.error(f"Error releasing lock for {router_name}: {e}")
+
+def release_all_router_locks(self, router_names: List[str], job_id: str):
+    """Release all router locks and notify all waiters
+
+    Args:
+        router_names: List of router names to unlock
+        job_id: Job ID releasing locks
+    """
+    for router_name in router_names:
+        try:
+            self.release_router_lock(router_name, job_id)
+        except Exception as e:
+            self.logger.error(f"Error releasing lock for {router_name}: {e}")
+
+@contextmanager
+def all_router_locks(self, router_names: List[str], job_id: str, timeout: float = 30.0):
+    """Context manager for atomic multi-router lock acquisition
+
+    Usage (detailed jobs processing multiple routers):
+        with lock_manager.all_router_locks(['router-1', 'router-2'], 'job-123'):
+            # Have exclusive access to ALL routers and their hosts
+            # Perform measurements across all routers
+            # No deadlock risk - all locks acquired atomically
+    """
+    if not self.acquire_all_router_locks(router_names, job_id, timeout):
+        raise TimeoutError(f"Could not acquire all router locks: {router_names}")
+    try:
+        yield
+    finally:
+        self.release_all_router_locks(router_names, job_id)
+```
+
+**Key Deadlock Prevention Strategies**:
+1. **All-or-nothing acquisition**: Either acquire ALL locks or release everything and fail
+2. **Sorted lock ordering**: Always acquire locks in sorted order to prevent circular wait
+3. **Timeout with cleanup**: If timeout occurs, automatically release all partial locks
+4. **Exception safety**: `finally` block ensures cleanup even if exceptions occur
+
+### 3.3 RouterWaiter Implementation (Quick Jobs)
+
+**Location**: `wsgi/services/tsim_router_waiter.py` (NEW FILE)
+
+**Purpose**: Allow quick jobs to wait (inotify-based, no polling) for router locks held by detailed jobs.
+
+```python
+import os
+import select
+from pathlib import Path
+from typing import Optional
+import logging
+
+class RouterWaiter:
+    """Wait for router locks to be released (inotify-based, no polling).
+
+    Quick jobs use this to wait if a router is locked by a detailed job.
+    Uses inotify to efficiently block until lock is released (no polling).
+    """
+
+    def __init__(self, lock_dir: Path, logger: Optional[logging.Logger] = None):
+        self.lock_dir = Path(lock_dir)
+        self.logger = logger or logging.getLogger(__name__)
+
+    def wait_until_free(self, router_name: str, timeout: float = 30.0) -> bool:
+        """Wait until router is free (not locked by detailed job).
+
+        Args:
+            router_name: Router namespace name
+            timeout: Maximum wait time (default 30s)
+
+        Returns:
+            True if router is free, False if timeout
+        """
+        lock_file = self.lock_dir / f"router_{router_name}_forward.lock"
+        notify_file = self.lock_dir / f"router_{router_name}_notify"
+
+        # Check if router is locked
+        if not lock_file.exists():
+            return True  # Not locked, proceed immediately
+
+        # Router is locked - wait using inotify (no polling)
+        self.logger.debug(f"Router {router_name} locked, waiting via inotify...")
+
+        # Ensure notify file exists for inotify
+        notify_file.touch(exist_ok=True)
+
+        # Set up inotify watch on notify file
+        fd = os.open(str(notify_file), os.O_RDONLY)
+        try:
+            # Use inotify to wait for file modification (touch on release)
+            inotify_fd = os.inotify_init()
+            wd = os.inotify_add_watch(inotify_fd, str(notify_file),
+                                       os.IN_MODIFY | os.IN_ATTRIB)
+
+            try:
+                # Wait for event or timeout
+                ready, _, _ = select.select([inotify_fd], [], [], timeout)
+
+                if ready:
+                    # Event received - lock was released
+                    self.logger.debug(f"Router {router_name} released, proceeding")
+                    return True
+                else:
+                    # Timeout
+                    self.logger.warning(f"Timeout waiting for router {router_name}")
+                    return False
+            finally:
+                os.inotify_rm_watch(inotify_fd, wd)
+                os.close(inotify_fd)
+        finally:
+            os.close(fd)
+```
+
+**Key Features**:
+- inotify-based blocking (no CPU usage while waiting)
+- Wakes up when detailed job releases lock (via notify file touch)
+- Timeout support (default 30s)
+- Quick jobs call `wait_until_free()` before touching router
+
+### 3.4 When Router Locks/Waiters Are Used (Controls Router AND Hosts)
+
+**Quick jobs**: Use RouterWaiter (never acquire locks)
+- **Before** touching router or source hosts:
+  - Call `RouterWaiter.wait_until_free(router)` for each router in path
+  - If router locked: wait via inotify (no polling) until released
+  - If router free: proceed immediately
+- **After** router is confirmed free:
+  - Can safely use source hosts on that router
+  - Acquire source host leases (reference counting)
+  - Multiple quick jobs can share source hosts (DSCP isolation)
+- **On cleanup**:
+  - Release source host leases (ref count--, delete if reaches 0)
+
+**Detailed jobs**: Acquire exclusive router locks (controls router + hosts)
+- **Before** reading baseline FORWARD counters:
+  - Acquire exclusive router lock
+  - This also grants exclusive access to ALL hosts on that router
+- **While holding lock**:
+  - Exclusive access to router (iptables, counters, forwarding)
+  - Exclusive access to source hosts on that router
+  - Create/delete destination hosts on that router (ephemeral, no leases)
+  - Perform measurements (baseline → test → final)
+- **After** measurements complete:
+  - Delete destination hosts (no ref counting needed)
+  - Release source host leases (ref count--, delete if reaches 0)
+  - Release router lock (notifies waiters via inotify)
+- **One router at a time per detailed job** (processes routers sequentially)
+
+**Coordination**:
+- Scheduler is router-agnostic (no global serialization)
+- Router-level coordination happens at job level:
+  - Quick jobs wait if needed (via RouterWaiter) - controls router + host access
+  - Detailed jobs acquire exclusive locks - grants router + host access
+  - Lock manager notifies waiters on release
+  - Source host leases track reference counts for persistence
+
+### 3.5 Configuration
 
 ```json
 {
   "router_locks": {
     "enabled": true,
     "lock_dir": "<runtime_directory>/locks/routers",
+    "notify_dir": "<runtime_directory>/locks/routers",
     "default_timeout": 30.0,
     "max_wait": 60.0
   }
 }
 ```
 
-**Note**: Longer timeouts for detailed jobs (30-60s) vs quick jobs (5s) because detailed jobs need to:
+**Note**: Longer timeouts (30-60s) because operations include:
 1. Read baseline counters
 2. Send test traffic
 3. Wait for responses
@@ -835,28 +1173,36 @@ def router_lock(self, router_name: str, job_id: str, timeout: float = 30.0):
 
 ---
 
-## Phase 4: Modify `ksms_tester.py` for Batched iptables-restore
+## Phase 4: Modify `ksms_tester.py` for Incremental iptables Operations
 
-### 4.1 Architecture Change: Batched Installation
+### 4.1 Architecture Change: Use --noflush Flag
 
-**Key Insight**: DSCP enables full parallelism - use batched iptables-restore for all services!
+**CRITICAL**: Always use `iptables-restore -n` (--noflush) to avoid clobbering other jobs' rules!
 
-**OLD approach** (serialized, slow):
+**Key Insight**: DSCP enables full parallelism - use incremental iptables operations with --noflush!
+
+**OLD approach** (WRONG - clobbers other jobs):
 ```
 1. iptables-save (read all rules)
 2. Filter/modify in memory
-3. iptables-restore (write all rules)
-Problem: Must be serialized per router, wastes time
+3. iptables-restore (write all rules, REPLACES entire table)
+Problem: Removes ALL TSIM_KSMS rules from other running jobs!
 ```
 
-**NEW approach** (parallel, fast):
+**NEW approach** (correct - incremental):
 ```
-1. Delete stale rules with our DSCP (if any) - batched iptables-restore
-2. Add all our rules in one batched iptables-restore call
+1. Delete stale rules with our DSCP (if any) - iptables-restore -n
+2. Add all our rules in one iptables-restore -n call
 3. Read counters for our DSCP
-4. Delete our rules using batched iptables-restore
-Benefit: Fully parallel, no serialization needed, all operations batched!
+4. Delete our rules using iptables-restore -n
+Benefit: Fully parallel, incremental operations, NO clobbering!
 ```
+
+**What is -n (--noflush)?**
+- `-n` or `--noflush`: Do NOT flush (clear) existing rules before adding new ones
+- Enables incremental rule addition/deletion without rebuilding entire table
+- Multiple jobs can safely call `iptables-restore -n` concurrently
+- Each job adds/removes only its own rules (identified by DSCP and run_id)
 
 ### 4.2 Pre-flight: Clean Stale Rules
 
@@ -1077,7 +1423,7 @@ def cleanup_router(rname: str, dscp: int, run_id: str):
 
 ---
 
-## Phase 5: Modify `ksms_tester.py` for Host Registry Integration
+## Phase 5: Modify `ksms_tester.py` for Router-Coupled Host Access (Quick Jobs)
 
 **Design Note - No Environment Variables**:
 
@@ -1086,7 +1432,18 @@ All inter-process communication now uses explicit mechanisms:
 - **Global config** (registry paths, lock dirs): Read from config in each process
 - **No environment variables** used for IPC between service and subprocess
 
-**Conflict handling**: Scheduler handles all job conflicts - ksms_tester.py just executes when called.
+**Quick Job Flow**:
+1. Wait for each router via RouterWaiter (blocks if detailed job has lock)
+2. Acquire source host leases (reference counting)
+3. Install iptables rules (--noflush), run tests
+4. Release source host leases (ref count--, delete if reaches 0)
+5. Cleanup iptables rules (--noflush)
+
+**Key Principles**:
+- Router lock controls access to router AND hosts
+- RouterWaiter ensures router is free before accessing source hosts
+- Source hosts persist across jobs (reference counted)
+- No destination hosts for quick jobs
 
 ### 5.1 Add DSCP CLI Argument
 
@@ -1120,9 +1477,27 @@ except ImportError as e:
     host_setup = None
 ```
 
-### 5.3 Modify Main Function Structure
+### 5.3 Add RouterWaiter Support
 
-**Simplified main - no queue coordination needed**:
+**At top of file, add RouterWaiter loading**:
+
+```python
+# RouterWaiter for router coordination (quick jobs wait if router locked)
+router_waiter = None
+try:
+    from traceroute_simulator.core.config_loader import get_lock_dir
+    lock_dir = get_lock_dir()
+    from traceroute_simulator.services.tsim_router_waiter import RouterWaiter
+    router_waiter = RouterWaiter(lock_dir=lock_dir, logger=logger)
+    _dbg(f"[INFO] Using RouterWaiter for router coordination", 1)
+except ImportError as e:
+    _dbg(f"[WARN] RouterWaiter not available: {e}", 1)
+    router_waiter = None
+```
+
+### 5.4 Modify Main Function Structure
+
+**Quick job flow with RouterWaiter + source host leases**:
 
 ```python
 def main():
@@ -1140,16 +1515,33 @@ def main():
         print(f"[INFO] Starting quick analysis with DSCP {job_dscp}", file=sys.stderr)
 
     # Track acquired resources for cleanup
-    acquired_hosts = []
+    acquired_source_hosts = []
 
     try:
-        # Phase 1: Router preparation (with per-router locking)
-        # Phase 2: Create/acquire source hosts (with registry coordination)
-        acquired_hosts = create_source_hosts(routers, args.source, run_id)
+        # Phase 1: Wait for routers to be free (RouterWaiter)
+        # Quick jobs must wait if routers are locked by detailed jobs
+        if router_waiter:
+            for router_name in routers:
+                if VERBOSE >= 2:
+                    print(f"[INFO] Checking if router {router_name} is free...", file=sys.stderr)
+                if not router_waiter.wait_until_free(router_name, timeout=30.0):
+                    raise TimeoutError(f"Router {router_name} locked by detailed job, timeout waiting")
+                if VERBOSE >= 2:
+                    print(f"[INFO] Router {router_name} is free, proceeding", file=sys.stderr)
 
-        # Phase 3: Emit probes
-        # Phase 4: Collect results
+        # Phase 2: Create/acquire source hosts (with registry coordination)
+        # NOW SAFE: routers are confirmed free, source hosts accessible
+        acquired_source_hosts = create_or_acquire_source_hosts(routers, args.source, run_id)
+
+        # Phase 3: Install iptables rules (--noflush)
+        for router_name in routers:
+            prepare_router(router_name)
+
+        # Phase 4: Emit probes and collect results
+        # ...
+
         # Phase 5: Output results
+        # ...
 
         sys.exit(0)
 
@@ -1162,41 +1554,57 @@ def main():
         if VERBOSE >= 1:
             print(f"[CLEANUP] Starting resource cleanup...", file=sys.stderr)
 
-        # Cleanup hosts (with registry coordination)
-        if acquired_hosts:
-            cleanup_source_hosts(acquired_hosts, run_id)
-
-        # Cleanup iptables rules on all routers (with DSCP filtering)
+        # Cleanup iptables rules on all routers (--noflush, DSCP-specific)
         for rname in routers:
-            cleanup_router(rname)
+            cleanup_router(rname, job_dscp, run_id)
+
+        # Release source host leases (ref count--, delete if reaches 0)
+        if host_setup and acquired_source_hosts:
+            for host_name, router_name in acquired_source_hosts:
+                ref_count = host_setup.release_source_host_lease(run_id, host_name)
+                if ref_count == 0:
+                    # Safe to delete - no other jobs using this host
+                    if VERBOSE >= 2:
+                        print(f"[CLEANUP] Deleting source host {host_name} (ref_count=0)", file=sys.stderr)
+                    try:
+                        tsimsh_exec(f"host remove --name {host_name}")
+                    except Exception as e:
+                        # Log but don't fail - another job can recreate
+                        if VERBOSE >= 1:
+                            print(f"[WARN] Failed to delete {host_name}: {e}", file=sys.stderr)
+                else:
+                    if VERBOSE >= 2:
+                        print(f"[CLEANUP] Released lease for {host_name} (ref_count={ref_count}, keeping)", file=sys.stderr)
 
         if VERBOSE >= 1:
             print(f"[CLEANUP] Resource cleanup completed", file=sys.stderr)
 ```
 
 **Key Points**:
-- No queue manager integration - scheduler handles conflicts
-- DSCP passed as CLI argument from scheduler
-- Job just executes when called - no waiting/blocking logic needed
+- RouterWaiter ensures routers are free before accessing source hosts
+- Source host leases use reference counting (persist across jobs)
+- iptables rules cleaned with --noflush (incremental, no clobbering)
+- Physical host deletion only when ref_count reaches 0
 
-### 5.4 Modify Host Creation with Registry
+### 5.5 Modify Host Creation with Registry and Leases
 
-**Replace host creation logic (around line 750)**:
+**Replace host creation logic**:
 
 ```python
-def create_source_hosts(routers: List[str], source_ip: str, run_id: str) -> List[Tuple[str, str]]:
-    """Create or acquire source hosts with registry coordination
+def create_or_acquire_source_hosts(routers: List[str], source_ip: str, run_id: str) -> List[Tuple[str, str]]:
+    """Create or acquire source hosts with registry coordination and leases
+
+    IMPORTANT: Call this AFTER RouterWaiter confirms routers are free!
 
     Returns:
-        List of (host_name, router) tuples that were acquired
+        List of (host_name, router_name) tuples that were acquired
     """
     acquired_hosts = []
 
-    for i, router in enumerate(routers, 1):
-        src_host_name = f"source-{i}"
-        host_key = f"{src_host_name}:{router}"
+    for i, router_name in enumerate(routers, 1):
+        src_host_name = f"destination-{i}"  # Source host naming convention
 
-        # Check if host already exists
+        # Check if host already exists physically
         host_list_output = tsimsh_exec("host list --json", capture_output=True)
         existing_hosts = {}
         if host_list_output:
@@ -1214,175 +1622,290 @@ def create_source_hosts(routers: List[str], source_ip: str, run_id: str) -> List
                 primary_ip = hinfo.get('primary_ip', '')
                 if '/' in primary_ip:
                     ip_only = primary_ip.split('/')[0]
-                    if ip_only == source_ip and connected == router:
+                    if ip_only == source_ip and connected == router_name:
                         host_exists = True
                         break
 
-        # Create host if needed (physical creation first)
-        should_create = not host_exists
-        if should_create:
+        # Create source host if needed (physical creation FIRST)
+        if not host_exists:
             if VERBOSE >= 2:
-                print(f"  [{router}] Creating source host {src_host_name}", file=sys.stderr)
+                print(f"  [{router_name}] Creating source host {src_host_name}", file=sys.stderr)
 
             result = tsimsh_exec(
                 f"host add --name {src_host_name} --primary-ip {source_ip}/24 "
-                f"--connect-to {router} --no-delay",
+                f"--connect-to {router_name} --no-delay",
                 verbose=VERBOSE
             )
 
             if result is not None:  # Error
-                _dbg(f"  [{router}] Failed to create {src_host_name}: {result}", 1)
+                _dbg(f"  [{router_name}] Failed to create {src_host_name}: {result}", 1)
                 continue
+        else:
+            if VERBOSE >= 2:
+                print(f"  [{router_name}] Source host {src_host_name} already exists", file=sys.stderr)
 
-        # Acquire reference AFTER physical creation
+        # Acquire source host lease AFTER physical creation
         if host_setup:
             try:
-                result = host_setup.acquire_host_ref(
-                    job_id=run_id,
+                ref_count = host_setup.acquire_source_host_lease(
+                    run_id=run_id,
                     host_name=src_host_name,
                     job_type='quick',
                     dscp=job_dscp
                 )
 
-                ref_count = result['ref_count']
-                conflicts = result.get('conflicts', [])
-
-                if conflicts:
-                    _dbg(f"  [{router}] WARNING: Host {src_host_name} has conflicts: {conflicts}", 1)
-
                 if VERBOSE >= 2:
-                    print(f"  [{router}] Host {src_host_name} acquired "
+                    print(f"  [{router_name}] Acquired lease for {src_host_name} "
                           f"(ref_count={ref_count})", file=sys.stderr)
 
             except Exception as e:
-                _dbg(f"  [{router}] WARNING: Host registry acquisition failed: {e}", 1)
-                # Continue anyway - host is already created
-        else:
-            if VERBOSE >= 2:
-                print(f"  [{router}] Reusing existing source host {src_host_name}", file=sys.stderr)
+                _dbg(f"  [{router_name}] WARNING: Lease acquisition failed: {e}", 1)
+                # Continue anyway - host is physically created
 
         # Track acquired host
-        acquired_hosts.append((src_host_name, router))
+        acquired_hosts.append((src_host_name, router_name))
 
     return acquired_hosts
 ```
 
-### 5.4 Modify Host Cleanup with Registry
+**Key Points**:
+- Physical creation happens FIRST
+- Lease acquisition happens AFTER (registers usage)
+- Multiple quick jobs can hold leases simultaneously
+- Router lock (via RouterWaiter) ensures no detailed job is using router
 
-**Replace cleanup logic (around line 778)**:
+---
+
+## Phase 6: Modify `network_reachability_test_multi.py` for Router-Coupled Host Access (Detailed Jobs)
+
+**Detailed Job Flow**:
+1. **Atomically acquire ALL router locks** (all-or-nothing, deadlock prevention)
+2. Create destination hosts on all routers (ephemeral, no leases) [tsimsh parallel]
+3. Acquire source host leases (reference counting) [all hosts]
+4. Create and start services on all destination hosts [tsimsh parallel]
+5. Perform measurements on all routers (baseline → test → final)
+6. Stop and cleanup services [tsimsh parallel]
+7. Delete destination hosts (no ref counting) [tsimsh parallel]
+8. Release source host leases (ref count--, delete if reaches 0)
+9. **Release ALL router locks atomically** (notifies all waiters via inotify)
+
+**Key Principles**:
+- **ATOMIC lock acquisition**: Either acquire ALL router locks or none (prevents deadlocks)
+- **Sorted lock ordering**: Always acquire locks in sorted order to prevent circular wait
+- **All routers processed in parallel**: tsimsh commands handle all routers simultaneously
+- Router locks grant exclusive access to router AND all hosts on that router
+- Destination hosts are ephemeral (created/deleted within job, no leases)
+- Source hosts use leases (reference counted, persist across jobs)
+
+### 6.1 Add Lock Manager Support
+
+**At top of file, add lock manager loading**:
 
 ```python
-def cleanup_source_hosts(acquired_hosts: List[Tuple[str, str]], run_id: str):
-    """Cleanup source hosts using registry coordination
+# Lock manager for router coordination (detailed jobs acquire exclusive locks)
+lock_manager = None
+try:
+    from traceroute_simulator.services.tsim_lock_manager_service import TsimLockManagerService
+    lock_manager = TsimLockManagerService(config=config, logger=logger)
+    _dbg(f"[INFO] Using lock manager for router coordination", 1)
+except ImportError as e:
+    _dbg(f"[WARN] Lock manager not available: {e}", 1)
+    lock_manager = None
 
-    Args:
-        acquired_hosts: List of (host_name, router) tuples to release
-        run_id: Job run ID
-    """
-    for host_name, router in acquired_hosts:
-        should_remove = False
-        if host_setup:
-            try:
-                result = host_setup.release_host_ref(job_id=run_id, host_name=host_name)
-                should_remove = result['should_remove_host']
-                ref_count = result['ref_count']
-
-                if VERBOSE >= 2:
-                    print(f"  [{router}] Released host {host_name} "
-                          f"(ref_count={ref_count}, remove={should_remove})", file=sys.stderr)
-
-            except Exception as e:
-                _dbg(f"  [{router}] WARNING: Host registry release failed: {e}", 1)
-                should_remove = True  # Fallback to always removing
-        else:
-            # No registry - always attempt removal
-            should_remove = True
-
-        # Remove host if reference count reached zero
-        if should_remove:
-            if VERBOSE >= 2:
-                print(f"  [{router}] Removing source host {host_name}", file=sys.stderr)
-
-            result = tsimsh_exec(
-                f"host remove --name {host_name} --force",
-                verbose=VERBOSE
-            )
-
-            if result is not None:
-                _dbg(f"  [{router}] WARNING: Failed to remove host {host_name}", 1)
-        else:
-            if VERBOSE >= 2:
-                print(f"  [{router}] Keeping host {host_name} (in use by other jobs)", file=sys.stderr)
+# Host registry for source host leases
+host_setup = None
+try:
+    from traceroute_simulator.simulators.host_namespace_setup import HostNamespaceSetup
+    host_setup = HostNamespaceSetup(verbose=VERBOSE >= 3)
+    _dbg(f"[INFO] Using host registry for source host leases", 1)
+except ImportError as e:
+    _dbg(f"[WARN] Host registry not available: {e}", 1)
+    host_setup = None
 ```
 
-### 5.5 Cleanup Logic Already in 5.2
+### 6.2 Modify Detailed Job Execution with Atomic Lock Acquisition
 
-**Note**: Cleanup logic including `job_queue.release()` is already shown in section 5.2 above in the `finally` block.
-
-**Wrap main execution in try/finally**:
+**CRITICAL: Use atomic lock acquisition to prevent deadlocks**:
 
 ```python
-def main():
-    global VERBOSE, job_dscp, run_id
+def run_detailed_job_with_atomic_locking(routers: List[str], run_id: str):
+    """Execute detailed job with atomic lock acquisition (all-or-nothing)
 
-    # ... argument parsing ...
-
-    # Generate run ID
-    run_id = f"KSMS{os.getpid()}_{int(time.time() * 1000) % 100000}"
-
-    # Get DSCP value from command-line argument
-    job_dscp = args.dscp
-
-    # Track acquired resources for cleanup
-    acquired_hosts = []
-    dscp_allocated = False
+    DEADLOCK PREVENTION: Acquires ALL router locks atomically or fails.
+    """
+    acquired_source_hosts = []
+    created_destination_hosts = []
 
     try:
-        # ... load registries, parse services, etc. ...
+        # CRITICAL: Atomically acquire ALL router locks (deadlock prevention)
+        if lock_manager:
+            if VERBOSE >= 1:
+                print(f"[INFO] Atomically acquiring locks for {len(routers)} routers...", file=sys.stderr)
 
-        # Phase 1: Router preparation
-        # ... prepare routers in parallel ...
+            # Use all_router_locks context manager (all-or-nothing acquisition)
+            with lock_manager.all_router_locks(routers, run_id, timeout=60.0):
+                if VERBOSE >= 1:
+                    print(f"[INFO] ALL router locks acquired, processing routers in parallel", file=sys.stderr)
 
-        # Phase 2: Create/acquire source hosts
-        acquired_hosts = create_source_hosts(routers, args.source, run_id)
+                # Now have exclusive access to ALL routers and ALL hosts
+                # Process all routers in parallel using tsimsh commands
 
-        # Phase 3: Emit probes
-        # ... emit probes from acquired hosts ...
+                # Step 1: Create destination hosts (tsimsh parallel across all routers)
+                created_destination_hosts = create_all_destination_hosts(routers, run_id)
 
-        # Phase 4: Collect results
-        # ... finalize routers and extract counters ...
+                # Step 2: Acquire source host leases (all hosts)
+                acquired_source_hosts = acquire_all_source_host_leases(routers, run_id)
 
-        # Phase 5: Output results
-        if args.json:
-            print(json.dumps({'source': args.source, 'destination': args.destination,
-                            'routers': results}, indent=2))
+                # Step 3: Create and start services (tsimsh parallel)
+                create_and_start_all_services(created_destination_hosts, run_id)
+
+                # Step 4: Run measurements on all routers
+                results = run_measurements_all_routers(routers, run_id)
+
+                # Step 5: Cleanup services (tsimsh parallel)
+                cleanup_all_services(created_destination_hosts, run_id)
+
+                if VERBOSE >= 1:
+                    print(f"[INFO] Processing complete, releasing ALL router locks", file=sys.stderr)
+
+            # ALL locks released here atomically, notify files touched for all waiters
+
         else:
-            # ... formatted output ...
+            # No lock manager - process without coordination (testing mode)
+            created_destination_hosts = create_all_destination_hosts(routers, run_id)
+            acquired_source_hosts = acquire_all_source_host_leases(routers, run_id)
+            create_and_start_all_services(created_destination_hosts, run_id)
+            results = run_measurements_all_routers(routers, run_id)
+            cleanup_all_services(created_destination_hosts, run_id)
 
-        sys.exit(0)
+    except TimeoutError as e:
+        # Failed to acquire all router locks (some routers busy)
+        print(f"[ERROR] Could not acquire all router locks: {e}", file=sys.stderr)
+        print(f"[ERROR] At least one router is busy. Job will retry later.", file=sys.stderr)
+        raise
 
     except Exception as e:
-        print(f"ERROR: {e}", file=sys.stderr)
-        sys.exit(1)
+        print(f"[ERROR] Detailed job failed: {e}", file=sys.stderr)
+        raise
 
     finally:
-        # ALWAYS cleanup acquired resources
-        if VERBOSE >= 1:
-            print(f"[CLEANUP] Starting resource cleanup...", file=sys.stderr)
+        # Cleanup happens in main finally block
+        pass
 
-        # Cleanup hosts (with registry coordination)
-        if acquired_hosts:
-            cleanup_source_hosts(acquired_hosts, run_id)
+    return results, acquired_source_hosts, created_destination_hosts
 
-        # Cleanup iptables rules on all routers
-        for rname in routers:
-            cleanup_router(rname)
+def create_all_destination_hosts(routers: List[str], run_id: str) -> List[str]:
+    """Create destination hosts on all routers in parallel (tsimsh handles parallelism)"""
+    created_hosts = []
 
-        # Release DSCP (happens in calling service, not here)
+    if VERBOSE >= 1:
+        print(f"[INFO] Creating destination hosts on {len(routers)} routers (parallel)", file=sys.stderr)
 
-        if VERBOSE >= 1:
-            print(f"[CLEANUP] Resource cleanup completed", file=sys.stderr)
+    # tsimsh processes all routers in parallel
+    for i, router_name in enumerate(routers, 1):
+        dest_host = f"service-host-{i}"
+        # tsimsh command creates hosts in parallel across all routers
+        tsimsh_exec(f"host add --name {dest_host} --primary-ip 10.x.x.x/24 "
+                    f"--connect-to {router_name}")
+        created_hosts.append(dest_host)
+
+    return created_hosts
+
+def acquire_all_source_host_leases(routers: List[str], run_id: str) -> List[Tuple[str, str]]:
+    """Acquire source host leases for all routers"""
+    acquired_hosts = []
+
+    if VERBOSE >= 1:
+        print(f"[INFO] Acquiring source host leases for {len(routers)} routers", file=sys.stderr)
+
+    for i, router_name in enumerate(routers, 1):
+        src_host = f"destination-{i}"
+        # Check if exists, create if needed (physical creation first)
+        # Then acquire lease
+        if host_setup:
+            ref_count = host_setup.acquire_source_host_lease(
+                run_id=run_id,
+                host_name=src_host,
+                job_type='detailed',
+                dscp=None
+            )
+            acquired_hosts.append((src_host, router_name))
+
+    return acquired_hosts
+
+def run_measurements_all_routers(routers: List[str], run_id: str) -> Dict:
+    """Run measurements on all routers (read counters, send traffic, calculate deltas)"""
+    # Read baseline FORWARD counters for all routers
+    # Send test traffic from all source hosts
+    # Read final FORWARD counters for all routers
+    # Calculate deltas for all routers
+    # Return results
+    pass
 ```
+
+### 6.3 Modify Cleanup
+
+**Update cleanup to handle destination hosts and source host leases**:
+
+```python
+def cleanup_detailed_job(acquired_source_hosts, created_destination_hosts, run_id):
+    """Cleanup after detailed job completes"""
+
+    # Delete destination hosts (ephemeral, no ref counting)
+    for dest_host in created_destination_hosts:
+        if VERBOSE >= 2:
+            print(f"[CLEANUP] Deleting destination host {dest_host}", file=sys.stderr)
+        try:
+            tsimsh_exec(f"host remove --name {dest_host}")
+        except Exception as e:
+            # Log but don't fail
+            if VERBOSE >= 1:
+                print(f"[WARN] Failed to delete {dest_host}: {e}", file=sys.stderr)
+
+    # Release source host leases (ref count--, delete if reaches 0)
+    if host_setup:
+        for src_host, router_name in acquired_source_hosts:
+            ref_count = host_setup.release_source_host_lease(run_id, src_host)
+            if ref_count == 0:
+                # Safe to delete - no other jobs using this host
+                if VERBOSE >= 2:
+                    print(f"[CLEANUP] Deleting source host {src_host} (ref_count=0)", file=sys.stderr)
+                try:
+                    tsimsh_exec(f"host remove --name {src_host}")
+                except Exception as e:
+                    if VERBOSE >= 1:
+                        print(f"[WARN] Failed to delete {src_host}: {e}", file=sys.stderr)
+            else:
+                if VERBOSE >= 2:
+                    print(f"[CLEANUP] Released lease for {src_host} (ref_count={ref_count}, keeping)", file=sys.stderr)
+```
+
+**Key Points**:
+- **ATOMIC lock acquisition**: All router locks acquired atomically (all-or-nothing)
+- **Deadlock prevention**: Sorted lock ordering + atomic acquisition prevents deadlocks
+- Router lock grants exclusive access to all hosts on that router
+- Destination hosts are ephemeral (no leases, always deleted at job end)
+- Source hosts use leases (reference counted, persist if other jobs need them)
+- **All routers processed in parallel**: tsimsh commands handle parallelism
+- Lock manager notifies all waiters on atomic lock release
+
+---
+
+## Summary of Changes
+
+**Phase 1**: Source host leases with reference counting, neighbor leases
+**Phase 2**: Router-agnostic scheduler (no router tracking, no global lock)
+**Phase 3**: **ATOMIC router lock acquisition** (deadlock prevention), RouterWaiter for quick jobs
+**Phase 4**: iptables --noflush flag for incremental operations
+**Phase 5**: Quick jobs use RouterWaiter + source host leases
+**Phase 6**: Detailed jobs use **atomic multi-router locks** + parallel processing
+
+**Critical Architectural Principles**:
+1. **Routers are persistent**, hosts are fluid
+2. **Router lock controls access to router AND all hosts** on that router
+3. **Source hosts**: Reference counted, persist across jobs
+4. **Destination hosts**: Ephemeral, created/deleted within single job
+5. **Scheduler is router-agnostic**: No router tracking, coordination at job level
 
 ---
 

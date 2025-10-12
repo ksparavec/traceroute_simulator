@@ -1,0 +1,88 @@
+// RegistryManager Architecture
+digraph {
+	dpi=300 nodesep=0.3 rankdir=TB ranksep=0.5 ratio=fill size="8,11.5" splines=ortho
+	node [fontname=Arial fontsize=11 style=filled]
+	edge [fontname=Arial fontsize=10]
+	subgraph cluster_apps {
+		color=blue fontsize=14 label="Application Layer" margin=20 style=dashed
+		apps [label="Applications:
+• ksms_tester.py
+• network_reachability_test_multi.py
+• TsimSchedulerService
+• batch_command_generator.py" fillcolor=lightblue shape=box width=6]
+	}
+	subgraph cluster_registry_mgr {
+		color=darkgreen fillcolor=lightgreen fontsize=14 label="RegistryManager
+(src/core/registry_manager.py)" margin=30 style="filled,dashed"
+		subgraph cluster_public_apis {
+			color=gray fontsize=12 label="Public APIs" margin=15 style=dashed
+			api_host [label="Host Registry Operations
+• check_and_register_host()
+• unregister_host()
+• get_host_info()" fillcolor=lightyellow shape=box width=5.5]
+			api_leases [label="Host Lease Operations
+• acquire_source_host_lease()
+• release_source_host_lease()
+• get_host_lease_count()" fillcolor=lightyellow shape=box width=5.5]
+			api_router [label="Router Lock Operations
+• acquire_router_lock()
+• release_router_lock()
+• acquire_all_router_locks_atomic()" fillcolor=lightyellow shape=box width=5.5]
+			api_waiter [label="Router Waiter Operations
+• wait_for_router()
+• wait_for_all_routers()" fillcolor=lightyellow shape=box width=5.5]
+			api_neighbor [label="Neighbor Lease Operations
+• acquire_neighbor_lease()
+• release_neighbor_lease()" fillcolor=lightyellow shape=box width=5.5]
+			api_host -> api_leases [style=invis]
+			api_leases -> api_router [style=invis]
+			api_router -> api_waiter [style=invis]
+			api_waiter -> api_neighbor [style=invis]
+		}
+		subgraph cluster_internal {
+			color=gray fontsize=12 label="Internal Components (private)" margin=15 style=dashed
+			internal_lock [label="_LockManager
+• posix_ipc semaphores
+• Lock ordering enforcement
+• Deadlock prevention" fillcolor=lightcyan shape=box width=5.5]
+			internal_io [label="_RegistryIO
+• Atomic read/write + fsync
+• Retry on errors
+• Corruption handling" fillcolor=lightcyan shape=box width=5.5]
+			internal_tx [label="_Transaction
+• Rollback on failure
+• Action recording" fillcolor=lightcyan shape=box width=5.5]
+			internal_lock -> internal_io [style=invis]
+			internal_io -> internal_tx [style=invis]
+		}
+	}
+	subgraph cluster_files {
+		color=darkred fontsize=14 label="Registry Files
+(/dev/shm/tsim/)" margin=20 style=dashed
+		files [label="hosts.json
+host_leases.json
+neighbor_leases.json
+locks/router_*" fillcolor=mistyrose shape=cylinder width=4]
+	}
+	apps -> api_host [label="Clean API
+(no lock awareness)" color=blue style=bold]
+	api_neighbor -> internal_lock [style=invis]
+	internal_io -> files [label="Atomic I/O + locks" color=darkgreen style=bold]
+	legend_table [label=<
+<TABLE BORDER="1" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
+  <TR><TD COLSPAN="2" BGCOLOR="lightgray"><B>LEGEND</B></TD></TR>
+  <TR>
+    <TD BGCOLOR="lightblue">Applications</TD>
+    <TD BGCOLOR="lightyellow">Public APIs</TD>
+  </TR>
+  <TR>
+    <TD BGCOLOR="lightcyan">Internal Components</TD>
+    <TD BGCOLOR="mistyrose">Registry Files</TD>
+  </TR>
+</TABLE>> shape=plaintext]
+	{
+		rank=sink
+		legend_table
+	}
+	files -> legend_table [style=invis weight=100]
+}

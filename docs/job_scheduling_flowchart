@@ -47,26 +47,42 @@ thread pool" fillcolor=lightcyan]
 		color=green label="Quick Job Execution (Parallel, DSCP Isolated)" margin=4 style=dashed
 		quick_start [label="Quick Job Starts
 (has unique DSCP)" fillcolor=lightgreen shape=ellipse]
-		quick_wait [label="For each router:
-RouterWaiter.wait_until_free()
-(inotify, no polling)" fillcolor=palegreen]
+		quick_wait [label=<
+For each router:<BR/>
+RouterWaiter.wait_until_free()<BR/>
+(inotify, no polling)<BR/>
+<BR/>
+<FONT POINT-SIZE="8" COLOR="darkblue"><I><B>RegistryManager:</B></I></FONT><BR/>
+<FONT POINT-SIZE="8" COLOR="darkblue"><I>wait_for_router(router, timeout)</I></FONT>> fillcolor=palegreen]
 		quick_locked [label="Router locked
 by detailed job?" fillcolor=yellow shape=diamond]
 		quick_block [label="Block until
 lock released
 (inotify wakeup)" fillcolor=orange]
-		quick_hosts [label="Create/acquire
-source hosts
-(physical + lease)" fillcolor=palegreen]
+		quick_hosts [label=<
+Create/acquire<BR/>
+source hosts<BR/>
+(physical + lease)<BR/>
+<BR/>
+<FONT POINT-SIZE="8" COLOR="darkblue"><I><B>RegistryManager:</B></I></FONT><BR/>
+<FONT POINT-SIZE="8" COLOR="darkblue"><I>check_and_register_host(...)</I></FONT><BR/>
+<FONT POINT-SIZE="8" COLOR="darkblue"><I>acquire_source_host_lease(</I></FONT><BR/>
+<FONT POINT-SIZE="8" COLOR="darkblue"><I>  run_id, host, 'quick', router, dscp)</I></FONT>> fillcolor=palegreen]
 		quick_iptables [label="Install iptables rules
 (--noflush, DSCP-specific)" fillcolor=palegreen]
 		quick_test [label="Run tests
 (DSCP isolated)" fillcolor=palegreen]
 		quick_cleanup_ipt [label="Cleanup iptables
 (--noflush, DSCP-specific)" fillcolor=palegreen]
-		quick_cleanup_hosts [label="Release source host leases
-ref_count--
-Delete if ref_count==0" fillcolor=palegreen]
+		quick_cleanup_hosts [label=<
+Release source host leases<BR/>
+ref_count--<BR/>
+Delete if ref_count==0<BR/>
+<BR/>
+<FONT POINT-SIZE="8" COLOR="darkblue"><I><B>RegistryManager:</B></I></FONT><BR/>
+<FONT POINT-SIZE="8" COLOR="darkblue"><I>ref_count, should_delete =</I></FONT><BR/>
+<FONT POINT-SIZE="8" COLOR="darkblue"><I>  release_source_host_lease(</I></FONT><BR/>
+<FONT POINT-SIZE="8" COLOR="darkblue"><I>    run_id, host)</I></FONT>> fillcolor=palegreen]
 		quick_end [label="Quick Job Complete" fillcolor=lightgreen shape=ellipse]
 	}
 	job_type -> quick_start
@@ -88,16 +104,27 @@ available?" fillcolor=yellow shape=diamond]
 		det_block [label="Wait for ALL routers
 to be released
 (retry lock acquisition)" fillcolor=orange]
-		det_lock_all [label="Acquire ALL router locks
-ATOMICALLY
-(all-or-nothing)
-[DEADLOCK PREVENTION]
-Grants exclusive access
-to all routers + hosts" fillcolor=mistyrose]
-		det_src_hosts [label="Create/acquire
-source hosts
-(physical + lease)
-[tsimsh parallel]" fillcolor=mistyrose]
+		det_lock_all [label=<
+Acquire ALL router locks<BR/>
+ATOMICALLY<BR/>
+(all-or-nothing)<BR/>
+[DEADLOCK PREVENTION]<BR/>
+Grants exclusive access<BR/>
+to all routers + hosts<BR/>
+<BR/>
+<FONT POINT-SIZE="8" COLOR="darkblue"><I><B>RegistryManager:</B></I></FONT><BR/>
+<FONT POINT-SIZE="8" COLOR="darkblue"><I>with all_router_locks(</I></FONT><BR/>
+<FONT POINT-SIZE="8" COLOR="darkblue"><I>  routers, job_id, timeout):</I></FONT>> fillcolor=mistyrose]
+		det_src_hosts [label=<
+Create/acquire<BR/>
+source hosts<BR/>
+(physical + lease)<BR/>
+[tsimsh parallel]<BR/>
+<BR/>
+<FONT POINT-SIZE="8" COLOR="darkblue"><I><B>RegistryManager:</B></I></FONT><BR/>
+<FONT POINT-SIZE="8" COLOR="darkblue"><I>check_and_register_host(...)</I></FONT><BR/>
+<FONT POINT-SIZE="8" COLOR="darkblue"><I>acquire_source_host_lease(</I></FONT><BR/>
+<FONT POINT-SIZE="8" COLOR="darkblue"><I>  run_id, host, 'detailed', router)</I></FONT>> fillcolor=mistyrose]
 		det_dst_hosts [label="Create destination hosts
 (ephemeral, no lease)
 [tsimsh parallel]" fillcolor=mistyrose]
@@ -122,14 +149,26 @@ services
 		det_cleanup_dst [label="Delete destination hosts
 (ephemeral)
 [tsimsh parallel]" fillcolor=mistyrose]
-		det_cleanup_src [label="Release source host leases
-ref_count--
-Delete if ref_count==0
-[all hosts]" fillcolor=mistyrose]
-		det_unlock_all [label="Release ALL router locks
-ATOMICALLY
-(touch notify files)
-[wake all waiters]" fillcolor=mistyrose]
+		det_cleanup_src [label=<
+Release source host leases<BR/>
+ref_count--<BR/>
+Delete if ref_count==0<BR/>
+[all hosts]<BR/>
+<BR/>
+<FONT POINT-SIZE="8" COLOR="darkblue"><I><B>RegistryManager:</B></I></FONT><BR/>
+<FONT POINT-SIZE="8" COLOR="darkblue"><I>ref_count, should_delete =</I></FONT><BR/>
+<FONT POINT-SIZE="8" COLOR="darkblue"><I>  release_source_host_lease(</I></FONT><BR/>
+<FONT POINT-SIZE="8" COLOR="darkblue"><I>    run_id, host)</I></FONT>> fillcolor=mistyrose]
+		det_unlock_all [label=<
+Release ALL router locks<BR/>
+ATOMICALLY<BR/>
+(touch notify files)<BR/>
+[wake all waiters]<BR/>
+<BR/>
+<FONT POINT-SIZE="8" COLOR="darkblue"><I><B>RegistryManager:</B></I></FONT><BR/>
+<FONT POINT-SIZE="8" COLOR="darkblue"><I>// context manager exit:</I></FONT><BR/>
+<FONT POINT-SIZE="8" COLOR="darkblue"><I>release_all_router_locks(</I></FONT><BR/>
+<FONT POINT-SIZE="8" COLOR="darkblue"><I>  routers, job_id)</I></FONT>> fillcolor=mistyrose]
 		det_end [label="Detailed Job Complete" fillcolor=mistyrose shape=ellipse]
 	}
 	job_type -> det_start

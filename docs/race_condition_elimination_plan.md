@@ -64,6 +64,81 @@ Implement host reference counting and per-router locking to eliminate race condi
 
 ---
 
+## Job Scheduling Flow with Race Condition Elimination
+
+![Job Scheduling Flowchart](job_scheduling_flowchart.png)
+
+**Diagram Generation**: The job scheduling flowchart is generated using `docs/generate_scheduling_flowchart.py`. To regenerate:
+```bash
+python3 docs/generate_scheduling_flowchart.py
+```
+
+**Flowchart Overview**:
+
+This comprehensive flowchart depicts the entire job lifecycle from submission through execution to completion, showing where RegistryManager coordination points are integrated:
+
+1. **Job Submission Layer** (Gray)
+   - User submits job (Quick or Detailed analysis)
+   - Handler generates run_id
+   - Job enqueued to FIFO queue
+
+2. **Router-Agnostic Scheduler** (Blue)
+   - Leader loop with no global lock
+   - No router tracking at scheduler level
+   - Cleanup completed jobs
+   - Count running quick jobs
+   - Pop jobs from queue (Quick jobs have PRIORITY)
+   - Allocate DSCP for quick jobs
+   - Submit to thread pool
+
+3. **Quick Job Execution** (Green)
+   - Parallel execution with DSCP isolation
+   - **RegistryManager: wait_for_router()** - inotify-based waiting if router locked
+   - **RegistryManager: check_and_register_host()** - atomic host registration (TOCTOU elimination)
+   - **RegistryManager: acquire_source_host_lease()** - reference-counted lease acquisition
+   - Install DSCP-specific iptables rules (--noflush)
+   - Run tests in isolation
+   - Cleanup iptables rules (--noflush)
+   - **RegistryManager: release_source_host_lease()** - ref_count--, delete if zero
+
+4. **Detailed Job Execution** (Red/Pink)
+   - All routers processed in parallel
+   - Exclusive access to all routers and hosts
+   - **RegistryManager: all_router_locks()** - atomic all-or-nothing lock acquisition (deadlock prevention)
+   - **RegistryManager: check_and_register_host()** and **acquire_source_host_lease()** for all source hosts
+   - Create ephemeral destination hosts (no leases)
+   - Start services on destination hosts
+   - Read baseline FORWARD counters (all routers)
+   - Send test traffic (all routers)
+   - Read final FORWARD counters (all routers)
+   - Calculate delta (no pollution from other jobs)
+   - Stop and cleanup services
+   - Delete destination hosts
+   - **RegistryManager: release_source_host_lease()** - ref_count--, delete if zero
+   - **RegistryManager: release_all_router_locks()** - atomic unlock, wake all waiters
+
+5. **Completion**
+   - Results returned to user
+   - Scheduler continues with next jobs
+
+**Key RegistryManager Integration Points** (shown in blue 8pt font in flowchart):
+- **wait_for_router()**: inotify-based waiting, no polling
+- **check_and_register_host()**: Atomic check-and-register eliminates TOCTOU
+- **acquire_source_host_lease()**: Reference counting for shared source hosts
+- **release_source_host_lease()**: Automatic cleanup when ref_count reaches zero
+- **all_router_locks()**: Context manager for atomic multi-router locking
+- **release_all_router_locks()**: Atomic unlock with inotify notification
+
+**Color Legend**:
+- **Light Green**: Quick job start/end
+- **Pale Green**: Quick job process steps
+- **Misty Rose**: Detailed job (all boxes)
+- **Yellow**: Decision points (diamonds)
+- **Orange**: Blocking/waiting states
+- **Light Blue**: Scheduler processes
+
+---
+
 ## Current Problem Analysis
 
 ### Race Condition #1: Concurrent Quick Jobs on Shared Router
@@ -136,7 +211,47 @@ tsimsh_exec(f"host remove --name {src_host_name} --force")
 
 ---
 
+## Centralized Registry Manager Architecture
+
+**Design Decision**: Instead of scattered lock management across multiple services, implement a centralized `RegistryManager` that encapsulates all registry operations and locking.
+
+**Benefits**:
+- **Eliminates TOCTOU vulnerabilities**: Check-and-register becomes single atomic operation
+- **Simplifies debugging**: All registry operations logged in one place
+- **Prevents deadlocks**: Consistent lock ordering enforced by manager
+- **Cleaner API**: Callers never see locks/semaphores
+- **Easier testing**: Mock one manager instead of many services
+
+**Architecture Reference**: See `docs/registry_manager_architecture.md` for complete design.
+
+**Implementation Location**: `src/core/registry_manager.py`
+
+**Usage Pattern**:
+```python
+# Old approach (scattered locks, TOCTOU vulnerable)
+with some_semaphore.acquire():
+    if not host_exists(name):  # Check
+        create_host(name)       # Act - RACE CONDITION WINDOW!
+        register_host(name)
+
+# New approach (atomic, safe)
+registry_mgr = RegistryManager(config)
+if registry_mgr.check_and_register_host(name, ip, router, mac):
+    create_host(name)  # Only create if registration succeeded
+```
+
+**Integration with Phases**:
+- **Phase 1**: RegistryManager handles host registry and leases
+- **Phase 2**: Scheduler uses RegistryManager for DSCP allocation
+- **Phase 3**: RegistryManager provides router lock and waiter APIs
+- **Phase 4**: ksms_tester.py uses RegistryManager for leases
+- **Phase 5**: network_reachability_test_multi.py uses RegistryManager for locks and leases
+
+---
+
 ## Phase 1: Source Host Leases Registry with Router-Coupled Access Control
+
+**Implementation Note**: All operations described below will be implemented in `RegistryManager` class. Services will call RegistryManager methods instead of directly managing locks and registries.
 
 **Key Architectural Points**:
 1. **Source hosts only**: Destination hosts are ephemeral (created/deleted within single job, no leases needed)
@@ -212,11 +327,14 @@ tsimsh_exec(f"host remove --name {src_host_name} --force")
 }
 ```
 
-**New Methods to Add to `HostNamespaceSetup` class**:
+**RegistryManager Methods (implemented in `src/core/registry_manager.py`)**:
 
 ```python
+# In RegistryManager class
+
 def acquire_source_host_lease(self, run_id: str, host_name: str,
-                               job_type: str, dscp: int = None) -> int:
+                               job_type: str, router_name: str,
+                               dscp: Optional[int] = None) -> int:
     """Add lease for SOURCE host (called AFTER physical creation)
 
     IMPORTANT: Caller MUST have acquired router lock for the router this host is attached to.
@@ -226,7 +344,8 @@ def acquire_source_host_lease(self, run_id: str, host_name: str,
         run_id: Unique job identifier
         host_name: Source host namespace name (e.g., "destination-2")
         job_type: 'quick' or 'detailed'
-        dscp: DSCP value (for quick jobs only)
+        router_name: Router this host is attached to
+        dscp: Optional DSCP value (for quick jobs only)
 
     Returns:
         Current ref_count (number of active leases for this host)
@@ -260,34 +379,52 @@ def acquire_source_host_lease(self, run_id: str, host_name: str,
         self._save_host_leases(leases)
         return len(leases[host_name]['leases'])
 
-def release_source_host_lease(self, run_id: str, host_name: str) -> int:
-    """Remove lease for SOURCE host (returns ref_count)
+def release_source_host_lease(self, run_id: str, host_name: str) -> Tuple[int, bool]:
+    """Remove lease for SOURCE host (decrement reference count)
 
-    Physical removal should only happen when returned ref_count == 0.
+    Physical removal should only happen when should_delete == True.
     If physical removal fails, just log - another job can recreate.
 
+    Args:
+        run_id: Job identifier
+        host_name: Source host name
+
     Returns:
-        Remaining ref_count (0 means safe to physically remove)
+        Tuple of (new_ref_count, should_delete)
+        should_delete=True when ref_count reaches 0
+
+    Raises:
+        RegistryError: On I/O errors
+        ValueError: If lease not found
     """
     with self._atomic_lease_operation():
         leases = self._load_host_leases()
         if host_name not in leases:
-            return 0
+            raise ValueError(f"No leases found for host {host_name}")
 
         # Remove this job's lease
+        original_count = len(leases[host_name]['leases'])
         leases[host_name]['leases'] = [
             lease for lease in leases[host_name]['leases']
             if lease['run_id'] != run_id
         ]
 
-        if not leases[host_name]['leases']:
+        new_count = len(leases[host_name]['leases'])
+
+        if new_count == original_count:
+            raise ValueError(f"Lease for {run_id} not found on host {host_name}")
+
+        if new_count == 0:
+            # Remove host entry entirely
             del leases[host_name]
+            should_delete = True
             ref_count = 0
         else:
-            ref_count = len(leases[host_name]['leases'])
+            ref_count = new_count
+            should_delete = False
 
         self._save_host_leases(leases)
-        return ref_count
+        return ref_count, should_delete
 
 def get_source_host_lease_count(self, host_name: str) -> int:
     """Get current lease count for source host (0 if no leases)"""
@@ -314,6 +451,13 @@ def reconcile_stale_source_host_leases(self) -> Dict[str, int]:
     Returns:
         {'stale_pids': count, 'stale_timeout': count, 'orphaned_hosts': count}
     """
+```
+
+**Note**: The above implementation details are internal to `RegistryManager`. Calling services use simple APIs like:
+```python
+# Service code
+registry_mgr = RegistryManager(config)
+ref_count = registry_mgr.acquire_source_host_lease(run_id, host_name, job_type, router_name, dscp)
 ```
 
 **Source Host Leases Registry Usage**:
@@ -364,66 +508,83 @@ def reconcile_stale_source_host_leases(self) -> Dict[str, int]:
 **New Methods to Add to Neighbor Management class**:
 
 ```python
-def acquire_neighbor_lease(self, run_id: str, router_name: str,
-                           neighbor_ip: str, job_type: str) -> int:
-    """Add lease for ARP neighbor entry (called AFTER physical creation)
+def acquire_neighbor_lease(self, run_id: str, host_name: str,
+                           neighbor_ip: str) -> int:
+    """Acquire lease for neighbor ARP entry (reference counting)
 
     Args:
-        run_id: Unique job identifier
-        router_name: Router namespace name
+        run_id: Job identifier
+        host_name: Host that needs this neighbor
         neighbor_ip: Neighbor IP address
-        job_type: 'quick' or 'detailed'
 
     Returns:
-        Current ref_count (number of active leases for this neighbor)
+        Current reference count
+
+    Raises:
+        RegistryLockTimeout: If lock not acquired within timeout
     """
     with self._atomic_lease_operation():
         leases = self._load_neighbor_leases()
-        key = f"{router_name}__{neighbor_ip}"
+        key = f"{host_name}:{neighbor_ip}"
 
         if key not in leases:
-            leases[key] = []
+            leases[key] = {
+                'host_name': host_name,
+                'neighbor_ip': neighbor_ip,
+                'leases': []
+            }
 
-        leases[key].append({
+        leases[key]['leases'].append({
             'run_id': run_id,
             'pid': os.getpid(),
-            'job_type': job_type,
             'allocated_at': time.time()
         })
 
         self._save_neighbor_leases(leases)
-        return len(leases[key])
+        return len(leases[key]['leases'])
 
-def release_neighbor_lease(self, run_id: str, router_name: str,
-                           neighbor_ip: str) -> int:
-    """Remove lease for neighbor (returns ref_count)
+def release_neighbor_lease(self, run_id: str, host_name: str,
+                           neighbor_ip: str) -> Tuple[int, bool]:
+    """Release neighbor lease (decrement reference count)
 
-    Physical removal (ip neigh del) should only happen when returned ref_count == 0.
+    Physical removal (ip neigh del) should only happen when should_delete == True.
+
+    Args:
+        run_id: Job identifier
+        host_name: Host releasing neighbor
+        neighbor_ip: Neighbor IP address
 
     Returns:
-        Remaining ref_count (0 means safe to physically remove)
+        Tuple of (new_ref_count, should_delete)
+
+    Raises:
+        RegistryLockTimeout: If lock not acquired within timeout
+        ValueError: If lease not found
     """
     with self._atomic_lease_operation():
         leases = self._load_neighbor_leases()
-        key = f"{router_name}__{neighbor_ip}"
+        key = f"{host_name}:{neighbor_ip}"
 
         if key not in leases:
-            return 0
+            raise ValueError(f"No leases found for {key}")
 
         # Remove this job's lease
-        leases[key] = [
-            lease for lease in leases[key]
+        leases[key]['leases'] = [
+            lease for lease in leases[key]['leases']
             if lease['run_id'] != run_id
         ]
 
-        if not leases[key]:
+        if not leases[key]['leases']:
+            # Remove entry entirely
             del leases[key]
+            should_delete = True
             ref_count = 0
         else:
-            ref_count = len(leases[key])
+            ref_count = len(leases[key]['leases'])
+            should_delete = False
 
         self._save_neighbor_leases(leases)
-        return ref_count
+        return ref_count, should_delete
 
 def get_neighbor_lease_count(self, router_name: str, neighbor_ip: str) -> int:
     """Get current lease count for neighbor (0 if no leases)"""
@@ -458,7 +619,7 @@ def reconcile_stale_neighbor_leases(self) -> Dict[str, int]:
    - No router conflicts between quick jobs
 
 2. **Quick vs Detailed**: Quick job waits if router is locked by detailed job
-   - Quick job calls `RouterWaiter.wait_until_free(router)` before touching router
+   - Quick job calls `registry_mgr.wait_for_router(router)` before touching router
    - Blocks using inotify (no polling) until detailed job releases that router's lock
    - Then proceeds with batch operations
 
@@ -470,8 +631,8 @@ def reconcile_stale_neighbor_leases(self) -> Dict[str, int]:
 
 **Implementation**:
 - **Phase 2 (Scheduler)**: Router-agnostic, no router tracking, no global lock
-- **Phase 3 (Router Locks & Waiter)**: Detailed jobs acquire exclusive locks; quick jobs use RouterWaiter
-- **Phase 4 (ksms_tester.py)**: Quick jobs wait via RouterWaiter, use batch --noflush operations
+- **Phase 3 (Router Locks & Waiter)**: Detailed jobs acquire exclusive locks; quick jobs use RegistryManager.wait_for_router()
+- **Phase 4 (ksms_tester.py)**: Quick jobs wait via RegistryManager.wait_for_router(), use batch --noflush operations
 - **Phase 5 (network_reachability_test_multi.py)**: Detailed jobs acquire per-router locks
 
 ### 1.4 Leases Registry Path Configuration
@@ -869,9 +1030,9 @@ Result: Detailed job's measurements include quick job's traffic → incorrect re
 
 ### 3.2 Lock Manager Implementation (Detailed Jobs)
 
-**Location**: `wsgi/services/tsim_lock_manager_service.py` (existing)
+**Implementation Note**: Router lock operations are now part of `RegistryManager` (`src/core/registry_manager.py`). The existing `TsimLockManagerService` can be deprecated or refactored to use RegistryManager internally.
 
-**Add router lock methods with notify support**:
+**RegistryManager Router Lock Methods**:
 
 ```python
 def acquire_router_lock(self, router_name: str, job_id: str,
@@ -902,7 +1063,7 @@ def release_router_lock(self, router_name: str, job_id: str) -> bool:
     return result
 
 def _notify_router_waiters(self, router_name: str):
-    """Notify RouterWaiter instances that router is free (touch notify file)"""
+    """Notify waiters that router is free (touch notify file for inotify)"""
     notify_file = Path(self.lock_dir) / f"router_{router_name}_notify"
     try:
         notify_file.touch()
@@ -934,8 +1095,8 @@ def router_lock(self, router_name: str, job_id: str, timeout: float = 30.0):
 **Add atomic multi-router lock acquisition (CRITICAL for deadlock prevention)**:
 
 ```python
-def acquire_all_router_locks(self, router_names: List[str], job_id: str,
-                              timeout: float = 30.0) -> bool:
+def acquire_all_router_locks_atomic(self, router_names: List[str], job_id: str,
+                                     timeout: float = 60.0) -> bool:
     """Atomically acquire ALL router locks or none (deadlock prevention)
 
     CRITICAL: This method implements "all-or-nothing" lock acquisition to prevent deadlocks.
@@ -997,30 +1158,36 @@ def acquire_all_router_locks(self, router_names: List[str], job_id: str,
                 except Exception as e:
                     self.logger.error(f"Error releasing lock for {router_name}: {e}")
 
-def release_all_router_locks(self, router_names: List[str], job_id: str):
+def release_all_router_locks(self, router_names: List[str], job_id: str) -> int:
     """Release all router locks and notify all waiters
 
     Args:
         router_names: List of router names to unlock
         job_id: Job ID releasing locks
+
+    Returns:
+        Number of locks successfully released
     """
+    count = 0
     for router_name in router_names:
         try:
-            self.release_router_lock(router_name, job_id)
+            if self.release_router_lock(router_name, job_id):
+                count += 1
         except Exception as e:
             self.logger.error(f"Error releasing lock for {router_name}: {e}")
+    return count
 
 @contextmanager
-def all_router_locks(self, router_names: List[str], job_id: str, timeout: float = 30.0):
+def all_router_locks(self, router_names: List[str], job_id: str, timeout: float = 60.0):
     """Context manager for atomic multi-router lock acquisition
 
     Usage (detailed jobs processing multiple routers):
-        with lock_manager.all_router_locks(['router-1', 'router-2'], 'job-123'):
+        with registry_mgr.all_router_locks(['router-1', 'router-2'], 'job-123'):
             # Have exclusive access to ALL routers and their hosts
             # Perform measurements across all routers
             # No deadlock risk - all locks acquired atomically
     """
-    if not self.acquire_all_router_locks(router_names, job_id, timeout):
+    if not self.acquire_all_router_locks_atomic(router_names, job_id, timeout):
         raise TimeoutError(f"Could not acquire all router locks: {router_names}")
     try:
         yield
@@ -1036,15 +1203,24 @@ def all_router_locks(self, router_names: List[str], job_id: str, timeout: float 
 
 ### 3.3 RouterWaiter Implementation (Quick Jobs)
 
-**Location**: `wsgi/services/tsim_router_waiter.py` (NEW FILE)
+**Implementation Note**: RouterWaiter functionality is now part of `RegistryManager` (`src/core/registry_manager.py`). The standalone `RouterWaiter` class can be deprecated.
 
-**Purpose**: Allow quick jobs to wait (inotify-based, no polling) for router locks held by detailed jobs.
+**RegistryManager Wait Methods**:
+
+Services call simple methods like:
+```python
+registry_mgr = RegistryManager(config)
+if registry_mgr.wait_for_router('router-hq', timeout=30.0):
+    # Router is now free, proceed
+```
+
+**Internal Implementation Details** (for reference):
 
 ```python
 import os
 import select
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Tuple
 import logging
 
 class RouterWaiter:
@@ -1146,9 +1322,9 @@ class RouterWaiter:
 **Coordination**:
 - Scheduler is router-agnostic (no global serialization)
 - Router-level coordination happens at job level:
-  - Quick jobs wait if needed (via RouterWaiter) - controls router + host access
+  - Quick jobs wait if needed (via RegistryManager.wait_for_router()) - controls router + host access
   - Detailed jobs acquire exclusive locks - grants router + host access
-  - Lock manager notifies waiters on release
+  - RegistryManager notifies waiters on release
   - Source host leases track reference counts for persistence
 
 ### 3.5 Configuration
@@ -1456,48 +1632,25 @@ ap.add_argument('--dscp', type=int, required=True, metavar='VALUE',
 
 **Note**: DSCP is allocated by `TsimSchedulerService` and passed as CLI argument.
 
-### 5.2 Add Host Registry Support
+### 5.2 Add RegistryManager Support
 
-**At top of file, add registry loading**:
-
-```python
-# Host registry integration (uses existing HostNamespaceSetup)
-host_setup = None
-try:
-    # Get registry path directly from config
-    from traceroute_simulator.core.config_loader import get_registry_paths
-    registry_path = get_registry_paths().get('hosts')
-
-    if registry_path and os.path.exists(registry_path):
-        from traceroute_simulator.simulators.host_namespace_setup import HostNamespaceSetup
-        host_setup = HostNamespaceSetup(verbose=VERBOSE >= 3)
-        _dbg(f"[INFO] Using shared host registry: {registry_path}", 1)
-except ImportError as e:
-    _dbg(f"[WARN] Host registry not available - running without coordination: {e}", 1)
-    host_setup = None
-```
-
-### 5.3 Add RouterWaiter Support
-
-**At top of file, add RouterWaiter loading**:
+**At top of file, add RegistryManager loading**:
 
 ```python
-# RouterWaiter for router coordination (quick jobs wait if router locked)
-router_waiter = None
+# Centralized registry manager for all coordination
+registry_mgr = None
 try:
-    from traceroute_simulator.core.config_loader import get_lock_dir
-    lock_dir = get_lock_dir()
-    from traceroute_simulator.services.tsim_router_waiter import RouterWaiter
-    router_waiter = RouterWaiter(lock_dir=lock_dir, logger=logger)
-    _dbg(f"[INFO] Using RouterWaiter for router coordination", 1)
+    from traceroute_simulator.core.registry_manager import RegistryManager
+    registry_mgr = RegistryManager(config=config, logger=logger)
+    _dbg(f"[INFO] Using centralized RegistryManager for coordination", 1)
 except ImportError as e:
-    _dbg(f"[WARN] RouterWaiter not available: {e}", 1)
-    router_waiter = None
+    _dbg(f"[WARN] RegistryManager not available - running without coordination: {e}", 1)
+    registry_mgr = None
 ```
 
-### 5.4 Modify Main Function Structure
+### 5.3 Modify Main Function Structure
 
-**Quick job flow with RouterWaiter + source host leases**:
+**Quick job flow with RegistryManager for coordination**:
 
 ```python
 def main():
@@ -1518,13 +1671,13 @@ def main():
     acquired_source_hosts = []
 
     try:
-        # Phase 1: Wait for routers to be free (RouterWaiter)
+        # Phase 1: Wait for routers to be free
         # Quick jobs must wait if routers are locked by detailed jobs
-        if router_waiter:
+        if registry_mgr:
             for router_name in routers:
                 if VERBOSE >= 2:
                     print(f"[INFO] Checking if router {router_name} is free...", file=sys.stderr)
-                if not router_waiter.wait_until_free(router_name, timeout=30.0):
+                if not registry_mgr.wait_for_router(router_name, timeout=30.0):
                     raise TimeoutError(f"Router {router_name} locked by detailed job, timeout waiting")
                 if VERBOSE >= 2:
                     print(f"[INFO] Router {router_name} is free, proceeding", file=sys.stderr)
@@ -1559,10 +1712,10 @@ def main():
             cleanup_router(rname, job_dscp, run_id)
 
         # Release source host leases (ref count--, delete if reaches 0)
-        if host_setup and acquired_source_hosts:
+        if registry_mgr and acquired_source_hosts:
             for host_name, router_name in acquired_source_hosts:
-                ref_count = host_setup.release_source_host_lease(run_id, host_name)
-                if ref_count == 0:
+                ref_count, should_delete = registry_mgr.release_source_host_lease(run_id, host_name)
+                if should_delete:
                     # Safe to delete - no other jobs using this host
                     if VERBOSE >= 2:
                         print(f"[CLEANUP] Deleting source host {host_name} (ref_count=0)", file=sys.stderr)
@@ -1645,12 +1798,13 @@ def create_or_acquire_source_hosts(routers: List[str], source_ip: str, run_id: s
                 print(f"  [{router_name}] Source host {src_host_name} already exists", file=sys.stderr)
 
         # Acquire source host lease AFTER physical creation
-        if host_setup:
+        if registry_mgr:
             try:
-                ref_count = host_setup.acquire_source_host_lease(
+                ref_count = registry_mgr.acquire_source_host_lease(
                     run_id=run_id,
                     host_name=src_host_name,
                     job_type='quick',
+                    router_name=router_name,
                     dscp=job_dscp
                 )
 
@@ -1702,25 +1856,15 @@ def create_or_acquire_source_hosts(routers: List[str], source_ip: str, run_id: s
 **At top of file, add lock manager loading**:
 
 ```python
-# Lock manager for router coordination (detailed jobs acquire exclusive locks)
-lock_manager = None
+# Centralized registry manager for all coordination
+registry_mgr = None
 try:
-    from traceroute_simulator.services.tsim_lock_manager_service import TsimLockManagerService
-    lock_manager = TsimLockManagerService(config=config, logger=logger)
-    _dbg(f"[INFO] Using lock manager for router coordination", 1)
+    from traceroute_simulator.core.registry_manager import RegistryManager
+    registry_mgr = RegistryManager(config=config, logger=logger)
+    _dbg(f"[INFO] Using centralized RegistryManager for coordination", 1)
 except ImportError as e:
-    _dbg(f"[WARN] Lock manager not available: {e}", 1)
-    lock_manager = None
-
-# Host registry for source host leases
-host_setup = None
-try:
-    from traceroute_simulator.simulators.host_namespace_setup import HostNamespaceSetup
-    host_setup = HostNamespaceSetup(verbose=VERBOSE >= 3)
-    _dbg(f"[INFO] Using host registry for source host leases", 1)
-except ImportError as e:
-    _dbg(f"[WARN] Host registry not available: {e}", 1)
-    host_setup = None
+    _dbg(f"[WARN] RegistryManager not available: {e}", 1)
+    registry_mgr = None
 ```
 
 ### 6.2 Modify Detailed Job Execution with Atomic Lock Acquisition
@@ -1738,12 +1882,12 @@ def run_detailed_job_with_atomic_locking(routers: List[str], run_id: str):
 
     try:
         # CRITICAL: Atomically acquire ALL router locks (deadlock prevention)
-        if lock_manager:
+        if registry_mgr:
             if VERBOSE >= 1:
                 print(f"[INFO] Atomically acquiring locks for {len(routers)} routers...", file=sys.stderr)
 
             # Use all_router_locks context manager (all-or-nothing acquisition)
-            with lock_manager.all_router_locks(routers, run_id, timeout=60.0):
+            with registry_mgr.all_router_locks(routers, run_id, timeout=60.0):
                 if VERBOSE >= 1:
                     print(f"[INFO] ALL router locks acquired, processing routers in parallel", file=sys.stderr)
 
@@ -1822,11 +1966,12 @@ def acquire_all_source_host_leases(routers: List[str], run_id: str) -> List[Tupl
         src_host = f"destination-{i}"
         # Check if exists, create if needed (physical creation first)
         # Then acquire lease
-        if host_setup:
-            ref_count = host_setup.acquire_source_host_lease(
+        if registry_mgr:
+            ref_count = registry_mgr.acquire_source_host_lease(
                 run_id=run_id,
                 host_name=src_host,
                 job_type='detailed',
+                router_name=router_name,
                 dscp=None
             )
             acquired_hosts.append((src_host, router_name))
@@ -1863,10 +2008,10 @@ def cleanup_detailed_job(acquired_source_hosts, created_destination_hosts, run_i
                 print(f"[WARN] Failed to delete {dest_host}: {e}", file=sys.stderr)
 
     # Release source host leases (ref count--, delete if reaches 0)
-    if host_setup:
+    if registry_mgr:
         for src_host, router_name in acquired_source_hosts:
-            ref_count = host_setup.release_source_host_lease(run_id, src_host)
-            if ref_count == 0:
+            ref_count, should_delete = registry_mgr.release_source_host_lease(run_id, src_host)
+            if should_delete:
                 # Safe to delete - no other jobs using this host
                 if VERBOSE >= 2:
                     print(f"[CLEANUP] Deleting source host {src_host} (ref_count=0)", file=sys.stderr)

@@ -98,14 +98,30 @@ def create_flowchart():
         c.node('quick_start', 'Quick Job Starts\n(has unique DSCP)',
                shape='ellipse',
                fillcolor='lightgreen')
-        c.node('quick_wait', 'For each router:\nRouterWaiter.wait_until_free()\n(inotify, no polling)',
+        quick_wait_label = '''<
+For each router:<BR/>
+RouterWaiter.wait_until_free()<BR/>
+(inotify, no polling)<BR/>
+<BR/>
+<FONT POINT-SIZE="8" COLOR="#000099"><B>→ RegistryManager:</B></FONT><BR/>
+<FONT POINT-SIZE="8" COLOR="#000099">  wait_for_router(router, timeout)</FONT>>'''
+        c.node('quick_wait', label=quick_wait_label,
                fillcolor='palegreen')
         c.node('quick_locked', 'Router locked\nby detailed job?',
                shape='diamond',
                fillcolor='yellow')
         c.node('quick_block', 'Block until\nlock released\n(inotify wakeup)',
                fillcolor='orange')
-        c.node('quick_hosts', 'Create/acquire\nsource hosts\n(physical + lease)',
+        quick_hosts_label = '''<
+Create/acquire<BR/>
+source hosts<BR/>
+(physical + lease)<BR/>
+<BR/>
+<FONT POINT-SIZE="8" COLOR="#000099"><B>→ RegistryManager:</B></FONT><BR/>
+<FONT POINT-SIZE="8" COLOR="#000099">  check_and_register_host(...)</FONT><BR/>
+<FONT POINT-SIZE="8" COLOR="#000099">  acquire_source_host_lease(</FONT><BR/>
+<FONT POINT-SIZE="8" COLOR="#000099">    run_id, host, 'quick', router, dscp)</FONT>>'''
+        c.node('quick_hosts', label=quick_hosts_label,
                fillcolor='palegreen')
         c.node('quick_iptables', 'Install iptables rules\n(--noflush, DSCP-specific)',
                fillcolor='palegreen')
@@ -113,7 +129,16 @@ def create_flowchart():
                fillcolor='palegreen')
         c.node('quick_cleanup_ipt', 'Cleanup iptables\n(--noflush, DSCP-specific)',
                fillcolor='palegreen')
-        c.node('quick_cleanup_hosts', 'Release source host leases\nref_count--\nDelete if ref_count==0',
+        quick_cleanup_hosts_label = '''<
+Release source host leases<BR/>
+ref_count--<BR/>
+Delete if ref_count==0<BR/>
+<BR/>
+<FONT POINT-SIZE="8" COLOR="#000099"><B>→ RegistryManager:</B></FONT><BR/>
+<FONT POINT-SIZE="8" COLOR="#000099">  ref_count, should_delete =</FONT><BR/>
+<FONT POINT-SIZE="8" COLOR="#000099">    release_source_host_lease(</FONT><BR/>
+<FONT POINT-SIZE="8" COLOR="#000099">      run_id, host)</FONT>>'''
+        c.node('quick_cleanup_hosts', label=quick_cleanup_hosts_label,
                fillcolor='palegreen')
         c.node('quick_end', 'Quick Job Complete',
                shape='ellipse',
@@ -144,9 +169,30 @@ def create_flowchart():
                fillcolor='yellow')
         c.node('det_block', 'Wait for ALL routers\nto be released\n(retry lock acquisition)',
                fillcolor='orange')
-        c.node('det_lock_all', 'Acquire ALL router locks\nATOMICALLY\n(all-or-nothing)\n[DEADLOCK PREVENTION]\nGrants exclusive access\nto all routers + hosts',
+        det_lock_all_label = '''<
+Acquire ALL router locks<BR/>
+ATOMICALLY<BR/>
+(all-or-nothing)<BR/>
+[DEADLOCK PREVENTION]<BR/>
+Grants exclusive access<BR/>
+to all routers + hosts<BR/>
+<BR/>
+<FONT POINT-SIZE="8" COLOR="#000099"><B>→ RegistryManager:</B></FONT><BR/>
+<FONT POINT-SIZE="8" COLOR="#000099">  with all_router_locks(</FONT><BR/>
+<FONT POINT-SIZE="8" COLOR="#000099">    routers, job_id, timeout):</FONT>>'''
+        c.node('det_lock_all', label=det_lock_all_label,
                fillcolor='mistyrose')
-        c.node('det_src_hosts', 'Create/acquire\nsource hosts\n(physical + lease)\n[tsimsh parallel]',
+        det_src_hosts_label = '''<
+Create/acquire<BR/>
+source hosts<BR/>
+(physical + lease)<BR/>
+[tsimsh parallel]<BR/>
+<BR/>
+<FONT POINT-SIZE="8" COLOR="darkblue"><I><B>RegistryManager:</B></I></FONT><BR/>
+<FONT POINT-SIZE="8" COLOR="darkblue"><I>check_and_register_host(...)</I></FONT><BR/>
+<FONT POINT-SIZE="8" COLOR="darkblue"><I>acquire_source_host_lease(</I></FONT><BR/>
+<FONT POINT-SIZE="8" COLOR="darkblue"><I>  run_id, host, 'detailed', router)</I></FONT>>'''
+        c.node('det_src_hosts', label=det_src_hosts_label,
                fillcolor='mistyrose')
         c.node('det_dst_hosts', 'Create destination hosts\n(ephemeral, no lease)\n[tsimsh parallel]',
                fillcolor='mistyrose')
@@ -164,9 +210,29 @@ def create_flowchart():
                fillcolor='mistyrose')
         c.node('det_cleanup_dst', 'Delete destination hosts\n(ephemeral)\n[tsimsh parallel]',
                fillcolor='mistyrose')
-        c.node('det_cleanup_src', 'Release source host leases\nref_count--\nDelete if ref_count==0\n[all hosts]',
+        det_cleanup_src_label = '''<
+Release source host leases<BR/>
+ref_count--<BR/>
+Delete if ref_count==0<BR/>
+[all hosts]<BR/>
+<BR/>
+<FONT POINT-SIZE="8" COLOR="darkblue"><I><B>RegistryManager:</B></I></FONT><BR/>
+<FONT POINT-SIZE="8" COLOR="darkblue"><I>ref_count, should_delete =</I></FONT><BR/>
+<FONT POINT-SIZE="8" COLOR="darkblue"><I>  release_source_host_lease(</I></FONT><BR/>
+<FONT POINT-SIZE="8" COLOR="darkblue"><I>    run_id, host)</I></FONT>>'''
+        c.node('det_cleanup_src', label=det_cleanup_src_label,
                fillcolor='mistyrose')
-        c.node('det_unlock_all', 'Release ALL router locks\nATOMICALLY\n(touch notify files)\n[wake all waiters]',
+        det_unlock_all_label = '''<
+Release ALL router locks<BR/>
+ATOMICALLY<BR/>
+(touch notify files)<BR/>
+[wake all waiters]<BR/>
+<BR/>
+<FONT POINT-SIZE="8" COLOR="darkblue"><I><B>RegistryManager:</B></I></FONT><BR/>
+<FONT POINT-SIZE="8" COLOR="darkblue"><I>// context manager exit:</I></FONT><BR/>
+<FONT POINT-SIZE="8" COLOR="darkblue"><I>release_all_router_locks(</I></FONT><BR/>
+<FONT POINT-SIZE="8" COLOR="darkblue"><I>  routers, job_id)</I></FONT>>'''
+        c.node('det_unlock_all', label=det_unlock_all_label,
                fillcolor='mistyrose')
         c.node('det_end', 'Detailed Job Complete',
                shape='ellipse',

@@ -59,19 +59,29 @@ class TsimKsmsService:
     
     def __init__(self, config_service):
         """Initialize KSMS service
-        
+
         Args:
             config_service: TsimConfigService instance
         """
         self.config = config_service
         self.logger = logging.getLogger('tsim.ksms')
         self.dscp_registry = TsimDscpRegistry(config_service)
-        
+
         # KSMS configuration
         self.enabled = config_service.get('ksms_enabled', True)
         self.timeout = config_service.get('ksms_timeout', 300)
         self.tsimsh_path = config_service.get('tsimsh_path', 'tsimsh')
-        
+
+        # Initialize RegistryManager for lock-free host existence checks
+        self.registry_mgr = None
+        try:
+            from tsim.core.registry_manager import TsimRegistryManager
+            self.registry_mgr = TsimRegistryManager(config_service.config, self.logger)
+            self.logger.info("TsimRegistryManager initialized in KSMS service")
+        except Exception as e:
+            self.logger.warning(f"Failed to initialize TsimRegistryManager: {e}")
+            self.logger.warning("Will fall back to tsimsh host add for all hosts")
+
         self.logger.info(f"KSMS Service initialized: enabled={self.enabled}, "
                         f"tsimsh_path={self.tsimsh_path}")
     
@@ -762,6 +772,19 @@ class TsimKsmsService:
             # Log individual host creation step
             log_progress(f'PHASE2_host_{i}', f'Creating source host {src_host_name} on {router.split(".")[0]}')
 
+            # OPTIMIZATION: Check if host already exists in registry (lock-free read)
+            host_exists = False
+            if self.registry_mgr:
+                try:
+                    host_info = self.registry_mgr.get_host_info(src_host_name)
+                    if host_info:
+                        host_exists = True
+                        self.logger.info(f"Host {src_host_name} already exists in registry, skipping tsimsh call")
+                        # Don't add to created_hosts - it's pre-existing
+                        continue
+                except Exception as e:
+                    self.logger.warning(f"Failed to check host registry: {e}, falling back to tsimsh")
+
             # Add source host to this router - WAIT for completion
             self.logger.debug(f"Adding source host {src_host_name} to router {router}")
             result = tsimsh_exec(
@@ -787,23 +810,39 @@ class TsimKsmsService:
                     created_hosts.append(src_host_name)
                     self.logger.info(f"Host {src_host_name} was created, will clean up after test")
 
-        # NOW verify ALL hosts exist by querying host list
+        # NOW verify ALL hosts exist
         log_progress('PHASE2_verify', 'Verifying all source hosts were created')
         self.logger.info(f"Verifying {len(expected_hosts)} source hosts exist: {expected_hosts}")
 
-        list_result = tsimsh_exec("host list -j", capture_output=True, verbose=2)
+        # OPTIMIZATION: Use lock-free registry reads instead of tsimsh
+        existing_hosts = set()
+        use_registry = False
 
-        if list_result is None:
-            self.logger.error("Failed to execute 'host list' command")
-            raise RuntimeError("Failed to verify host creation - 'host list' command failed")
+        if self.registry_mgr:
+            try:
+                # Lock-free read of all hosts
+                all_hosts = self.registry_mgr.list_all_hosts()
+                existing_hosts = set(all_hosts.keys())
+                use_registry = True
+                self.logger.info(f"Using registry manager for verification (lock-free)")
+            except Exception as e:
+                self.logger.warning(f"Failed to read host registry: {e}, falling back to tsimsh")
 
-        try:
-            host_data = json.loads(list_result.strip())
-            existing_hosts = set(host_data.get('hosts', {}).keys())
-            self.logger.debug(f"Found existing hosts: {existing_hosts}")
-        except json.JSONDecodeError as e:
-            self.logger.error(f"Failed to parse host list output: {e}")
-            raise RuntimeError(f"Failed to parse host list output: {e}")
+        # Fall back to tsimsh if registry not available
+        if not use_registry:
+            list_result = tsimsh_exec("host list -j", capture_output=True, verbose=2)
+
+            if list_result is None:
+                self.logger.error("Failed to execute 'host list' command")
+                raise RuntimeError("Failed to verify host creation - 'host list' command failed")
+
+            try:
+                host_data = json.loads(list_result.strip())
+                existing_hosts = set(host_data.get('hosts', {}).keys())
+                self.logger.debug(f"Found existing hosts: {existing_hosts}")
+            except json.JSONDecodeError as e:
+                self.logger.error(f"Failed to parse host list output: {e}")
+                raise RuntimeError(f"Failed to parse host list output: {e}")
 
         # Check which expected hosts are missing
         missing_hosts = []

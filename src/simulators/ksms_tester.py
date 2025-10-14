@@ -228,30 +228,32 @@ def egress_iface_and_nexthop_for(router: str, dst_ip: str) -> Tuple[Optional[str
     return iface, nexthop
 
 
-def taps_restore_payload(services: List[Tuple[int, str]], svc_tokens: Dict[Tuple[int, str], Dict], run_id: str) -> str:
-    lines = ["*mangle", ":TSIM_TAP_FW - [0:0]"]
+def taps_restore_payload(services: List[Tuple[int, str]], svc_tokens: Dict[Tuple[int, str], Dict], run_id: str, job_dscp: int) -> str:
+    chain_name = f"TSIM_TAP_FW_{job_dscp}"
+    lines = ["*mangle", f":{chain_name} - [0:0]"]
     # Ensure user chain returns
-    lines.append("-F TSIM_TAP_FW")
-    lines.append("-A TSIM_TAP_FW -j RETURN")
+    lines.append(f"-F {chain_name}")
+    lines.append(f"-A {chain_name} -j RETURN")
     for port, proto in services:
         dscp = svc_tokens[(port, proto)]['dscp']
         comment_pre = f"TSIM_KSMS={run_id}:PREROUTING:{port}/{proto}"
         comment_post = f"TSIM_KSMS={run_id}:POSTROUTING:{port}/{proto}"
-        lines.append(f"-I PREROUTING 1 -m dscp --dscp {dscp} -p {proto} --dport {port} -j TSIM_TAP_FW -m comment --comment {shlex.quote(comment_pre)}")
-        lines.append(f"-I POSTROUTING 1 -m dscp --dscp {dscp} -p {proto} --dport {port} -j TSIM_TAP_FW -m comment --comment {shlex.quote(comment_post)}")
+        lines.append(f"-I PREROUTING 1 -m dscp --dscp {dscp} -p {proto} --dport {port} -j {chain_name} -m comment --comment {shlex.quote(comment_pre)}")
+        lines.append(f"-I POSTROUTING 1 -m dscp --dscp {dscp} -p {proto} --dport {port} -j {chain_name} -m comment --comment {shlex.quote(comment_post)}")
     lines.append("COMMIT")
     return "\n".join(lines) + "\n"
 
 
-def taps_delete_payload(services: List[Tuple[int, str]], svc_tokens: Dict[Tuple[int, str], Dict], run_id: str) -> str:
+def taps_delete_payload(services: List[Tuple[int, str]], svc_tokens: Dict[Tuple[int, str], Dict], run_id: str, job_dscp: int) -> str:
     # Reflect inserts with deletes; use -D PREROUTING/POSTROUTING entries
+    chain_name = f"TSIM_TAP_FW_{job_dscp}"
     lines = ["*mangle"]
     for port, proto in services:
         dscp = svc_tokens[(port, proto)]['dscp']
         comment_pre = f"TSIM_KSMS={run_id}:PREROUTING:{port}/{proto}"
         comment_post = f"TSIM_KSMS={run_id}:POSTROUTING:{port}/{proto}"
-        lines.append(f"-D PREROUTING -m dscp --dscp {dscp} -p {proto} --dport {port} -j TSIM_TAP_FW -m comment --comment {shlex.quote(comment_pre)}")
-        lines.append(f"-D POSTROUTING -m dscp --dscp {dscp} -p {proto} --dport {port} -j TSIM_TAP_FW -m comment --comment {shlex.quote(comment_post)}")
+        lines.append(f"-D PREROUTING -m dscp --dscp {dscp} -p {proto} --dport {port} -j {chain_name} -m comment --comment {shlex.quote(comment_pre)}")
+        lines.append(f"-D POSTROUTING -m dscp --dscp {dscp} -p {proto} --dport {port} -j {chain_name} -m comment --comment {shlex.quote(comment_post)}")
     lines.append("COMMIT")
     return "\n".join(lines) + "\n"
 
@@ -753,38 +755,52 @@ Routers are automatically inferred from source IP using network registries.
         cleanup_commands = []
         removed = 0
 
-        # Build iptables -D commands for each old TSIM_KSMS rule
+        # Build iptables -D commands for OLD TSIM_KSMS rules from previous runs
+        # IMPORTANT: Only remove rules from OTHER jobs/runs, not from current parallel jobs
+        # Rules have format: TSIM_KSMS=<run_id>:...
+        # We filter by timestamp: only remove rules older than 5 minutes
+        import time
+        current_time = time.time()
+
         for line in snap.splitlines():
             if 'TSIM_KSMS=' in line and line.startswith('-A '):
-                # Convert from iptables-save format (-A CHAIN ...) to delete format
-                # -A PREROUTING -p tcp ... → iptables -t mangle -D PREROUTING -p tcp ...
-                rule_spec = line[3:]  # Remove "-A "
-                cleanup_commands.append(f"iptables -t mangle -D {rule_spec}")
-                removed += 1
+                # Skip rules from the current job (same run_id)
+                if f'TSIM_KSMS={run_id}:' in line:
+                    continue
 
-        # Also remove TSIM_TAP_FW chain if it exists
-        cleanup_commands.append("iptables -t mangle -F TSIM_TAP_FW || true")
-        cleanup_commands.append("iptables -t mangle -X TSIM_TAP_FW || true")
+                # For rules from other jobs: extract their run_id timestamp if possible
+                # Run IDs are UUIDs, no timestamp - so we skip cleanup entirely for parallel safety
+                # Let the post-test cleanup handle removal of this job's rules
+                # Other jobs' rules will be cleaned by their own post-test cleanup
+                continue
 
-        if removed > 0:
-            result = execute_iptables_script(rname, cleanup_commands)
-            if result.returncode == 0:
-                if VERBOSE >= 2:
-                    print(f"  [{rname}] Cleaned {removed} stale TSIM_KSMS rule(s)", file=sys.stderr)
-            else:
-                _dbg(f"  [{rname}] WARNING: Failed to clean old rules: {result.stderr}", 1)
+        # Always clean up job-specific chain (safe for parallel execution)
+        # Each job has its own DSCP-specific chain, so no interference
+        chain_cleanup_commands = []
+        chain_cleanup_commands.append(f"iptables -t mangle -F TSIM_TAP_FW_{job_dscp} || true")
+        chain_cleanup_commands.append(f"iptables -t mangle -X TSIM_TAP_FW_{job_dscp} || true")
+
+        # Also try to remove old shared chain (backward compatibility, harmless if not exists)
+        chain_cleanup_commands.append("iptables -t mangle -F TSIM_TAP_FW || true")
+        chain_cleanup_commands.append("iptables -t mangle -X TSIM_TAP_FW || true")
+
+        # Execute chain cleanup (always runs, even if no stale rules found)
+        result = execute_iptables_script(rname, chain_cleanup_commands)
+        if result.returncode != 0:
+            _dbg(f"  [{rname}] WARNING: Chain cleanup had issues: {result.stderr}", 1)
         # Insert taps using individual iptables commands
         insert_commands = []
 
-        # Create TSIM_TAP_FW chain
-        insert_commands.append("iptables -t mangle -N TSIM_TAP_FW || true")
-        insert_commands.append("iptables -t mangle -F TSIM_TAP_FW")
-        insert_commands.append("iptables -t mangle -A TSIM_TAP_FW -j RETURN")
+        # Create DSCP-specific chain for parallel job isolation
+        chain_name = f"TSIM_TAP_FW_{job_dscp}"
+        insert_commands.append(f"iptables -t mangle -N {chain_name} || true")
+        insert_commands.append(f"iptables -t mangle -F {chain_name}")
+        insert_commands.append(f"iptables -t mangle -A {chain_name} -j RETURN")
 
         # Add a catch-all rule to verify packets are traversing at all (for debugging)
         if VERBOSE >= 3:
             comment_debug = f'TSIM_KSMS={run_id}:DEBUG:CATCH_ALL'
-            insert_commands.append(f"iptables -t mangle -I PREROUTING 1 -d {args.destination} -j TSIM_TAP_FW -m comment --comment {shlex.quote(comment_debug)}")
+            insert_commands.append(f"iptables -t mangle -I PREROUTING 1 -d {args.destination} -j {chain_name} -m comment --comment {shlex.quote(comment_debug)}")
 
         # Insert rules for each service (use -I to insert at beginning)
         for port, proto in services:
@@ -795,13 +811,13 @@ Routers are automatically inferred from source IP using network registries.
             # PREROUTING rule
             insert_commands.append(
                 f"iptables -t mangle -I PREROUTING 1 -p {proto} -m dscp --dscp 0x{dscp:02x} "
-                f"-m {proto} --dport {port} -m comment --comment {shlex.quote(comment_pre)} -j TSIM_TAP_FW"
+                f"-m {proto} --dport {port} -m comment --comment {shlex.quote(comment_pre)} -j {chain_name}"
             )
 
             # POSTROUTING rule
             insert_commands.append(
                 f"iptables -t mangle -I POSTROUTING 1 -p {proto} -m dscp --dscp 0x{dscp:02x} "
-                f"-m {proto} --dport {port} -m comment --comment {shlex.quote(comment_post)} -j TSIM_TAP_FW"
+                f"-m {proto} --dport {port} -m comment --comment {shlex.quote(comment_post)} -j {chain_name}"
             )
 
             if VERBOSE >= 3:
@@ -1074,7 +1090,12 @@ Routers are automatically inferred from source IP using network registries.
             elif 'TSIM_KSMS=' in line and line.startswith('-A '):
                 has_other_tsim_rules = True
 
-        # If no other TSIM_KSMS rules remain, also remove the TSIM_TAP_FW chain
+        # Always remove the DSCP-specific chain for this job (no other job should use it)
+        chain_name = f"TSIM_TAP_FW_{job_dscp}"
+        cleanup_commands.append(f"iptables -t mangle -F {chain_name} || true")
+        cleanup_commands.append(f"iptables -t mangle -X {chain_name} || true")
+
+        # Also remove old shared TSIM_TAP_FW chain if no other TSIM_KSMS rules remain (backward compatibility)
         if not has_other_tsim_rules:
             cleanup_commands.append("iptables -t mangle -F TSIM_TAP_FW || true")
             cleanup_commands.append("iptables -t mangle -X TSIM_TAP_FW || true")

@@ -25,7 +25,7 @@ class JobConfig:
     """Configuration for a single job"""
     trace_file: str
     analysis_mode: str  # 'quick' or 'detailed'
-    dest_ports: List[int]
+    dest_ports: List[str]  # Support both "80" and "80/tcp" or "1000/udp" format
 
     @classmethod
     def from_line(cls, line: str) -> 'JobConfig':
@@ -36,7 +36,8 @@ class JobConfig:
 
         trace_file = parts[0]
         analysis_mode = parts[1]
-        dest_ports = [int(p.strip()) for p in parts[2].split(',')]
+        # Keep port specs as strings to support "port" or "port/protocol" format
+        dest_ports = [p.strip() for p in parts[2].split(',')]
 
         return cls(trace_file, analysis_mode, dest_ports)
 
@@ -48,15 +49,16 @@ class JobResult:
     run_id: str
     trace_file: str
     analysis_mode: str
-    dest_ports: List[int]
+    dest_ports: List[str]  # Support both "80" and "80/tcp" or "1000/udp" format
     submit_time: float
     complete_time: Optional[float]
-    duration: Optional[float]
-    curl_exit_code: int
-    curl_output: str
-    pdf_path: Optional[str]
-    json_path: Optional[str]
-    status: str  # 'SUCCESS', 'FAILED', 'TIMEOUT'
+    duration: Optional[float]  # HTTP request duration
+    server_duration: Optional[float] = None  # Actual job execution time on server
+    curl_exit_code: int = 0
+    curl_output: str = ''
+    pdf_path: Optional[str] = None
+    json_path: Optional[str] = None
+    status: str = 'SUCCESS'  # 'SUCCESS', 'FAILED', 'TIMEOUT'
     error_message: Optional[str] = None
 
 
@@ -329,11 +331,62 @@ class IntegrationTester:
                 error_message=str(e)
             )
 
+    def _wait_for_jobs_completion(self, results: List[JobResult], poll_interval: float = 1.0, max_wait: float = 600.0):
+        """Wait for all jobs to complete on the server by polling progress.json"""
+
+        pending_jobs = [r for r in results if r.status == 'SUCCESS' and r.run_id != 'UNKNOWN']
+
+        if not pending_jobs:
+            return
+
+        start_wait = time.time()
+        completed_count = 0
+
+        while pending_jobs and (time.time() - start_wait) < max_wait:
+            for job in list(pending_jobs):
+                progress_file = Path(f'/dev/shm/tsim/runs/{job.run_id}/progress.json')
+
+                if not progress_file.exists():
+                    time.sleep(0.1)
+                    continue
+
+                try:
+                    with open(progress_file, 'r') as f:
+                        progress_data = json.load(f)
+
+                    if progress_data.get('complete'):
+                        completed_count += 1
+                        pending_jobs.remove(job)
+                        print(f"  Job {job.job_id} completed ({completed_count}/{len(results)})")
+                except Exception:
+                    pass  # File might be being written, try again next iteration
+
+            if pending_jobs:
+                time.sleep(poll_interval)
+
+        if pending_jobs:
+            print(f"  Warning: {len(pending_jobs)} jobs did not complete within {max_wait}s")
+
     def collect_results(self, result: JobResult, scenario_dir: Path) -> JobResult:
         """Collect PDF and JSON files for completed job"""
 
         if result.status != 'SUCCESS' or result.run_id == 'UNKNOWN':
             return result
+
+        # Read server-side execution time from progress.json
+        json_dir = Path('/dev/shm/tsim/runs') / result.run_id
+        progress_file = json_dir / 'progress.json'
+        if progress_file.exists():
+            try:
+                with open(progress_file, 'r') as f:
+                    progress_data = json.load(f)
+                phases = progress_data.get('phases', [])
+                if phases:
+                    first_timestamp = phases[0]['timestamp']
+                    last_timestamp = phases[-1]['timestamp']
+                    result.server_duration = last_timestamp - first_timestamp
+            except Exception as e:
+                pass  # Keep server_duration as None if we can't read it
 
         # Look for PDF file
         pdf_pattern = f"*{result.run_id}*.pdf"
@@ -349,8 +402,7 @@ class IntegrationTester:
             except Exception as e:
                 result.error_message = f"Failed to copy PDF: {e}"
 
-        # Look for JSON results
-        json_dir = Path('/dev/shm/tsim/runs') / result.run_id
+        # Look for JSON results and copy them
         if json_dir.exists():
             json_dst_dir = scenario_dir / 'runs' / result.run_id
             json_dst_dir.mkdir(parents=True, exist_ok=True)
@@ -408,8 +460,9 @@ class IntegrationTester:
                       f"(run_id: {result.run_id}, duration: {result.duration:.2f}s)")
                 results.append(result)
 
-        # Wait a bit for file system sync
-        time.sleep(2)
+        # Wait for all jobs to complete on server
+        print("\nWaiting for jobs to complete on server...")
+        self._wait_for_jobs_completion(results)
 
         # Collect results
         print("\nCollecting results...")
@@ -444,7 +497,63 @@ class IntegrationTester:
         print(f"  Failed: {failed_count}/{len(jobs)}")
         print(f"  Timeout: {timeout_count}/{len(jobs)}")
 
+        # Print timing statistics
+        self._print_timing_statistics(scenario_result)
+
         return scenario_result
+
+    def _print_timing_statistics(self, result: ScenarioResult):
+        """Print detailed timing statistics"""
+
+        # Collect server-side execution times (actual job execution on server)
+        server_durations = [job.server_duration for job in result.jobs if job.server_duration is not None]
+
+        if not server_durations:
+            return
+
+        # Calculate statistics
+        server_durations_sorted = sorted(server_durations)
+        min_time = min(server_durations)
+        max_time = max(server_durations)
+        avg_time = sum(server_durations) / len(server_durations)
+        median_time = server_durations_sorted[len(server_durations_sorted) // 2]
+
+        print(f"\n  Job Execution Times (server-side):")
+        print(f"    Min:     {min_time:.2f}s")
+        print(f"    Max:     {max_time:.2f}s")
+        print(f"    Average: {avg_time:.2f}s")
+        print(f"    Median:  {median_time:.2f}s")
+
+        # Calculate wall-clock time: earliest job start to latest job end
+        # Use server_duration to calculate actual start/end times
+        job_times = []
+        for job in result.jobs:
+            if job.server_duration is not None and job.complete_time is not None:
+                # Job completed at complete_time, and took server_duration to execute
+                # So it started at complete_time - server_duration
+                start = job.complete_time - job.server_duration
+                end = job.complete_time
+                job_times.append((start, end))
+
+        if job_times:
+            first_start = min(t[0] for t in job_times)
+            last_end = max(t[1] for t in job_times)
+            wall_clock = last_end - first_start
+
+            print(f"\n  Wall-clock Time (first job start → last job end):")
+            print(f"    {wall_clock:.2f}s")
+
+            # Calculate parallelism factor
+            total_sequential_time = sum(server_durations)
+            if wall_clock > 0:
+                parallelism = total_sequential_time / wall_clock
+                efficiency = (parallelism / len(server_durations)) * 100
+                print(f"\n  Parallelism:")
+                print(f"    Speedup:    {parallelism:.1f}x")
+                print(f"    Sequential: {total_sequential_time:.2f}s")
+                print(f"    Parallel:   {wall_clock:.2f}s")
+                print(f"    Efficiency: {efficiency:.0f}%")
+
 
     def save_meta_json(self, result: ScenarioResult, scenario_dir: Path):
         """Save scenario metadata to JSON"""
@@ -469,7 +578,8 @@ class IntegrationTester:
                     'timings': {
                         'submit_time': job.submit_time,
                         'complete_time': job.complete_time,
-                        'duration_seconds': job.duration
+                        'duration_seconds': job.duration,
+                        'server_duration_seconds': job.server_duration
                     },
                     'status': job.status,
                     'curl_exit_code': job.curl_exit_code,

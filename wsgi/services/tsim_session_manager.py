@@ -150,43 +150,50 @@ class TsimSessionManager:
     
     def update_session(self, session_id: str, data: Dict[str, Any]) -> bool:
         """Update session data
-        
+
         Args:
             session_id: Session ID
             data: Data to update
-            
+
         Returns:
             True if successful, False otherwise
         """
         if not self._validate_session_id(session_id):
             return False
-        
+
         session_file = self.session_dir / f"{session_id}.json"
-        
+        lock_file = self.session_dir / f"{session_id}.lock"
+
         if not session_file.exists():
             return False
-        
+
+        # Use separate lock file to coordinate read-modify-write across threads
         try:
-            # Read existing data
-            with open(session_file, 'r') as f:
-                fcntl.flock(f.fileno(), fcntl.LOCK_EX)
-                session_data = json.load(f)
-            
-            # Update data
-            session_data.update(data)
-            session_data['last_access'] = time.time()
-            
-            # Write back
-            temp_file = session_file.with_suffix('.tmp')
-            with open(temp_file, 'w') as f:
-                json.dump(session_data, f)
-                f.flush()
-                os.fsync(f.fileno())
-            
-            # Atomic rename
-            temp_file.rename(session_file)
-            
-            return True
+            with open(lock_file, 'a') as lock:
+                fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+
+                try:
+                    # Read existing data (under lock)
+                    with open(session_file, 'r') as f:
+                        session_data = json.load(f)
+
+                    # Update data (under lock)
+                    session_data.update(data)
+                    session_data['last_access'] = time.time()
+
+                    # Write back (under lock)
+                    temp_file = session_file.with_suffix('.tmp')
+                    with open(temp_file, 'w') as f:
+                        json.dump(session_data, f)
+                        f.flush()
+                        os.fsync(f.fileno())
+
+                    # Atomic rename (under lock)
+                    temp_file.rename(session_file)
+
+                    return True
+                finally:
+                    fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
         except Exception as e:
             self.logger.error(f"Error updating session {session_id}: {e}")
             return False

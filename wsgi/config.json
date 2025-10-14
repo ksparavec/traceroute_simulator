@@ -67,8 +67,8 @@
         {"ports": "27017/tcp", "name": "MongoDB", "description": "MongoDB Database"}
     ],
     
-    "wsgi_processes": 4,
-    "wsgi_threads": 2,
+    "wsgi_processes": 1,
+    "wsgi_threads": 5,
     "wsgi_max_requests": 1000,
     "wsgi_request_timeout": 300,
     "wsgi_socket_timeout": 60,
@@ -137,6 +137,13 @@
     "ksms_enabled": true,
     "ksms_mode_default": "quick",
     "ksms_timeout": 300,
+
+    "reconciler": {
+        "enabled": true,
+        "check_interval": 5.0,
+        "stale_job_timeout": 30.0,
+        "min_age_before_check": 5.0
+    },
 
     "cors": {
         "enabled": false,

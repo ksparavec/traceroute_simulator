@@ -3,9 +3,8 @@
 TSIM Queue Admin Handler
 Provides admin-only endpoint to inspect the run queue and lock states.
 
-NOTE: Current implementation shows single running job (serial execution).
-Future Enhancement: When parallel execution is implemented (see queue_scheduler_integration_plan.md),
-update to show multiple running jobs with DSCP values and job types.
+Supports both serial and parallel execution modes. Returns list of all currently
+running jobs with progress tracking, DSCP values, and job metadata.
 """
 
 import json
@@ -19,8 +18,8 @@ from services.tsim_lock_manager_service import TsimLockManagerService
 class TsimQueueAdminHandler(TsimBaseHandler):
     """Admin endpoint for queue inspection
 
-    Currently shows single running job. Will be enhanced to show multiple
-    running jobs when parallel execution is implemented.
+    Shows all running jobs (supports both serial and parallel execution),
+    queued jobs, and execution history with progress tracking.
     """
 
     def __init__(self, config_service, session_manager, logger_service,
@@ -46,23 +45,32 @@ class TsimQueueAdminHandler(TsimBaseHandler):
 
         jobs = self.queue_service.list_jobs()
 
-        # Determine current running job (if any) and enrich with progress info
-        running = self.queue_service.get_current()
-        if running and isinstance(running, dict):
+        # Get all running jobs (supports both serial and parallel execution)
+        running_jobs = self.queue_service.get_running()
+
+        # Enrich each running job with progress info and ensure metadata consistency
+        if running_jobs:
             try:
-                # Try to read progress percent/phase
                 from services.tsim_progress_tracker import TsimProgressTracker
                 tracker = TsimProgressTracker(self.config)
-                prog = tracker.get_progress(running.get('run_id', '')) or {}
-                running['percent'] = int(prog.get('overall_progress', 0))
-                phases = prog.get('phases', [])
-                running['phase'] = phases[-1]['phase'] if phases else 'UNKNOWN'
+                for job in running_jobs:
+                    if not isinstance(job, dict):
+                        continue
+                    prog = tracker.get_progress(job.get('run_id', '')) or {}
+                    job['percent'] = int(prog.get('overall_progress', 0))
+                    phases = prog.get('phases', [])
+                    job['phase'] = phases[-1]['phase'] if phases else 'UNKNOWN'
+                    job['status'] = 'RUNNING'
+
+                    # Ensure analysis_mode field exists (may be stored as 'type')
+                    if 'analysis_mode' not in job and 'type' in job:
+                        job['analysis_mode'] = job['type']
             except Exception:
                 pass
 
         response = {
             'success': True,
-            'running': running,
+            'running': running_jobs,  # Now returns list of running jobs
             'queue': jobs,
             'history': self._get_history(),
             'locks': {

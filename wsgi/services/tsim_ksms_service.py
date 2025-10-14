@@ -752,6 +752,9 @@ class TsimKsmsService:
         for i in range(1, len(routers) + 1):
             expected_hosts.append(f"source-{i}")
 
+        # Track which hosts were actually created (vs reused)
+        created_hosts = []
+
         # Execute host creation commands and WAIT for completion
         for i, router in enumerate(routers, 1):
             src_host_name = f"source-{i}"
@@ -773,6 +776,16 @@ class TsimKsmsService:
                 # Log full output for debugging
                 self.logger.info(f"Host add stdout length: {len(result)}")
                 self.logger.info(f"Host add full output:\n{result}")
+
+                # Check if host was reused (already existed) or created
+                # Look for [REUSED] tag in output
+                if "[REUSED]" in result:
+                    self.logger.info(f"Host {src_host_name} was reused (pre-existing), will not clean up")
+                    # Don't add to created_hosts - we shouldn't clean up reused hosts
+                else:
+                    # Host was actually created by us - add to created_hosts for cleanup
+                    created_hosts.append(src_host_name)
+                    self.logger.info(f"Host {src_host_name} was created, will clean up after test")
 
         # NOW verify ALL hosts exist by querying host list
         log_progress('PHASE2_verify', 'Verifying all source hosts were created')
@@ -810,7 +823,8 @@ class TsimKsmsService:
             raise RuntimeError(f"Host creation verification failed - missing hosts: {missing_list}")
 
         self.logger.info(f"Successfully verified all {len(expected_hosts)} source hosts exist")
-        return expected_hosts
+        self.logger.info(f"Created {len(created_hosts)} new hosts, reused {len(expected_hosts) - len(created_hosts)} existing hosts")
+        return created_hosts  # Only return hosts we created, not reused ones
 
     def _cleanup_source_hosts(self, created_hosts: List[str], run_id: str):
         """Remove created source hosts
@@ -819,8 +833,11 @@ class TsimKsmsService:
             created_hosts: List of host names that were created by this job
             run_id: Run ID for logging
         """
+        removed_count = 0
+        failed_count = 0
+
         for src_host_name in created_hosts:
-            self.logger.debug(f"Removing source host {src_host_name}")
+            self.logger.debug(f"Attempting to remove source host {src_host_name}")
             result = tsimsh_exec(
                 f"host remove --name {src_host_name} --force",
                 capture_output=True, verbose=1
@@ -828,8 +845,19 @@ class TsimKsmsService:
 
             if result is None:
                 self.logger.warning(f"Failed to remove source host {src_host_name}")
+                failed_count += 1
+            else:
+                # Check if removal was successful (host existed and was deleted, or didn't exist)
+                if "[SUCCESS]" in result or "[INFO]" in result:
+                    removed_count += 1
+                else:
+                    self.logger.warning(f"Uncertain status removing {src_host_name}: {result[:100]}")
+                    failed_count += 1
 
-        self.logger.info(f"Cleaned up {len(created_hosts)} source hosts for {run_id}")
+        if failed_count > 0:
+            self.logger.warning(f"Cleanup attempted for {len(created_hosts)} hosts: {removed_count} succeeded, {failed_count} failed for {run_id}")
+        else:
+            self.logger.info(f"Successfully cleaned up {removed_count} source hosts for {run_id}")
     
     def _create_multiservicetester_format(self, ksms_results: Dict, port: int, protocol: str, params: Dict) -> Dict:
         """Create MultiServiceTester-compatible format for individual service

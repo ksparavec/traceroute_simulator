@@ -1582,33 +1582,63 @@ class HostNamespaceManager:
         # Set current timing data for command tracking
         self._current_timing_data = timing_data
 
-        # Operation: Check namespace existence
+        # Operation: Check namespace existence - allow reuse of existing tsim-managed hosts
         op_start = time.time()
+        host_already_exists = False
         if host_name in self.available_namespaces:
-            self.logger.error(f"Namespace {host_name} already exists")
+            # Check if it's tsim-managed
+            if self._is_tsim_managed_namespace(host_name):
+                if self.verbose >= 1:
+                    print(f"[INFO] Host {host_name} already exists (tsim-managed), will reuse")
+                self.logger.info(f"Host {host_name} already exists and is tsim-managed, will reuse")
+                host_already_exists = True
+                timing_data['operations'].append({
+                    'name': 'check_namespace_exists',
+                    'duration_ms': (time.time() - op_start) * 1000,
+                    'result': 'reusing_existing'
+                })
+            else:
+                if self.verbose >= 1:
+                    print(f"[ERROR] Namespace {host_name} already exists but is not managed by tsim")
+                self.logger.error(f"Namespace {host_name} already exists but is not managed by tsim")
+                timing_data['operations'].append({
+                    'name': 'check_namespace_exists',
+                    'duration_ms': (time.time() - op_start) * 1000,
+                    'result': 'failed'
+                })
+                return False
+        else:
             timing_data['operations'].append({
                 'name': 'check_namespace_exists',
                 'duration_ms': (time.time() - op_start) * 1000,
-                'result': 'failed'
+                'result': 'success'
             })
-            return False
-        timing_data['operations'].append({
-            'name': 'check_namespace_exists',
-            'duration_ms': (time.time() - op_start) * 1000,
-            'result': 'success'
-        })
-            
+
         # Operation: Quick registry check for host name collision
         op_start = time.time()
         registry = self.load_host_registry()
         if host_name in registry:
-            self.logger.error(f"Host {host_name} already registered")
-            timing_data['operations'].append({
-                'name': 'check_host_registry',
-                'duration_ms': (time.time() - op_start) * 1000,
-                'result': 'failed'
-            })
-            return False
+            if host_already_exists:
+                # Always print reuse message (not conditional on verbose) so KSMS service can detect it
+                print(f"[REUSED] Host {host_name} already exists, reusing")
+                self.logger.info(f"Host {host_name} already registered, will reuse")
+                timing_data['operations'].append({
+                    'name': 'check_host_registry',
+                    'duration_ms': (time.time() - op_start) * 1000,
+                    'result': 'reusing_existing'
+                })
+                # Return success - host already exists and is ready to use
+                return True
+            else:
+                # Always print error (not conditional on verbose)
+                print(f"[ERROR] Host {host_name} registered but namespace doesn't exist")
+                self.logger.error(f"Host {host_name} already registered but namespace doesn't exist")
+                timing_data['operations'].append({
+                    'name': 'check_host_registry',
+                    'duration_ms': (time.time() - op_start) * 1000,
+                    'result': 'failed'
+                })
+                return False
         timing_data['operations'].append({
             'name': 'check_host_registry',
             'duration_ms': (time.time() - op_start) * 1000,
@@ -1959,15 +1989,44 @@ class HostNamespaceManager:
     def remove_host(self, host_name: str) -> bool:
         """Remove a host from the network.
 
+        Returns:
+            True if host was removed or didn't exist
+            False if host exists but deletion failed
+
         Raises:
             RuntimeError: If namespace deletion fails
         """
         registry = self.load_host_registry()
 
-        if host_name not in registry:
-            self.logger.error(f"Host {host_name} not found in registry")
-            raise RuntimeError(f"Host {host_name} not found in registry")
+        # Check if namespace exists
+        namespace_exists = host_name in self.available_namespaces
+        in_registry = host_name in registry
 
+        # Case 4: Host does not exist, try to delete
+        if not in_registry and not namespace_exists:
+            if self.verbose >= 1:
+                print(f"[INFO] Host {host_name} does not exist, nothing to remove")
+            self.logger.info(f"Host {host_name} not found in registry or namespaces")
+            return True  # Success - host is already gone
+
+        # Case 3: Host exists (created by someone else), try to delete
+        if not in_registry and namespace_exists:
+            if self.verbose >= 1:
+                print(f"[WARNING] Namespace {host_name} exists but not in registry, will remove namespace only")
+            self.logger.warning(f"Namespace {host_name} exists but not in registry")
+            # Try to delete the namespace even though it's not registered
+            try:
+                self.run_command(f"ip netns del {host_name}")
+                if self.verbose >= 1:
+                    print(f"[SUCCESS] Unregistered namespace {host_name} removed")
+                return True
+            except Exception as e:
+                if self.verbose >= 1:
+                    print(f"[ERROR] Failed to remove unregistered namespace {host_name}: {e}")
+                self.logger.error(f"Failed to delete unregistered namespace {host_name}: {e}")
+                raise RuntimeError(f"Failed to delete unregistered namespace {host_name}: {e}")
+
+        # Normal case: Host in registry, delete it
         host_config = registry[host_name]
 
         # CRITICAL: Delete physical namespace FIRST before touching any registry
@@ -1975,6 +2034,8 @@ class HostNamespaceManager:
         try:
             self.cleanup_host_resources(host_name, host_config)
         except Exception as e:
+            if self.verbose >= 1:
+                print(f"[ERROR] Failed to delete namespace {host_name}: {e}")
             self.logger.error(f"Failed to delete namespace {host_name}: {e}")
             raise RuntimeError(f"Failed to delete namespace {host_name}: {e}")
 
@@ -1996,11 +2057,13 @@ class HostNamespaceManager:
             self._atomic_json_operation(self.host_registry_file, remove_host_op)
 
             if self.verbose >= 1:
-                print(f"✓ Host {host_name} removed successfully")
+                print(f"[SUCCESS] Host {host_name} removed successfully")
 
             return True
 
         except Exception as e:
+            if self.verbose >= 1:
+                print(f"[ERROR] Namespace deleted but registry update failed: {e}")
             self.logger.error(f"CRITICAL: Namespace {host_name} deleted but registry update failed: {e}")
             self.logger.error(f"Manual cleanup may be required for {host_name} registries")
             raise RuntimeError(f"Registry update failed after namespace deletion: {e}")

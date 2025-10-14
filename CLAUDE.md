@@ -30,3 +30,4 @@ This file provides guidance for Claude Code (claude.ai/code) when working with c
 - use unix_group parameter, do not hardcode tsim-users into scripts
 - all directories in /dev/shm/tsim must have following permissions: 2775 and all group ownerships must be set to unix_group parameter.
 all files in /dev/shm/tsim must have following permissions: 0660 and all group ownerships must be set to unix_group parameter.
+- never execute any python script as root using sudo!

@@ -13,6 +13,8 @@
     "controller_ip": "127.0.0.1",
     "registry_files": {
         "hosts": "/dev/shm/tsim/host_registry.json",
+        "host_leases": "/dev/shm/tsim/host_leases.json",
+        "neighbor_leases": "/dev/shm/tsim/neighbor_leases.json",
         "routers": "/dev/shm/tsim/router_registry.json",
         "interfaces": "/dev/shm/tsim/interface_registry.json",
         "bridges": "/dev/shm/tsim/bridge_registry.json",
@@ -76,7 +78,15 @@
         "services.tsim_session_manager",
         "services.tsim_logger_service"
     ],
-    
+
+    "wsgi_execution_mode": "serial",
+    "wsgi_parallel_config": {
+        "max_quick_jobs": 32,
+        "thread_pool_workers": 33,
+        "enable_fallback_to_serial": true,
+        "log_execution_metrics": true
+    },
+
     "data_dir": "/dev/shm/tsim",
     "log_dir": "/var/log/tsim",
     "session_dir": "/dev/shm/tsim/sessions",
@@ -100,12 +110,27 @@
     "dscp_registry": {
         "enabled": true,
         "dscp_range_min": 32,
-        "dscp_range_max": 63, 
+        "dscp_range_max": 63,
         "max_concurrent_jobs": 32,
         "allocation_timeout": 3600,
         "cleanup_interval": 300
     },
-    
+
+    "registry_manager": {
+        "enabled": true,
+        "lock_timeouts": {
+            "host_registry": 5.0,
+            "host_leases": 3.0,
+            "router_lock": 30.0,
+            "router_lock_atomic": 60.0,
+            "neighbor_leases": 3.0
+        },
+        "retry_attempts": 3,
+        "retry_delay": 0.1,
+        "enable_transaction_log": false,
+        "transaction_log_path": null
+    },
+
     "ksms_parallel_execution": true,
     "max_parallel_fast_jobs": 8,
     

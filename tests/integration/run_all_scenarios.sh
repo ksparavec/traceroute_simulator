@@ -17,13 +17,12 @@ RUN_DIR="${OUTPUT_DIR}/${TIMESTAMP}"
 BASE_URL="${TSIM_BASE_URL:-http://localhost/tsim}"
 USERNAME="${TSIM_USERNAME:-admin}"
 PASSWORD="${TSIM_PASSWORD:-}"
-SOURCE_IP="${TSIM_SOURCE_IP:-10.0.1.1}"
-DEST_IP="${TSIM_DEST_IP:-10.0.2.1}"
 TIMEOUT="${TSIM_TIMEOUT:-600}"
 
 # Parse command line arguments
 SEQUENTIAL=""
 CHECK_MODE=""
+INSECURE=""
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -47,17 +46,13 @@ while [[ $# -gt 0 ]]; do
             PASSWORD="$2"
             shift 2
             ;;
-        --source-ip)
-            SOURCE_IP="$2"
-            shift 2
-            ;;
-        --dest-ip)
-            DEST_IP="$2"
-            shift 2
-            ;;
         --timeout)
             TIMEOUT="$2"
             shift 2
+            ;;
+        --insecure|-k)
+            INSECURE="--insecure"
+            shift
             ;;
         --help)
             echo "Usage: $0 [OPTIONS]"
@@ -68,17 +63,14 @@ while [[ $# -gt 0 ]]; do
             echo "  --base-url URL       Base URL for TSIM API (default: http://localhost/tsim)"
             echo "  --username USER      Authentication username"
             echo "  --password PASS      Authentication password"
-            echo "  --source-ip IP       Source IP address"
-            echo "  --dest-ip IP         Destination IP address"
             echo "  --timeout SECONDS    Timeout per job (default: 600)"
+            echo "  --insecure, -k       Allow insecure SSL connections"
             echo "  --help               Show this help"
             echo ""
             echo "Environment variables:"
             echo "  TSIM_BASE_URL        Base URL (overridden by --base-url)"
             echo "  TSIM_USERNAME        Username (overridden by --username)"
             echo "  TSIM_PASSWORD        Password (overridden by --password)"
-            echo "  TSIM_SOURCE_IP       Source IP (overridden by --source-ip)"
-            echo "  TSIM_DEST_IP         Destination IP (overridden by --dest-ip)"
             echo "  TSIM_TIMEOUT         Timeout (overridden by --timeout)"
             exit 0
             ;;
@@ -135,8 +127,6 @@ echo "  Timestamp:    $TIMESTAMP"
 echo "  Output:       $RUN_DIR"
 echo "  Base URL:     $BASE_URL"
 echo "  Username:     $USERNAME"
-echo "  Source IP:    $SOURCE_IP"
-echo "  Dest IP:      $DEST_IP"
 echo "  Timeout:      ${TIMEOUT}s"
 echo "  Mode:         $([ -n "$SEQUENTIAL" ] && echo "Sequential" || echo "Parallel")"
 if [[ -n "$CHECK_MODE" ]]; then
@@ -169,13 +159,15 @@ for scenario in "${SCENARIOS[@]}"; do
         --base-url "$BASE_URL"
         --username "$USERNAME"
         --password "$PASSWORD"
-        --source-ip "$SOURCE_IP"
-        --dest-ip "$DEST_IP"
         --timeout "$TIMEOUT"
     )
 
     if [[ -n "$SEQUENTIAL" ]]; then
         cmd+=("$SEQUENTIAL")
+    fi
+
+    if [[ -n "$INSECURE" ]]; then
+        cmd+=("$INSECURE")
     fi
 
     if [[ -n "$CHECK_MODE" ]]; then
@@ -213,8 +205,6 @@ cat > "$SUMMARY_FILE" <<EOF
   "configuration": {
     "base_url": "$BASE_URL",
     "username": "$USERNAME",
-    "source_ip": "$SOURCE_IP",
-    "dest_ip": "$DEST_IP",
     "timeout": $TIMEOUT,
     "sequential": $([ -n "$SEQUENTIAL" ] && echo "true" || echo "false"),
     "check_mode": $([ -n "$CHECK_MODE" ] && echo "\"$CHECK_MODE\"" || echo "null")

@@ -15,6 +15,12 @@ try:
 except Exception:
     pass
 
+# Set umask for proper file and directory permissions
+# umask 0007: files=0660, dirs=0770 (with setgid parent → 2770)
+# Note: We fix dir permissions to 2775 in startup code below
+# This ensures all files created by WSGI have proper group permissions (0660)
+os.umask(0o0007)
+
 # Load configuration first to get all paths
 import json
 from pathlib import Path
@@ -171,7 +177,75 @@ if _debug_enabled:
     print(f"  PATH: {os.environ.get('PATH', 'NOT SET')}", file=sys.stderr)
     print(f"=====================================", file=sys.stderr)
 
-# Ensure cache directories exist
+# CRITICAL: Set parent data directory permissions BEFORE any subdirs are created
+import grp
+try:
+    if 'config' in globals() and isinstance(config, dict):
+        data_dir = Path(config.get('data_dir', '/dev/shm/tsim'))
+        # Create parent if it doesn't exist
+        data_dir.mkdir(parents=True, exist_ok=True)
+
+        # Get unix_group from traceroute_simulator.yaml
+        unix_group = 'tsim-users'  # default
+        try:
+            from tsim.core.config_loader import load_traceroute_config
+            yaml_config = load_traceroute_config()
+            unix_group = yaml_config.get('system', {}).get('unix_group', 'tsim-users')
+        except Exception:
+            pass
+
+        try:
+            gid = grp.getgrnam(unix_group).gr_gid
+        except KeyError:
+            gid = None  # Group doesn't exist
+
+        # Set setgid bit (2775) and group ownership on parent
+        data_dir.chmod(0o2775)
+        if gid is not None:
+            os.chown(data_dir, -1, gid)
+
+        # Fix existing subdirectories and files that have wrong permissions
+        # This is needed after reboot when dirs/files already exist
+        for item in data_dir.iterdir():
+            # Skip sessions directory - it has intentionally restrictive permissions
+            if item.name == 'sessions':
+                continue
+
+            try:
+                if item.is_dir():
+                    # Always set proper permissions on subdirectory (2775)
+                    # This is needed because umask 0007 creates dirs as 0770
+                    item.chmod(0o2775)
+                    # Set group ownership
+                    if gid is not None:
+                        os.chown(item, -1, gid)
+
+                    # Fix files inside subdirectory
+                    for subitem in item.iterdir():
+                        try:
+                            if subitem.is_file():
+                                subitem_mode = subitem.stat().st_mode
+                                if (subitem_mode & 0o7777) != 0o660:
+                                    subitem.chmod(0o660)
+                                if gid is not None:
+                                    os.chown(subitem, -1, gid)
+                        except Exception:
+                            pass
+
+                elif item.is_file():
+                    # Fix file permissions in root data dir
+                    current_mode = item.stat().st_mode
+                    if (current_mode & 0o7777) != 0o660:
+                        item.chmod(0o660)
+                    if gid is not None:
+                        os.chown(item, -1, gid)
+            except Exception:
+                pass  # Skip if we can't fix this one
+
+except Exception as e:
+    print(f"Warning: Could not set permissions on data directory: {e}", file=sys.stderr)
+
+# Ensure cache directories exist (will inherit group from parent now)
 Path(os.environ['MPLCONFIGDIR']).mkdir(parents=True, exist_ok=True)
 Path(os.environ['PYTHONPYCACHEPREFIX']).mkdir(parents=True, exist_ok=True)
 

@@ -37,8 +37,8 @@ def tsimsh_exec(command: str, capture_output: bool = False, verbose: int = 0, en
         if verbose > 0:
             print(f"[DEBUG] tsimsh command: {command}", file=sys.stderr)
             if verbose > 1:
-                print(f"[DEBUG] tsimsh stdout: {result.stdout[:500]}", file=sys.stderr)
-                print(f"[DEBUG] tsimsh stderr: {result.stderr[:200]}", file=sys.stderr)
+                print(f"[DEBUG] tsimsh stdout: {result.stdout}", file=sys.stderr)
+                print(f"[DEBUG] tsimsh stderr: {result.stderr}", file=sys.stderr)
             print(f"[DEBUG] tsimsh return code: {result.returncode}", file=sys.stderr)
         
         if result.returncode != 0:
@@ -119,18 +119,18 @@ class TsimKsmsService:
             try:
                 # Step 3: Setup source hosts from trace
                 log_progress('PHASE2_host_setup', 'Creating source hosts from trace')
-                
-                routers = self._setup_source_hosts(params, run_id, log_progress)
-                
+
+                created_hosts = self._setup_source_hosts(params, run_id, log_progress)
+
                 # Step 4: Execute KSMS bulk scan
                 log_progress('PHASE3_ksms_scan', f'Executing KSMS bulk scan with DSCP {job_dscp}')
-                
+
                 ksms_results = self._execute_ksms_scan(source_ip, dest_ip, services, job_dscp, run_id)
-                
-                # Step 5: Cleanup source hosts
+
+                # Step 5: Cleanup source hosts (only those created by this job)
                 log_progress('PHASE3_cleanup', 'Removing created source hosts')
-                
-                self._cleanup_source_hosts(routers, run_id)
+
+                self._cleanup_source_hosts(created_hosts, run_id)
                 
                 # Step 6: Convert to service format for PDF compatibility
                 log_progress('PHASE4_format', 'Converting KSMS results for PDF generation')
@@ -170,10 +170,13 @@ class TsimKsmsService:
             self.logger.error(f"KSMS quick analysis failed for {run_id}: {e}")
             raise
     
-    def _execute_ksms_scan(self, source_ip: str, dest_ip: str, services: List[Dict], 
+    def _execute_ksms_scan(self, source_ip: str, dest_ip: str, services: List[Dict],
                           job_dscp: int, run_id: str) -> Dict[str, Any]:
         """Execute ksms_tester subprocess
-        
+
+        NOTE: DSCP is now passed via --dscp CLI argument (not environment variable).
+        This aligns with the centralized registry coordination architecture.
+
         Returns:
             Raw KSMS results in router-based format
         """
@@ -182,19 +185,15 @@ class TsimKsmsService:
         for svc in services:
             port_specs.append(f"{svc['port']}/{svc['protocol']}")
         ports_arg = ",".join(port_specs)
-        
-        # Build KSMS command exactly like service test pattern
-        ksms_command = f"ksms_tester -s {source_ip} -d {dest_ip} -P {ports_arg} -j"
-        
-        # Set environment with DSCP
-        env = os.environ.copy()
-        env['KSMS_JOB_DSCP'] = str(job_dscp)
-        
+
+        # Build KSMS command with --dscp CLI argument (no environment variables)
+        ksms_command = f"ksms_tester -s {source_ip} -d {dest_ip} -P {ports_arg} --dscp {job_dscp} -j"
+
         self.logger.debug(f"Executing KSMS command: {ksms_command}")
-        self.logger.debug(f"KSMS environment: KSMS_JOB_DSCP={job_dscp}")
-        
+
         # Use the same tsimsh_exec pattern as MultiServiceTester
-        ksms_output = tsimsh_exec(ksms_command, capture_output=True, verbose=1, env=env)
+        # No special environment needed - coordination handled by TsimRegistryManager in ksms_tester.py
+        ksms_output = tsimsh_exec(ksms_command, capture_output=True, verbose=1, env=None)
         
         # Debug: Log what we got back
         self.logger.info(f"KSMS command returned: {repr(ksms_output)}")
@@ -713,81 +712,124 @@ class TsimKsmsService:
     
     def _setup_source_hosts(self, params: Dict[str, Any], run_id: str, log_progress) -> List[str]:
         """Setup source hosts from trace file
-        
+
         Args:
             params: Parameters including trace_file
             run_id: Run ID for logging
             log_progress: Progress logging function
-            
+
         Returns:
-            List of routers where source hosts were created
+            List of host names that were successfully created
+
+        Raises:
+            RuntimeError: If any host creation fails or verification fails
         """
         routers = []
-        
+
         # Get routers from trace file
         trace_file = params.get('trace_file')
         if trace_file:
             try:
                 with open(trace_file, 'r') as f:
                     trace_data = json.load(f)
-                
+
                 # Extract routers from path (only router hops)
                 path = trace_data.get('path', [])
                 routers = [hop['name'] for hop in path if hop.get('is_router')]
-                
+
             except Exception as e:
                 self.logger.error(f"Failed to read trace file {trace_file}: {e}")
-                return []
-        
+                raise RuntimeError(f"Failed to read trace file: {e}")
+
         if not routers:
-            self.logger.warning(f"No routers found in trace for {run_id}")
-            return []
-        
+            self.logger.error(f"No routers found in trace for {run_id}")
+            raise RuntimeError("No routers found in trace file")
+
         source_ip = params['source_ip']
-        
-        # Add source hosts to routers (1-based indexing like MultiServiceTester)
-        created_hosts = []
+
+        # Build list of expected hosts
+        expected_hosts = []
+        for i in range(1, len(routers) + 1):
+            expected_hosts.append(f"source-{i}")
+
+        # Execute host creation commands and WAIT for completion
         for i, router in enumerate(routers, 1):
             src_host_name = f"source-{i}"
-            
+
             # Log individual host creation step
             log_progress(f'PHASE2_host_{i}', f'Creating source host {src_host_name} on {router.split(".")[0]}')
-            
-            # Add source host to this router
+
+            # Add source host to this router - WAIT for completion
             self.logger.debug(f"Adding source host {src_host_name} to router {router}")
             result = tsimsh_exec(
                 f"host add --name {src_host_name} --primary-ip {source_ip}/24 --connect-to {router} --no-delay",
-                capture_output=True, verbose=1
+                capture_output=True, verbose=2
             )
-            
-            if result is not None:
-                created_hosts.append(src_host_name)
+
+            if result is None:
+                self.logger.error(f"Host add command failed for {src_host_name} on {router}")
+                # Note: We continue to try creating all hosts, then verify at the end
             else:
-                self.logger.warning(f"Failed to create source host {src_host_name} on {router}")
-        
-        self.logger.info(f"Created {len(created_hosts)} source hosts for KSMS scan")
-        return routers
-    
-    def _cleanup_source_hosts(self, routers: List[str], run_id: str):
+                # Log full output for debugging
+                self.logger.info(f"Host add stdout length: {len(result)}")
+                self.logger.info(f"Host add full output:\n{result}")
+
+        # NOW verify ALL hosts exist by querying host list
+        log_progress('PHASE2_verify', 'Verifying all source hosts were created')
+        self.logger.info(f"Verifying {len(expected_hosts)} source hosts exist: {expected_hosts}")
+
+        list_result = tsimsh_exec("host list -j", capture_output=True, verbose=2)
+
+        if list_result is None:
+            self.logger.error("Failed to execute 'host list' command")
+            raise RuntimeError("Failed to verify host creation - 'host list' command failed")
+
+        try:
+            host_data = json.loads(list_result.strip())
+            existing_hosts = set(host_data.get('hosts', {}).keys())
+            self.logger.debug(f"Found existing hosts: {existing_hosts}")
+        except json.JSONDecodeError as e:
+            self.logger.error(f"Failed to parse host list output: {e}")
+            raise RuntimeError(f"Failed to parse host list output: {e}")
+
+        # Check which expected hosts are missing
+        missing_hosts = []
+        for host_name in expected_hosts:
+            if host_name not in existing_hosts:
+                missing_hosts.append(host_name)
+                self.logger.error(f"Host {host_name} is missing from registry")
+
+        if missing_hosts:
+            # Cleanup any hosts that were created
+            for host_name in expected_hosts:
+                if host_name in existing_hosts:
+                    self.logger.debug(f"Cleaning up {host_name} after verification failure")
+                    tsimsh_exec(f"host remove --name {host_name} --force", capture_output=True, verbose=1)
+
+            missing_list = ", ".join(missing_hosts)
+            raise RuntimeError(f"Host creation verification failed - missing hosts: {missing_list}")
+
+        self.logger.info(f"Successfully verified all {len(expected_hosts)} source hosts exist")
+        return expected_hosts
+
+    def _cleanup_source_hosts(self, created_hosts: List[str], run_id: str):
         """Remove created source hosts
-        
+
         Args:
-            routers: List of routers where hosts were created
+            created_hosts: List of host names that were created by this job
             run_id: Run ID for logging
         """
-        for i, router in enumerate(routers, 1):
-            src_host_name = f"source-{i}"
-            
+        for src_host_name in created_hosts:
             self.logger.debug(f"Removing source host {src_host_name}")
             result = tsimsh_exec(
                 f"host remove --name {src_host_name} --force",
                 capture_output=True, verbose=1
             )
-            
+
             if result is None:
                 self.logger.warning(f"Failed to remove source host {src_host_name}")
-        
-        self.logger.info(f"Cleaned up source hosts for {run_id}")
+
+        self.logger.info(f"Cleaned up {len(created_hosts)} source hosts for {run_id}")
     
     def _create_multiservicetester_format(self, ksms_results: Dict, port: int, protocol: str, params: Dict) -> Dict:
         """Create MultiServiceTester-compatible format for individual service

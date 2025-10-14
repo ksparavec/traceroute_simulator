@@ -26,3 +26,7 @@ This file provides guidance for Claude Code (claude.ai/code) when working with c
 - search and work on files in repo only
 - do not commit without asking
 - don't use emojis when writing documents
+- do not install anything or restart apache2 without permission
+- use unix_group parameter, do not hardcode tsim-users into scripts
+- all directories in /dev/shm/tsim must have following permissions: 2775 and all group ownerships must be set to unix_group parameter.
+all files in /dev/shm/tsim must have following permissions: 0660 and all group ownerships must be set to unix_group parameter.

@@ -25,6 +25,9 @@ from tsim.core.config_loader import get_registry_paths
 # Global verbosity level
 VERBOSE = 0
 
+# Global registry manager instance
+REGISTRY_MGR = None
+
 def _dbg(msg: str, level: int = 1):
     """Debug output that respects verbosity level."""
     global VERBOSE
@@ -262,40 +265,38 @@ def iptables_save_mangle(router: str, with_counters: bool = True) -> str:
     return cp.stdout if cp.returncode == 0 else ''
 
 
-def build_insert_payload_from_existing(existing_save: str, insert_lines: List[str], with_counters: bool = True) -> str:
-    """SIMPLIFIED: Create clean iptables-restore payload, removing all TSIM_KSMS rules first."""
-    lines = existing_save.splitlines()
-    out: List[str] = []
-    
-    # Simply copy everything EXCEPT TSIM_KSMS rules and TSIM_TAP_FW chain stuff
-    # This prevents recursive rule explosion
-    for ln in lines:
-        # Skip any line containing TSIM_KSMS (our old rules)
-        if 'TSIM_KSMS=' in ln:
-            continue
-        # Skip TSIM_TAP_FW chain declarations and rules (we'll re-add if needed)
-        if ':TSIM_TAP_FW' in ln or (ln.startswith('-') and 'TSIM_TAP_FW' in ln):
-            continue
-            
-        # Before COMMIT, insert our new rules
-        if ln.strip() == 'COMMIT':
-            # Add TSIM_TAP_FW chain if we have rules to insert
-            if insert_lines:
-                out.append(':TSIM_TAP_FW - [0:0]')
-                out.append('-A TSIM_TAP_FW -j RETURN')
-                
-                # Add our new rules with counters
-                for rule in insert_lines:
-                    if with_counters and not rule.startswith('['):
-                        rule = '[0:0] ' + rule
-                    out.append(rule)
-            
-        out.append(ln)
-    
-    result = '\n'.join(out)
-    if not result.endswith('\n'):
-        result += '\n'
-    return result
+def execute_iptables_script(rname: str, script_commands: List[str]) -> 'subprocess.CompletedProcess':
+    """Execute iptables commands via temporary shell script.
+
+    Args:
+        rname: Router namespace name
+        script_commands: List of iptables command strings to execute
+
+    Returns:
+        CompletedProcess with returncode, stdout, stderr
+    """
+    import tempfile
+
+    # Create temporary shell script
+    script_content = "#!/bin/bash\nset -e\n" + "\n".join(script_commands) + "\n"
+
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.sh', delete=False) as f:
+        script_path = f.name
+        f.write(script_content)
+
+    try:
+        # Make executable
+        os.chmod(script_path, 0o755)
+
+        # Execute in namespace
+        result = run(['ip', 'netns', 'exec', rname, '/bin/bash', script_path])
+        return result
+    finally:
+        # Cleanup
+        try:
+            os.unlink(script_path)
+        except Exception:
+            pass
 
 
 def extract_counter(snapshot: str, comment: str) -> Tuple[int, int]:
@@ -476,7 +477,7 @@ if udp_services:
 
 
 def main():
-    global VERBOSE
+    global VERBOSE, REGISTRY_MGR
     ap = argparse.ArgumentParser(
         description='KSMS Tester - Fast YES/NO service reachability testing using kernel-space packet counting',
         epilog='''
@@ -531,6 +532,9 @@ Routers are automatically inferred from source IP using network registries.
                     help='TCP connection timeout in seconds (default: 1.0)')
     ap.add_argument('--force', action='store_true',
                     help='Force large ranges without confirmation prompts')
+    ap.add_argument('--dscp', type=int, metavar='VALUE',
+                    help='DSCP value for packet marking (32-63). Required for coordination. '
+                         'Falls back to KSMS_JOB_DSCP environment variable if not specified.')
     ap.add_argument('-j', '--json', action='store_true',
                     help='Output results in JSON format')
     ap.add_argument('-v', '--verbose', action='count', default=0,
@@ -539,12 +543,69 @@ Routers are automatically inferred from source IP using network registries.
     
     # Set global verbosity level
     VERBOSE = args.verbose
-    
+
     # Validate range-limit parameter
     if args.range_limit < 1 or args.range_limit > 65535:
         print("Error: --range-limit must be between 1 and 65535", file=sys.stderr)
         sys.exit(1)
-    
+
+    # Initialize TsimRegistryManager for coordination
+    try:
+        import json
+
+        # Get config path: TSIM_CONFIG_PATH env var or default
+        config_path = os.environ.get('TSIM_CONFIG_PATH', '/opt/tsim/wsgi/conf/config.json')
+
+        # Try to load config
+        config = None
+        try:
+            with open(config_path, 'r') as f:
+                config = json.load(f)
+            if VERBOSE >= 3:
+                _dbg(f"[DEBUG] Loaded config from: {config_path}", 3)
+        except (FileNotFoundError, json.JSONDecodeError) as e:
+            # If TSIM_CONFIG_PATH was explicitly set but invalid, try default
+            if 'TSIM_CONFIG_PATH' in os.environ:
+                if VERBOSE >= 1:
+                    _dbg(f"[WARN] Invalid config at TSIM_CONFIG_PATH={config_path}: {e}", 1)
+                try:
+                    with open('/opt/tsim/wsgi/conf/config.json', 'r') as f:
+                        config = json.load(f)
+                    if VERBOSE >= 3:
+                        _dbg("[DEBUG] Loaded config from default location", 3)
+                except Exception:
+                    pass
+
+        if not config:
+            _dbg(
+                f"[WARN] Cannot load config.json from {config_path}. "
+                "Set TSIM_CONFIG_PATH environment variable. "
+                "Continuing without registry coordination.", 1
+            )
+            REGISTRY_MGR = None
+        else:
+            # Initialize TsimRegistryManager with loaded config
+            # All paths (data_dir, lock_dir, registry_files) come from config.json
+            from tsim.core.registry_manager import TsimRegistryManager
+            import logging
+            logger = logging.getLogger(__name__)
+            if VERBOSE >= 3:
+                logger.setLevel(logging.DEBUG)
+            elif VERBOSE >= 2:
+                logger.setLevel(logging.INFO)
+            else:
+                logger.setLevel(logging.WARNING)
+
+            REGISTRY_MGR = TsimRegistryManager(config, logger)
+            if VERBOSE >= 2:
+                _dbg("[INFO] TsimRegistryManager initialized for coordination", 2)
+
+    except Exception as e:
+        _dbg(f"[WARN] Failed to initialize TsimRegistryManager: {e}", 1)
+        if VERBOSE >= 3:
+            import traceback
+            _dbg(f"[DEBUG] Traceback: {traceback.format_exc()}", 3)
+        REGISTRY_MGR = None
 
     bridges, hosts = load_registries()
     ip_map = build_ip_to_namespaces(bridges, hosts)
@@ -585,10 +646,13 @@ Routers are automatically inferred from source IP using network registries.
 
     # Generate unique run ID for this job
     run_id = f"KSMS{os.getpid()}_{int(time.time() * 1000) % 100000}"
-    
-    # Get DSCP value from environment (set by WSGI DSCP registry) or default to 32
-    job_dscp = int(os.environ.get('KSMS_JOB_DSCP', '32'))
-    
+
+    # Get DSCP value: CLI argument first, then environment variable, then default to 32
+    if args.dscp is not None:
+        job_dscp = args.dscp
+    else:
+        job_dscp = int(os.environ.get('KSMS_JOB_DSCP', '32'))
+
     # Validate DSCP range (use reserved range 32-63 for KSMS)
     if not (32 <= job_dscp <= 63):
         raise ValueError(f"Invalid DSCP value {job_dscp} (must be 32-63, 0x20-0x3F)")
@@ -607,6 +671,66 @@ Routers are automatically inferred from source IP using network registries.
     
     if VERBOSE >= 1:
         _dbg(f"[INFO] Using run ID: {run_id}", 1)
+
+    # COORDINATION: Wait for routers if locked by detailed jobs (quick jobs wait)
+    if REGISTRY_MGR:
+        if VERBOSE >= 2:
+            print(f"\n[COORDINATION] Checking router availability...", file=sys.stderr)
+
+        for router in routers:
+            if VERBOSE >= 3:
+                _dbg(f"  Checking if router {router} is locked...", 3)
+
+            # Wait for router to be free (inotify-based, no polling)
+            if not REGISTRY_MGR.wait_for_router(router, timeout=30.0):
+                print(f"Error: Router {router} locked by detailed job, timeout waiting", file=sys.stderr)
+                sys.exit(1)
+
+            if VERBOSE >= 3:
+                _dbg(f"  Router {router} is free, proceeding", 3)
+
+        if VERBOSE >= 2:
+            print(f"  All routers available, proceeding with test", file=sys.stderr)
+
+    # COORDINATION: Acquire source host leases
+    acquired_leases = []
+    if REGISTRY_MGR:
+        if VERBOSE >= 2:
+            print(f"[COORDINATION] Acquiring source host leases...", file=sys.stderr)
+
+        for src_host in src_namespaces:
+            # Find which router this host is connected to
+            host_router = None
+            for host_name, host_info in hosts.items():
+                if host_name == src_host:
+                    host_router = host_info.get('connected_to')
+                    break
+
+            if not host_router:
+                if VERBOSE >= 2:
+                    _dbg(f"  WARNING: Could not determine router for source host {src_host}, skipping lease", 2)
+                continue
+
+            try:
+                ref_count = REGISTRY_MGR.acquire_source_host_lease(
+                    run_id=run_id,
+                    host_name=src_host,
+                    job_type='quick',
+                    router_name=host_router,
+                    dscp=job_dscp
+                )
+                acquired_leases.append(src_host)
+
+                if VERBOSE >= 3:
+                    _dbg(f"  Acquired lease for {src_host}: ref_count={ref_count}", 3)
+
+            except Exception as e:
+                _dbg(f"  WARNING: Failed to acquire lease for {src_host}: {e}", 1)
+
+        if VERBOSE >= 2:
+            print(f"  Acquired {len(acquired_leases)} source host lease(s)", file=sys.stderr)
+
+    if VERBOSE >= 1:
         print(f"\n[PHASE 1] Preparing routers for testing...", file=sys.stderr)
 
     # Per-router preparation in parallel
@@ -624,95 +748,86 @@ Routers are automatically inferred from source IP using network registries.
         if VERBOSE >= 2:
             print(f"  [{rname}] Route to {args.destination}: via {nexthop or 'direct'} dev {iface or 'unknown'}", file=sys.stderr)
         _dbg(f"  [{rname}] DEBUG: egress iface = {iface}, nexthop = {nexthop}", 3)
-        # Cleanup: Remove ALL old TSIM_KSMS rules efficiently
-        # Use iptables-save/restore which is atomic and preserves other rules
+        # Cleanup: Remove ALL old TSIM_KSMS rules using individual iptables commands
         snap = iptables_save_mangle(rname, with_counters=False)
-        clean_lines = []
+        cleanup_commands = []
         removed = 0
+
+        # Build iptables -D commands for each old TSIM_KSMS rule
         for line in snap.splitlines():
-            if 'TSIM_KSMS=' in line:
+            if 'TSIM_KSMS=' in line and line.startswith('-A '):
+                # Convert from iptables-save format (-A CHAIN ...) to delete format
+                # -A PREROUTING -p tcp ... → iptables -t mangle -D PREROUTING -p tcp ...
+                rule_spec = line[3:]  # Remove "-A "
+                cleanup_commands.append(f"iptables -t mangle -D {rule_spec}")
                 removed += 1
-                continue  # Skip all old TSIM_KSMS rules
-            clean_lines.append(line)
-        
+
+        # Also remove TSIM_TAP_FW chain if it exists
+        cleanup_commands.append("iptables -t mangle -F TSIM_TAP_FW || true")
+        cleanup_commands.append("iptables -t mangle -X TSIM_TAP_FW || true")
+
         if removed > 0:
-            # Apply the cleaned state
-            clean_payload = '\n'.join(clean_lines) + '\n'
-            result = run(['ip', 'netns', 'exec', rname, 'iptables-restore'], input_data=clean_payload)
+            result = execute_iptables_script(rname, cleanup_commands)
             if result.returncode == 0:
                 if VERBOSE >= 2:
                     print(f"  [{rname}] Cleaned {removed} stale TSIM_KSMS rule(s)", file=sys.stderr)
             else:
                 _dbg(f"  [{rname}] WARNING: Failed to clean old rules: {result.stderr}", 1)
-        # Insert taps (build from existing save to satisfy iptables-restore format)
-        existing = iptables_save_mangle(rname, with_counters=False)
-        
-        if VERBOSE >= 3:
-            _dbg(f"  [{rname}] DEBUG: Existing mangle table has {len(existing.splitlines())} lines", 3)
-        
-        insert_lines = []
-        # For iptables-restore, we need to use -A (append) format, not -I (insert)
-        # We'll add them at the beginning of PREROUTING/POSTROUTING chains
-        
+        # Insert taps using individual iptables commands
+        insert_commands = []
+
+        # Create TSIM_TAP_FW chain
+        insert_commands.append("iptables -t mangle -N TSIM_TAP_FW || true")
+        insert_commands.append("iptables -t mangle -F TSIM_TAP_FW")
+        insert_commands.append("iptables -t mangle -A TSIM_TAP_FW -j RETURN")
+
         # Add a catch-all rule to verify packets are traversing at all (for debugging)
         if VERBOSE >= 3:
-            insert_lines.append(f"-A PREROUTING -d {args.destination} -j TSIM_TAP_FW -m comment --comment {shlex.quote(f'TSIM_KSMS={run_id}:DEBUG:CATCH_ALL')}")
-        
+            comment_debug = f'TSIM_KSMS={run_id}:DEBUG:CATCH_ALL'
+            insert_commands.append(f"iptables -t mangle -I PREROUTING 1 -d {args.destination} -j TSIM_TAP_FW -m comment --comment {shlex.quote(comment_debug)}")
+
+        # Insert rules for each service (use -I to insert at beginning)
         for port, proto in services:
             dscp = svc_tokens[(port, proto)]['dscp']
             comment_pre = f"TSIM_KSMS={run_id}:PREROUTING:{port}/{proto}"
             comment_post = f"TSIM_KSMS={run_id}:POSTROUTING:{port}/{proto}"
-            # Use -A format for iptables-restore (these will be inserted at the beginning due to our build function)
-            # Match the exact format that iptables-save produces (with -m tcp/udp module)
-            proto_module = f"-m {proto}"
-            insert_lines.append(f"-A PREROUTING -p {proto} -m dscp --dscp 0x{dscp:02x} {proto_module} --dport {port} -m comment --comment {shlex.quote(comment_pre)} -j TSIM_TAP_FW")
-            insert_lines.append(f"-A POSTROUTING -p {proto} -m dscp --dscp 0x{dscp:02x} {proto_module} --dport {port} -m comment --comment {shlex.quote(comment_post)} -j TSIM_TAP_FW")
-            
+
+            # PREROUTING rule
+            insert_commands.append(
+                f"iptables -t mangle -I PREROUTING 1 -p {proto} -m dscp --dscp 0x{dscp:02x} "
+                f"-m {proto} --dport {port} -m comment --comment {shlex.quote(comment_pre)} -j TSIM_TAP_FW"
+            )
+
+            # POSTROUTING rule
+            insert_commands.append(
+                f"iptables -t mangle -I POSTROUTING 1 -p {proto} -m dscp --dscp 0x{dscp:02x} "
+                f"-m {proto} --dport {port} -m comment --comment {shlex.quote(comment_post)} -j TSIM_TAP_FW"
+            )
+
             if VERBOSE >= 3:
                 _dbg(f"  [{rname}] DEBUG: Will insert rule for {port}/{proto} with DSCP={dscp}", 3)
-        
-        # Build payload with counters since we'll use iptables-restore -c
-        payload = build_insert_payload_from_existing(existing, insert_lines, with_counters=True)
-        
-        if VERBOSE >= 3:
-            lines = payload.splitlines()
-            _dbg(f"  [{rname}] DEBUG: Payload has {len(lines)} lines", 3)
-            # Show the structure of the payload
-            ksms_count = sum(1 for l in lines if 'TSIM_KSMS' in l)
-            _dbg(f"  [{rname}] DEBUG: Payload contains {ksms_count} TSIM_KSMS rules", 3)
-            
-            # Show lines around our rules
-            for i, line in enumerate(lines):
-                if i < 10 or 'TSIM_KSMS' in line or 'TSIM_TAP_FW' in line:
-                    if line.strip():  # Skip empty lines
-                        _dbg(f"  [{rname}] DEBUG: Payload line {i}: {line[:100]}", 3)
-        
-        # Add timeout and better error handling
+
+        # Execute all iptables commands
         if VERBOSE >= 2:
-            print(f"  [{rname}] Running iptables-restore...", file=sys.stderr)
-        
+            print(f"  [{rname}] Inserting iptables taps...", file=sys.stderr)
+
         try:
-            # Debug the payload type
-            if VERBOSE >= 3:
-                _dbg(f"  [{rname}] DEBUG: Payload type is {type(payload)}, length {len(payload)}", 3)
-            
-            # Use -c flag since our payload now has counters
-            result = run(['ip', 'netns', 'exec', rname, 'iptables-restore', '-c', '-n'], input_data=payload)
-            
+            result = execute_iptables_script(rname, insert_commands)
+
             if VERBOSE >= 2:
-                print(f"  [{rname}] iptables-restore completed with code {result.returncode}", file=sys.stderr)
-            
+                print(f"  [{rname}] iptables script completed with code {result.returncode}", file=sys.stderr)
+
             if VERBOSE >= 3:
-                _dbg(f"  [{rname}] DEBUG: iptables-restore returned code {result.returncode}", 3)
-            if result.stdout:
-                _dbg(f"  [{rname}] DEBUG: stdout: {result.stdout[:200]}", 3)
-            if result.stderr:
-                _dbg(f"  [{rname}] DEBUG: stderr: {result.stderr[:200]}", 3)
-        
+                _dbg(f"  [{rname}] DEBUG: iptables script returned code {result.returncode}", 3)
+                if result.stdout:
+                    _dbg(f"  [{rname}] DEBUG: stdout: {result.stdout[:500]}", 3)
+                if result.stderr:
+                    _dbg(f"  [{rname}] DEBUG: stderr: {result.stderr[:500]}", 3)
+
             if result.returncode == 0:
                 if VERBOSE >= 2:
                     print(f"  [{rname}] Inserted iptables taps for {len(services)} service(s)", file=sys.stderr)
-                
+
                 # Verify rules were actually inserted
                 if VERBOSE >= 3:
                     verify = iptables_save_mangle(rname, with_counters=False)
@@ -723,14 +838,14 @@ Routers are automatically inferred from source IP using network registries.
                     print(f"  [{rname}] FAILED to insert iptables taps (code {result.returncode})", file=sys.stderr)
                     if result.stderr:
                         print(f"  [{rname}] Error: {result.stderr.strip()}", file=sys.stderr)
-                _dbg(f"  [{rname}] DEBUG: iptables-restore failed with code {result.returncode}", 3)
+                _dbg(f"  [{rname}] DEBUG: iptables script failed with code {result.returncode}", 3)
         except Exception as e:
             if VERBOSE >= 1:
-                print(f"  [{rname}] ERROR running iptables-restore: {e}", file=sys.stderr)
+                print(f"  [{rname}] ERROR running iptables script: {e}", file=sys.stderr)
                 import traceback
                 if VERBOSE >= 3:
                     _dbg(f"  [{rname}] DEBUG: Full traceback:\n{traceback.format_exc()}", 3)
-            _dbg(f"  [{rname}] DEBUG: Exception during iptables-restore: {e}", 2)
+            _dbg(f"  [{rname}] DEBUG: Exception during iptables script: {e}", 2)
         # Baseline snapshot
         router_results[rname]['before'] = iptables_save_mangle(rname)
         
@@ -941,35 +1056,31 @@ Routers are automatically inferred from source IP using network registries.
                             if VERBOSE >= 1:
                                 print(f"  [{rname}] ARP cleanup warning: {stderr_msg}", file=sys.stderr)
         
-        # Remove all our TSIM_KSMS rules with our run_id
+        # Remove all our TSIM_KSMS rules with our run_id using individual iptables commands
         snap = iptables_save_mangle(rname, with_counters=False)
-        clean_lines = []
+        cleanup_commands = []
         removed = 0
         has_other_tsim_rules = False
-        
+
+        # Build iptables -D commands for each rule from this run
         for line in snap.splitlines():
             # Remove only OUR rules from this run
-            if f'TSIM_KSMS={run_id}' in line:
+            if f'TSIM_KSMS={run_id}' in line and line.startswith('-A '):
+                # Convert from iptables-save format to delete format
+                rule_spec = line[3:]  # Remove "-A "
+                cleanup_commands.append(f"iptables -t mangle -D {rule_spec}")
                 removed += 1
-                continue
             # Check if there are other TSIM_KSMS rules from other runs
-            if 'TSIM_KSMS=' in line:
+            elif 'TSIM_KSMS=' in line and line.startswith('-A '):
                 has_other_tsim_rules = True
-            clean_lines.append(line)
-        
+
         # If no other TSIM_KSMS rules remain, also remove the TSIM_TAP_FW chain
         if not has_other_tsim_rules:
-            final_lines = []
-            for line in clean_lines:
-                # Skip chain declaration and flush/return rules
-                if ':TSIM_TAP_FW' in line or (line.startswith('-') and 'TSIM_TAP_FW' in line):
-                    continue
-                final_lines.append(line)
-            clean_lines = final_lines
-        
+            cleanup_commands.append("iptables -t mangle -F TSIM_TAP_FW || true")
+            cleanup_commands.append("iptables -t mangle -X TSIM_TAP_FW || true")
+
         if removed > 0:
-            clean_payload = '\n'.join(clean_lines) + '\n'
-            result = run(['ip', 'netns', 'exec', rname, 'iptables-restore'], input_data=clean_payload)
+            result = execute_iptables_script(rname, cleanup_commands)
             if result.returncode == 0:
                 if VERBOSE >= 3:
                     _dbg(f"  [{rname}] Removed {removed} test rules", 3)
@@ -981,7 +1092,31 @@ Routers are automatically inferred from source IP using network registries.
         futs = [ex.submit(cleanup_router, r) for r in routers]
         for _ in as_completed(futs):
             pass
-    
+
+    # COORDINATION: Release source host leases
+    if REGISTRY_MGR and acquired_leases:
+        if VERBOSE >= 2:
+            print(f"[COORDINATION] Releasing source host leases...", file=sys.stderr)
+
+        for src_host in acquired_leases:
+            try:
+                ref_count, should_delete = REGISTRY_MGR.release_source_host_lease(
+                    run_id=run_id,
+                    host_name=src_host
+                )
+
+                if VERBOSE >= 3:
+                    _dbg(f"  Released lease for {src_host}: ref_count={ref_count}, should_delete={should_delete}", 3)
+
+                # Quick jobs never delete physical hosts - they're managed by host_namespace_setup
+                # Just release the lease and let ref counting handle persistence
+
+            except Exception as e:
+                _dbg(f"  WARNING: Failed to release lease for {src_host}: {e}", 1)
+
+        if VERBOSE >= 2:
+            print(f"  Released {len(acquired_leases)} source host lease(s)", file=sys.stderr)
+
     if VERBOSE >= 2:
         print(f"[CLEANUP] Completed\n", file=sys.stderr)
 

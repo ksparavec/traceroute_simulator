@@ -2,6 +2,26 @@
 """
 TSIM Lock Manager Service
 Manages locks for concurrent operations
+
+DEPRECATION WARNING:
+    This service is deprecated for most use cases.
+
+    - For leader election: Continue using this service (scheduler_leader lock)
+    - For host coordination: Use TsimRegistryManager (src/core/registry_manager.py)
+    - For router coordination: Use TsimRegistryManager (src/core/registry_manager.py)
+    - For network_test lock: REMOVED - coordination now in TsimRegistryManager
+
+    Migration Guide:
+        Old: lock_manager.lock('network_test')
+        New: Coordination happens automatically in scripts via TsimRegistryManager
+
+        Old: Manual host/router locking
+        New: Use TsimRegistryManager.check_and_register_host()
+             Use TsimRegistryManager.acquire_source_host_lease()
+             Use TsimRegistryManager.all_router_locks()
+
+    This service will remain for backward compatibility and leader election,
+    but new code should use TsimRegistryManager for coordination.
 """
 
 import os
@@ -9,13 +29,18 @@ import fcntl
 import time
 import threading
 import logging
+import warnings
 from pathlib import Path
 from typing import Optional, Dict, Any
 from contextlib import contextmanager
 
 
 class TsimLockManagerService:
-    """Lock management service for preventing concurrent test execution"""
+    """Lock management service for preventing concurrent test execution
+
+    DEPRECATED: Use TsimRegistryManager for host/router coordination.
+    This service is kept for backward compatibility and leader election only.
+    """
     
     def __init__(self, config_service):
         """Initialize lock manager
@@ -49,18 +74,35 @@ class TsimLockManagerService:
         # Optional legacy lock FDs (for network_test compatibility)
         self.legacy_file_locks = {}
     
-    def acquire_lock(self, lock_name: str, timeout: float = 60.0, 
+    def acquire_lock(self, lock_name: str, timeout: float = 60.0,
                     retry_interval: float = 0.5) -> bool:
         """Acquire a named lock
-        
+
         Args:
             lock_name: Name of the lock
             timeout: Maximum time to wait for lock (seconds)
             retry_interval: Time between retry attempts (seconds)
-            
+
         Returns:
             True if lock acquired, False if timeout
         """
+        # Emit deprecation warnings for specific locks that should migrate
+        if lock_name == 'network_test':
+            warnings.warn(
+                "Lock 'network_test' is deprecated. Coordination now handled by "
+                "TsimRegistryManager in scripts. This lock should no longer be used.",
+                DeprecationWarning,
+                stacklevel=2
+            )
+        elif lock_name not in ['scheduler_leader']:
+            # Warn for any lock except scheduler_leader
+            warnings.warn(
+                f"Lock '{lock_name}' via TsimLockManagerService is deprecated. "
+                f"Consider using TsimRegistryManager for coordination.",
+                DeprecationWarning,
+                stacklevel=2
+            )
+
         # Thread-level locking first
         with self.thread_lock_mutex:
             if lock_name not in self.thread_locks:

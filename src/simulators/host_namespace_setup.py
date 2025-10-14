@@ -50,6 +50,28 @@ import hashlib
 from tsim.core.config_loader import get_registry_paths, load_traceroute_config
 
 
+def generate_mac_address(host_name: str) -> str:
+    """Generate a unique, deterministic MAC address for a host.
+
+    Uses locally administered MAC address space (02:00:00:xx:xx:xx)
+    with a hash of the host name for uniqueness.
+
+    Args:
+        host_name: The name of the host
+
+    Returns:
+        MAC address string in format "02:00:00:xx:xx:xx"
+    """
+    # Hash the host name
+    hash_obj = hashlib.sha256(host_name.encode('utf-8'))
+    hash_bytes = hash_obj.digest()
+
+    # Use first 3 bytes of hash for the last 3 octets
+    # First octet is 02 (locally administered, unicast)
+    mac = f"02:00:00:{hash_bytes[0]:02x}:{hash_bytes[1]:02x}:{hash_bytes[2]:02x}"
+    return mac
+
+
 class HostNamespaceManager:
     """
     Manages dynamic host namespaces in the network simulation.
@@ -74,21 +96,51 @@ class HostNamespaceManager:
         self.available_namespaces: Set[str] = set()
         
         # Load configuration for unix_group
-        config = load_traceroute_config()
-        self.unix_group = config.get('system', {}).get('unix_group', 'tsim-users')
-        
+        yaml_config = load_traceroute_config()
+        self.unix_group = yaml_config.get('system', {}).get('unix_group', 'tsim-users')
+
+        # Load WSGI config.json ONCE (needed for TsimRegistryManager)
+        wsgi_config = self._load_wsgi_config()
+
         # Load registry paths from configuration
         registry_paths = get_registry_paths()
         self.host_registry_file = Path(registry_paths['hosts'])
         self.router_registry_file = Path(registry_paths['routers'])
         self.interface_registry_file = Path(registry_paths['interfaces'])
         self.bridge_registry_file = Path(registry_paths['bridges'])
-        
+
         self.interface_registry: Dict[str, Dict[str, str]] = {}  # host_code -> {interface_name -> interface_code}
-        
-        # Initialize semaphores for atomic registry operations
+
+        # Initialize TsimRegistryManager for host registry coordination
+        self._init_registry_manager(wsgi_config)
+
+        # Initialize semaphores for interface and bridge registries only
         self._init_semaphores()
         
+    def _load_wsgi_config(self) -> Optional[Dict]:
+        """Load WSGI config.json ONCE from TSIM_CONFIG_PATH or default location.
+
+        Returns:
+            Config dict or None if loading fails
+        """
+        import json
+
+        config_path = os.environ.get('TSIM_CONFIG_PATH', '/opt/tsim/wsgi/conf/config.json')
+
+        try:
+            with open(config_path, 'r') as f:
+                return json.load(f)
+        except (FileNotFoundError, json.JSONDecodeError) as e:
+            # If TSIM_CONFIG_PATH was explicitly set but invalid, try default
+            if 'TSIM_CONFIG_PATH' in os.environ and config_path != '/opt/tsim/wsgi/conf/config.json':
+                try:
+                    with open('/opt/tsim/wsgi/conf/config.json', 'r') as f:
+                        return json.load(f)
+                except Exception:
+                    pass
+            # Return None if cannot load - registry manager will use fallback
+            return None
+
     def setup_logging(self):
         """Configure logging based on verbosity level."""
         if self.verbose == 0:
@@ -97,19 +149,51 @@ class HostNamespaceManager:
             level = logging.INFO
         else:
             level = logging.DEBUG
-            
+
+        # Configure basic logging (only works if not already configured)
         logging.basicConfig(
             level=level,
             format='%(levelname)s: %(message)s'
         )
+
+        # CRITICAL: Also set level on root logger and our logger
+        # This ensures verbose level works even when logging already initialized (e.g., from tsimsh)
+        logging.getLogger().setLevel(level)
         self.logger = logging.getLogger(__name__)
-    
+        self.logger.setLevel(level)
+
+    def _init_registry_manager(self, wsgi_config: Optional[Dict]):
+        """Initialize TsimRegistryManager for host registry coordination.
+
+        Args:
+            wsgi_config: WSGI config.json dict (already loaded by caller)
+        """
+        try:
+            if not wsgi_config:
+                self.logger.warning("TsimRegistryManager not initialized - config.json not available")
+                self.registry_mgr = None
+                return
+
+            # Initialize TsimRegistryManager with passed config
+            # All paths (data_dir, lock_dir, registry_files) come from config.json
+            from tsim.core.registry_manager import TsimRegistryManager
+            self.registry_mgr = TsimRegistryManager(wsgi_config, self.logger)
+            self.logger.info("TsimRegistryManager initialized for host coordination")
+
+        except Exception as e:
+            self.logger.error(f"Failed to initialize TsimRegistryManager: {e}")
+            import traceback
+            self.logger.debug(traceback.format_exc())
+            self.registry_mgr = None
+
     def _init_semaphores(self):
-        """Initialize POSIX semaphores for registry files."""
-        # Semaphore names for each registry
+        """Initialize POSIX semaphores for interface and bridge registries only.
+
+        Note: Host registry now uses TsimRegistryManager instead of semaphores.
+        """
+        # Semaphore names for each registry (excluding host registry)
         self.sem_names = {
-            str(self.host_registry_file): "/tsim_hosts_reg",
-            str(self.router_registry_file): "/tsim_routers_reg", 
+            str(self.router_registry_file): "/tsim_routers_reg",
             str(self.interface_registry_file): "/tsim_interfaces_reg",
             str(self.bridge_registry_file): "/tsim_bridges_reg"
         }
@@ -643,62 +727,60 @@ class HostNamespaceManager:
         
         self._atomic_json_operation(str(self.bridge_registry_file), update_op)
         
-    def _batch_register_host(self, host_name: str, host_config: Dict, interfaces: List[str], 
+    def _batch_register_host(self, host_name: str, host_config: Dict, interfaces: List[str],
                             bridge_name: str, primary_ip: str) -> bool:
         """
         Batch register host in all registries with minimal lock contention.
-        This minimizes the time locks are held by doing all updates quickly.
+        Uses TsimRegistryManager for host registry (atomic TOCTOU-free registration).
         """
         try:
-            # 1. Update host registry (quick lock)
-            def add_host_op(registry):
-                # Double-check no collision happened while we were creating the host
-                if host_name in registry:
-                    self.logger.error(f"Host name {host_name} already exists (race condition)")
-                    return False, registry
-                
-                # Also check for IP collision on the same router (race condition check)
-                ip_without_prefix = host_config['primary_ip'].split('/')[0]
-                connected_router = host_config['connected_to']
-                
-                for existing_host, existing_config in registry.items():
-                    if existing_host == host_name:
-                        continue
-                    existing_router = existing_config.get('connected_to', '')
-                    if existing_router == connected_router:
-                        # Check primary IP
-                        existing_ip = existing_config.get('primary_ip', '').split('/')[0]
-                        if existing_ip == ip_without_prefix:
-                            self.logger.error(f"IP {ip_without_prefix} already in use by host {existing_host} on router {connected_router} (race condition)")
-                            return False, registry
-                        # Check secondary IPs
-                        for sec_ip in existing_config.get('secondary_ips', []):
-                            if sec_ip.split('/')[0] == ip_without_prefix:
-                                self.logger.error(f"IP {ip_without_prefix} already in use by host {existing_host} on router {connected_router} (race condition)")
-                                return False, registry
-                
-                # Also check secondary IPs for collision
-                for sec_ip in host_config.get('secondary_ips', []):
-                    sec_ip_clean = sec_ip.split('/')[0]
-                    for existing_host, existing_config in registry.items():
-                        if existing_config.get('connected_to') == connected_router:
-                            existing_primary = existing_config.get('primary_ip', '').split('/')[0]
-                            if existing_primary == sec_ip_clean:
-                                self.logger.error(f"Secondary IP {sec_ip_clean} already in use by host {existing_host} on router {connected_router} (race condition)")
-                                return False, registry
-                            for existing_sec in existing_config.get('secondary_ips', []):
-                                if existing_sec.split('/')[0] == sec_ip_clean:
-                                    self.logger.error(f"Secondary IP {sec_ip_clean} already in use by host {existing_host} on router {connected_router} (race condition)")
-                                    return False, registry
-                
-                # All checks passed, safe to add
-                registry[host_name] = host_config
-                return True, registry
-            
-            success, _ = self._atomic_json_operation(self.host_registry_file, add_host_op)
-            if not success:
-                self.logger.error(f"Failed to register host {host_name} in host registry")
-                return False
+            # 1. Update host registry using TsimRegistryManager (atomic, TOCTOU-free)
+            if self.registry_mgr:
+                # Extract MAC address from host_config or generate unique one
+                mac_address = host_config.get('mac_address', generate_mac_address(host_name))
+
+                # Build additional info dict from host_config
+                # Include all fields that were saved in old implementation
+                additional_info = {}
+                optional_fields = [
+                    'secondary_ips', 'created_at', 'router_interface', 'gateway_ip',
+                    'router_ip_added', 'dummy_interfaces', 'connection_type',
+                    'mesh_bridge', 'host_veth', 'mesh_veth', 'sim_namespace'
+                ]
+                for field in optional_fields:
+                    if field in host_config:
+                        additional_info[field] = host_config[field]
+
+                # Atomic check-and-register (eliminates TOCTOU vulnerability)
+                success = self.registry_mgr.check_and_register_host(
+                    host_name=host_name,
+                    primary_ip=host_config['primary_ip'],
+                    connected_to=host_config['connected_to'],
+                    mac_address=mac_address,
+                    additional_info=additional_info
+                )
+
+                if not success:
+                    self.logger.error(
+                        f"Failed to register host {host_name}: "
+                        f"collision detected (name, IP, or MAC already in use)"
+                    )
+                    return False
+            else:
+                # Fallback to old method if registry_mgr not available
+                self.logger.warning("TsimRegistryManager not available, using fallback method")
+
+                def add_host_op(registry):
+                    if host_name in registry:
+                        self.logger.error(f"Host name {host_name} already exists")
+                        return False, registry
+                    registry[host_name] = host_config
+                    return True, registry
+
+                success, _ = self._atomic_json_operation(self.host_registry_file, add_host_op)
+                if not success:
+                    self.logger.error(f"Failed to register host {host_name} in host registry")
+                    return False
             
             # 2. Update interface registry (quick lock)
             host_code = self.get_host_code(host_name)
@@ -753,11 +835,16 @@ class HostNamespaceManager:
     
     def _remove_host_from_registry(self, host_name: str):
         """Helper to remove host from registry during rollback."""
-        def remove_op(registry):
-            if host_name in registry:
-                del registry[host_name]
-            return True, registry
-        self._atomic_json_operation(self.host_registry_file, remove_op)
+        if self.registry_mgr:
+            # Use TsimRegistryManager for atomic removal
+            self.registry_mgr.unregister_host(host_name)
+        else:
+            # Fallback to old method
+            def remove_op(registry):
+                if host_name in registry:
+                    del registry[host_name]
+                return True, registry
+            self._atomic_json_operation(self.host_registry_file, remove_op)
     
     def check_command_availability(self, command: str) -> bool:
         """Check if a command is available on the system."""
@@ -814,17 +901,35 @@ class HostNamespaceManager:
             
     def load_host_registry(self) -> Dict[str, Dict]:
         """Load registry of existing hosts atomically."""
-        def read_op(data):
-            return True, data
-        
-        success, registry = self._atomic_json_operation(self.host_registry_file, read_op)
-        return registry if success else {}
-            
+        if self.registry_mgr:
+            # Use TsimRegistryManager for atomic read
+            return self.registry_mgr.list_all_hosts()
+        else:
+            # Fallback to old method
+            def read_op(data):
+                return True, data
+
+            success, registry = self._atomic_json_operation(self.host_registry_file, read_op)
+            return registry if success else {}
+
     def save_host_registry(self, registry: Dict[str, Dict]):
-        """Save registry of hosts atomically."""
+        """Save registry of hosts atomically.
+
+        WARNING: This method is deprecated when using TsimRegistryManager.
+        Use check_and_register_host() and unregister_host() instead for atomic operations.
+        """
+        if self.registry_mgr:
+            self.logger.warning(
+                "save_host_registry() called with TsimRegistryManager active. "
+                "Use check_and_register_host() and unregister_host() for atomic operations."
+            )
+            # Don't perform save operation - TsimRegistryManager manages this
+            return
+
+        # Fallback to old method
         def write_op(current):
             return True, registry
-        
+
         success, _ = self._atomic_json_operation(self.host_registry_file, write_op)
         if not success:
             self.logger.error(f"Could not save host registry")
@@ -1473,10 +1578,10 @@ class HostNamespaceManager:
             'primary_ip': primary_ip,
             'secondary_ip_count': len(secondary_ips)
         }
-        
+
         # Set current timing data for command tracking
         self._current_timing_data = timing_data
-        
+
         # Operation: Check namespace existence
         op_start = time.time()
         if host_name in self.available_namespaces:
@@ -1824,9 +1929,9 @@ class HostNamespaceManager:
                 if secondary_ips:
                     print(f"  Secondary IPs: {', '.join(secondary_ips)}")
                 print(f"  Mesh bridge: {connection_info.get('mesh_bridge', 'auto-detected')}")
-                    
+
             return True
-            
+
         except ValueError as e:
             # IP collision or other validation error - no cleanup needed since nothing was created
             self._current_timing_data = None  # Clear timing data
@@ -1839,45 +1944,66 @@ class HostNamespaceManager:
             return False
         except Exception as e:
             self.logger.error(f"Unexpected error creating host {host_name}: {e}")
+            # Cleanup on failure - namespace may have been created even if registry failed
+            if 'host_config' in locals():
+                self.cleanup_host_resources(host_name, host_config)
+            else:
+                # Minimal cleanup if host_config not yet defined
+                try:
+                    self.run_command(f"ip netns del {host_name}", check=False)
+                except:
+                    pass
             self._current_timing_data = None  # Clear timing data
-            raise
-            
-    def remove_host(self, host_name: str) -> bool:
-        """Remove a host from the network."""
-        registry = self.load_host_registry()
-        
-        if host_name not in registry:
-            self.logger.error(f"Host {host_name} not found in registry")
             return False
             
+    def remove_host(self, host_name: str) -> bool:
+        """Remove a host from the network.
+
+        Raises:
+            RuntimeError: If namespace deletion fails
+        """
+        registry = self.load_host_registry()
+
+        if host_name not in registry:
+            self.logger.error(f"Host {host_name} not found in registry")
+            raise RuntimeError(f"Host {host_name} not found in registry")
+
         host_config = registry[host_name]
-        
+
+        # CRITICAL: Delete physical namespace FIRST before touching any registry
+        # If this fails, we want to abort before modifying any registry state
+        try:
+            self.cleanup_host_resources(host_name, host_config)
+        except Exception as e:
+            self.logger.error(f"Failed to delete namespace {host_name}: {e}")
+            raise RuntimeError(f"Failed to delete namespace {host_name}: {e}")
+
+        # Namespace deleted successfully - now update ALL registries
+        # These should not fail, but if they do, we want to know
         try:
             # Unregister host interfaces from interface registry
             self.unregister_host_interfaces(host_name)
-            
+
             # Unregister host from bridge registry
             self.unregister_host_from_bridge_registry(host_name)
-            
-            # Remove host resources
-            self.cleanup_host_resources(host_name, host_config)
-            
-            # Remove from registry atomically
+
+            # Remove from host registry atomically
             def remove_host_op(registry):
                 if host_name in registry:
                     del registry[host_name]
                 return True, registry
-            
+
             self._atomic_json_operation(self.host_registry_file, remove_host_op)
-            
+
             if self.verbose >= 1:
                 print(f"✓ Host {host_name} removed successfully")
-                
+
             return True
-            
+
         except Exception as e:
-            self.logger.error(f"Failed to remove host {host_name}: {e}")
-            return False
+            self.logger.error(f"CRITICAL: Namespace {host_name} deleted but registry update failed: {e}")
+            self.logger.error(f"Manual cleanup may be required for {host_name} registries")
+            raise RuntimeError(f"Registry update failed after namespace deletion: {e}")
             
     def _recreate_host_namespace(self, host_name: str, host_config: Dict) -> bool:
         """Recreate host namespace from existing registry config without updating registry."""
@@ -1900,7 +2026,11 @@ class HostNamespaceManager:
         )
             
     def cleanup_host_resources(self, host_name: str, host_config: Dict):
-        """Clean up all resources associated with a host."""
+        """Clean up all resources associated with a host.
+
+        Raises:
+            RuntimeError: If critical cleanup operations fail (namespace deletion)
+        """
         try:
             # First, remove router IP if we added it during host creation
             if host_config.get("router_ip_added", False):
@@ -1908,20 +2038,20 @@ class HostNamespaceManager:
                 router_interface = host_config.get("router_interface")
                 gateway_ip = host_config.get("gateway_ip")
                 primary_ip = host_config.get("primary_ip")
-                
+
                 if connected_router and router_interface and gateway_ip and primary_ip:
                     # Check if router still exists
                     if connected_router in self.available_namespaces:
                         try:
                             # Extract network prefix from primary IP
                             host_network = ipaddress.IPv4Network(primary_ip, strict=False)
-                            
+
                             self.logger.info(f"Removing IP {gateway_ip}/{host_network.prefixlen} from {connected_router} interface {router_interface} (added during host creation)")
-                            
+
                             # Remove the IP from router
                             cmd = f"ip addr del {gateway_ip}/{host_network.prefixlen} dev {router_interface}"
                             result = self.run_command(cmd, namespace=connected_router, check=False)
-                            
+
                             if result.returncode == 0:
                                 self.logger.info(f"Successfully removed router IP {gateway_ip}/{host_network.prefixlen}")
                             else:
@@ -1929,26 +2059,31 @@ class HostNamespaceManager:
                                     self.logger.debug(f"IP {gateway_ip}/{host_network.prefixlen} was already removed")
                                 else:
                                     self.logger.warning(f"Failed to remove router IP: {result.stderr}")
-                            
+
                             # Clear ARP cache on router
                             self.logger.info(f"Clearing ARP cache on router {connected_router}")
                             self.run_command(f"ip neigh flush all", namespace=connected_router, check=False)
-                            
+
                         except Exception as e:
                             self.logger.warning(f"Error removing router IP: {e}")
-            
+
             # Remove namespace (this automatically removes all interfaces in it)
-            self.run_command(f"ip netns del {host_name}", check=False)
-            
+            # This is critical - we must verify it succeeds
+            result = self.run_command(f"ip netns del {host_name}", check=False)
+            if result.returncode != 0 and "Cannot remove" in result.stderr:
+                # Namespace deletion failed
+                self.logger.error(f"Failed to delete namespace {host_name}: {result.stderr}")
+                raise RuntimeError(f"Failed to delete namespace {host_name}")
+
             # Remove mesh-side veth interfaces based on connection type
             connection_type = host_config.get("connection_type", "")
-            
+
             if connection_type == "sim_mesh_direct":
                 # Remove mesh veth from {self.hidden_ns} namespace (direct mesh connection)
                 mesh_veth = host_config.get("mesh_veth")
                 if mesh_veth:
                     self.run_command(f"ip netns exec {self.hidden_ns} ip link del {mesh_veth}", check=False)
-            
+
             # Clean bridge FDB entries if we have the mesh bridge info
             mesh_bridge = host_config.get("mesh_bridge")
             if mesh_bridge:
@@ -1959,9 +2094,13 @@ class HostNamespaceManager:
                 if not self.no_delay:
                     time.sleep(0.1)
                 self.run_command(f"ip link set {mesh_bridge} type bridge ageing_time 30000", namespace=self.hidden_ns, check=False)
-                    
+
+        except RuntimeError:
+            # Re-raise critical errors
+            raise
         except Exception as e:
-            self.logger.debug(f"Error during cleanup: {e}")
+            # Log other errors but don't fail
+            self.logger.warning(f"Error during cleanup: {e}")
             
     def list_hosts(self, json_output: bool = False) -> bool:
         """List all registered hosts."""
@@ -2039,7 +2178,15 @@ class HostNamespaceManager:
         return True
     
     def __del__(self):
-        """Cleanup semaphores on object destruction."""
+        """Cleanup semaphores and registry manager on object destruction."""
+        # Cleanup TsimRegistryManager
+        if hasattr(self, 'registry_mgr') and self.registry_mgr:
+            try:
+                self.registry_mgr.cleanup()
+            except:
+                pass
+
+        # Cleanup semaphores (for interface and bridge registries)
         if hasattr(self, 'semaphores'):
             for sem in self.semaphores.values():
                 try:

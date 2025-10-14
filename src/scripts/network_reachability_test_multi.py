@@ -31,6 +31,29 @@ VERSION = "2.0.0"
 SCRIPT_START_TIME = time.time()
 LAST_CHECKPOINT_TIME = SCRIPT_START_TIME
 
+# Global configuration and registry manager
+CONFIG = None
+REGISTRY_MGR = None
+
+# Load configuration at module level
+def _load_config() -> Optional[Dict[str, Any]]:
+    """Load config.json from TSIM_CONFIG_PATH or default location."""
+    config_path = os.environ.get('TSIM_CONFIG_PATH', '/opt/tsim/wsgi/conf/config.json')
+    try:
+        with open(config_path, 'r') as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        # Try default if TSIM_CONFIG_PATH was set but invalid
+        if 'TSIM_CONFIG_PATH' in os.environ:
+            try:
+                with open('/opt/tsim/wsgi/conf/config.json', 'r') as f:
+                    return json.load(f)
+            except Exception:
+                pass
+    return None
+
+CONFIG = _load_config()
+
 def log_timing(checkpoint: str, details: str = "") -> None:
     """Log timing information for performance tracking."""
     global LAST_CHECKPOINT_TIME
@@ -41,9 +64,13 @@ def log_timing(checkpoint: str, details: str = "") -> None:
     
     timestamp = time.strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
     session_id = os.environ.get('RUN_ID', str(uuid.uuid4()))
-    
-    # Log to timings.log
-    log_dir = Path("/var/www/traceroute-web/logs")
+
+    # Log to timings.log - path comes from config.json
+    if CONFIG and 'log_dir' in CONFIG:
+        log_dir = Path(CONFIG['log_dir'])
+    else:
+        log_dir = Path('/var/log/tsim')  # Fallback only if config not available
+
     if log_dir.exists():
         timings_file = log_dir / "timings.log"
         audit_file = log_dir / "audit.log"
@@ -107,8 +134,8 @@ def tsimsh_exec(command: str, capture_output: bool = False, verbose: int = 0) ->
 class MultiServiceTester:
     """Main class for multi-service testing."""
     
-    def __init__(self, source_ip: str, source_port: Optional[int], dest_ip: str, 
-                 services: List[Tuple[int, str]], output_dir: str, 
+    def __init__(self, source_ip: str, source_port: Optional[int], dest_ip: str,
+                 services: List[Tuple[int, str]], output_dir: str,
                  trace_file: Optional[str] = None, verbose: int = 0):
         self.source_ip = source_ip
         self.source_port = source_port
@@ -117,21 +144,51 @@ class MultiServiceTester:
         self.output_dir = Path(output_dir)
         self.trace_file = trace_file
         self.verbose = verbose
-        
+
         # Create output directory with proper permissions
         self.output_dir.mkdir(parents=True, exist_ok=True, mode=0o775)
-        
+
         # Track created resources for cleanup
         self.created_hosts = []
+        self.source_hosts = []  # Track source hosts separately for lease management
         self.started_services = []  # List of (ip, port, protocol) tuples
-        
+
         # Track result files for each service (for PDF generation)
         self.service_result_files = []
+
+        # Track routers and run_id for coordination
+        self.routers = []
+        self.run_id = os.environ.get('RUN_ID', str(uuid.uuid4()))
         
     def cleanup(self) -> None:
         """Clean up all created resources (matches shell script cleanup)."""
         log_timing("cleanup_start", "Starting cleanup")
-        
+
+        # COORDINATION: Release source host leases first (detailed job cleanup)
+        if REGISTRY_MGR and self.source_hosts:
+            if self.verbose > 0:
+                print(f"[COORDINATION] Releasing {len(self.source_hosts)} source host leases...", file=sys.stderr)
+
+            for src_host in self.source_hosts:
+                try:
+                    ref_count, should_delete = REGISTRY_MGR.release_source_host_lease(
+                        run_id=self.run_id,
+                        host_name=src_host
+                    )
+
+                    if self.verbose > 1:
+                        print(f"  Released lease for {src_host}: ref_count={ref_count}, should_delete={should_delete}", file=sys.stderr)
+
+                    # Detailed jobs created the hosts, so they clean them up
+                    # The should_delete flag tells us if ref_count reached zero
+
+                except Exception as e:
+                    if self.verbose > 0:
+                        print(f"  WARNING: Failed to release lease for {src_host}: {e}", file=sys.stderr)
+
+            if self.verbose > 0:
+                print(f"  Released all source host leases", file=sys.stderr)
+
         # Stop all services (using IP:port like shell script)
         for ip, port, protocol in self.started_services:
             try:
@@ -139,14 +196,14 @@ class MultiServiceTester:
                 tsimsh_exec(cmd, verbose=self.verbose)
             except:
                 pass
-        
+
         # Remove all hosts with --force flag
         for host_name in self.created_hosts:
             try:
                 tsimsh_exec(f"host remove --name {host_name} --force", verbose=self.verbose)
             except:
                 pass
-        
+
         log_timing("cleanup_complete", "Cleanup completed")
     
     def phase1_path_discovery(self) -> Dict[str, Any]:
@@ -228,12 +285,16 @@ class MultiServiceTester:
                 )
                 if result is None:  # Success
                     self.created_hosts.append(src_host_name)
+                    self.source_hosts.append(src_host_name)  # Track separately for lease management
                     hosts_added += 1
                     if self.verbose > 0:
                         print(f"[DEBUG] Added {src_host_name} to {router}", file=sys.stderr)
                 else:
                     if self.verbose > 0:
                         print(f"[DEBUG] Failed to add {src_host_name} to {router}: {result}", file=sys.stderr)
+            else:
+                # Host already exists - just track it for lease management
+                self.source_hosts.append(src_host_name)
             
             # Check if destination host already exists for THIS router  
             dest_exists_for_router = any(
@@ -303,6 +364,44 @@ class MultiServiceTester:
         
         # Give services a moment to stabilize
         time.sleep(1)
+
+        # COORDINATION: Acquire source host leases (detailed job pattern)
+        if REGISTRY_MGR and self.source_hosts:
+            log_timing("PHASE2_lease_acquisition", f"Acquiring leases for {len(self.source_hosts)} source hosts")
+            if self.verbose > 0:
+                print(f"[COORDINATION] Acquiring source host leases...", file=sys.stderr)
+
+            for src_host in self.source_hosts:
+                # Determine which router this source host is connected to
+                # Source hosts are named "source-{router_index}" and correspond to routers in order
+                try:
+                    # Extract router index from host name (e.g., "source-1" -> index 1)
+                    host_index = int(src_host.split('-')[1])
+                    # Convert to 0-based index for list lookup
+                    router_name = routers[host_index - 1] if host_index <= len(routers) else None
+
+                    if router_name:
+                        ref_count = REGISTRY_MGR.acquire_source_host_lease(
+                            run_id=self.run_id,
+                            host_name=src_host,
+                            job_type='detailed',
+                            router_name=router_name,
+                            dscp=None  # Detailed jobs don't use DSCP
+                        )
+
+                        if self.verbose > 1:
+                            print(f"  Acquired lease for {src_host} on {router_name}: ref_count={ref_count}", file=sys.stderr)
+                    else:
+                        if self.verbose > 0:
+                            print(f"  WARNING: Could not determine router for {src_host}", file=sys.stderr)
+
+                except Exception as e:
+                    if self.verbose > 0:
+                        print(f"  WARNING: Failed to acquire lease for {src_host}: {e}", file=sys.stderr)
+
+            if self.verbose > 0:
+                print(f"  Acquired {len(self.source_hosts)} source host lease(s)", file=sys.stderr)
+
         log_timing("PHASE2_complete", "Environment setup finished")
     
     def phase3_initial_tests(self) -> Dict[str, Any]:
@@ -606,11 +705,11 @@ class MultiServiceTester:
         """Main execution flow matching shell script phases."""
         try:
             log_timing("START", f"Multi-service test: {self.source_ip} -> {self.dest_ip} ({len(self.services)} services)")
-            
-            # Phase 1: Path Discovery
+
+            # Phase 1: Path Discovery (done before acquiring locks)
             trace_data = self.phase1_path_discovery()
             self.trace_data = trace_data  # Store for later use in formatting
-            
+
             # Extract routers from trace
             routers = []
             for hop in trace_data.get('path', []):
@@ -618,145 +717,270 @@ class MultiServiceTester:
                     router_name = hop.get('name', '')
                     if router_name:
                         routers.append(router_name)
-            
+
             if not routers:
                 raise Exception("No routers found in trace path")
-            
+
+            # Store routers for coordination
+            self.routers = routers
+
             log_timing("PHASE1_complete", f"Found {len(routers)} routers: {', '.join(routers)}")
-            
-            # Phase 2: Environment Setup (hosts and services)
-            self.phase2_setup_environment(routers)
-            
-            # Phase 3: Initial Tests (traceroute only, no ping)
-            traceroute_result = self.phase3_initial_tests()
-            self.traceroute_result = traceroute_result  # Store for use in formatting
-            
-            # Phase 4: Test each service SEQUENTIALLY with packet analysis
-            log_timing("PHASE4_start", f"Testing {len(self.services)} services sequentially")
-            
-            all_results = []
-            last_iptables_snapshot = None  # Track last snapshot for optimization
-            
-            for i, (port, protocol) in enumerate(self.services, 1):
-                # Test this service with packet counter analysis
-                # Reuse previous "after" snapshot as "before" for performance
-                service_result = self.test_service_with_packet_analysis(
-                    port, protocol, routers,
-                    reuse_before_snapshot=last_iptables_snapshot
-                )
-                
-                # Save "after" snapshot for next iteration
-                last_iptables_snapshot = service_result.pop("iptables_after", None)
-                
-                all_results.append(service_result)
-                
-                # Brief pause between service tests to ensure clean separation
-                if i < len(self.services):
-                    time.sleep(1)
-            
-            log_timing("PHASE4_complete", "All service tests completed")
-            
-            # Phase 5: Generate individual result files in EXACT shell script format
-            self.service_result_files = []
-            
-            for i, (service_result, (port, protocol)) in enumerate(zip(all_results, self.services)):
-                # Build result in EXACT format that shell script produces via format_reachability_output.py
-                formatted_result = {
-                    "timestamp": service_result.get("timestamp", time.strftime("%Y-%m-%d %H:%M:%S")),
-                    "version": "1.0.0",
-                    "summary": {
-                        "source_ip": self.source_ip,
-                        "source_port": str(self.source_port) if self.source_port else "ephemeral",
-                        "destination_ip": self.dest_ip,
-                        "destination_port": str(port),
-                        "protocol": protocol
-                    },
-                    "setup_status": {
-                        "source_host_added": True,
-                        "destination_host_added": True,
-                        "service_started": True
-                    },
-                    "reachability_tests": {
-                        "ping": {
-                            "result": None,  # Shell script has None when ping not run
-                            "return_code": None
-                        },
-                        "traceroute": {
-                            "result": traceroute_result,
-                            "return_code": 0
-                        },
-                        "service": {
-                            "result": service_result.get("connectivity_test", None),
-                            "return_code": 0 if service_result.get("reachable", False) else 1
+
+            # COORDINATION: Acquire ALL router locks atomically (detailed job pattern)
+            # This ensures exclusive access to all routers and their hosts
+            if REGISTRY_MGR:
+                log_timing("COORDINATION_lock_start", f"Acquiring atomic locks for {len(routers)} routers")
+                if self.verbose > 0:
+                    print(f"[COORDINATION] Acquiring atomic locks for routers: {', '.join(routers)}", file=sys.stderr)
+
+                with REGISTRY_MGR.all_router_locks(routers, self.run_id, timeout=60.0):
+                    if self.verbose > 0:
+                        print(f"[COORDINATION] Acquired all router locks, proceeding with test", file=sys.stderr)
+                    log_timing("COORDINATION_lock_acquired", "All router locks acquired")
+
+                    # Phase 2: Environment Setup (hosts and services)
+                    self.phase2_setup_environment(routers)
+
+                    # Phase 3: Initial Tests (traceroute only, no ping)
+                    traceroute_result = self.phase3_initial_tests()
+                    self.traceroute_result = traceroute_result  # Store for use in formatting
+
+                    # Phase 4: Test each service SEQUENTIALLY with packet analysis
+                    log_timing("PHASE4_start", f"Testing {len(self.services)} services sequentially")
+
+                    all_results = []
+                    last_iptables_snapshot = None  # Track last snapshot for optimization
+
+                    for i, (port, protocol) in enumerate(self.services, 1):
+                        # Test this service with packet counter analysis
+                        # Reuse previous "after" snapshot as "before" for performance
+                        service_result = self.test_service_with_packet_analysis(
+                            port, protocol, routers,
+                            reuse_before_snapshot=last_iptables_snapshot
+                        )
+
+                        # Save "after" snapshot for next iteration
+                        last_iptables_snapshot = service_result.pop("iptables_after", None)
+
+                        all_results.append(service_result)
+
+                        # Brief pause between service tests to ensure clean separation
+                        if i < len(self.services):
+                            time.sleep(1)
+
+                    log_timing("PHASE4_complete", "All service tests completed")
+
+                    # Phase 5: Generate individual result files in EXACT shell script format
+                    self.service_result_files = []
+
+                    for i, (service_result, (port, protocol)) in enumerate(zip(all_results, self.services)):
+                        # Build result in EXACT format that shell script produces via format_reachability_output.py
+                        formatted_result = {
+                            "timestamp": service_result.get("timestamp", time.strftime("%Y-%m-%d %H:%M:%S")),
+                            "version": "1.0.0",
+                            "summary": {
+                                "source_ip": self.source_ip,
+                                "source_port": str(self.source_port) if self.source_port else "ephemeral",
+                                "destination_ip": self.dest_ip,
+                                "destination_port": str(port),
+                                "protocol": protocol
+                            },
+                            "setup_status": {
+                                "source_host_added": True,
+                                "destination_host_added": True,
+                                "service_started": True
+                            },
+                            "reachability_tests": {
+                                "ping": {
+                                    "result": None,  # Shell script has None when ping not run
+                                    "return_code": None
+                                },
+                                "traceroute": {
+                                    "result": traceroute_result,
+                                    "return_code": 0
+                                },
+                                "service": {
+                                    "result": service_result.get("connectivity_test", None),
+                                    "return_code": 0 if service_result.get("reachable", False) else 1
+                                }
+                            },
+                            # Convert packet_count_analysis from dict format to list format expected by visualizer
+                            "packet_count_analysis": self.convert_packet_analysis_to_list(
+                                service_result.get("packet_count_analysis", service_result.get("packet_analysis", {}))
+                            ),
+                            "router_service_results": service_result.get("router_service_results", {})
                         }
-                    },
-                    # Convert packet_count_analysis from dict format to list format expected by visualizer
-                    "packet_count_analysis": self.convert_packet_analysis_to_list(
-                        service_result.get("packet_count_analysis", service_result.get("packet_analysis", {}))
-                    ),
-                    "router_service_results": service_result.get("router_service_results", {})
-                }
-                
-                # Add operational summary (required by visualizer)
-                formatted_result["operational_summary"] = []
-                formatted_result["total_duration_seconds"] = 0.0
-                
-                # Add reachability summary based on router service results
-                router_results = formatted_result["router_service_results"]
-                if router_results:
-                    reachable_via = []
-                    blocked_by = []
-                    total_routers = len(router_results)
-                    
-                    for router, status in router_results.items():
-                        if status == "ALLOWED" or status == "OK":
-                            reachable_via.append(router)
-                        else:
-                            blocked_by.append(router)
-                    
-                    # Service is only reachable if ALL routers allow it
-                    service_reachable = len(reachable_via) == total_routers and total_routers > 0
-                    
-                    formatted_result["reachability_summary"] = {
-                        "service_reachable": service_reachable,
-                        "reachable_via_routers": reachable_via,
-                        "blocked_by_routers": blocked_by
+
+                        # Add operational summary (required by visualizer)
+                        formatted_result["operational_summary"] = []
+                        formatted_result["total_duration_seconds"] = 0.0
+
+                        # Add reachability summary based on router service results
+                        router_results = formatted_result["router_service_results"]
+                        if router_results:
+                            reachable_via = []
+                            blocked_by = []
+                            total_routers = len(router_results)
+
+                            for router, status in router_results.items():
+                                if status == "ALLOWED" or status == "OK":
+                                    reachable_via.append(router)
+                                else:
+                                    blocked_by.append(router)
+
+                            # Service is only reachable if ALL routers allow it
+                            service_reachable = len(reachable_via) == total_routers and total_routers > 0
+
+                            formatted_result["reachability_summary"] = {
+                                "service_reachable": service_reachable,
+                                "reachable_via_routers": reachable_via,
+                                "blocked_by_routers": blocked_by
+                            }
+
+                        # Save individual result file in EXACT shell script format
+                        result_file = self.output_dir / f"{port}_{protocol}_results.json"
+                        with open(result_file, 'w') as f:
+                            json.dump(formatted_result, f, indent=2)
+
+                        self.service_result_files.append(str(result_file))
+                        log_timing(f"service_{i+1}_file_created", f"Created result file for {port}/{protocol}")
+
+                    # Save summary file for reference
+                    summary = {
+                        "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+                        "source_ip": self.source_ip,
+                        "destination_ip": self.dest_ip,
+                        "services_tested": len(self.services),
+                        "services_reachable": sum(1 for r in all_results if r.get("reachable", False)),
+                        "result_files": self.service_result_files
                     }
-                
-                # Save individual result file in EXACT shell script format
-                result_file = self.output_dir / f"{port}_{protocol}_results.json"
-                with open(result_file, 'w') as f:
-                    json.dump(formatted_result, f, indent=2)
-                
-                self.service_result_files.append(str(result_file))
-                log_timing(f"service_{i+1}_file_created", f"Created result file for {port}/{protocol}")
-            
-            # Save summary file for reference
-            summary = {
-                "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
-                "source_ip": self.source_ip,
-                "destination_ip": self.dest_ip,
-                "services_tested": len(self.services),
-                "services_reachable": sum(1 for r in all_results if r.get("reachable", False)),
-                "result_files": self.service_result_files
-            }
-            
-            summary_file = self.output_dir / "summary.json"
-            with open(summary_file, 'w') as f:
-                json.dump(summary, f, indent=2)
-            
-            total_duration = time.time() - SCRIPT_START_TIME
-            log_timing("TOTAL", f"Total execution time: {total_duration:.2f}s")
-            
-            # Print summary to stdout
-            print(json.dumps({
-                "status": "success",
-                "services_tested": len(self.services),
-                "services_reachable": summary["services_reachable"],
-                "duration": total_duration,
-                "output_dir": str(self.output_dir),
-                "result_files": self.service_result_files
-            }))
+
+                    summary_file = self.output_dir / "summary.json"
+                    with open(summary_file, 'w') as f:
+                        json.dump(summary, f, indent=2)
+
+                    total_duration = time.time() - SCRIPT_START_TIME
+                    log_timing("TOTAL", f"Total execution time: {total_duration:.2f}s")
+
+                    # Print summary to stdout
+                    print(json.dumps({
+                        "status": "success",
+                        "services_tested": len(self.services),
+                        "services_reachable": summary["services_reachable"],
+                        "duration": total_duration,
+                        "output_dir": str(self.output_dir),
+                        "result_files": self.service_result_files
+                    }))
+
+                    if self.verbose > 0:
+                        print(f"[COORDINATION] Test complete, releasing router locks", file=sys.stderr)
+                    log_timing("COORDINATION_lock_release", "Router locks released by context manager")
+
+            else:
+                # Fallback: Run without coordination if REGISTRY_MGR not available
+                if self.verbose > 0:
+                    print(f"[WARNING] TsimRegistryManager not available, running without coordination", file=sys.stderr)
+
+                # Phase 2-5: Run without locks (not recommended for production)
+                self.phase2_setup_environment(routers)
+                traceroute_result = self.phase3_initial_tests()
+                self.traceroute_result = traceroute_result
+
+                log_timing("PHASE4_start", f"Testing {len(self.services)} services sequentially")
+                all_results = []
+                last_iptables_snapshot = None
+
+                for i, (port, protocol) in enumerate(self.services, 1):
+                    service_result = self.test_service_with_packet_analysis(
+                        port, protocol, routers,
+                        reuse_before_snapshot=last_iptables_snapshot
+                    )
+                    last_iptables_snapshot = service_result.pop("iptables_after", None)
+                    all_results.append(service_result)
+                    if i < len(self.services):
+                        time.sleep(1)
+
+                log_timing("PHASE4_complete", "All service tests completed")
+
+                # Phase 5: Generate results (same as above)
+                self.service_result_files = []
+                for i, (service_result, (port, protocol)) in enumerate(zip(all_results, self.services)):
+                    formatted_result = {
+                        "timestamp": service_result.get("timestamp", time.strftime("%Y-%m-%d %H:%M:%S")),
+                        "version": "1.0.0",
+                        "summary": {
+                            "source_ip": self.source_ip,
+                            "source_port": str(self.source_port) if self.source_port else "ephemeral",
+                            "destination_ip": self.dest_ip,
+                            "destination_port": str(port),
+                            "protocol": protocol
+                        },
+                        "setup_status": {
+                            "source_host_added": True,
+                            "destination_host_added": True,
+                            "service_started": True
+                        },
+                        "reachability_tests": {
+                            "ping": {"result": None, "return_code": None},
+                            "traceroute": {"result": traceroute_result, "return_code": 0},
+                            "service": {
+                                "result": service_result.get("connectivity_test", None),
+                                "return_code": 0 if service_result.get("reachable", False) else 1
+                            }
+                        },
+                        "packet_count_analysis": self.convert_packet_analysis_to_list(
+                            service_result.get("packet_count_analysis", service_result.get("packet_analysis", {}))
+                        ),
+                        "router_service_results": service_result.get("router_service_results", {})
+                    }
+                    formatted_result["operational_summary"] = []
+                    formatted_result["total_duration_seconds"] = 0.0
+
+                    router_results = formatted_result["router_service_results"]
+                    if router_results:
+                        reachable_via = []
+                        blocked_by = []
+                        total_routers = len(router_results)
+                        for router, status in router_results.items():
+                            if status == "ALLOWED" or status == "OK":
+                                reachable_via.append(router)
+                            else:
+                                blocked_by.append(router)
+                        service_reachable = len(reachable_via) == total_routers and total_routers > 0
+                        formatted_result["reachability_summary"] = {
+                            "service_reachable": service_reachable,
+                            "reachable_via_routers": reachable_via,
+                            "blocked_by_routers": blocked_by
+                        }
+
+                    result_file = self.output_dir / f"{port}_{protocol}_results.json"
+                    with open(result_file, 'w') as f:
+                        json.dump(formatted_result, f, indent=2)
+                    self.service_result_files.append(str(result_file))
+                    log_timing(f"service_{i+1}_file_created", f"Created result file for {port}/{protocol}")
+
+                summary = {
+                    "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+                    "source_ip": self.source_ip,
+                    "destination_ip": self.dest_ip,
+                    "services_tested": len(self.services),
+                    "services_reachable": sum(1 for r in all_results if r.get("reachable", False)),
+                    "result_files": self.service_result_files
+                }
+                summary_file = self.output_dir / "summary.json"
+                with open(summary_file, 'w') as f:
+                    json.dump(summary, f, indent=2)
+
+                total_duration = time.time() - SCRIPT_START_TIME
+                log_timing("TOTAL", f"Total execution time: {total_duration:.2f}s")
+                print(json.dumps({
+                    "status": "success",
+                    "services_tested": len(self.services),
+                    "services_reachable": summary["services_reachable"],
+                    "duration": total_duration,
+                    "output_dir": str(self.output_dir),
+                    "result_files": self.service_result_files
+                }))
             
         except Exception as e:
             log_timing("ERROR", str(e))
@@ -821,7 +1045,48 @@ def main():
     except Exception as e:
         print(f"Error parsing services: {e}", file=sys.stderr)
         sys.exit(1)
-    
+
+    # Initialize TsimRegistryManager for coordination
+    global REGISTRY_MGR
+    try:
+        if not CONFIG:
+            if args.verbose >= 1:
+                config_path = os.environ.get('TSIM_CONFIG_PATH', '/opt/tsim/wsgi/conf/config.json')
+                print(
+                    f"[WARN] Cannot load config.json from {config_path}. "
+                    "Set TSIM_CONFIG_PATH environment variable. "
+                    "Continuing without registry coordination.",
+                    file=sys.stderr
+                )
+            REGISTRY_MGR = None
+        else:
+            # Initialize TsimRegistryManager with loaded config
+            # All paths (data_dir, lock_dir, registry_files) come from config.json
+            if args.verbose >= 3:
+                config_path = os.environ.get('TSIM_CONFIG_PATH', '/opt/tsim/wsgi/conf/config.json')
+                print(f"[DEBUG] Loaded config from: {config_path}", file=sys.stderr)
+
+            from tsim.core.registry_manager import TsimRegistryManager
+            import logging
+            logger = logging.getLogger(__name__)
+            if args.verbose >= 3:
+                logger.setLevel(logging.DEBUG)
+            elif args.verbose >= 2:
+                logger.setLevel(logging.INFO)
+            else:
+                logger.setLevel(logging.WARNING)
+
+            REGISTRY_MGR = TsimRegistryManager(CONFIG, logger)
+            if args.verbose >= 2:
+                print("[INFO] TsimRegistryManager initialized for coordination", file=sys.stderr)
+
+    except Exception as e:
+        print(f"[WARN] Failed to initialize TsimRegistryManager: {e}", file=sys.stderr)
+        if args.verbose >= 1:
+            import traceback
+            traceback.print_exc()
+        REGISTRY_MGR = None
+
     # Run the tester
     tester = MultiServiceTester(
         source_ip=args.source_ip,

@@ -2,6 +2,10 @@
 """
 TSIM Queue Admin Handler
 Provides admin-only endpoint to inspect the run queue and lock states.
+
+NOTE: Current implementation shows single running job (serial execution).
+Future Enhancement: When parallel execution is implemented (see queue_scheduler_integration_plan.md),
+update to show multiple running jobs with DSCP values and job types.
 """
 
 import json
@@ -13,7 +17,11 @@ from services.tsim_lock_manager_service import TsimLockManagerService
 
 
 class TsimQueueAdminHandler(TsimBaseHandler):
-    """Admin endpoint for queue inspection"""
+    """Admin endpoint for queue inspection
+
+    Currently shows single running job. Will be enhanced to show multiple
+    running jobs when parallel execution is implemented.
+    """
 
     def __init__(self, config_service, session_manager, logger_service,
                  queue_service: TsimQueueService, lock_manager: TsimLockManagerService):

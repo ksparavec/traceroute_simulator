@@ -92,6 +92,9 @@ class KsmsTesterCommand(BaseCommandHandler):
                             help='TCP SYN connect timeout in seconds (default: 1.0)')
         parser.add_argument('--force', action='store_true',
                             help='Force large ranges without confirmation prompts')
+        parser.add_argument('--dscp', type=int, metavar='VALUE',
+                            help='DSCP value for packet marking (32-63). Required for coordination. '
+                                 'Falls back to KSMS_JOB_DSCP environment variable if not specified.')
         parser.add_argument('-j', '--json', action='store_true',
                             help='Output in JSON format')
         parser.add_argument('-v', '--verbose', action='count', default=0,
@@ -119,6 +122,8 @@ class KsmsTesterCommand(BaseCommandHandler):
         ]
         # Always add --force since we've already confirmed at cmd2 level
         cmd_args.append('--force')
+        if hasattr(args, 'dscp') and args.dscp is not None:
+            cmd_args.extend(['--dscp', str(args.dscp)])
         if args.json:
             cmd_args.append('--json')
         for _ in range(args.verbose):
@@ -143,8 +148,8 @@ class KsmsTesterCommand(BaseCommandHandler):
         args = line.split()
         # complete argument names
         available_args = ['-s', '--source', '-d', '--destination', '-P', '--ports',
-                          '--default-proto', '--max-services', '--range-limit', '--tcp-timeout', 
-                          '--force', '-j', '--json', '-v', '--verbose']
+                          '--default-proto', '--max-services', '--range-limit', '--tcp-timeout',
+                          '--force', '--dscp', '-j', '--json', '-v', '--verbose']
         if len(args) >= 2 and args[-2] in ['-s', '--source', '-d', '--destination']:
             return [ip for ip in self.ip_choices() if ip.startswith(text)]
         if len(args) >= 2 and args[-2] == '--default-proto':

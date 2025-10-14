@@ -77,18 +77,57 @@ class IntegrationTester:
     """Integration test executor for parallel jobs"""
 
     def __init__(self, base_url: str, username: str, password: str,
-                 output_dir: Path, source_ip: str, dest_ip: str,
-                 timeout: int = 600):
+                 output_dir: Path, timeout: int = 600, insecure: bool = False):
         self.base_url = base_url
         self.username = username
         self.password = password
         self.output_dir = output_dir
-        self.source_ip = source_ip
-        self.dest_ip = dest_ip
         self.timeout = timeout
+        self.insecure = insecure
+        self.cookie_file = self.output_dir / '.session_cookie'
 
         # Create output directory structure
         self.output_dir.mkdir(parents=True, exist_ok=True)
+
+        # Login to get session cookie
+        self._login()
+
+    def _login(self):
+        """Login to get session cookie"""
+        # Build curl command for login
+        curl_cmd = ['curl', '-s', '-w', '\\n%{http_code}', '-c', str(self.cookie_file)]
+
+        if self.insecure:
+            curl_cmd.append('-k')
+
+        curl_cmd.extend([
+            '-L',  # Follow redirects
+            '-X', 'POST',
+            '-F', f'username={self.username}',
+            '-F', f'password={self.password}',
+            f'{self.base_url}/login'
+        ])
+
+        try:
+            result = subprocess.run(curl_cmd, capture_output=True, text=True, timeout=30)
+            if result.returncode != 0:
+                raise RuntimeError(f"Login failed: curl exit code {result.returncode}")
+
+            # Check if login succeeded
+            lines = result.stdout.strip().split('\n')
+            http_code = lines[-1] if lines else '000'
+
+            # Check cookie file exists and has session cookie
+            if not self.cookie_file.exists():
+                raise RuntimeError("Login failed: no cookie file created")
+
+            cookie_content = self.cookie_file.read_text()
+            if not cookie_content.strip():
+                raise RuntimeError("Login failed: empty cookie file")
+
+            print(f"Login successful (HTTP {http_code})", file=sys.stderr)
+        except Exception as e:
+            raise RuntimeError(f"Login failed: {e}")
 
     def submit_job(self, job_id: int, config: JobConfig) -> JobResult:
         """Submit a single job via curl"""
@@ -97,28 +136,78 @@ class IntegrationTester:
         with open(config.trace_file, 'r') as f:
             trace_data = f.read()
 
+        # Extract source_ip and dest_ip from trace file
+        try:
+            trace_json = json.loads(trace_data)
+            source_ip = trace_json.get('source', '')
+            dest_ip = trace_json.get('destination', '')
+
+            if not source_ip or not dest_ip:
+                raise ValueError("source or destination not found in trace file")
+        except (json.JSONDecodeError, ValueError) as e:
+            print(f"ERROR: Failed to extract IPs from trace file: {e}", file=sys.stderr)
+            return JobResult(
+                job_id=job_id,
+                run_id='ERROR',
+                trace_file=config.trace_file,
+                analysis_mode=config.analysis_mode,
+                dest_ports=config.dest_ports,
+                submit_time=time.time(),
+                complete_time=time.time(),
+                duration=0,
+                curl_exit_code=1,
+                curl_output='',
+                pdf_path=None,
+                json_path=None,
+                status='FAILED',
+                error_message=f"Failed to extract IPs from trace: {e}"
+            )
+
         # Prepare form data
+        # Always use port_mode=manual for CLI scripts (quick mode is for web browser only)
+        # Port format supports:
+        # - Just port number (e.g., "80") -> add default_protocol ("/tcp")
+        # - Port/protocol (e.g., "80/udp") -> use as-is
+        default_protocol = 'tcp'
+        port_specs = []
+        for p in config.dest_ports:
+            p_str = str(p)
+            # If port already has /protocol, use as-is
+            if '/' in p_str:
+                port_specs.append(p_str)
+            else:
+                # Just a port number, add default protocol
+                port_specs.append(f"{p_str}/{default_protocol}")
+
         form_data = {
-            'source_ip': self.source_ip,
-            'dest_ip': self.dest_ip,
+            'source_ip': source_ip,
+            'dest_ip': dest_ip,
             'source_port': '',
-            'port_protocol_list': ','.join([f"{p}:tcp" for p in config.dest_ports]),
+            'port_mode': 'manual',
+            'dest_ports': ','.join(port_specs),
+            'default_protocol': default_protocol,
             'analysis_mode': config.analysis_mode,
             'user_trace_data': trace_data
         }
 
-        # Build curl command
+        # Build curl command with session cookie
+        # Use -D to dump headers so we can extract Location header
+        headers_file = self.output_dir / f'.headers_{job_id}'
         curl_cmd = [
-            'curl', '-s', '-w', '\\n%{http_code}',
-            '-u', f'{self.username}:{self.password}',
+            'curl', '-s', '-D', str(headers_file), '-w', '\\n%{http_code}',
+            '-b', str(self.cookie_file),
             '-X', 'POST'
         ]
+
+        # Add insecure flag if needed (skip SSL verification)
+        if self.insecure:
+            curl_cmd.append('-k')
 
         # Add form fields
         for key, value in form_data.items():
             curl_cmd.extend(['-F', f'{key}={value}'])
 
-        curl_cmd.append(f'{self.base_url}/api/test')
+        curl_cmd.append(f'{self.base_url}/main')
 
         # Execute curl
         submit_time = time.time()
@@ -133,25 +222,57 @@ class IntegrationTester:
             exit_code = result.returncode
             output = result.stdout
 
-            # Parse response
+            # Parse response - curl -w adds \n%{http_code} to output
+            # For empty responses (like 302 redirects), we only get the http code
             lines = output.strip().split('\n')
-            if len(lines) >= 2:
+            if len(lines) >= 1 and lines[-1].isdigit():
                 http_code = lines[-1]
-                response_body = '\n'.join(lines[:-1])
+                response_body = '\n'.join(lines[:-1]) if len(lines) > 1 else ''
             else:
                 http_code = '000'
                 response_body = output
 
-            # Try to parse JSON response
-            try:
-                response_json = json.loads(response_body)
-                run_id = response_json.get('run_id', 'UNKNOWN')
-                status = 'SUCCESS' if http_code == '200' else 'FAILED'
-                error_msg = response_json.get('error') if status == 'FAILED' else None
-            except json.JSONDecodeError:
-                run_id = 'UNKNOWN'
-                status = 'FAILED'
-                error_msg = f"Invalid JSON response: {response_body}"
+            # Parse headers to get Location (for redirect with run_id)
+            run_id = 'UNKNOWN'
+            status = 'FAILED'
+            error_msg = None
+
+            if headers_file.exists():
+                headers = headers_file.read_text()
+
+                # Check for redirect with Location header
+                if http_code == '302':
+                    # Extract run_id from Location header
+                    # Format: Location: /progress.html?id=<run_id>
+                    for line in headers.split('\n'):
+                        if line.lower().startswith('location:'):
+                            location = line.split(':', 1)[1].strip()
+                            # Extract id parameter
+                            if '?id=' in location:
+                                run_id = location.split('?id=')[1].split('&')[0]
+                                status = 'SUCCESS'
+                                break
+
+                # Clean up headers file
+                headers_file.unlink()
+
+            # If we got a JSON response instead of redirect
+            if status == 'FAILED' and response_body and http_code != '302':
+                try:
+                    response_json = json.loads(response_body)
+                    if isinstance(response_json, dict):
+                        run_id = response_json.get('run_id', 'UNKNOWN')
+                        if http_code == '200':
+                            status = 'SUCCESS'
+                        error_msg = response_json.get('error')
+                except (json.JSONDecodeError, ValueError):
+                    error_msg = f"HTTP {http_code}: {response_body[:200]}"
+
+            # Debug output
+            if status == 'SUCCESS':
+                print(f"Job {job_id} submitted: run_id={run_id}", file=sys.stderr)
+            else:
+                print(f"Job {job_id} failed: HTTP {http_code}, {error_msg or 'Unknown error'}", file=sys.stderr)
 
             return JobResult(
                 job_id=job_id,
@@ -188,6 +309,9 @@ class IntegrationTester:
                 error_message=f'Job exceeded timeout of {self.timeout}s'
             )
         except Exception as e:
+            import traceback
+            error_details = f"{str(e)}\n{traceback.format_exc()}"
+            print(f"ERROR in submit_job: {error_details}", file=sys.stderr)
             return JobResult(
                 job_id=job_id,
                 run_id='ERROR',
@@ -561,18 +685,6 @@ def main():
     )
 
     parser.add_argument(
-        '--source-ip',
-        required=True,
-        help='Source IP address for tests'
-    )
-
-    parser.add_argument(
-        '--dest-ip',
-        required=True,
-        help='Destination IP address for tests'
-    )
-
-    parser.add_argument(
         '--sequential',
         action='store_true',
         help='Submit jobs sequentially instead of parallel'
@@ -589,6 +701,12 @@ def main():
         '--check',
         type=Path,
         help='Check mode: compare with expected results in this directory'
+    )
+
+    parser.add_argument(
+        '--insecure', '-k',
+        action='store_true',
+        help='Allow insecure SSL connections (skip certificate verification)'
     )
 
     args = parser.parse_args()
@@ -612,9 +730,8 @@ def main():
         username=args.username,
         password=args.password,
         output_dir=args.output_dir,
-        source_ip=args.source_ip,
-        dest_ip=args.dest_ip,
-        timeout=args.timeout
+        timeout=args.timeout,
+        insecure=args.insecure
     )
 
     # Run scenario

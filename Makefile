@@ -1696,9 +1696,22 @@ install-wsgi:
 	fi
 	
 	# Copy WSGI application files (excluding htdocs, documentation, templates, config.json, and Python cache)
+	# Also exclude scripts that come from src/scripts and generated config files
 	@echo "Installing WSGI application..."
-	@rsync -av --delete --exclude='htdocs' --exclude='conf' --exclude='*.md' --exclude='*.template' --exclude='config.json' --exclude='__pycache__' --exclude='*.pyc' wsgi/ "$(TSIM_WEB_ROOT)/"
-	
+	@rsync -av --delete \
+		--exclude='htdocs' --exclude='conf' --exclude='*.md' --exclude='*.template' --exclude='config.json' \
+		--exclude='__pycache__' --exclude='*.pyc' \
+		--exclude='scripts/network_reachability_test_multi.py' \
+		--exclude='scripts/visualize_reachability.py' \
+		--exclude='scripts/analyze_packet_counts.py' \
+		--exclude='mod_wsgi.conf' --exclude='apache-site.conf' \
+		wsgi/ "$(TSIM_WEB_ROOT)/"
+
+	# Copy scripts from src/scripts (authoritative source)
+	@echo "Installing utility scripts from src/scripts..."
+	@rsync -a --update src/scripts/network_reachability_test_multi.py src/scripts/visualize_reachability.py src/scripts/analyze_packet_counts.py "$(TSIM_WEB_ROOT)/scripts/"
+	@chmod +x "$(TSIM_WEB_ROOT)/scripts/"*.py
+
 	# Remove old subprocess-based files that have been replaced
 	@echo "Removing obsolete files..."
 	@rm -f "$(TSIM_WEB_ROOT)/services/tsim_background_executor.py"

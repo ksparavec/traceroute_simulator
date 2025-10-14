@@ -10,7 +10,7 @@
 # 3. Pass variables to make: make build-shell VERSION=1.2.0
 
 # Package versioning
-VERSION ?= 1.2.1
+VERSION ?= 1.3.0
 
 # Python configuration
 PYTHON ?= python3

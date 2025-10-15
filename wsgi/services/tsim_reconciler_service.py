@@ -100,6 +100,11 @@ class TsimReconcilerService:
             if run_id in queued or run_id in running:
                 continue
 
+            # Also skip if job's current phase is QUEUED (even if not in queue list - race condition)
+            current_phase = pdata.get('current_phase', '')
+            if current_phase == 'QUEUED':
+                continue
+
             # Job is not queued and not running - check if it's stale
             try:
                 age = time.time() - progress_file.stat().st_mtime

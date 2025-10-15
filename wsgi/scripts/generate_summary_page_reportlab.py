@@ -190,17 +190,45 @@ def create_summary_page_from_data(output_file: str, form_data: Dict[str, Any],
     dest_ip = form_data.get('dest_ip', 'N/A')
     timestamp = form_data.get('timestamp', 'N/A')
     session_id = form_data.get('session_id', form_data.get('run_id', 'N/A'))
-    services_str = ', '.join([f"{s['port']}/{s['protocol']}" for s in services_summary])
+
+    # Format services - use original dest_ports if available, otherwise expand
+    dest_ports_original = form_data.get('dest_ports', '').strip()
+    if dest_ports_original:
+        # Use original port specification (may contain ranges) - max 4 per line
+        ports_list = [p.strip().lower() for p in dest_ports_original.split(',')]
+        services_lines = []
+        for i in range(0, len(ports_list), 4):
+            chunk = ports_list[i:i+4]
+            services_lines.append(', '.join(chunk))
+        services_display = '\n'.join(services_lines)
+    else:
+        # Fall back to expanding services list
+        services_list = [f"{s['port']}/{s['protocol'].lower()}" for s in services_summary]
+        services_lines = []
+        for i in range(0, len(services_list), 4):
+            chunk = services_list[i:i+4]
+            services_lines.append(', '.join(chunk))
+        services_display = '\n'.join(services_lines) if services_lines else 'N/A'
+
     firewall_names = ', '.join([router.split('.')[0] for router in routers])
-    
+
+    # Build info table with Services Tested label on first line
     info_data = [
         ['Source IP:', source_ip],
         ['Destination IP:', dest_ip],
         ['Test Date/Time:', timestamp],
-        ['Session ID:', session_id],
-        ['Services Tested:', services_str],
-        ['Firewalls:', firewall_names]
+        ['Session ID:', session_id]
     ]
+
+    # Add services - first line with label, rest without
+    if services_display:
+        lines = services_display.split('\n')
+        if lines:
+            info_data.append(['Services Tested:', lines[0]])
+            for line in lines[1:]:
+                info_data.append(['', line])
+
+    info_data.append(['Firewalls:', firewall_names])
     
     # Create info table - let ReportLab handle column widths automatically
     info_table = Table(info_data)
@@ -237,9 +265,9 @@ def create_summary_page_from_data(output_file: str, form_data: Dict[str, Any],
             traceroute_row.append(status)
         table_data.append(traceroute_row)
     
-    # Add service rows
+    # Add service rows (lowercase protocol)
     for service in services_summary:
-        row = [f"{service['port']}/{service['protocol']}"]
+        row = [f"{service['port']}/{service['protocol'].lower()}"]
         for router in routers:
             status = service['router_status'].get(router, 'N/A')
             row.append(status)

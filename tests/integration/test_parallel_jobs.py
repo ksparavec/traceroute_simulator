@@ -60,6 +60,8 @@ class JobResult:
     json_path: Optional[str] = None
     status: str = 'SUCCESS'  # 'SUCCESS', 'FAILED', 'TIMEOUT'
     error_message: Optional[str] = None
+    results_valid: Optional[bool] = None  # True if all results are valid YES/NO
+    results_pattern: Optional[str] = None  # Actual pattern found (e.g., "NO/YES")
 
 
 @dataclass
@@ -384,7 +386,26 @@ class IntegrationTester:
                 if phases:
                     first_timestamp = phases[0]['timestamp']
                     last_timestamp = phases[-1]['timestamp']
-                    result.server_duration = last_timestamp - first_timestamp
+                    total_duration = last_timestamp - first_timestamp
+
+                    # For KSMS quick analysis, exclude thread pool queue wait time
+                    # Queue wait is the gap between PHASE2_start and PHASE2_ksms_start
+                    thread_pool_wait = 0
+                    phase2_start = None
+                    phase2_ksms_start = None
+
+                    for phase in phases:
+                        if phase['phase'] == 'MULTI_REACHABILITY_PHASE2_start':
+                            phase2_start = phase['timestamp']
+                        elif phase['phase'] == 'MULTI_REACHABILITY_PHASE2_ksms_start':
+                            phase2_ksms_start = phase['timestamp']
+                            break
+
+                    if phase2_start and phase2_ksms_start:
+                        thread_pool_wait = phase2_ksms_start - phase2_start
+
+                    # Actual execution time = total time - queue wait
+                    result.server_duration = total_duration - thread_pool_wait
             except Exception as e:
                 pass  # Keep server_duration as None if we can't read it
 
@@ -413,10 +434,64 @@ class IntegrationTester:
                     shutil.copy2(json_file, json_dst_dir / json_file.name)
 
                 result.json_path = str(json_dst_dir)
+
+                # Validate results pattern
+                self._validate_results(result, json_dst_dir)
+
             except Exception as e:
                 result.error_message = f"Failed to copy JSON: {e}"
 
         return result
+
+    def _validate_results(self, result: JobResult, json_dir: Path):
+        """Validate that all results are either YES or NO"""
+
+        # Find results JSON file
+        results_files = list(json_dir.glob('*_results.json'))
+        if not results_files:
+            result.results_valid = None
+            result.results_pattern = "NO_FILE"
+            return
+
+        results_file = results_files[0]
+
+        try:
+            with open(results_file, 'r') as f:
+                results_data = json.load(f)
+
+            # Check for error
+            if 'error' in results_data:
+                result.results_valid = False
+                result.results_pattern = f"ERROR: {results_data['error']}"
+                return
+
+            # Extract KSMS results in order
+            tests = results_data.get('tests', [])
+            if not tests:
+                result.results_valid = False
+                result.results_pattern = "NO_TESTS"
+                return
+
+            # Build actual pattern from KSMS original results (YES/NO)
+            pattern_parts = []
+            for test in tests:
+                ksms_result = test.get('ksms_original_result', 'UNKNOWN')
+                # Validate each result is YES or NO
+                if ksms_result not in ('YES', 'NO'):
+                    result.results_valid = False
+                    result.results_pattern = f"INVALID: {ksms_result}"
+                    return
+                pattern_parts.append(ksms_result)
+
+            actual_pattern = "/".join(pattern_parts)
+            result.results_pattern = actual_pattern
+
+            # All results are valid if we got here (all YES or NO)
+            result.results_valid = True
+
+        except Exception as e:
+            result.results_valid = False
+            result.results_pattern = f"PARSE_ERROR: {str(e)}"
 
     def run_scenario(self, scenario_name: str, jobs: List[JobConfig],
                      parallel: bool = True) -> ScenarioResult:
@@ -447,7 +522,8 @@ class IntegrationTester:
                     job_id = futures[future]
                     try:
                         result = future.result()
-                        print(f"Job {job_id} ({result.analysis_mode}): {result.status} "
+                        ports_str = ','.join(result.dest_ports)
+                        print(f"Job {job_id} ({result.analysis_mode}, {ports_str}): {result.status} "
                               f"(run_id: {result.run_id}, duration: {result.duration:.2f}s)")
                         results.append(result)
                     except Exception as e:
@@ -456,7 +532,8 @@ class IntegrationTester:
             # Submit jobs sequentially
             for i, job in enumerate(jobs):
                 result = self.submit_job(i, job)
-                print(f"Job {i} ({result.analysis_mode}): {result.status} "
+                ports_str = ','.join(result.dest_ports)
+                print(f"Job {i} ({result.analysis_mode}, {ports_str}): {result.status} "
                       f"(run_id: {result.run_id}, duration: {result.duration:.2f}s)")
                 results.append(result)
 
@@ -500,6 +577,9 @@ class IntegrationTester:
         # Print timing statistics
         self._print_timing_statistics(scenario_result)
 
+        # Print validation summary
+        self._print_validation_summary(scenario_result)
+
         return scenario_result
 
     def _print_timing_statistics(self, result: ScenarioResult):
@@ -525,15 +605,22 @@ class IntegrationTester:
         print(f"    Median:  {median_time:.2f}s")
 
         # Calculate wall-clock time: earliest job start to latest job end
-        # Use server_duration to calculate actual start/end times
+        # Read actual server-side timestamps from progress.json files
         job_times = []
+        run_dir = Path('/dev/shm/tsim/runs')
         for job in result.jobs:
-            if job.server_duration is not None and job.complete_time is not None:
-                # Job completed at complete_time, and took server_duration to execute
-                # So it started at complete_time - server_duration
-                start = job.complete_time - job.server_duration
-                end = job.complete_time
-                job_times.append((start, end))
+            progress_file = run_dir / job.run_id / 'progress.json'
+            if progress_file.exists():
+                try:
+                    with open(progress_file, 'r') as f:
+                        progress_data = json.load(f)
+                    phases = progress_data.get('phases', [])
+                    if phases:
+                        start = phases[0]['timestamp']
+                        end = phases[-1]['timestamp']
+                        job_times.append((start, end))
+                except Exception:
+                    pass
 
         if job_times:
             first_start = min(t[0] for t in job_times)
@@ -554,6 +641,34 @@ class IntegrationTester:
                 print(f"    Parallel:   {wall_clock:.2f}s")
                 print(f"    Efficiency: {efficiency:.0f}%")
 
+    def _print_validation_summary(self, result: ScenarioResult):
+        """Print validation summary for job results"""
+
+        # Collect validation results
+        valid_jobs = []
+        invalid_jobs = []
+        unvalidated_jobs = []
+
+        for job in result.jobs:
+            if job.results_valid is None:
+                unvalidated_jobs.append(job)
+            elif job.results_valid:
+                valid_jobs.append(job)
+            else:
+                invalid_jobs.append(job)
+
+        # Print summary
+        print(f"\n  Results Validation:")
+        print(f"    Valid:       {len(valid_jobs)}/{len(result.jobs)}")
+        print(f"    Invalid:     {len(invalid_jobs)}/{len(result.jobs)}")
+        print(f"    Unvalidated: {len(unvalidated_jobs)}/{len(result.jobs)}")
+
+        # Print details for invalid results
+        if invalid_jobs:
+            print(f"\n  Invalid Results:")
+            for job in invalid_jobs:
+                actual = job.results_pattern
+                print(f"    Job {job.job_id}: {actual}")
 
     def save_meta_json(self, result: ScenarioResult, scenario_dir: Path):
         """Save scenario metadata to JSON"""

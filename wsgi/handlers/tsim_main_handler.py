@@ -291,7 +291,8 @@ class TsimMainHandler(TsimBaseHandler):
                 'user_trace_data': user_trace_data,
                 'run_dir': str(self.config.get('run_dir', '/dev/shm/tsim/runs')),
                 'analysis_mode': analysis_mode,
-                'services': port_protocol_list  # Add for KSMS compatibility
+                'services': port_protocol_list,  # Add for KSMS compatibility
+                'dest_ports': dest_port_spec  # Original port specification for PDF display
             }
 
             position = self.queue_service.enqueue(run_id, username, params)

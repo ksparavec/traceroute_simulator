@@ -2,56 +2,37 @@
 <html>
 <head>
   <meta charset="utf-8">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
   <title>TSIM Queue Admin</title>
-  <link rel="stylesheet" href="/css/style.css">
+  <link rel="stylesheet" href="/css/style.css?v=3">
   <style>
     .queue-table { width: 100%; border-collapse: collapse; }
     .queue-table th, .queue-table td { border: 1px solid #ddd; padding: 8px; }
     .queue-table th { background: #f2f2f2; text-align: left; }
-    .locks { margin: 10px 0; font-size: 14px; }
     .status-badge { padding: 2px 6px; border-radius: 4px; background: #eee; }
   </style>
 </head>
 <body>
   <div class="container">
-    <header>
-      <h1>Run Queue</h1>
-    </header>
-
-    <div class="locks" id="locks"></div>
-
-    <div id="runningContainer" style="margin: 16px 0; display: none;">
-      <h2>Currently Running</h2>
-      <div class="progress-container">
-        <div class="progress-bar">
-          <div id="runningFill" class="progress-fill" style="width: 0%"></div>
-          <div class="progress-text" id="runningText">Initializing...</div>
-        </div>
-        <div class="progress-percentage"><span id="runningPercent">0</span>%</div>
-      </div>
-      <table class="queue-table" id="runningDetails">
-        <thead><tr><th>Run ID</th><th>User</th><th>Mode</th><th>DSCP</th><th>Created</th><th>Services</th></tr></thead>
-        <tbody><tr><td id="rdRun"></td><td id="rdUser"></td><td id="rdMode"></td><td id="rdDSCP"></td><td id="rdCreated"></td><td id="rdServices"></td></tr></tbody>
+    <div id="runningPoolContainer" style="margin: 16px 0;">
+      <h2>Running Pool (<span id="runningPoolCount">0</span>)</h2>
+      <table class="queue-table" id="runningPoolTable">
+        <thead><tr><th>Run ID</th><th>User</th><th>Mode</th><th>Services</th><th>DSCP</th><th>Phase</th><th>Progress</th><th>Created</th></tr></thead>
+        <tbody id="runningPoolBody"></tbody>
       </table>
     </div>
 
-    <table class="queue-table" id="queueTable">
-      <thead>
-        <tr>
-          <th>Position</th>
-          <th>Run ID</th>
-          <th>User</th>
-          <th>Mode</th>
-          <th>Status</th>
-          <th>Created</th>
-          <th>Services</th>
-          <th>Actions</th>
-        </tr>
-      </thead>
-      <tbody id="queueBody"></tbody>
-    </table>
+    <div id="waitingQueueContainer" style="margin: 16px 0;">
+      <h2>Waiting Queue (<span id="waitingQueueCount">0</span>)</h2>
+      <table class="queue-table" id="waitingQueueTable">
+        <thead><tr><th>Position</th><th>Run ID</th><th>User</th><th>Mode</th><th>Services</th><th>Status</th><th>Created</th><th>Actions</th></tr></thead>
+        <tbody id="waitingQueueBody"></tbody>
+      </table>
+    </div>
 
-    <h2 style="margin-top:24px;">Finished Jobs</h2>
+    <h2 style="margin-top:24px;">Finished Jobs (<span id="finishedJobsCount">0</span>)</h2>
     <table class="queue-table" id="historyTable">
       <thead>
         <tr>
@@ -123,69 +104,108 @@
       const es = new EventSource('/admin-queue-stream');
       es.onmessage = function(event){
         const data = JSON.parse(event.data || '{}');
-        const locks = data.locks || {};
-        const locksEl = document.getElementById('locks');
-        const leaderText = locks.scheduler_leader ? 'acquired' : 'free';
-        locksEl.textContent = `Leader: ${leaderText} | network_test: ${locks.network_test ? 'locked' : 'free'}`;
-        if (window._prevLeader !== locks.scheduler_leader) {
-          locksEl.style.backgroundColor = '#fff3cd';
-          setTimeout(() => { locksEl.style.backgroundColor = ''; }, 800);
-          window._prevLeader = locks.scheduler_leader;
+
+        // Helper function to format services with port range compression
+        function formatServices(params) {
+          const portList = params.port_protocol_list || [];
+          if (!Array.isArray(portList) || portList.length === 0) return '';
+
+          // Group ports by protocol
+          const byProtocol = {};
+          portList.forEach(([port, protocol]) => {
+            if (!byProtocol[protocol]) byProtocol[protocol] = [];
+            byProtocol[protocol].push(port);
+          });
+
+          // Format each protocol group with range compression
+          const parts = [];
+          for (const protocol in byProtocol) {
+            const ports = byProtocol[protocol].sort((a, b) => a - b);
+            const ranges = [];
+            let start = ports[0];
+            let end = ports[0];
+
+            for (let i = 1; i <= ports.length; i++) {
+              if (i < ports.length && ports[i] === end + 1) {
+                end = ports[i];
+              } else {
+                if (start === end) {
+                  ranges.push(`${start}`);
+                } else if (end === start + 1) {
+                  ranges.push(`${start}`, `${end}`);
+                } else {
+                  ranges.push(`${start}-${end}`);
+                }
+                if (i < ports.length) {
+                  start = ports[i];
+                  end = ports[i];
+                }
+              }
+            }
+
+            parts.push(ranges.join(',') + '/' + protocol);
+          }
+
+          return parts.join(', ');
         }
 
-        const body = document.getElementById('queueBody');
-        body.innerHTML = '';
-        const running = data.running || null;
-        const rc = document.getElementById('runningContainer');
-        if (running && running.run_id) {
-          rc.style.display = 'block';
-          const percent = Math.max(0, Math.min(100, parseInt(running.percent || 0)));
-          const phaseLabel = sanitizeAscii(getPhaseStatus(running.phase || 'RUNNING'));
-          document.getElementById('runningFill').style.width = percent + '%';
-          document.getElementById('runningPercent').textContent = Math.round(percent);
-          document.getElementById('runningText').textContent = phaseLabel;
-          const created = fmtDate(running.created_at);
-          const servicesRun = Array.isArray(running.params?.port_protocol_list)
-            ? running.params.port_protocol_list.map(p => `${p[0]}/${p[1]}`).join(', ') : '';
-          const analysisMode = running.params?.analysis_mode || 'detailed';
-          const modeDisplay = analysisMode === 'quick' ? 'Quick' : 'Detailed';
-          const dscpDisplay = running.dscp_value ? `DSCP ${running.dscp_value}` : 'N/A';
-          
-          document.getElementById('rdRun').textContent = sanitizeAscii(running.run_id||'');
-          document.getElementById('rdUser').textContent = sanitizeAscii(running.username||'');
-          document.getElementById('rdMode').textContent = modeDisplay;
-          document.getElementById('rdDSCP').textContent = dscpDisplay;
-          document.getElementById('rdCreated').textContent = created;
-          document.getElementById('rdServices').textContent = sanitizeAscii(servicesRun);
-          if (!running.username) {
-            fetch(`/admin-job?id=${encodeURIComponent(running.run_id)}`, { headers: { 'X-Requested-With':'XMLHttpRequest' } })
-              .then(r => r.ok ? r.json() : null)
-              .then(dj => {
-                if (!dj) return;
-                const mu = (dj.meta && dj.meta.username) || '';
-                if (mu) document.getElementById('rdUser').textContent = sanitizeAscii(mu);
-              })
-              .catch(() => {});
-          }
-        } else {
-          rc.style.display = 'none';
-        }
-        (data.queue || []).forEach(j => {
+        // Display Running Pool (actually executing jobs)
+        const runningPool = data.running_pool || [];
+        const rpBody = document.getElementById('runningPoolBody');
+        document.getElementById('runningPoolCount').textContent = runningPool.length;
+        rpBody.innerHTML = '';
+
+        runningPool.forEach(job => {
+          if (!job || !job.run_id) return;
+
           const tr = document.createElement('tr');
-          const created = fmtDate(j.created_at);
-          const services = Array.isArray(j.params?.port_protocol_list)
-            ? j.params.port_protocol_list.map(p => `${p[0]}/${p[1]}`).join(', ') : '';
-          const queueMode = j.params?.analysis_mode || 'detailed';
+          const percent = Math.max(0, Math.min(100, parseInt(job.percent || 0)));
+          const phaseLabel = sanitizeAscii(getPhaseStatus(job.phase || 'RUNNING'));
+          const created = fmtDate(job.created_at);
+
+          const params = job.params || {};
+          const analysisMode = params.analysis_mode || params.mode || 'unknown';
+          const modeDisplay = analysisMode === 'quick' ? 'Quick' : (analysisMode === 'detailed' ? 'Detailed' : analysisMode);
+          const dscpDisplay = job.dscp_value ? `${job.dscp_value}` : 'N/A';
+          const services = formatServices(params);
+
+          tr.innerHTML = `<td>${sanitizeAscii(job.run_id||'')}</td>` +
+                        `<td>${sanitizeAscii(job.username||'')}</td>` +
+                        `<td>${modeDisplay}</td>` +
+                        `<td>${sanitizeAscii(services)}</td>` +
+                        `<td>${dscpDisplay}</td>` +
+                        `<td>${phaseLabel}</td>` +
+                        `<td>${percent}%</td>` +
+                        `<td>${created}</td>`;
+          rpBody.appendChild(tr);
+        });
+
+        // Display Waiting Queue (scheduler queue + thread pool queue)
+        const waitingQueue = data.waiting_queue || [];
+        const wqBody = document.getElementById('waitingQueueBody');
+        document.getElementById('waitingQueueCount').textContent = waitingQueue.length;
+        wqBody.innerHTML = '';
+
+        waitingQueue.forEach((job, idx) => {
+          if (!job || !job.run_id) return;
+
+          const tr = document.createElement('tr');
+          const created = fmtDate(job.created_at);
+          const params = job.params || {};
+          const services = formatServices(params);
+          const queueMode = params.analysis_mode || 'detailed';
           const queueModeDisplay = queueMode === 'quick' ? 'Quick' : 'Detailed';
-          tr.innerHTML = `<td>${j.position||''}</td>`+
-                         `<td>${sanitizeAscii(j.run_id||'')}</td>`+
-                         `<td>${sanitizeAscii(j.username||'')}</td>`+
+          const status = job.status || 'WAITING';
+
+          tr.innerHTML = `<td>${idx + 1}</td>`+
+                         `<td>${sanitizeAscii(job.run_id||'')}</td>`+
+                         `<td>${sanitizeAscii(job.username||'')}</td>`+
                          `<td>${queueModeDisplay}</td>`+
-                         `<td><span class=\"status-badge\">${sanitizeAscii(j.status||'')}</span></td>`+
-                         `<td>${created}</td>`+
                          `<td>${sanitizeAscii(services)}</td>`+
-                         `<td><button data-run-id=\"${sanitizeAscii(j.run_id||'')}\" class=\"cancel-btn\">Cancel</button></td>`;
-          body.appendChild(tr);
+                         `<td><span class=\"status-badge\">${sanitizeAscii(status)}</span></td>`+
+                         `<td>${created}</td>`+
+                         `<td><button data-run-id=\"${sanitizeAscii(job.run_id||'')}\" class=\"cancel-btn\">Cancel</button></td>`;
+          wqBody.appendChild(tr);
         });
         document.querySelectorAll('.cancel-btn').forEach(btn => {
           btn.onclick = async () => {
@@ -202,7 +222,9 @@
         const hbody = document.getElementById('historyBody');
         if (hbody) {
           hbody.innerHTML = '';
-          (data.history || []).forEach(item => {
+          const history = data.history || [];
+          document.getElementById('finishedJobsCount').textContent = history.length;
+          history.forEach(item => {
             const tr = document.createElement('tr');
             const finished = fmtDate(item.finished_at);
             let status = item.status || (item.success ? 'SUCCESS' : 'FAILED');
@@ -210,7 +232,8 @@
               status = 'CANCELLED';
             }
             const runId = sanitizeAscii(item.run_id||'');
-            const historyMode = item.params?.analysis_mode || 'detailed';
+            const histParams = item.params || {};
+            const historyMode = histParams.analysis_mode || histParams.mode || 'detailed';
             const historyModeDisplay = historyMode === 'quick' ? 'Quick' : 'Detailed';
             tr.innerHTML = `<td>${runId}</td>`+
                            `<td>${sanitizeAscii(item.username||'')}</td>`+

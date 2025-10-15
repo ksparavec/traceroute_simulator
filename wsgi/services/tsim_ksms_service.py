@@ -15,6 +15,15 @@ from typing import Dict, List, Any, Optional, Tuple
 
 from .tsim_dscp_registry import TsimDscpRegistry
 
+# Import for direct Python execution (no tsimsh subprocess for quick analysis)
+try:
+    from tsim.simulators.host_namespace_setup import HostNamespaceManager
+    from tsim.simulators import ksms_tester
+    DIRECT_EXECUTION_AVAILABLE = True
+except ImportError as e:
+    DIRECT_EXECUTION_AVAILABLE = False
+    _import_error = str(e)
+
 
 def tsimsh_exec(command: str, capture_output: bool = False, verbose: int = 0, env: dict = None) -> Optional[str]:
     """Execute tsimsh command (copied exactly from MultiServiceTester pattern)"""
@@ -82,8 +91,22 @@ class TsimKsmsService:
             self.logger.warning(f"Failed to initialize TsimRegistryManager: {e}")
             self.logger.warning("Will fall back to tsimsh host add for all hosts")
 
+        # Initialize HostNamespaceManager for direct host operations (no tsimsh)
+        self.host_manager = None
+        if DIRECT_EXECUTION_AVAILABLE:
+            try:
+                self.host_manager = HostNamespaceManager(verbose=0, no_delay=True)
+                self.logger.info("HostNamespaceManager initialized for direct execution")
+            except Exception as e:
+                self.logger.warning(f"Failed to initialize HostNamespaceManager: {e}")
+                self.logger.warning("Will fall back to tsimsh for host operations")
+        else:
+            self.logger.warning(f"Direct execution not available: {_import_error}")
+            self.logger.warning("Will use tsimsh subprocess for all operations")
+
+        exec_mode = "direct" if self.host_manager else "tsimsh"
         self.logger.info(f"KSMS Service initialized: enabled={self.enabled}, "
-                        f"tsimsh_path={self.tsimsh_path}")
+                        f"execution_mode={exec_mode}")
     
     
     def execute_quick_analysis(self, params: Dict[str, Any], progress_callback=None) -> Dict[str, Any]:
@@ -118,62 +141,56 @@ class TsimKsmsService:
         try:
             # Step 1: Update progress - Start
             log_progress('PHASE2_ksms_start', f'Starting KSMS quick analysis for {len(services)} services')
-            
-            # Step 2: Allocate DSCP
-            job_dscp = self.dscp_registry.allocate_dscp(run_id)
+
+            # Step 2: Get DSCP (already allocated by scheduler)
+            job_dscp = params.get('job_dscp')
             if job_dscp is None:
-                raise RuntimeError("No DSCP values available - too many concurrent jobs")
-            
-            self.logger.info(f"Allocated DSCP {job_dscp} for job {run_id}")
-            
-            try:
-                # Step 3: Setup source hosts from trace
-                log_progress('PHASE2_host_setup', 'Creating source hosts from trace')
+                raise RuntimeError("No DSCP provided - scheduler should have allocated one")
 
-                created_hosts = self._setup_source_hosts(params, run_id, log_progress)
+            self.logger.info(f"Using DSCP {job_dscp} for job {run_id} (allocated by scheduler)")
 
-                # Step 4: Execute KSMS bulk scan
-                log_progress('PHASE3_ksms_scan', f'Executing KSMS bulk scan with DSCP {job_dscp}')
+            # Step 3: Setup source hosts from trace
+            log_progress('PHASE2_host_setup', 'Creating source hosts from trace')
 
-                ksms_results = self._execute_ksms_scan(source_ip, dest_ip, services, job_dscp, run_id)
+            created_hosts = self._setup_source_hosts(params, run_id, log_progress)
 
-                # Step 5: Cleanup source hosts (only those created by this job)
-                log_progress('PHASE3_cleanup', 'Removing created source hosts')
+            # Step 4: Execute KSMS bulk scan
+            log_progress('PHASE3_ksms_scan', f'Executing KSMS bulk scan with DSCP {job_dscp}')
 
-                self._cleanup_source_hosts(created_hosts, run_id)
-                
-                # Step 6: Convert to service format for PDF compatibility
-                log_progress('PHASE4_format', 'Converting KSMS results for PDF generation')
-                
-                service_format_results = self._convert_to_service_format(ksms_results, params)
-                
-                # Step 7: Generate PDF
-                log_progress('PHASE4_pdf', 'Generating KSMS summary PDF')
-                
-                pdf_result = self._generate_summary_pdf(service_format_results, params, ksms_results)
-                
-                # Complete
-                log_progress('PHASE4_complete', 'KSMS scan and analysis completed')
-                
-                # Note: PDF URL is handled by hybrid executor
-                
-                final_result = {
-                    'run_id': run_id,
-                    'analysis_mode': 'quick',
-                    'services_analyzed': len(services),
-                    'ksms_results': ksms_results,
-                    'service_results': service_format_results,
-                    'pdf_result': pdf_result,
-                    'dscp_used': job_dscp
-                }
-                
-                self.logger.info(f"KSMS quick analysis completed: {run_id}")
-                return final_result
-                
-            finally:
-                # Always release DSCP
-                self.dscp_registry.release_dscp(run_id)
-                self.logger.info(f"Released DSCP {job_dscp} for job {run_id}")
+            ksms_results = self._execute_ksms_scan(source_ip, dest_ip, services, job_dscp, run_id)
+
+            # Step 5: Cleanup source hosts (only those created by this job)
+            log_progress('PHASE3_cleanup', 'Removing created source hosts')
+
+            self._cleanup_source_hosts(created_hosts, run_id)
+
+            # Step 6: Convert to service format for PDF compatibility
+            log_progress('PHASE4_format', 'Converting KSMS results for PDF generation')
+
+            service_format_results = self._convert_to_service_format(ksms_results, params)
+
+            # Step 7: Generate PDF
+            log_progress('PHASE4_pdf', 'Generating KSMS summary PDF')
+
+            pdf_result = self._generate_summary_pdf(service_format_results, params, ksms_results)
+
+            # Complete
+            log_progress('PHASE4_complete', 'KSMS scan and analysis completed')
+
+            # Note: PDF URL is handled by hybrid executor
+
+            final_result = {
+                'run_id': run_id,
+                'analysis_mode': 'quick',
+                'services_analyzed': len(services),
+                'ksms_results': ksms_results,
+                'service_results': service_format_results,
+                'pdf_result': pdf_result,
+                'dscp_used': job_dscp
+            }
+
+            self.logger.info(f"KSMS quick analysis completed: {run_id}")
+            return final_result
         
         except Exception as e:
             log_progress('ERROR', f'KSMS analysis failed: {str(e)}')
@@ -182,7 +199,7 @@ class TsimKsmsService:
     
     def _execute_ksms_scan(self, source_ip: str, dest_ip: str, services: List[Dict],
                           job_dscp: int, run_id: str) -> Dict[str, Any]:
-        """Execute ksms_tester subprocess
+        """Execute ksms_tester directly or via subprocess
 
         NOTE: DSCP is now passed via --dscp CLI argument (not environment variable).
         This aligns with the centralized registry coordination architecture.
@@ -196,21 +213,79 @@ class TsimKsmsService:
             port_specs.append(f"{svc['port']}/{svc['protocol']}")
         ports_arg = ",".join(port_specs)
 
-        # Build KSMS command with --dscp CLI argument (no environment variables)
+        # DIRECT EXECUTION: Call ksms_tester directly without subprocess
+        # Results are written to file instead of stdout to avoid Apache/mod_wsgi FD issues
+        if DIRECT_EXECUTION_AVAILABLE:
+            try:
+                self.logger.info(f"Executing KSMS direct: source={source_ip}, dest={dest_ip}, ports={ports_arg}, dscp={job_dscp}")
+
+                # Results file path from config
+                from pathlib import Path
+                run_dir = self.config.get('run_dir', '/dev/shm/tsim/runs')
+                results_file = Path(run_dir) / run_id / 'ksms_results.json'
+
+                try:
+                    # Get max_services from config (default 100)
+                    max_services = self.config.get('max_services', 100)
+
+                    # Build argument list for thread-safe invocation (no global sys.argv manipulation)
+                    # NOTE: Do NOT include program name - argparse.parse_args(argv) expects only arguments
+                    argv = [
+                        '-s', source_ip,
+                        '-d', dest_ip,
+                        '-P', ports_arg,
+                        '--dscp', str(job_dscp),
+                        '--max-services', str(max_services),
+                        '--range-limit', str(max_services),
+                        '--run-id', run_id  # Write results to file
+                    ]
+
+                    # Call ksms_tester.main() directly with explicit argv (thread-safe)
+                    # Results will be written to results_file
+                    ksms_tester.main(argv)
+
+                except SystemExit as e:
+                    if e.code != 0:
+                        self.logger.error(f"KSMS exited with code {e.code}")
+                        return {"error": f"KSMS exited with code {e.code}", "routers": []}
+
+                # Read results from file
+                if results_file.exists():
+                    try:
+                        with open(results_file, 'r') as f:
+                            ksms_data = json.load(f)
+
+                        self.logger.debug(f"KSMS results read from file: {len(ksms_data.get('routers', []))} routers")
+
+                        # Clean up results file
+                        try:
+                            results_file.unlink()
+                        except Exception as e:
+                            self.logger.warning(f"Failed to clean up KSMS results file: {e}")
+
+                        return ksms_data
+
+                    except json.JSONDecodeError as e:
+                        self.logger.error(f"Failed to parse KSMS JSON from file: {e}")
+                        return {"error": f"Invalid JSON from KSMS file: {e}", "routers": []}
+                    except Exception as e:
+                        self.logger.error(f"Failed to read KSMS results file: {e}")
+                        return {"error": f"Failed to read KSMS results: {e}", "routers": []}
+                else:
+                    self.logger.error(f"KSMS results file not found: {results_file}")
+                    return {"error": "KSMS results file not found", "routers": []}
+
+            except Exception as e:
+                self.logger.error(f"KSMS direct execution failed: {e}", exc_info=True)
+                self.logger.warning("Falling back to tsimsh subprocess")
+                # Fall through to tsimsh fallback
+
+        # Fallback to tsimsh subprocess
         ksms_command = f"ksms_tester -s {source_ip} -d {dest_ip} -P {ports_arg} --dscp {job_dscp} -j"
+        self.logger.debug(f"Executing KSMS via tsimsh: {ksms_command}")
 
-        self.logger.debug(f"Executing KSMS command: {ksms_command}")
-
-        # Use the same tsimsh_exec pattern as MultiServiceTester
-        # No special environment needed - coordination handled by TsimRegistryManager in ksms_tester.py
         ksms_output = tsimsh_exec(ksms_command, capture_output=True, verbose=1, env=None)
-        
-        # Debug: Log what we got back
-        self.logger.info(f"KSMS command returned: {repr(ksms_output)}")
-        self.logger.info(f"KSMS output length: {len(ksms_output) if ksms_output else 0}")
-        if ksms_output:
-            self.logger.info(f"KSMS output preview: {ksms_output[:200]}...")
-        
+
         if ksms_output:
             try:
                 ksms_data = json.loads(ksms_output.strip())
@@ -221,12 +296,8 @@ class TsimKsmsService:
                 self.logger.error(f"KSMS stdout: {ksms_output[:500]}...")
                 raise RuntimeError(f"Invalid JSON from KSMS: {e}")
         else:
-            # Handle failed command like MultiServiceTester - don't throw exception, return error result
             self.logger.error("KSMS command failed - tsimsh_exec returned None")
-            return {
-                "error": "KSMS command failed", 
-                "routers": []  # Empty routers list to prevent further errors
-            }
+            return {"error": "KSMS command failed", "routers": []}
     
     
     def _convert_to_service_format(self, ksms_results: Dict, params: Dict) -> Dict[str, Any]:
@@ -362,11 +433,12 @@ class TsimKsmsService:
             from datetime import datetime
             form_data = {
                 'source_ip': params['source_ip'],
-                'dest_ip': params['dest_ip'], 
+                'dest_ip': params['dest_ip'],
                 'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 'session_id': run_id,
                 'analysis_mode': 'quick',
-                'run_id': run_id
+                'run_id': run_id,
+                'dest_ports': params.get('dest_ports', '')  # Original port spec for PDF
             }
             form_data_file = run_dir / f"{run_id}_form.json"
             with open(form_data_file, 'w') as f:
@@ -406,30 +478,16 @@ class TsimKsmsService:
                             'file': str(service_file)
                         })
                 
-                # Write results list
-                results_list_file = run_dir / f"{run_id}_results_list.json"
-                with open(results_list_file, 'w') as f:
-                    json.dump(results_list, f, indent=2)
-                
-                # Use PDF generation script from same directory (when installed, both are in scripts/)
-                script_dir = Path(__file__).parent.parent / 'scripts'
-                script_path = script_dir / 'generate_summary_page_reportlab.py'
-                
-                if not script_path.exists():
-                    raise RuntimeError(f"generate_summary_page_reportlab.py not found at {script_path}")
-                
-                cmd = [
-                    sys.executable, "-B", "-u",
-                    str(script_path),
-                    '--form-data', str(form_data_file),
-                    '--results', str(results_list_file),
-                    '--output', str(summary_pdf)
-                ]
-                
-                result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
-                if result.returncode != 0:
-                    raise RuntimeError(f"PDF generation failed: {result.stderr}")
-                
+                # Direct PDF generation (no subprocess)
+                from scripts.generate_summary_page_reportlab import create_summary_page
+
+                # Convert results_list to format expected by create_summary_page
+                # Expected: List[Tuple[port, protocol, file_path]]
+                results_tuples = [(r['port'], r['protocol'], r['file']) for r in results_list]
+
+                # Call PDF generation directly
+                create_summary_page(str(summary_pdf), form_data, results_tuples)
+
                 if summary_pdf.exists():
                     self.logger.info(f"Generated summary PDF: {summary_pdf}")
                     return {
@@ -779,36 +837,55 @@ class TsimKsmsService:
                     host_info = self.registry_mgr.get_host_info(src_host_name)
                     if host_info:
                         host_exists = True
-                        self.logger.info(f"Host {src_host_name} already exists in registry, skipping tsimsh call")
+                        self.logger.info(f"Host {src_host_name} already exists in registry, skipping creation")
                         # Don't add to created_hosts - it's pre-existing
                         continue
                 except Exception as e:
-                    self.logger.warning(f"Failed to check host registry: {e}, falling back to tsimsh")
+                    self.logger.warning(f"Failed to check host registry: {e}")
 
-            # Add source host to this router - WAIT for completion
+            # Add source host to this router
             self.logger.debug(f"Adding source host {src_host_name} to router {router}")
-            result = tsimsh_exec(
-                f"host add --name {src_host_name} --primary-ip {source_ip}/24 --connect-to {router} --no-delay",
-                capture_output=True, verbose=2
-            )
 
-            if result is None:
-                self.logger.error(f"Host add command failed for {src_host_name} on {router}")
-                # Note: We continue to try creating all hosts, then verify at the end
+            # DIRECT EXECUTION: Use HostNamespaceManager.add_host() instead of tsimsh subprocess
+            if self.host_manager:
+                try:
+                    success = self.host_manager.add_host(
+                        host_name=src_host_name,
+                        primary_ip=f"{source_ip}/24",
+                        secondary_ips=[],
+                        connect_to=router
+                    )
+
+                    if success:
+                        # Check if host was reused or created
+                        if src_host_name in self.host_manager.available_namespaces:
+                            # Host existed before our call - it was reused
+                            self.logger.info(f"Host {src_host_name} was reused (pre-existing), will not clean up")
+                        else:
+                            # Host was created by us
+                            created_hosts.append(src_host_name)
+                            self.logger.info(f"Host {src_host_name} was created, will clean up after test")
+                    else:
+                        self.logger.error(f"Direct host add failed for {src_host_name} on {router}")
+
+                except Exception as e:
+                    self.logger.error(f"Direct host add exception for {src_host_name}: {e}")
             else:
-                # Log full output for debugging
-                self.logger.info(f"Host add stdout length: {len(result)}")
-                self.logger.info(f"Host add full output:\n{result}")
+                # Fallback to tsimsh subprocess
+                result = tsimsh_exec(
+                    f"host add --name {src_host_name} --primary-ip {source_ip}/24 --connect-to {router} --no-delay",
+                    capture_output=True, verbose=2
+                )
 
-                # Check if host was reused (already existed) or created
-                # Look for [REUSED] tag in output
-                if "[REUSED]" in result:
-                    self.logger.info(f"Host {src_host_name} was reused (pre-existing), will not clean up")
-                    # Don't add to created_hosts - we shouldn't clean up reused hosts
+                if result is None:
+                    self.logger.error(f"Host add command failed for {src_host_name} on {router}")
                 else:
-                    # Host was actually created by us - add to created_hosts for cleanup
-                    created_hosts.append(src_host_name)
-                    self.logger.info(f"Host {src_host_name} was created, will clean up after test")
+                    # Check if host was reused (already existed) or created
+                    if "[REUSED]" in result:
+                        self.logger.info(f"Host {src_host_name} was reused (pre-existing), will not clean up")
+                    else:
+                        created_hosts.append(src_host_name)
+                        self.logger.info(f"Host {src_host_name} was created, will clean up after test")
 
         # NOW verify ALL hosts exist
         log_progress('PHASE2_verify', 'Verifying all source hosts were created')
@@ -856,7 +933,14 @@ class TsimKsmsService:
             for host_name in expected_hosts:
                 if host_name in existing_hosts:
                     self.logger.debug(f"Cleaning up {host_name} after verification failure")
-                    tsimsh_exec(f"host remove --name {host_name} --force", capture_output=True, verbose=1)
+                    # DIRECT EXECUTION: Use HostNamespaceManager for cleanup
+                    if self.host_manager:
+                        try:
+                            self.host_manager.remove_host(host_name)
+                        except Exception as e:
+                            self.logger.warning(f"Failed to cleanup {host_name}: {e}")
+                    else:
+                        tsimsh_exec(f"host remove --name {host_name} --force", capture_output=True, verbose=1)
 
             missing_list = ", ".join(missing_hosts)
             raise RuntimeError(f"Host creation verification failed - missing hosts: {missing_list}")
@@ -877,21 +961,37 @@ class TsimKsmsService:
 
         for src_host_name in created_hosts:
             self.logger.debug(f"Attempting to remove source host {src_host_name}")
-            result = tsimsh_exec(
-                f"host remove --name {src_host_name} --force",
-                capture_output=True, verbose=1
-            )
 
-            if result is None:
-                self.logger.warning(f"Failed to remove source host {src_host_name}")
-                failed_count += 1
-            else:
-                # Check if removal was successful (host existed and was deleted, or didn't exist)
-                if "[SUCCESS]" in result or "[INFO]" in result:
-                    removed_count += 1
-                else:
-                    self.logger.warning(f"Uncertain status removing {src_host_name}: {result[:100]}")
+            # DIRECT EXECUTION: Use HostNamespaceManager.remove_host() instead of tsimsh subprocess
+            if self.host_manager:
+                try:
+                    success = self.host_manager.remove_host(src_host_name)
+                    if success:
+                        removed_count += 1
+                        self.logger.debug(f"Removed host {src_host_name}")
+                    else:
+                        failed_count += 1
+                        self.logger.warning(f"Failed to remove source host {src_host_name}")
+                except Exception as e:
                     failed_count += 1
+                    self.logger.warning(f"Exception removing host {src_host_name}: {e}")
+            else:
+                # Fallback to tsimsh subprocess
+                result = tsimsh_exec(
+                    f"host remove --name {src_host_name} --force",
+                    capture_output=True, verbose=1
+                )
+
+                if result is None:
+                    self.logger.warning(f"Failed to remove source host {src_host_name}")
+                    failed_count += 1
+                else:
+                    # Check if removal was successful
+                    if "[SUCCESS]" in result or "[INFO]" in result:
+                        removed_count += 1
+                    else:
+                        self.logger.warning(f"Uncertain status removing {src_host_name}: {result[:100]}")
+                        failed_count += 1
 
         if failed_count > 0:
             self.logger.warning(f"Cleanup attempted for {len(created_hosts)} hosts: {removed_count} succeeded, {failed_count} failed for {run_id}")

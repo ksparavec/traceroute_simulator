@@ -61,9 +61,10 @@ class TsimExecutor:
     
     def execute(self, run_id: str, source_ip: str, dest_ip: str,
                 source_port: Optional[str], port_protocol_list: List[Tuple[int, str]],
-                user_trace_data: Optional[str] = None, analysis_mode: str = 'detailed') -> Dict[str, Any]:
+                user_trace_data: Optional[str] = None, analysis_mode: str = 'detailed',
+                dest_ports: Optional[str] = None, job_dscp: Optional[int] = None) -> Dict[str, Any]:
         """Execute complete test pipeline using hybrid executor
-        
+
         Args:
             run_id: Unique run identifier
             source_ip: Source IP address
@@ -72,13 +73,15 @@ class TsimExecutor:
             port_protocol_list: List of (port, protocol) tuples
             user_trace_data: Optional user-provided trace data
             analysis_mode: Analysis mode ('quick' or 'detailed')
-            
+            dest_ports: Original port specification string (for PDF display)
+            job_dscp: Optional pre-allocated DSCP value for quick analysis
+
         Returns:
             Dictionary with execution results
         """
         if not self.hybrid_executor:
             raise RuntimeError("Hybrid executor not configured")
-        
+
         # Prepare parameters for hybrid executor
         params = {
             'run_id': run_id,
@@ -90,6 +93,7 @@ class TsimExecutor:
             'analysis_mode': analysis_mode,
             'services': [{'port': port, 'protocol': protocol} for port, protocol in port_protocol_list],  # Add for KSMS compatibility
             'run_dir': str(self.run_dir / run_id),
+            'dest_ports': dest_ports or '',  # Original port spec for PDF display
             'summary': {
                 'source_ip': source_ip,
                 'dest_ip': dest_ip,
@@ -98,6 +102,10 @@ class TsimExecutor:
                 'services': [{'port': port, 'protocol': protocol} for port, protocol in port_protocol_list]
             }
         }
+
+        # Add DSCP if provided (for quick analysis jobs)
+        if job_dscp is not None:
+            params['job_dscp'] = job_dscp
         
         # Execute directly using hybrid executor
         self.logger.info(f"Starting direct execution for run {run_id}")

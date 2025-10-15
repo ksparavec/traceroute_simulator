@@ -174,7 +174,8 @@ class TsimSchedulerService:
                     params.get('source_port'),
                     params.get('port_protocol_list', []),
                     params.get('user_trace_data'),
-                    params.get('analysis_mode', 'detailed')
+                    params.get('analysis_mode', 'detailed'),
+                    params.get('dest_ports', '')
                 )
 
                 # Update current as running (for completeness)
@@ -301,12 +302,23 @@ class TsimSchedulerService:
             except Exception:
                 pass
 
-            # Inject DSCP into params for quick jobs
-            params = job.get('params', {})
-            if dscp is not None:
-                params['job_dscp'] = dscp
+            # Create run.json metadata file (required for admin interface)
+            try:
+                run_dir = Path(self.config.get('run_dir', '/dev/shm/tsim/runs')) / run_id
+                params = job.get('params', {})
+                meta = {
+                    'run_id': run_id,
+                    'username': job.get('username'),
+                    'created_at': job.get('created_at'),
+                    'params': params,
+                    'status': 'RUNNING'
+                }
+                with open(run_dir / 'run.json', 'w') as f:
+                    json.dump(meta, f, indent=2)
+            except Exception:
+                pass
 
-            # Execute the job
+            # Execute the job (pass DSCP for quick analysis)
             result = self.executor.execute(
                 run_id,
                 params.get('source_ip'),
@@ -314,7 +326,9 @@ class TsimSchedulerService:
                 params.get('source_port'),
                 params.get('port_protocol_list', []),
                 params.get('user_trace_data'),
-                analysis_mode
+                analysis_mode,
+                params.get('dest_ports', ''),
+                job_dscp=dscp
             )
 
             # Log metrics if enabled

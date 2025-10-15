@@ -447,6 +447,16 @@ try:
 except ImportError:
     logger.info("Performance middleware not available")
 
+# Initialize DSCP registry to trigger stale allocation cleanup
+try:
+    from services.tsim_dscp_registry import TsimDscpRegistry
+    from services.tsim_config_service import TsimConfigService
+    _config_service = TsimConfigService()
+    _dscp_registry = TsimDscpRegistry(_config_service)
+    logger.info("DSCP registry initialized (stale allocations cleaned on startup)")
+except Exception as e:
+    logger.warning(f"Could not initialize DSCP registry for cleanup: {e}")
+
 # Log detailed startup information
 try:
     import psutil

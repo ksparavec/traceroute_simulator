@@ -59,7 +59,16 @@ class TsimDscpRegistry:
                 'updated_at': time.time(),
                 'allocations': {}
             })
-        
+
+        # Clean up stale allocations from previous Apache processes on startup
+        if self.enabled:
+            try:
+                cleaned = self.cleanup_stale_allocations()
+                if cleaned > 0:
+                    self.logger.info(f"Cleaned up {cleaned} stale DSCP allocations on startup")
+            except Exception as e:
+                self.logger.warning(f"Failed to cleanup stale allocations on startup: {e}")
+
         self.logger.info(f"DSCP Registry initialized: range {self.dscp_min}-{self.dscp_max} "
                         f"({'enabled' if self.enabled else 'disabled'})")
     

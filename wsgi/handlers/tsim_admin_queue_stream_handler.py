@@ -50,9 +50,71 @@ class TsimAdminQueueStreamHandler(TsimBaseHandler):
             jobs = self.queue_service.list_jobs()
         except Exception:
             jobs = []
-        # running with progress
-        running = self.queue_service.get_current()
-        if running and isinstance(running, dict):
+
+        # running jobs with progress (support parallel execution)
+        running_list = []
+        try:
+            running_jobs = self.queue_service.get_running()
+            if isinstance(running_jobs, list):
+                running_list = running_jobs
+            else:
+                # Fallback to single job mode (legacy support)
+                running = self.queue_service.get_current()
+                # Check if it's a valid job dict with run_id (not the container object)
+                if running and isinstance(running, dict) and running.get('run_id'):
+                    running_list = [running]
+        except Exception:
+            pass
+
+        # Split jobs into "actually running" (in thread pool execution) and "waiting"
+        # A job is "actually running" if it has reached PHASE2_ksms_start (for quick analysis)
+        # or any execution phase (for detailed analysis)
+        running_pool = []
+        waiting_in_threadpool = []
+
+        for job in running_list:
+            if not isinstance(job, dict):
+                continue
+
+            run_id = job.get('run_id')
+            if not run_id:
+                continue
+
+            # Check if job has started actual execution by looking at progress phases
+            try:
+                from services.tsim_progress_tracker import TsimProgressTracker
+                tracker = TsimProgressTracker(self.config)
+                prog = tracker.get_progress(run_id) or {}
+                phases = prog.get('phases', [])
+
+                # Job is executing if it has reached KSMS start phase or later
+                # (not just PHASE2_start which happens before thread pool submission)
+                is_executing = False
+                for phase in phases:
+                    phase_name = phase.get('phase', '')
+                    if 'PHASE2_ksms_start' in phase_name or \
+                       'PHASE3' in phase_name or \
+                       'PHASE4' in phase_name or \
+                       'PDF' in phase_name or \
+                       'COMPLETE' in phase_name:
+                        is_executing = True
+                        break
+
+                if is_executing:
+                    running_pool.append(job)
+                else:
+                    # Has DSCP but waiting in thread pool queue
+                    waiting_in_threadpool.append(job)
+            except Exception:
+                # If we can't read progress, assume it's running (conservative)
+                running_pool.append(job)
+
+        # Enrich running pool jobs with progress and metadata
+        running_list = running_pool
+        for running in running_list:
+            if not isinstance(running, dict):
+                continue
+
             try:
                 from services.tsim_progress_tracker import TsimProgressTracker
                 tracker = TsimProgressTracker(self.config)
@@ -62,7 +124,7 @@ class TsimAdminQueueStreamHandler(TsimBaseHandler):
                 running['phase'] = phases[-1]['phase'] if phases else 'UNKNOWN'
             except Exception:
                 pass
-            
+
             # Add DSCP information for KSMS jobs
             try:
                 run_id = running.get('run_id')
@@ -85,9 +147,47 @@ class TsimAdminQueueStreamHandler(TsimBaseHandler):
                 running.setdefault('created_at', meta.get('created_at'))
             except Exception:
                 pass
+
+        # Enrich thread pool waiting jobs with metadata
+        for waiting_job in waiting_in_threadpool:
+            if not isinstance(waiting_job, dict):
+                continue
+
+            try:
+                rd = Path(self.config.get('run_dir', '/dev/shm/tsim/runs')) / waiting_job.get('run_id', '')
+                import json as _json
+                with open(rd / 'run.json', 'r') as f:
+                    meta = _json.load(f)
+                waiting_job.setdefault('username', meta.get('username'))
+                waiting_job.setdefault('created_at', meta.get('created_at'))
+                waiting_job.setdefault('params', meta.get('params', {}))
+            except Exception:
+                pass
+
+        # Combine scheduler queue and thread pool waiting jobs into single waiting queue
+        waiting_queue = waiting_in_threadpool + jobs
+
+        # Truncate port lists for all job types (max 5 ports, add "..." if more)
+        def truncate_ports(job):
+            if not isinstance(job, dict):
+                return job
+            params = job.get('params', {})
+            port_list = params.get('port_protocol_list', [])
+            if isinstance(port_list, list) and len(port_list) > 5:
+                params['port_protocol_list_truncated'] = port_list[:5]
+                params['port_count_total'] = len(port_list)
+            return job
+
+        running_list = [truncate_ports(j) for j in running_list]
+        waiting_queue = [truncate_ports(j) for j in waiting_queue]
+
+        # For backward compatibility, return first running job as 'running' (for single-job UI)
         return {
-            'running': running,
-            'queue': jobs,
+            'running': running_list[0] if running_list else None,
+            'running_pool': running_list,      # New: actually executing jobs
+            'waiting_queue': waiting_queue,     # New: jobs waiting (scheduler + threadpool)
+            'running_jobs': running_list,       # Legacy: for backward compatibility
+            'queue': jobs,                      # Legacy: scheduler queue only
             'history': self._history(),
             'locks': {
                 'scheduler_leader': self.lock_manager.is_locked('scheduler_leader'),
@@ -138,7 +238,22 @@ class TsimAdminQueueStreamHandler(TsimBaseHandler):
                     ph = phs[-1].get('phase', ph)
             except Exception:
                 pass
-            status = 'SUCCESS' if data.get('success') else ('CANCELLED' if (cancel.get('cancelled_by') or cancel.get('cancelled_at')) else 'FAILED')
+
+            # Determine status with better error detection
+            success = data.get('success')
+            has_error = data.get('error') is not None
+            is_cancelled = cancel.get('cancelled_by') or cancel.get('cancelled_at')
+
+            if success is True:
+                status = 'SUCCESS'
+            elif is_cancelled:
+                status = 'CANCELLED'
+            elif has_error or success is False:
+                status = 'FAILED'
+            else:
+                # Unknown completion state
+                status = 'UNKNOWN'
+
             out.append({
                 'run_id': d.name,
                 'username': meta.get('username'),
@@ -148,7 +263,8 @@ class TsimAdminQueueStreamHandler(TsimBaseHandler):
                 'pdf_url': data.get('pdf_url'),
                 'cancelled_by': cancel.get('cancelled_by'),
                 'cancelled_at': cancel.get('cancelled_at'),
-                'params': meta.get('params', {})
+                'params': meta.get('params', {}),
+                'error': data.get('error')  # Include error message for debugging
             })
         out.sort(key=lambda x: x.get('finished_at', 0), reverse=True)
         return out

@@ -28,6 +28,9 @@ VERBOSE = 0
 # Global registry manager instance
 REGISTRY_MGR = None
 
+# Global run directory path from config
+RUN_DIR = None
+
 def _dbg(msg: str, level: int = 1):
     """Debug output that respects verbosity level."""
     global VERBOSE
@@ -278,11 +281,22 @@ def execute_iptables_script(rname: str, script_commands: List[str]) -> 'subproce
         CompletedProcess with returncode, stdout, stderr
     """
     import tempfile
+    from pathlib import Path
 
-    # Create temporary shell script
+    # Use shared memory for temp files instead of /tmp
+    # Default to /dev/shm/tsim/temp if RUN_DIR not available
+    if RUN_DIR:
+        temp_dir = str(Path(RUN_DIR).parent / 'temp')
+    else:
+        temp_dir = '/dev/shm/tsim/temp'
+
+    # Ensure temp directory exists
+    Path(temp_dir).mkdir(parents=True, exist_ok=True)
+
+    # Create temporary shell script in shared memory
     script_content = "#!/bin/bash\nset -e\n" + "\n".join(script_commands) + "\n"
 
-    with tempfile.NamedTemporaryFile(mode='w', suffix='.sh', delete=False) as f:
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.sh', delete=False, dir=temp_dir) as f:
         script_path = f.name
         f.write(script_content)
 
@@ -356,6 +370,56 @@ def extract_counter(snapshot: str, comment: str) -> Tuple[int, int]:
                     _dbg(f"    [counter]   Comment: {comment_match.group(1)[:60]}...", 3)
     
     return pkts, bytes_
+
+
+def initialize_job_dscp_chains(rname: str, job_dscp: int):
+    """Initialize chains and jump rules for THIS job's DSCP value only.
+
+    Creates permanent infrastructure for this specific DSCP:
+    - TSIM_TAP_PRE_{job_dscp} and TSIM_TAP_POST_{job_dscp} chains
+    - Jump rules from PREROUTING/POSTROUTING (matching ONLY on this DSCP value)
+
+    IMPORTANT: Only works on chains for THIS job's DSCP. Never touches other DSCPs.
+
+    Args:
+        rname: Router namespace name
+        job_dscp: This job's DSCP value (32-63)
+    """
+    if VERBOSE >= 3:
+        _dbg(f"  [{rname}] Initializing DSCP {job_dscp} infrastructure...", 3)
+
+    # Get current rules to check what already exists
+    current_rules = iptables_save_mangle(rname, with_counters=False)
+
+    # Chain names for THIS job's DSCP only
+    chain_pre = f"TSIM_TAP_PRE_{job_dscp}"
+    chain_post = f"TSIM_TAP_POST_{job_dscp}"
+    dscp_hex = f"0x{job_dscp:02x}"
+
+    # Create PREROUTING chain (ignore if exists)
+    run(['ip', 'netns', 'exec', rname, 'iptables', '-t', 'mangle', '-N', chain_pre])
+
+    # Create POSTROUTING chain (ignore if exists)
+    run(['ip', 'netns', 'exec', rname, 'iptables', '-t', 'mangle', '-N', chain_post])
+
+    # Add jump rule from PREROUTING (only if not already present)
+    prerouting_jump = f"-A PREROUTING -m dscp --dscp {dscp_hex} -j {chain_pre}"
+    if prerouting_jump not in current_rules:
+        result = run(['ip', 'netns', 'exec', rname, 'iptables', '-t', 'mangle',
+                     '-A', 'PREROUTING', '-m', 'dscp', '--dscp', dscp_hex, '-j', chain_pre])
+        if result.returncode != 0 and VERBOSE >= 1:
+            _dbg(f"  [{rname}] WARNING: Failed to add PREROUTING jump for DSCP {job_dscp}", 1)
+
+    # Add jump rule from POSTROUTING (only if not already present)
+    postrouting_jump = f"-A POSTROUTING -m dscp --dscp {dscp_hex} -j {chain_post}"
+    if postrouting_jump not in current_rules:
+        result = run(['ip', 'netns', 'exec', rname, 'iptables', '-t', 'mangle',
+                     '-A', 'POSTROUTING', '-m', 'dscp', '--dscp', dscp_hex, '-j', chain_post])
+        if result.returncode != 0 and VERBOSE >= 1:
+            _dbg(f"  [{rname}] WARNING: Failed to add POSTROUTING jump for DSCP {job_dscp}", 1)
+
+    if VERBOSE >= 3:
+        _dbg(f"  [{rname}] DSCP {job_dscp} infrastructure ready", 3)
 
 
 def emit_probes_in_source_ns(source_ns: str, dst_ip: str, services: List[Tuple[int, str]], svc_tokens: Dict[Tuple[int, str], Dict], tcp_timeout: float) -> int:
@@ -478,8 +542,14 @@ if udp_services:
     return cp.returncode
 
 
-def main():
-    global VERBOSE, REGISTRY_MGR
+def main(argv=None):
+    """Main entry point for KSMS testing.
+
+    Args:
+        argv: Command-line arguments (list of strings). If None, uses sys.argv.
+              This allows thread-safe invocation from WSGI handlers.
+    """
+    global VERBOSE, REGISTRY_MGR, RUN_DIR
     ap = argparse.ArgumentParser(
         description='KSMS Tester - Fast YES/NO service reachability testing using kernel-space packet counting',
         epilog='''
@@ -539,10 +609,12 @@ Routers are automatically inferred from source IP using network registries.
                          'Falls back to KSMS_JOB_DSCP environment variable if not specified.')
     ap.add_argument('-j', '--json', action='store_true',
                     help='Output results in JSON format')
+    ap.add_argument('--run-id', type=str, metavar='RUN_ID',
+                    help='Run ID for writing results to shared memory (writes to /dev/shm/tsim/runs/{run_id}/ksms_results.json)')
     ap.add_argument('-v', '--verbose', action='count', default=0,
                     help='Increase verbosity (-v, -vv, -vvv)')
-    args = ap.parse_args()
-    
+    args = ap.parse_args(argv)
+
     # Set global verbosity level
     VERBOSE = args.verbose
 
@@ -585,6 +657,7 @@ Routers are automatically inferred from source IP using network registries.
                 "Continuing without registry coordination.", 1
             )
             REGISTRY_MGR = None
+            RUN_DIR = '/dev/shm/tsim/runs'  # Fallback default
         else:
             # Initialize TsimRegistryManager with loaded config
             # All paths (data_dir, lock_dir, registry_files) come from config.json
@@ -602,12 +675,18 @@ Routers are automatically inferred from source IP using network registries.
             if VERBOSE >= 2:
                 _dbg("[INFO] TsimRegistryManager initialized for coordination", 2)
 
+            # Store run_dir from config for file-based result output
+            RUN_DIR = config.get('run_dir', '/dev/shm/tsim/runs')
+            if VERBOSE >= 3:
+                _dbg(f"[DEBUG] Run directory set to: {RUN_DIR}", 3)
+
     except Exception as e:
         _dbg(f"[WARN] Failed to initialize TsimRegistryManager: {e}", 1)
         if VERBOSE >= 3:
             import traceback
             _dbg(f"[DEBUG] Traceback: {traceback.format_exc()}", 3)
         REGISTRY_MGR = None
+        RUN_DIR = '/dev/shm/tsim/runs'  # Fallback default
 
     bridges, hosts = load_registries()
     ip_map = build_ip_to_namespaces(bridges, hosts)
@@ -741,87 +820,54 @@ Routers are automatically inferred from source IP using network registries.
     def prepare_router(rname: str):
         if VERBOSE >= 2:
             print(f"  [{rname}] Preparing router...", file=sys.stderr)
-        
+
+        # Initialize THIS job's DSCP chains and jump rules if not already present
+        # Only touches chains for THIS job's DSCP value
+        initialize_job_dscp_chains(rname, job_dscp)
+
         # Determine egress iface and next hop via ip route get
         iface, nexthop = egress_iface_and_nexthop_for(rname, args.destination)
         router_results[rname]['egress'] = iface
         router_results[rname]['nexthop'] = nexthop
-        
+
         if VERBOSE >= 2:
             print(f"  [{rname}] Route to {args.destination}: via {nexthop or 'direct'} dev {iface or 'unknown'}", file=sys.stderr)
         _dbg(f"  [{rname}] DEBUG: egress iface = {iface}, nexthop = {nexthop}", 3)
-        # Cleanup: Remove ALL old TSIM_KSMS rules using individual iptables commands
-        snap = iptables_save_mangle(rname, with_counters=False)
-        cleanup_commands = []
-        removed = 0
 
-        # Build iptables -D commands for OLD TSIM_KSMS rules from previous runs
-        # IMPORTANT: Only remove rules from OTHER jobs/runs, not from current parallel jobs
-        # Rules have format: TSIM_KSMS=<run_id>:...
-        # We filter by timestamp: only remove rules older than 5 minutes
-        import time
-        current_time = time.time()
+        # Pre-run cleanup: Flush THIS job's chains only (never touch other DSCPs)
+        chain_pre = f"TSIM_TAP_PRE_{job_dscp}"
+        chain_post = f"TSIM_TAP_POST_{job_dscp}"
 
-        for line in snap.splitlines():
-            if 'TSIM_KSMS=' in line and line.startswith('-A '):
-                # Skip rules from the current job (same run_id)
-                if f'TSIM_KSMS={run_id}:' in line:
-                    continue
+        # Flush both chains to remove any old rules from previous runs
+        run(['ip', 'netns', 'exec', rname, 'iptables', '-t', 'mangle', '-F', chain_pre])
+        run(['ip', 'netns', 'exec', rname, 'iptables', '-t', 'mangle', '-F', chain_post])
+        # Ignore errors - chains may not exist yet (will be created by initialize_job_dscp_chains)
 
-                # For rules from other jobs: extract their run_id timestamp if possible
-                # Run IDs are UUIDs, no timestamp - so we skip cleanup entirely for parallel safety
-                # Let the post-test cleanup handle removal of this job's rules
-                # Other jobs' rules will be cleaned by their own post-test cleanup
-                continue
-
-        # Always clean up job-specific chain (safe for parallel execution)
-        # Each job has its own DSCP-specific chain, so no interference
-        chain_cleanup_commands = []
-        chain_cleanup_commands.append(f"iptables -t mangle -F TSIM_TAP_FW_{job_dscp} || true")
-        chain_cleanup_commands.append(f"iptables -t mangle -X TSIM_TAP_FW_{job_dscp} || true")
-
-        # Also try to remove old shared chain (backward compatibility, harmless if not exists)
-        chain_cleanup_commands.append("iptables -t mangle -F TSIM_TAP_FW || true")
-        chain_cleanup_commands.append("iptables -t mangle -X TSIM_TAP_FW || true")
-
-        # Execute chain cleanup (always runs, even if no stale rules found)
-        result = execute_iptables_script(rname, chain_cleanup_commands)
-        if result.returncode != 0:
-            _dbg(f"  [{rname}] WARNING: Chain cleanup had issues: {result.stderr}", 1)
-        # Insert taps using individual iptables commands
+        # Insert test rules INSIDE the DSCP-specific chains
+        # The chains already have permanent jump rules from PREROUTING/POSTROUTING based on DSCP
+        # We just add port/protocol matching rules inside the chains
         insert_commands = []
 
-        # Create DSCP-specific chain for parallel job isolation
-        chain_name = f"TSIM_TAP_FW_{job_dscp}"
-        insert_commands.append(f"iptables -t mangle -N {chain_name} || true")
-        insert_commands.append(f"iptables -t mangle -F {chain_name}")
-        insert_commands.append(f"iptables -t mangle -A {chain_name} -j RETURN")
-
-        # Add a catch-all rule to verify packets are traversing at all (for debugging)
-        if VERBOSE >= 3:
-            comment_debug = f'TSIM_KSMS={run_id}:DEBUG:CATCH_ALL'
-            insert_commands.append(f"iptables -t mangle -I PREROUTING 1 -d {args.destination} -j {chain_name} -m comment --comment {shlex.quote(comment_debug)}")
-
-        # Insert rules for each service (use -I to insert at beginning)
+        # Insert rules for each service - one in PRE chain, one in POST chain
+        # No DSCP matching needed here - packets only reach these chains if DSCP already matched
         for port, proto in services:
-            dscp = svc_tokens[(port, proto)]['dscp']
             comment_pre = f"TSIM_KSMS={run_id}:PREROUTING:{port}/{proto}"
             comment_post = f"TSIM_KSMS={run_id}:POSTROUTING:{port}/{proto}"
 
-            # PREROUTING rule
+            # PREROUTING counter rule (in PRE chain)
             insert_commands.append(
-                f"iptables -t mangle -I PREROUTING 1 -p {proto} -m dscp --dscp 0x{dscp:02x} "
-                f"-m {proto} --dport {port} -m comment --comment {shlex.quote(comment_pre)} -j {chain_name}"
+                f"iptables -t mangle -A {chain_pre} -p {proto} -m {proto} --dport {port} "
+                f"-m comment --comment {shlex.quote(comment_pre)}"
             )
 
-            # POSTROUTING rule
+            # POSTROUTING counter rule (in POST chain)
             insert_commands.append(
-                f"iptables -t mangle -I POSTROUTING 1 -p {proto} -m dscp --dscp 0x{dscp:02x} "
-                f"-m {proto} --dport {port} -m comment --comment {shlex.quote(comment_post)} -j {chain_name}"
+                f"iptables -t mangle -A {chain_post} -p {proto} -m {proto} --dport {port} "
+                f"-m comment --comment {shlex.quote(comment_post)}"
             )
 
             if VERBOSE >= 3:
-                _dbg(f"  [{rname}] DEBUG: Will insert rule for {port}/{proto} with DSCP={dscp}", 3)
+                _dbg(f"  [{rname}] DEBUG: Will insert rules for {port}/{proto} in chains {chain_pre} and {chain_post}", 3)
 
         # Execute all iptables commands
         if VERBOSE >= 2:
@@ -1072,42 +1118,29 @@ Routers are automatically inferred from source IP using network registries.
                             if VERBOSE >= 1:
                                 print(f"  [{rname}] ARP cleanup warning: {stderr_msg}", file=sys.stderr)
         
-        # Remove all our TSIM_KSMS rules with our run_id using individual iptables commands
-        snap = iptables_save_mangle(rname, with_counters=False)
-        cleanup_commands = []
-        removed = 0
-        has_other_tsim_rules = False
+        # Flush THIS job's DSCP-specific chains only (never delete permanent chains, never touch other DSCPs)
+        # Chains persist across all test runs to save time on initialization and cleanup
+        chain_pre = f"TSIM_TAP_PRE_{job_dscp}"
+        chain_post = f"TSIM_TAP_POST_{job_dscp}"
 
-        # Build iptables -D commands for each rule from this run
-        for line in snap.splitlines():
-            # Remove only OUR rules from this run
-            if f'TSIM_KSMS={run_id}' in line and line.startswith('-A '):
-                # Convert from iptables-save format to delete format
-                rule_spec = line[3:]  # Remove "-A "
-                cleanup_commands.append(f"iptables -t mangle -D {rule_spec}")
-                removed += 1
-            # Check if there are other TSIM_KSMS rules from other runs
-            elif 'TSIM_KSMS=' in line and line.startswith('-A '):
-                has_other_tsim_rules = True
+        # Flush PRE chain (removes all rules, but chain remains for future use)
+        result = run(['ip', 'netns', 'exec', rname, 'iptables', '-t', 'mangle', '-F', chain_pre])
+        if result.returncode != 0:
+            if VERBOSE >= 2:
+                _dbg(f"  [{rname}] WARNING: Failed to flush chain {chain_pre}: {result.stderr}", 2)
+        else:
+            if VERBOSE >= 3:
+                _dbg(f"  [{rname}] Flushed permanent chain {chain_pre}", 3)
 
-        # Always remove the DSCP-specific chain for this job (no other job should use it)
-        chain_name = f"TSIM_TAP_FW_{job_dscp}"
-        cleanup_commands.append(f"iptables -t mangle -F {chain_name} || true")
-        cleanup_commands.append(f"iptables -t mangle -X {chain_name} || true")
+        # Flush POST chain (removes all rules, but chain remains for future use)
+        result = run(['ip', 'netns', 'exec', rname, 'iptables', '-t', 'mangle', '-F', chain_post])
+        if result.returncode != 0:
+            if VERBOSE >= 2:
+                _dbg(f"  [{rname}] WARNING: Failed to flush chain {chain_post}: {result.stderr}", 2)
+        else:
+            if VERBOSE >= 3:
+                _dbg(f"  [{rname}] Flushed permanent chain {chain_post}", 3)
 
-        # Also remove old shared TSIM_TAP_FW chain if no other TSIM_KSMS rules remain (backward compatibility)
-        if not has_other_tsim_rules:
-            cleanup_commands.append("iptables -t mangle -F TSIM_TAP_FW || true")
-            cleanup_commands.append("iptables -t mangle -X TSIM_TAP_FW || true")
-
-        if removed > 0:
-            result = execute_iptables_script(rname, cleanup_commands)
-            if result.returncode == 0:
-                if VERBOSE >= 3:
-                    _dbg(f"  [{rname}] Removed {removed} test rules", 3)
-            else:
-                _dbg(f"  [{rname}] WARNING: Failed to cleanup iptables rules: {result.stderr}", 1)
-    
     # Cleanup in parallel
     with ThreadPoolExecutor(max_workers=len(routers)) as ex:
         futs = [ex.submit(cleanup_router, r) for r in routers]
@@ -1141,7 +1174,22 @@ Routers are automatically inferred from source IP using network registries.
     if VERBOSE >= 2:
         print(f"[CLEANUP] Completed\n", file=sys.stderr)
 
-    if args.json:
+    if args.run_id:
+        # Write JSON results to shared memory file for API integration
+        import pathlib
+        results_dir = pathlib.Path(RUN_DIR) / args.run_id
+        results_file = results_dir / 'ksms_results.json'
+
+        try:
+            results_dir.mkdir(parents=True, exist_ok=True)
+            with open(results_file, 'w') as f:
+                json.dump({'source': args.source, 'destination': args.destination, 'routers': results}, f, indent=2)
+            if VERBOSE >= 2:
+                print(f"[INFO] Results written to {results_file}", file=sys.stderr)
+        except Exception as e:
+            print(f"Error writing results to {results_file}: {e}", file=sys.stderr)
+            sys.exit(1)
+    elif args.json:
         print(json.dumps({'source': args.source, 'destination': args.destination, 'routers': results}, indent=2))
     else:
         # Different output based on verbosity

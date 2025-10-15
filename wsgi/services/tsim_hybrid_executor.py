@@ -67,9 +67,13 @@ class TsimHybridExecutor:
         self.run_dir = Path('/dev/shm/tsim/runs')
         self.run_dir.mkdir(parents=True, exist_ok=True)
         
-        # Thread pool for I/O-bound operations (tsimsh commands)
+        # Thread pool for I/O-bound operations (KSMS scans)
+        # Use max_parallel_fast_jobs to limit resource contention during network scans
+        # Fallback to thread_pool_workers for backward compatibility, then to 4 as last resort
+        thread_pool_workers = self.config.get('max_parallel_fast_jobs') or \
+                             self.config.get('wsgi_parallel_config', {}).get('thread_pool_workers') or 4
         self.thread_pool = ThreadPoolExecutor(
-            max_workers=4,
+            max_workers=thread_pool_workers,
             thread_name_prefix='tsim-io'
         )
         

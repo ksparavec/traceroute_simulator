@@ -830,48 +830,20 @@ class TsimKsmsService:
             # Log individual host creation step
             log_progress(f'PHASE2_host_{i}', f'Creating source host {src_host_name} on {router.split(".")[0]}')
 
-            # OPTIMIZATION: Check if host already exists in registry (lock-free read)
-            host_exists = False
+            # Check if host already exists in registry
+            skip_creation = False
             if self.registry_mgr:
                 try:
                     host_info = self.registry_mgr.get_host_info(src_host_name)
                     if host_info:
-                        host_exists = True
                         self.logger.info(f"Host {src_host_name} already exists in registry, skipping creation")
-                        # Don't add to created_hosts - it's pre-existing
-                        continue
+                        skip_creation = True
                 except Exception as e:
                     self.logger.warning(f"Failed to check host registry: {e}")
 
-            # Add source host to this router
-            self.logger.debug(f"Adding source host {src_host_name} to router {router}")
-
-            # DIRECT EXECUTION: Use HostNamespaceManager.add_host() instead of tsimsh subprocess
-            if self.host_manager:
-                try:
-                    success = self.host_manager.add_host(
-                        host_name=src_host_name,
-                        primary_ip=f"{source_ip}/24",
-                        secondary_ips=[],
-                        connect_to=router
-                    )
-
-                    if success:
-                        # Check if host was reused or created
-                        if src_host_name in self.host_manager.available_namespaces:
-                            # Host existed before our call - it was reused
-                            self.logger.info(f"Host {src_host_name} was reused (pre-existing), will not clean up")
-                        else:
-                            # Host was created by us
-                            created_hosts.append(src_host_name)
-                            self.logger.info(f"Host {src_host_name} was created, will clean up after test")
-                    else:
-                        self.logger.error(f"Direct host add failed for {src_host_name} on {router}")
-
-                except Exception as e:
-                    self.logger.error(f"Direct host add exception for {src_host_name}: {e}")
-            else:
-                # Fallback to tsimsh subprocess
+            if not skip_creation:
+                # Add source host to this router using tsimsh
+                self.logger.info(f"Adding host {src_host_name} via tsimsh")
                 result = tsimsh_exec(
                     f"host add --name {src_host_name} --primary-ip {source_ip}/24 --connect-to {router} --no-delay",
                     capture_output=True, verbose=2
@@ -879,6 +851,7 @@ class TsimKsmsService:
 
                 if result is None:
                     self.logger.error(f"Host add command failed for {src_host_name} on {router}")
+                    raise RuntimeError(f"Failed to create host {src_host_name}")
                 else:
                     # Check if host was reused (already existed) or created
                     if "[REUSED]" in result:
@@ -891,13 +864,12 @@ class TsimKsmsService:
         log_progress('PHASE2_verify', 'Verifying all source hosts were created')
         self.logger.info(f"Verifying {len(expected_hosts)} source hosts exist: {expected_hosts}")
 
-        # OPTIMIZATION: Use lock-free registry reads instead of tsimsh
+        # Try registry manager first for verification (lock-free read)
         existing_hosts = set()
         use_registry = False
 
         if self.registry_mgr:
             try:
-                # Lock-free read of all hosts
                 all_hosts = self.registry_mgr.list_all_hosts()
                 existing_hosts = set(all_hosts.keys())
                 use_registry = True
@@ -916,7 +888,7 @@ class TsimKsmsService:
             try:
                 host_data = json.loads(list_result.strip())
                 existing_hosts = set(host_data.get('hosts', {}).keys())
-                self.logger.debug(f"Found existing hosts: {existing_hosts}")
+                self.logger.info(f"Found existing hosts via tsimsh: {existing_hosts}")
             except json.JSONDecodeError as e:
                 self.logger.error(f"Failed to parse host list output: {e}")
                 raise RuntimeError(f"Failed to parse host list output: {e}")
@@ -933,14 +905,7 @@ class TsimKsmsService:
             for host_name in expected_hosts:
                 if host_name in existing_hosts:
                     self.logger.debug(f"Cleaning up {host_name} after verification failure")
-                    # DIRECT EXECUTION: Use HostNamespaceManager for cleanup
-                    if self.host_manager:
-                        try:
-                            self.host_manager.remove_host(host_name)
-                        except Exception as e:
-                            self.logger.warning(f"Failed to cleanup {host_name}: {e}")
-                    else:
-                        tsimsh_exec(f"host remove --name {host_name} --force", capture_output=True, verbose=1)
+                    tsimsh_exec(f"host remove --name {host_name} --force", capture_output=True, verbose=1)
 
             missing_list = ", ".join(missing_hosts)
             raise RuntimeError(f"Host creation verification failed - missing hosts: {missing_list}")
@@ -962,36 +927,22 @@ class TsimKsmsService:
         for src_host_name in created_hosts:
             self.logger.debug(f"Attempting to remove source host {src_host_name}")
 
-            # DIRECT EXECUTION: Use HostNamespaceManager.remove_host() instead of tsimsh subprocess
-            if self.host_manager:
-                try:
-                    success = self.host_manager.remove_host(src_host_name)
-                    if success:
-                        removed_count += 1
-                        self.logger.debug(f"Removed host {src_host_name}")
-                    else:
-                        failed_count += 1
-                        self.logger.warning(f"Failed to remove source host {src_host_name}")
-                except Exception as e:
-                    failed_count += 1
-                    self.logger.warning(f"Exception removing host {src_host_name}: {e}")
-            else:
-                # Fallback to tsimsh subprocess
-                result = tsimsh_exec(
-                    f"host remove --name {src_host_name} --force",
-                    capture_output=True, verbose=1
-                )
+            # Use tsimsh to remove host
+            result = tsimsh_exec(
+                f"host remove --name {src_host_name} --force",
+                capture_output=True, verbose=1
+            )
 
-                if result is None:
-                    self.logger.warning(f"Failed to remove source host {src_host_name}")
-                    failed_count += 1
+            if result is None:
+                self.logger.warning(f"Failed to remove source host {src_host_name}")
+                failed_count += 1
+            else:
+                # Check if removal was successful
+                if "[SUCCESS]" in result or "[INFO]" in result:
+                    removed_count += 1
                 else:
-                    # Check if removal was successful
-                    if "[SUCCESS]" in result or "[INFO]" in result:
-                        removed_count += 1
-                    else:
-                        self.logger.warning(f"Uncertain status removing {src_host_name}: {result[:100]}")
-                        failed_count += 1
+                    self.logger.warning(f"Uncertain status removing {src_host_name}: {result[:100]}")
+                    failed_count += 1
 
         if failed_count > 0:
             self.logger.warning(f"Cleanup attempted for {len(created_hosts)} hosts: {removed_count} succeeded, {failed_count} failed for {run_id}")

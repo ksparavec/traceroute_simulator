@@ -225,11 +225,19 @@
                                 currentProgress = Math.min(99, Math.floor(100 * (data.all_phases.length / data.expected_steps)));
                             }
                             
-                            // Get clean phase name for progress bar
-                            let cleanPhaseName = getPhaseStatus(phase);
-                            cleanPhaseName = sanitizeAscii(cleanPhaseName);
-                            
-                            // Special handling for KSMS bulk operations
+                            // Use details field if available (contains user-friendly messages),
+                            // otherwise fall back to phase name mapping
+                            let cleanPhaseName;
+                            if (details && details.trim()) {
+                                // Use the user-friendly message from details
+                                cleanPhaseName = sanitizeAscii(details);
+                            } else {
+                                // Fall back to mapped phase name
+                                cleanPhaseName = getPhaseStatus(phase);
+                                cleanPhaseName = sanitizeAscii(cleanPhaseName);
+                            }
+
+                            // Special handling for KSMS bulk operations (legacy support)
                             if (phase.startsWith('KSMS_') && details.includes('services')) {
                                 // Extract service count from details for KSMS
                                 const serviceMatch = details.match(/(\d+)\s+services?/);
@@ -242,12 +250,9 @@
                                     }
                                 }
                             }
-                            
+
                             // Create detailed message for log window
                             let logMessage = cleanPhaseName;
-                            if (details && details.trim()) {
-                                logMessage += `: ${sanitizeAscii(details)}`;
-                            }
                             // Append live queue position if present (QUEUED only)
                             if (!data.complete && phase === 'QUEUED' && typeof data.queue_position === 'number' && data.queue_position > 0) {
                                 logMessage = `In queue position ${data.queue_position}`;
@@ -282,7 +287,13 @@
                 }
                 // If no new phases were processed but server sent a snapshot with a phase, update progress text
                 if (!newPhasesProcessed && data.phase) {
-                    let cleanPhaseName = sanitizeAscii(getPhaseStatus(data.phase));
+                    // Use details field if available, otherwise fall back to mapped phase name
+                    let cleanPhaseName;
+                    if (data.details && data.details.trim()) {
+                        cleanPhaseName = sanitizeAscii(data.details);
+                    } else {
+                        cleanPhaseName = sanitizeAscii(getPhaseStatus(data.phase));
+                    }
                     if (!data.complete && data.phase === 'QUEUED' && typeof data.queue_position === 'number' && data.queue_position > 0) {
                         cleanPhaseName = `In queue position ${data.queue_position}`;
                     }

@@ -286,6 +286,7 @@ class TsimMainHandler(TsimBaseHandler):
                 'source_ip': source_ip,
                 'dest_ip': dest_ip,
                 'session_id': session.get('session_id'),  # Add for KSMS caching
+                'username': username,  # Add for creator tag in background threads
                 'source_port': source_port,
                 'port_protocol_list': port_protocol_list,
                 'user_trace_data': user_trace_data,

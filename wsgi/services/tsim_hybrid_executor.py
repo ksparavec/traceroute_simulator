@@ -22,6 +22,14 @@ from .tsim_timing_service import TsimTimingService
 from .tsim_ksms_service import TsimKsmsService
 
 
+class JobCancelledException(Exception):
+    """Exception raised when a job is cancelled during execution"""
+    def __init__(self, message, cancelled_by=None, reason=None):
+        super().__init__(message)
+        self.cancelled_by = cancelled_by
+        self.reason = reason
+
+
 def _tsim_init_worker():
     """Initializer for ProcessPool workers: disable bytecode and set cache dir."""
     try:
@@ -61,7 +69,16 @@ class TsimHybridExecutor:
         # Ensure a timing service is available
         self.timing_service = timing_service or TsimTimingService()
         self.logger = logging.getLogger('tsim.hybrid_executor')
-        
+
+        # Load cancellation configuration
+        cancellation_config = config_service.get('job_cancellation', {})
+        self.trace_poll_interval = cancellation_config.get('trace_execution', {}).get('poll_interval', 1.0)
+        self.trace_timeout = cancellation_config.get('trace_execution', {}).get('timeout', 120)
+        self.detailed_poll_interval = cancellation_config.get('detailed_analysis', {}).get('poll_interval', 2.0)
+        self.detailed_timeout = cancellation_config.get('detailed_analysis', {}).get('timeout', 300)
+        self.quick_poll_interval = cancellation_config.get('quick_analysis', {}).get('poll_interval', 1.0)
+        self.quick_timeout = cancellation_config.get('quick_analysis', {}).get('timeout', 120)
+
         # Paths
         self.tsimsh_path = config_service.tsimsh_path
         self.run_dir = Path('/dev/shm/tsim/runs')
@@ -98,9 +115,35 @@ class TsimHybridExecutor:
         
         # Progress callback storage
         self.progress_callbacks = {}
-        self.callback_lock = threading.Lock()
-        
-        self.logger.info("TsimHybridExecutor initialized with thread and process pools")
+
+        self.logger.info("Hybrid executor initialized")
+
+    def _check_cancellation(self, run_id: str) -> bool:
+        """Check if job has been cancelled by admin or system
+
+        Args:
+            run_id: Run ID to check
+
+        Returns:
+            True if job was cancelled
+
+        Raises:
+            JobCancelledException: If job was cancelled
+        """
+        cancel_file = self.run_dir / run_id / 'cancel.json'
+        if cancel_file.exists():
+            try:
+                with open(cancel_file, 'r') as f:
+                    cancel_data = json.load(f)
+                cancelled_by = cancel_data.get('cancelled_by', 'unknown')
+                cancelled_at = cancel_data.get('cancelled_at', 'unknown time')
+                reason = cancel_data.get('reason', 'No reason provided')
+                self.logger.warning(f"Job {run_id} was cancelled by {cancelled_by} at {cancelled_at}: {reason}")
+                raise JobCancelledException(f"Job cancelled by {cancelled_by} at {cancelled_at}", cancelled_by, reason)
+            except json.JSONDecodeError:
+                self.logger.warning(f"Job {run_id} has invalid cancel.json file")
+                raise JobCancelledException("Job cancelled (invalid cancel marker)", "unknown", "Invalid cancel file")
+        return False
 
     # -----------------------------
     # Timing helpers
@@ -183,10 +226,16 @@ class TsimHybridExecutor:
         self._start_timing(run_id)
         
         try:
+            # Check cancellation before starting
+            self._check_cancellation(run_id)
+
             # Step 1: Execute trace (I/O bound - use thread)
             self._checkpoint(run_id, 'TRACE_START', f"{params['source_ip']}->{params['dest_ip']}")
             self._update_progress(run_id, 'MULTI_REACHABILITY_PHASE1_start', f"Path discovery from {params['source_ip']} to {params['dest_ip']}")
             trace_result = self._execute_trace(params, run_dir)
+
+            # Check cancellation after trace
+            self._check_cancellation(run_id)
             # After obtaining the trace, compute exact expected step count based on analysis mode
             try:
                 router_count = 0
@@ -199,12 +248,23 @@ class TsimHybridExecutor:
                 # Different step calculations for different analysis modes
                 analysis_mode = params.get('analysis_mode', 'detailed')
                 if analysis_mode == 'quick':
-                    # Quick analysis steps: 
-                    # 5 initial phases + router_count host creation steps + 4 KSMS phases + 3 completion phases
-                    expected_steps = 5 + router_count + 4 + 3
+                    # Quick analysis steps:
+                    # Hybrid executor: START, PHASE1_start, PHASE1_complete, PHASE2_start, PHASE4_complete, PDF_GENERATION, PDF_COMPLETE, COMPLETE (8)
+                    # KSMS: PHASE2_ksms_start, PHASE2_host_setup, PHASE2_host_{i} (per router), PHASE2_verify,
+                    #       PHASE3_ksms_scan, PHASE3_cleanup, PHASE4_format, PHASE4_pdf, PHASE4_complete (9 + router_count)
+                    # Total: 8 + 9 + router_count = 17 + router_count
+                    expected_steps = 17 + router_count
                 else:
-                    # Detailed analysis steps (original formula)
-                    expected_steps = 25 + (12 * service_count) + (2 * router_count)
+                    # Detailed analysis steps (base phases + per-service):
+                    # Hybrid executor: START, PHASE1_start, PHASE1_complete, PHASE2_start, PHASE4_complete, PDF_GENERATION, PDF_COMPLETE, COMPLETE (8)
+                    # MultiServiceTester: START, PHASE1_complete, PHASE2_start, PHASE2_host_list, PHASE2_host_setup_start,
+                    #                     PHASE2_hosts_complete, PHASE2_service_check, PHASE2_services_start, PHASE2_lease_acquisition,
+                    #                     PHASE2_complete, PHASE3_start, PHASE3_complete, PHASE4_start, PHASE4_complete (14)
+                    # Some duplicates (START, PHASE1_complete, PHASE2_start, PHASE4_complete) = 4
+                    # Base unique phases: 8 + 14 - 4 = 18
+                    # Per-service phases: PHASE4_service_1, PHASE4_service_2, ... PHASE4_service_N (service_count)
+                    # Total: 18 + service_count
+                    expected_steps = 18 + service_count
                 
                 if self.progress_tracker:
                     try:
@@ -226,14 +286,24 @@ class TsimHybridExecutor:
                     self._update_progress(run_id, 'MULTI_REACHABILITY_PHASE1_complete', 'Path discovery completed')
             
             # Step 2: Execute reachability tests (I/O bound - use thread)
+            # Check cancellation before reachability tests
+            self._check_cancellation(run_id)
+
             self._checkpoint(run_id, 'REACHABILITY_START')
             self._update_progress(run_id, 'MULTI_REACHABILITY_PHASE2_start', 'Setting up simulation environment')
             params['trace_file'] = trace_result['trace_file']
             reach_result = self._execute_reachability(params, run_dir)
+
+            # Check cancellation after reachability tests
+            self._check_cancellation(run_id)
+
             self._checkpoint(run_id, 'REACHABILITY_DONE', f"services={len(params.get('port_protocol_list', []))}")
             self._update_progress(run_id, 'MULTI_REACHABILITY_PHASE4_complete', 'All service tests completed')
             
             # Step 3: Generate PDFs (CPU bound - use process pool)
+            # Check cancellation before PDF generation
+            self._check_cancellation(run_id)
+
             # Skip PDF generation for KSMS as it handles its own PDF generation
             analysis_mode = reach_result.get('analysis_mode', 'detailed')
             if analysis_mode == 'quick':
@@ -275,6 +345,32 @@ class TsimHybridExecutor:
                 'timing': timing
             }
             
+        except JobCancelledException as e:
+            # Job was cancelled - clean up and mark as cancelled
+            self.logger.warning(f"Job {run_id} was cancelled: {e}")
+            cancelled_by = e.cancelled_by or 'unknown'
+            reason = e.reason or 'No reason provided'
+
+            # Mark as cancelled in progress tracker
+            if self.progress_tracker:
+                cancel_msg = f"Job was cancelled by {cancelled_by}. Reason: {reason}"
+                self.progress_tracker.mark_complete(run_id, success=False, error=cancel_msg)
+            else:
+                self._update_progress(run_id, 'CANCELLED', f'Job cancelled by {cancelled_by}')
+
+            # Finalize timing
+            self._end_timing(run_id, run_dir, {'cancelled': True, 'cancelled_by': cancelled_by})
+
+            # Return a cancelled result (don't raise - let scheduler handle gracefully)
+            return {
+                'success': False,
+                'cancelled': True,
+                'run_id': run_id,
+                'cancelled_by': cancelled_by,
+                'reason': reason,
+                'timestamp': datetime.now().isoformat()
+            }
+
         except Exception as e:
             self.logger.error(f"Test execution failed for {run_id}: {e}")
             self._update_progress(run_id, 'ERROR', f'Test failed: {str(e)}')
@@ -309,10 +405,38 @@ class TsimHybridExecutor:
         
         self.logger.info(f"Executing trace for {run_id}: {source_ip} -> {dest_ip}")
         self.logger.info(f"Trace command: {trace_command.strip()}")
-        
+
         # Run in thread pool for I/O operation
         future = self.thread_pool.submit(self._run_tsimsh_command, trace_command, run_id, str(run_dir))
-        output = future.result(timeout=120)  # 2 minute timeout
+
+        # Poll for cancellation while waiting for trace to complete
+        import concurrent.futures
+        timeout = self.trace_timeout
+        poll_interval = self.trace_poll_interval
+        elapsed = 0
+
+        while elapsed < timeout:
+            try:
+                # Check for cancellation before each wait
+                self._check_cancellation(run_id)
+
+                # Wait for result with short timeout to allow cancellation checks
+                output = future.result(timeout=poll_interval)
+                break  # Got result, exit loop
+            except concurrent.futures.TimeoutError:
+                # Future not done yet, continue polling
+                elapsed += poll_interval
+                continue
+            except JobCancelledException:
+                # Job was cancelled - cancel the future and re-raise
+                self.logger.warning(f"Trace execution cancelled for {run_id} - cancelling future")
+                future.cancel()
+                raise
+        else:
+            # Timeout reached
+            self.logger.error(f"Trace execution timed out after {timeout}s for {run_id}")
+            future.cancel()
+            raise TimeoutError(f"Trace execution timed out after {timeout} seconds")
         
         # Basic logging only
         self.logger.info(f"Trace output length: {len(output)} characters")
@@ -393,8 +517,36 @@ class TsimHybridExecutor:
                 params,
                 progress_callback
             )
-            results = future.result(timeout=300)  # 5 minute timeout
-            
+
+            # Poll for cancellation while waiting for quick analysis to complete
+            import concurrent.futures
+            run_id = params['run_id']
+            timeout = self.quick_timeout
+            poll_interval = self.quick_poll_interval
+            elapsed = 0
+
+            while elapsed < timeout:
+                try:
+                    # Check for cancellation before each wait
+                    self._check_cancellation(run_id)
+
+                    # Wait for result with short timeout to allow cancellation checks
+                    results = future.result(timeout=poll_interval)
+                    break  # Got result, exit loop
+                except concurrent.futures.TimeoutError:
+                    # Future not done yet, continue polling
+                    elapsed += poll_interval
+                    continue
+                except JobCancelledException:
+                    # Job was cancelled - cancel the future and re-raise
+                    self.logger.warning(f"Quick analysis cancelled for {run_id} - cancelling future")
+                    future.cancel()
+                    raise
+            else:
+                # Timeout exceeded
+                future.cancel()
+                raise TimeoutError(f"Quick analysis timed out after {timeout} seconds")
+
             # KSMS service handles its own completion progress message
             
             # Save results to JSON file
@@ -407,7 +559,11 @@ class TsimHybridExecutor:
                 'results_dir': str(results_dir),
                 'analysis_mode': 'quick'
             }
-            
+
+        except JobCancelledException:
+            # Don't log ERROR phase for cancellations - just re-raise
+            self.logger.info(f"KSMS execution cancelled for {params['run_id']}")
+            raise
         except Exception as e:
             self.logger.error(f"KSMS execution failed for {params['run_id']}: {e}")
             self._update_progress(params['run_id'], 'KSMS_ERROR', f'KSMS failed: {str(e)}')
@@ -434,7 +590,8 @@ class TsimHybridExecutor:
             services=params['port_protocol_list'],  # MultiServiceTester expects 'services'
             output_dir=str(results_dir),
             trace_file=params['trace_file'],
-            verbose=1
+            verbose=1,
+            run_id=params['run_id']
         )
         
         # Set progress callback - add MULTI_REACHABILITY_ prefix to match CGI
@@ -444,8 +601,72 @@ class TsimHybridExecutor:
         
         # Execute tests in thread pool (I/O bound)
         self.logger.info(f"Starting detailed reachability tests for {params['run_id']}")
+
+        # Pass cancellation checker to tester
+        run_id = params['run_id']
+        tester.cancellation_check = lambda: self._check_cancellation(run_id)
+
         future = self.thread_pool.submit(tester.run)
-        results = future.result(timeout=300)  # 5 minute timeout
+
+        # Poll for cancellation while waiting for tests to complete
+        import concurrent.futures
+        timeout = self.detailed_timeout
+        poll_interval = self.detailed_poll_interval
+        elapsed = 0
+
+        while elapsed < timeout:
+            try:
+                # Check for cancellation before each wait
+                self._check_cancellation(run_id)
+
+                # Wait for result with short timeout to allow cancellation checks
+                results = future.result(timeout=poll_interval)
+                break  # Got result, exit loop
+            except concurrent.futures.TimeoutError:
+                # Future not done yet, continue polling
+                elapsed += poll_interval
+                continue
+            except JobCancelledException:
+                # Job was cancelled - the tester should handle cleanup in its finally block
+                # Wait a moment for the thread to exit gracefully with cleanup
+                self.logger.warning(f"Detailed analysis cancelled for {run_id} - waiting for cleanup")
+
+                # Give the thread time to hit cancellation check and execute finally block
+                import time
+                cleanup_timeout = 5.0
+                cleanup_elapsed = 0
+                cleanup_interval = 0.1
+
+                while cleanup_elapsed < cleanup_timeout and not future.done():
+                    time.sleep(cleanup_interval)
+                    cleanup_elapsed += cleanup_interval
+
+                if not future.done():
+                    # Thread still running after grace period - force cleanup
+                    self.logger.warning(f"Detailed analysis thread still running after {cleanup_timeout}s - forcing cleanup")
+                    # Explicitly call cleanup on the tester if accessible
+                    try:
+                        tester.cleanup()
+                        self.logger.info(f"Forced cleanup completed for cancelled job {run_id}")
+                    except Exception as cleanup_err:
+                        self.logger.error(f"Failed to force cleanup after cancellation: {cleanup_err}")
+                else:
+                    self.logger.info(f"Detailed analysis thread exited cleanly after cancellation")
+
+                raise
+        else:
+            # Timeout reached - force cleanup before failing
+            self.logger.error(f"Detailed analysis timed out after {timeout}s for {run_id}")
+
+            # Explicitly call cleanup on the tester before raising timeout error
+            try:
+                tester.cleanup()
+                self.logger.info(f"Cleanup completed for timed out job {run_id}")
+            except Exception as cleanup_err:
+                self.logger.error(f"Failed to cleanup after timeout: {cleanup_err}")
+
+            future.cancel()
+            raise TimeoutError(f"Detailed analysis timed out after {timeout} seconds")
         
         # Collect result files - MultiServiceTester saves as {port}_{protocol}_results.json
         result_files = []

@@ -8,10 +8,73 @@
   <title>TSIM Queue Admin</title>
   <link rel="stylesheet" href="/css/style.css?v=3">
   <style>
-    .queue-table { width: 100%; border-collapse: collapse; }
-    .queue-table th, .queue-table td { border: 1px solid #ddd; padding: 8px; }
+    /* Override container max-width for admin page - allow full width */
+    body {
+      margin: 0;
+      padding: 0;
+    }
+    .container {
+      max-width: none !important;
+      width: 100%;
+      padding: 20px;
+      margin: 0;
+    }
+    .queue-table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+    .queue-table th, .queue-table td {
+      border: 1px solid #ddd;
+      padding: 8px;
+      height: 50px;
+      max-height: 50px;
+      overflow: hidden;
+      vertical-align: middle;
+      overflow-wrap: break-word;
+      word-break: keep-all;
+      white-space: normal;
+    }
     .queue-table th { background: #f2f2f2; text-align: left; }
     .status-badge { padding: 2px 6px; border-radius: 4px; background: #eee; }
+    .status-cell {
+      font-size: 13px;
+      line-height: 1.2;
+      height: 100%;
+      overflow: hidden;
+      overflow-wrap: break-word;
+      word-break: keep-all;
+      white-space: normal;
+      display: flex;
+      align-items: center;
+    }
+    .run-id-cell {
+      font-family: 'Courier New', Courier, monospace;
+      font-weight: bold;
+    }
+    .progress-bar {
+      height: 24px;
+      background-color: #4a4a4a;
+      border-radius: 12px;
+      overflow: hidden;
+      position: relative;
+      min-width: 120px;
+    }
+    .progress-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #3498db, #2980b9);
+      border-radius: 12px;
+      transition: width 0.3s ease;
+    }
+    .progress-text {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      color: white;
+      font-size: 12px;
+      font-weight: bold;
+      text-shadow: 1px 1px 2px rgba(0,0,0,0.5);
+    }
   </style>
 </head>
 <body>
@@ -19,7 +82,7 @@
     <div id="runningPoolContainer" style="margin: 16px 0;">
       <h2>Running Pool (<span id="runningPoolCount">0</span>)</h2>
       <table class="queue-table" id="runningPoolTable">
-        <thead><tr><th>Run ID</th><th>User</th><th>Mode</th><th>Services</th><th>DSCP</th><th>Phase</th><th>Progress</th><th>Created</th></tr></thead>
+        <thead><tr><th>Run ID</th><th>User</th><th>Mode</th><th>Services</th><th>DSCP</th><th>Status</th><th>Progress</th><th>Created</th><th>Actions</th></tr></thead>
         <tbody id="runningPoolBody"></tbody>
       </table>
     </div>
@@ -100,6 +163,40 @@
       };
       return map[phase] || phase;
     }
+
+    function adjustFontSize(element) {
+      if (!element) return;
+
+      // Start with default font size
+      let fontSize = 13;
+      const minFontSize = 5; // Allow very small fonts to fit all text
+      const maxHeight = 42; // Cell padding leaves ~42px for content
+
+      element.style.fontSize = fontSize + 'px';
+      element.style.whiteSpace = 'normal'; // Allow wrapping
+      element.style.lineHeight = '1.2';
+
+      // Keep reducing font size until text fits (no ellipsis - show full text)
+      let iterations = 0;
+      const maxIterations = 50; // Prevent infinite loops
+
+      while (element.scrollHeight > maxHeight && fontSize > minFontSize && iterations < maxIterations) {
+        fontSize -= 0.3;
+        element.style.fontSize = fontSize + 'px';
+        iterations++;
+      }
+
+      // If still overflowing after reaching minimum size, try tighter line height
+      if (element.scrollHeight > maxHeight && fontSize <= minFontSize) {
+        let lineHeight = 1.2;
+        while (element.scrollHeight > maxHeight && lineHeight > 1.0 && iterations < maxIterations) {
+          lineHeight -= 0.05;
+          element.style.lineHeight = lineHeight.toFixed(2);
+          iterations++;
+        }
+      }
+    }
+
     function startStream(){
       const es = new EventSource('/admin-queue-stream');
       es.onmessage = function(event){
@@ -160,7 +257,8 @@
 
           const tr = document.createElement('tr');
           const percent = Math.max(0, Math.min(100, parseInt(job.percent || 0)));
-          const phaseLabel = sanitizeAscii(getPhaseStatus(job.phase || 'RUNNING'));
+          // Use phase_message (user-friendly) instead of mapped phase name
+          const statusMessage = sanitizeAscii(job.phase_message || getPhaseStatus(job.phase || 'RUNNING'));
           const created = fmtDate(job.created_at);
 
           const params = job.params || {};
@@ -169,15 +267,51 @@
           const dscpDisplay = job.dscp_value ? `${job.dscp_value}` : 'N/A';
           const services = formatServices(params);
 
-          tr.innerHTML = `<td>${sanitizeAscii(job.run_id||'')}</td>` +
+          // Create progress bar HTML matching user interface
+          const progressBarHtml = `<div class="progress-bar"><div class="progress-fill" style="width: ${percent}%"></div><div class="progress-text">${percent}%</div></div>`;
+
+          tr.innerHTML = `<td class="run-id-cell">${sanitizeAscii(job.run_id||'')}</td>` +
                         `<td>${sanitizeAscii(job.username||'')}</td>` +
                         `<td>${modeDisplay}</td>` +
                         `<td>${sanitizeAscii(services)}</td>` +
                         `<td>${dscpDisplay}</td>` +
-                        `<td>${phaseLabel}</td>` +
-                        `<td>${percent}%</td>` +
-                        `<td>${created}</td>`;
+                        `<td><div class="status-cell" data-text="${sanitizeAscii(statusMessage)}">${statusMessage}</div></td>` +
+                        `<td>${progressBarHtml}</td>` +
+                        `<td>${created}</td>` +
+                        `<td><button data-run-id="${sanitizeAscii(job.run_id||'')}" class="force-cancel-btn" style="background: #d9534f; color: white; border: none; padding: 4px 8px; cursor: pointer; border-radius: 3px;">Cancel</button></td>`;
           rpBody.appendChild(tr);
+
+          // Adjust font size if text overflows
+          adjustFontSize(tr.querySelector('.status-cell'));
+        });
+
+        // Add force cancel handlers for running jobs
+        document.querySelectorAll('.force-cancel-btn').forEach(btn => {
+          btn.onclick = async () => {
+            const runId = btn.getAttribute('data-run-id');
+            if (!runId) return;
+            if (!confirm(`Force cancel running job ${runId}?\n\nThis will:\n- Remove the job from the running pool\n- Release allocated resources (DSCP)\n- Mark the job as failed\n\nUse this for stuck or zombie jobs.`)) return;
+            btn.disabled = true;
+            btn.textContent = 'Cancelling...';
+            try {
+              const fd = new FormData();
+              fd.append('action', 'force_cancel');
+              fd.append('run_id', runId);
+              const resp = await fetch('/admin-queue', { method: 'POST', body: fd, headers: { 'X-Requested-With': 'XMLHttpRequest' } });
+              const result = await resp.json();
+              if (result.success) {
+                alert(`Job ${runId} was successfully cancelled`);
+              } else {
+                alert(`Failed to cancel job: ${result.message || 'Unknown error'}`);
+                btn.disabled = false;
+                btn.textContent = 'Cancel';
+              }
+            } catch (e) {
+              alert(`Error cancelling job: ${e.message}`);
+              btn.disabled = false;
+              btn.textContent = 'Cancel';
+            }
+          };
         });
 
         // Display Waiting Queue (scheduler queue + thread pool queue)
@@ -198,7 +332,7 @@
           const status = job.status || 'WAITING';
 
           tr.innerHTML = `<td>${idx + 1}</td>`+
-                         `<td>${sanitizeAscii(job.run_id||'')}</td>`+
+                         `<td class="run-id-cell">${sanitizeAscii(job.run_id||'')}</td>`+
                          `<td>${sanitizeAscii(job.username||'')}</td>`+
                          `<td>${queueModeDisplay}</td>`+
                          `<td>${sanitizeAscii(services)}</td>`+
@@ -235,7 +369,7 @@
             const histParams = item.params || {};
             const historyMode = histParams.analysis_mode || histParams.mode || 'detailed';
             const historyModeDisplay = historyMode === 'quick' ? 'Quick' : 'Detailed';
-            tr.innerHTML = `<td>${runId}</td>`+
+            tr.innerHTML = `<td class="run-id-cell">${runId}</td>`+
                            `<td>${sanitizeAscii(item.username||'')}</td>`+
                            `<td>${historyModeDisplay}</td>`+
                            `<td>${sanitizeAscii(status)}</td>`+

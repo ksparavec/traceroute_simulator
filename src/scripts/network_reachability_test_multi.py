@@ -57,37 +57,38 @@ CONFIG = _load_config()
 def log_timing(checkpoint: str, details: str = "") -> None:
     """Log timing information for performance tracking."""
     global LAST_CHECKPOINT_TIME
-    
+
     current_time = time.time()
     duration = current_time - LAST_CHECKPOINT_TIME
     LAST_CHECKPOINT_TIME = current_time
-    
-    timestamp = time.strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+
+    timestamp_dt = time.time()
     session_id = os.environ.get('RUN_ID', str(uuid.uuid4()))
 
-    # Log to timings.log - path comes from config.json
-    if CONFIG and 'log_dir' in CONFIG:
-        log_dir = Path(CONFIG['log_dir'])
+    # Write to run-specific directory for progress tracking
+    # Get run_dir from CONFIG, fallback to /dev/shm/tsim/runs
+    if CONFIG and 'run_dir' in CONFIG:
+        run_base_dir = Path(CONFIG['run_dir'])
     else:
-        log_dir = Path('/var/log/tsim')  # Fallback only if config not available
+        run_base_dir = Path('/dev/shm/tsim/runs')
 
-    if log_dir.exists():
-        timings_file = log_dir / "timings.log"
-        audit_file = log_dir / "audit.log"
-        
-        timing_entry = f"[{timestamp}] [{session_id}] {duration:7.2f}s | MULTI_REACHABILITY_{checkpoint}"
-        if details:
-            timing_entry += f" | {details}"
-        
+    run_dir = run_base_dir / session_id
+    if run_dir.exists():
+        timing_file = run_dir / "timing.log"
+        audit_file = run_dir / "audit.log"
+
+        # Write to timing.log in format: PHASE timestamp message
+        timing_entry = f"{checkpoint} {timestamp_dt} {details}"
         try:
-            with open(timings_file, 'a') as f:
+            with open(timing_file, 'a') as f:
                 f.write(timing_entry + "\n")
+                f.flush()
         except:
             pass
-        
-        # Also log to audit.log for progress tracking
+
+        # Write to audit.log for progress tracking
         audit_entry = {
-            "timestamp": timestamp,
+            "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S.%f", time.localtime(timestamp_dt))[:-3],
             "run_id": session_id,
             "phase": checkpoint,
             "message": details
@@ -95,6 +96,7 @@ def log_timing(checkpoint: str, details: str = "") -> None:
         try:
             with open(audit_file, 'a') as f:
                 f.write(json.dumps(audit_entry) + "\n")
+                f.flush()
         except:
             pass
 
@@ -136,7 +138,7 @@ class MultiServiceTester:
     
     def __init__(self, source_ip: str, source_port: Optional[int], dest_ip: str,
                  services: List[Tuple[int, str]], output_dir: str,
-                 trace_file: Optional[str] = None, verbose: int = 0):
+                 trace_file: Optional[str] = None, verbose: int = 0, run_id: Optional[str] = None):
         self.source_ip = source_ip
         self.source_port = source_port
         self.dest_ip = dest_ip
@@ -158,8 +160,35 @@ class MultiServiceTester:
 
         # Track routers and run_id for coordination
         self.routers = []
-        self.run_id = os.environ.get('RUN_ID', str(uuid.uuid4()))
-        
+        self.run_id = run_id or os.environ.get('RUN_ID', str(uuid.uuid4()))
+
+        # Progress and cancellation callbacks (set by executor)
+        self.progress_callback = None
+        self.cancellation_check = None
+
+    def _log_progress(self, phase: str, message: str = ""):
+        """Log progress update via callback (like KSMS service does)
+
+        Args:
+            phase: Phase name (without MULTI_REACHABILITY_ prefix - will be added by executor)
+            message: Progress message
+        """
+        if self.progress_callback:
+            try:
+                self.progress_callback(phase, message)
+            except Exception as e:
+                if self.verbose > 0:
+                    print(f"[ERROR] Failed to log progress {phase}: {e}", file=sys.stderr)
+
+    def _check_cancellation(self) -> None:
+        """Check if job has been cancelled and raise exception if so."""
+        if self.cancellation_check:
+            try:
+                self.cancellation_check()  # Will raise JobCancelledException if cancelled
+            except Exception:
+                # Re-raise any cancellation exception
+                raise
+
     def cleanup(self) -> None:
         """Clean up all created resources (matches shell script cleanup)."""
         log_timing("cleanup_start", "Starting cleanup")
@@ -233,10 +262,10 @@ class MultiServiceTester:
     
     def phase2_setup_environment(self, routers: List[str]) -> None:
         """Phase 2: Setup Environment - matches shell script phase2_setup_environment."""
-        log_timing("PHASE2_start", "Setting up simulation environment")
-        
+        self._log_progress("PHASE2_start", "Setting up simulation environment")
+
         # Check existing hosts (like shell script does)
-        log_timing("PHASE2_host_list", "Query existing hosts")
+        self._log_progress("PHASE2_host_list", "Query existing hosts")
         host_list_output = tsimsh_exec("host list --json", capture_output=True)
         
         existing_hosts = {}
@@ -264,7 +293,7 @@ class MultiServiceTester:
         
         # Add hosts to ALL routers (using 1-based indexing like shell script)
         num_routers = len(routers)
-        log_timing("PHASE2_host_setup_start", f"Adding hosts to {num_routers} routers")
+        self._log_progress("PHASE2_host_setup_start", f"Adding hosts to {num_routers} routers")
         
         hosts_added = 0
         router_index = 1  # Start at 1 like shell script
@@ -295,6 +324,9 @@ class MultiServiceTester:
             else:
                 # Host already exists - just track it for lease management
                 self.source_hosts.append(src_host_name)
+
+            # Check for cancellation after each source host operation
+            self._check_cancellation()
             
             # Check if destination host already exists for THIS router  
             dest_exists_for_router = any(
@@ -317,13 +349,16 @@ class MultiServiceTester:
                 else:
                     if self.verbose > 0:
                         print(f"[DEBUG] Failed to add {dst_host_name} to {router}: {result}", file=sys.stderr)
-            
+
+            # Check for cancellation after each destination host operation
+            self._check_cancellation()
+
             router_index += 1  # Increment for next router
         
-        log_timing("PHASE2_hosts_complete", f"Host setup completed: {hosts_added} hosts added")
-        
+        self._log_progress("PHASE2_hosts_complete", f"Host setup completed: {hosts_added} hosts added")
+
         # Check existing services
-        log_timing("PHASE2_service_check", "Checking existing services")
+        self._log_progress("PHASE2_service_check", "Checking existing services")
         service_list_output = tsimsh_exec("service list --json", capture_output=True)
         existing_services = []
         
@@ -340,7 +375,7 @@ class MultiServiceTester:
                 pass
         
         # Start ALL services in parallel (different from shell script which starts one)
-        log_timing("PHASE2_services_start", f"Starting {len(self.services)} services on {self.dest_ip}")
+        self._log_progress("PHASE2_services_start", f"Starting {len(self.services)} services on {self.dest_ip}")
         
         for port, protocol in self.services:
             # Check if this service already exists
@@ -367,7 +402,7 @@ class MultiServiceTester:
 
         # COORDINATION: Acquire source host leases (detailed job pattern)
         if REGISTRY_MGR and self.source_hosts:
-            log_timing("PHASE2_lease_acquisition", f"Acquiring leases for {len(self.source_hosts)} source hosts")
+            self._log_progress("PHASE2_lease_acquisition", f"Acquiring leases for {len(self.source_hosts)} source hosts")
             if self.verbose > 0:
                 print(f"[COORDINATION] Acquiring source host leases...", file=sys.stderr)
 
@@ -402,11 +437,11 @@ class MultiServiceTester:
             if self.verbose > 0:
                 print(f"  Acquired {len(self.source_hosts)} source host lease(s)", file=sys.stderr)
 
-        log_timing("PHASE2_complete", "Environment setup finished")
-    
+        self._log_progress("PHASE2_complete", "Environment setup finished")
+
     def phase3_initial_tests(self) -> Dict[str, Any]:
         """Phase 3: Initial Reachability Tests - only traceroute (no ping as requested)."""
-        log_timing("PHASE3_start", "Starting initial reachability tests")
+        self._log_progress("PHASE3_start", "Starting initial reachability tests")
         
         # Run traceroute test only (no ping as requested)
         traceroute_output = tsimsh_exec(
@@ -424,7 +459,7 @@ class MultiServiceTester:
         else:
             traceroute_result = {"error": "Traceroute failed"}
         
-        log_timing("PHASE3_complete", "Initial tests finished")
+        self._log_progress("PHASE3_complete", "Initial tests finished")
         return traceroute_result
     
     def test_service_with_packet_analysis(self, port: int, protocol: str, routers: List[str], 
@@ -704,11 +739,14 @@ class MultiServiceTester:
     def run(self) -> None:
         """Main execution flow matching shell script phases."""
         try:
-            log_timing("START", f"Multi-service test: {self.source_ip} -> {self.dest_ip} ({len(self.services)} services)")
+            self._log_progress("START", f"Multi-service test: {self.source_ip} -> {self.dest_ip} ({len(self.services)} services)")
 
             # Phase 1: Path Discovery (done before acquiring locks)
             trace_data = self.phase1_path_discovery()
             self.trace_data = trace_data  # Store for later use in formatting
+
+            # Check for cancellation after path discovery
+            self._check_cancellation()
 
             # Extract routers from trace
             routers = []
@@ -724,7 +762,7 @@ class MultiServiceTester:
             # Store routers for coordination
             self.routers = routers
 
-            log_timing("PHASE1_complete", f"Found {len(routers)} routers: {', '.join(routers)}")
+            self._log_progress("PHASE1_complete", f"Found {len(routers)} routers: {', '.join(routers)}")
 
             # COORDINATION: Acquire ALL router locks atomically (detailed job pattern)
             # This ensures exclusive access to all routers and their hosts
@@ -741,17 +779,23 @@ class MultiServiceTester:
                     # Phase 2: Environment Setup (hosts and services)
                     self.phase2_setup_environment(routers)
 
+                    # Check for cancellation after environment setup
+                    self._check_cancellation()
+
                     # Phase 3: Initial Tests (traceroute only, no ping)
                     traceroute_result = self.phase3_initial_tests()
                     self.traceroute_result = traceroute_result  # Store for use in formatting
 
                     # Phase 4: Test each service SEQUENTIALLY with packet analysis
-                    log_timing("PHASE4_start", f"Testing {len(self.services)} services sequentially")
+                    self._log_progress("PHASE4_start", f"Testing {len(self.services)} services sequentially")
 
                     all_results = []
                     last_iptables_snapshot = None  # Track last snapshot for optimization
 
                     for i, (port, protocol) in enumerate(self.services, 1):
+                        # Check for cancellation before each service test
+                        self._check_cancellation()
+
                         # Test this service with packet counter analysis
                         # Reuse previous "after" snapshot as "before" for performance
                         service_result = self.test_service_with_packet_analysis(
@@ -764,11 +808,14 @@ class MultiServiceTester:
 
                         all_results.append(service_result)
 
+                        # Log progress for this service
+                        self._log_progress(f"PHASE4_service_{i}", f"Service {i}/{len(self.services)} ({protocol}/{port}) complete")
+
                         # Brief pause between service tests to ensure clean separation
                         if i < len(self.services):
                             time.sleep(1)
 
-                    log_timing("PHASE4_complete", "All service tests completed")
+                    self._log_progress("PHASE4_complete", "All service tests completed")
 
                     # Phase 5: Generate individual result files in EXACT shell script format
                     self.service_result_files = []
@@ -883,24 +930,35 @@ class MultiServiceTester:
 
                 # Phase 2-5: Run without locks (not recommended for production)
                 self.phase2_setup_environment(routers)
+
+                # Check for cancellation after environment setup
+                self._check_cancellation()
+
                 traceroute_result = self.phase3_initial_tests()
                 self.traceroute_result = traceroute_result
 
-                log_timing("PHASE4_start", f"Testing {len(self.services)} services sequentially")
+                self._log_progress("PHASE4_start", f"Testing {len(self.services)} services sequentially")
                 all_results = []
                 last_iptables_snapshot = None
 
                 for i, (port, protocol) in enumerate(self.services, 1):
+                    # Check for cancellation before each service test
+                    self._check_cancellation()
+
                     service_result = self.test_service_with_packet_analysis(
                         port, protocol, routers,
                         reuse_before_snapshot=last_iptables_snapshot
                     )
                     last_iptables_snapshot = service_result.pop("iptables_after", None)
                     all_results.append(service_result)
+
+                    # Log progress for this service
+                    self._log_progress(f"PHASE4_service_{i}", f"Service {i}/{len(self.services)} ({protocol}/{port}) complete")
+
                     if i < len(self.services):
                         time.sleep(1)
 
-                log_timing("PHASE4_complete", "All service tests completed")
+                self._log_progress("PHASE4_complete", "All service tests completed")
 
                 # Phase 5: Generate results (same as above)
                 self.service_result_files = []

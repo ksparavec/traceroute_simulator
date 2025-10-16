@@ -191,4 +191,47 @@ class TsimQueueAdminHandler(TsimBaseHandler):
                 'message': 'Cancellation requested' if ok else 'Unable to cancel run'
             })
 
+        if action == 'force_cancel':
+            # Force cancel a running job (for zombies or stuck jobs)
+            self.logger.info(f"Admin {session.get('username')} force cancelling running job {run_id}")
+
+            # Get job info before removing (for logging and resource cleanup)
+            running_jobs = self.queue_service.get_running()
+            job_info = None
+            for job in running_jobs:
+                if isinstance(job, dict) and job.get('run_id') == run_id:
+                    job_info = job
+                    break
+
+            # Force cancel the job
+            # NOTE: This writes cancel.json and removes from running pool.
+            # The executor thread will detect the cancellation via cancel.json and:
+            #   1. Stop execution at next checkpoint
+            #   2. Clean up resources
+            #   3. Mark job as cancelled in progress tracker
+            # So we DON'T call mark_complete here to avoid race conditions
+            ok = self.queue_service.force_cancel_running(run_id, session.get('username'))
+
+            if ok:
+                self.logger.info(f"Force cancel successful for {run_id} - executor thread will detect and cleanup")
+                # DSCP will be released by scheduler when job completes
+                # Progress will be marked as cancelled by executor thread when it detects cancel.json
+
+            # Log to audit
+            try:
+                client_ip = self.get_client_ip(environ)
+                target_user = job_info.get('username') if job_info else None
+                details = {'run_id': run_id, 'force': True}
+                if target_user:
+                    details['target_user'] = target_user
+                self.logger_service.log_audit('force_cancel_job', session.get('username','admin'),
+                                             client_ip, bool(ok), details)
+            except Exception:
+                pass
+
+            return self.json_response(start_response, {
+                'success': bool(ok),
+                'message': 'Job force-cancelled successfully' if ok else 'Unable to force-cancel job'
+            })
+
         return self.error_response(start_response, 'Unsupported action')

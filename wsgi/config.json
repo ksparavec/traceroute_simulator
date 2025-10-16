@@ -142,7 +142,23 @@
         "enabled": true,
         "check_interval": 5.0,
         "stale_job_timeout": 30.0,
-        "min_age_before_check": 5.0
+        "min_age_before_check": 5.0,
+        "zombie_detection_timeout": 60.0
+    },
+
+    "job_cancellation": {
+        "trace_execution": {
+            "poll_interval": 1.0,
+            "timeout": 120
+        },
+        "detailed_analysis": {
+            "poll_interval": 2.0,
+            "timeout": 300
+        },
+        "quick_analysis": {
+            "poll_interval": 1.0,
+            "timeout": 120
+        }
     },
 
     "cors": {

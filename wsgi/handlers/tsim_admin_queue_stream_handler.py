@@ -89,10 +89,12 @@ class TsimAdminQueueStreamHandler(TsimBaseHandler):
 
                 # Job is executing if it has reached KSMS start phase or later
                 # (not just PHASE2_start which happens before thread pool submission)
+                # For detailed jobs, consider MULTI_REACHABILITY phases as executing
                 is_executing = False
                 for phase in phases:
                     phase_name = phase.get('phase', '')
                     if 'PHASE2_ksms_start' in phase_name or \
+                       'MULTI_REACHABILITY' in phase_name or \
                        'PHASE3' in phase_name or \
                        'PHASE4' in phase_name or \
                        'PDF' in phase_name or \
@@ -120,8 +122,16 @@ class TsimAdminQueueStreamHandler(TsimBaseHandler):
                 tracker = TsimProgressTracker(self.config)
                 prog = tracker.get_progress(running.get('run_id', '')) or {}
                 running['percent'] = int(prog.get('overall_progress', 0))
+                running['expected_steps'] = prog.get('expected_steps', 0)
                 phases = prog.get('phases', [])
-                running['phase'] = phases[-1]['phase'] if phases else 'UNKNOWN'
+                if phases:
+                    last_phase = phases[-1]
+                    # Use the user-friendly message instead of cryptic phase name
+                    running['phase_message'] = last_phase.get('message', last_phase.get('details', ''))
+                    running['phase'] = last_phase.get('phase', 'UNKNOWN')
+                else:
+                    running['phase_message'] = ''
+                    running['phase'] = 'UNKNOWN'
             except Exception:
                 pass
 

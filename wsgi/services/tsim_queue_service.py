@@ -435,3 +435,102 @@ class TsimQueueService:
             except Exception:
                 return False
         return False
+
+    def force_cancel_running(self, run_id: str, cancelled_by: Optional[str] = None) -> bool:
+        """Force cancel a running job (for admin interface / zombie cleanup).
+
+        This forcibly removes the job from the running pool and marks it as cancelled.
+        Used when a job is stuck/zombie or admin needs to forcibly terminate it.
+
+        Returns:
+            True if job was found and cancelled, False otherwise
+        """
+        from datetime import datetime
+        import logging
+        logger = logging.getLogger('tsim.queue')
+
+        logger.info(f"Force cancelling running job {run_id} by {cancelled_by or 'admin'}")
+
+        # Check if job is in running pool
+        with self._lock():
+            if not self.current_file.exists():
+                logger.warning(f"Cannot force cancel {run_id}: no running jobs")
+                return False
+
+            try:
+                with open(self.current_file, 'r') as f:
+                    data = json.load(f)
+            except Exception as e:
+                logger.error(f"Failed to read current.json: {e}")
+                return False
+
+            # Handle both single job (old format) and multiple jobs (new format)
+            found = False
+            if isinstance(data, dict):
+                if 'jobs' in data:
+                    # New format: multiple jobs
+                    jobs = data.get('jobs', [])
+                    for job in jobs:
+                        if job.get('run_id') == run_id:
+                            found = True
+                            break
+                else:
+                    # Old format: single job
+                    if data.get('run_id') == run_id:
+                        found = True
+
+            if not found:
+                logger.warning(f"Cannot force cancel {run_id}: not in running pool")
+                return False
+
+            # Write cancel marker BEFORE removing from running pool
+            try:
+                run_dir = Path(self.config.get('run_dir', '/dev/shm/tsim/runs')) / run_id
+                run_dir.mkdir(parents=True, exist_ok=True)
+                marker = {
+                    'run_id': run_id,
+                    'cancelled_by': cancelled_by or 'admin',
+                    'cancelled_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                    'force_cancelled': True,
+                    'reason': 'Admin force cancellation'
+                }
+                mtmp = (run_dir / 'cancel.json').with_suffix('.tmp')
+                with open(mtmp, 'w') as f:
+                    json.dump(marker, f, indent=2)
+                    f.flush()
+                    os.fsync(f.fileno())
+                mtmp.replace(run_dir / 'cancel.json')
+                logger.info(f"Created cancel marker for force-cancelled job {run_id}")
+            except Exception as e:
+                logger.error(f"Failed to create cancel marker for {run_id}: {e}")
+
+            # Remove from running pool (inline to avoid recursive lock)
+            # Cannot call self.remove_running() here because we're already holding the lock
+            try:
+                # Handle both formats
+                if isinstance(data, dict):
+                    if 'jobs' in data:
+                        # New format
+                        jobs = data.get('jobs', [])
+                        jobs = [j for j in jobs if j.get('run_id') != run_id]
+                        data['jobs'] = jobs
+                        data['updated_at'] = time.time()
+                    else:
+                        # Old format - if this is the job, clear current
+                        if data.get('run_id') == run_id:
+                            self.current_file.unlink()
+                            logger.info(f"Removed {run_id} from running pool")
+                            return True
+
+                # Save updated running jobs
+                tmp = self.current_file.with_suffix('.tmp')
+                with open(tmp, 'w') as f:
+                    json.dump(data, f, indent=2)
+                    f.flush()
+                    os.fsync(f.fileno())
+                tmp.replace(self.current_file)
+                logger.info(f"Removed {run_id} from running pool")
+            except Exception as e:
+                logger.error(f"Failed to remove {run_id} from running pool: {e}")
+
+            return True

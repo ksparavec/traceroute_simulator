@@ -48,6 +48,7 @@ import hashlib
 
 # Import configuration loader
 from tsim.core.config_loader import get_registry_paths, load_traceroute_config
+from tsim.core.creator_tag import CreatorTagManager
 
 
 def generate_mac_address(host_name: str) -> str:
@@ -750,6 +751,9 @@ class HostNamespaceManager:
                 for field in optional_fields:
                     if field in host_config:
                         additional_info[field] = host_config[field]
+
+                # Add creator tag for audit trail and cleanup
+                additional_info['created_by'] = CreatorTagManager.get_creator_tag()
 
                 # Atomic check-and-register (eliminates TOCTOU vulnerability)
                 success = self.registry_mgr.check_and_register_host(

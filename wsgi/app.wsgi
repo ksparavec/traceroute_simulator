@@ -475,6 +475,104 @@ try:
 except:
     logger.info("Application startup complete")
 
+# Clean up stale WSGI-created resources from previous daemon processes
+logger.info("Checking for stale WSGI-created resources...")
+try:
+    import subprocess
+    from pathlib import Path
+
+    def _cleanup_wsgi_resources():
+        """Remove hosts and services created by previous WSGI processes"""
+        removed_hosts = 0
+        removed_services = 0
+        hosts_to_unregister = []
+
+        try:
+            # Read host registry
+            host_registry_file = Path(config.get('data_dir', '/dev/shm/tsim')) / 'host_registry.json'
+            if host_registry_file.exists():
+                with open(host_registry_file, 'r') as f:
+                    hosts = json.load(f)
+
+                # Find WSGI-created hosts
+                for host_name, host_info in hosts.items():
+                    created_by = host_info.get('created_by', '')
+                    if created_by.startswith('wsgi:'):
+                        # Remove physical host
+                        try:
+                            result = subprocess.run(
+                                ['tsimsh', '-q'],
+                                input=f'host remove --name {host_name} --force\n',
+                                capture_output=True,
+                                text=True,
+                                timeout=10
+                            )
+                            if result.returncode == 0:
+                                removed_hosts += 1
+                                hosts_to_unregister.append(host_name)
+                                logger.info(f"Removed stale WSGI host: {host_name} ({created_by})")
+                        except Exception as e:
+                            logger.warning(f"Failed to remove host {host_name}: {e}")
+
+                # Unregister successfully removed hosts from registry
+                if hosts_to_unregister:
+                    try:
+                        from tsim.core.registry_manager import TsimRegistryManager
+                        registry_mgr = TsimRegistryManager(config)
+                        for host_name in hosts_to_unregister:
+                            try:
+                                registry_mgr.unregister_host(host_name)
+                                logger.debug(f"Unregistered {host_name} from registry")
+                            except Exception as e:
+                                logger.warning(f"Failed to unregister {host_name} from registry: {e}")
+                    except Exception as e:
+                        logger.warning(f"Could not initialize registry manager: {e}")
+
+        except Exception as e:
+            logger.warning(f"Error reading host registry: {e}")
+
+        try:
+            # Read service registry
+            service_registry_file = Path(config.get('data_dir', '/dev/shm/tsim')) / 'services_registry.json'
+            if service_registry_file.exists():
+                with open(service_registry_file, 'r') as f:
+                    services = json.load(f)
+
+                # Find WSGI-created services
+                for service_key, service_info in services.items():
+                    created_by = service_info.get('created_by', '')
+                    if created_by.startswith('wsgi:'):
+                        namespace = service_info.get('namespace')
+                        name = service_info.get('name')
+                        if namespace and name:
+                            # Remove this service
+                            try:
+                                result = subprocess.run(
+                                    ['tsimsh', '-q'],
+                                    input=f'service stop --namespace {namespace} --name {name}\n',
+                                    capture_output=True,
+                                    text=True,
+                                    timeout=10
+                                )
+                                if result.returncode == 0:
+                                    removed_services += 1
+                                    logger.info(f"Removed stale WSGI service: {namespace}:{name} ({created_by})")
+                            except Exception as e:
+                                logger.warning(f"Failed to remove service {namespace}:{name}: {e}")
+
+        except Exception as e:
+            logger.warning(f"Error reading service registry: {e}")
+
+        if removed_hosts > 0 or removed_services > 0:
+            logger.info(f"Cleanup complete: removed {removed_hosts} hosts, {removed_services} services")
+        else:
+            logger.info("No stale WSGI resources found")
+
+    _cleanup_wsgi_resources()
+
+except Exception as e:
+    logger.warning(f"Could not perform WSGI resource cleanup: {e}")
+
 # Create wrapper to handle environment variables from Apache SetEnv
 _application = application
 
@@ -482,12 +580,41 @@ def application(environ, start_response):
     """WSGI application wrapper that transfers Apache SetEnv variables to os.environ"""
     # Transfer environment variables from Apache SetEnv to os.environ (one-time only)
     if 'TSIM_ENV_SET' not in os.environ:
-        for key in ['TSIM_CONFIG_FILE', 'TSIM_WEB_ROOT', 'TSIM_HTDOCS', 'TSIM_VENV', 
+        for key in ['TSIM_CONFIG_FILE', 'TSIM_WEB_ROOT', 'TSIM_HTDOCS', 'TSIM_VENV',
                     'TSIM_DATA_DIR', 'TSIM_LOG_DIR']:
             if key in environ:
                 os.environ[key] = environ[key]
                 logger.debug(f"{key} set from Apache: {environ[key]}")
         os.environ['TSIM_ENV_SET'] = '1'  # Flag to prevent repeated setting
-    
+
+    # Set TSIM_WSGI_USERNAME for creator tag tracking
+    # This allows host/service creation to tag resources with logged-in user
+    if 'HTTP_COOKIE' in environ:
+        try:
+            from services.tsim_session_manager import TsimSessionManager
+            from services.tsim_config_service import TsimConfigService
+
+            cookies = environ['HTTP_COOKIE']
+            session_id = None
+
+            # Parse cookies to find session_id
+            for cookie in cookies.split(';'):
+                cookie = cookie.strip()
+                if cookie.startswith('session_id='):
+                    session_id = cookie.split('=', 1)[1]
+                    break
+
+            if session_id:
+                _cfg_svc = TsimConfigService()
+                _session_mgr = TsimSessionManager(_cfg_svc)
+                session_data = _session_mgr.get_session(session_id)
+
+                if session_data:
+                    username = session_data.get('username')
+                    if username:
+                        os.environ['TSIM_WSGI_USERNAME'] = username
+        except Exception:
+            pass  # Silently fail - not critical
+
     # Call the actual application
     return _application(environ, start_response)

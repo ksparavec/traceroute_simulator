@@ -160,10 +160,10 @@ class TsimProgressTracker:
     
     def get_progress(self, run_id: str) -> Optional[Dict[str, Any]]:
         """Get current progress for a run
-        
+
         Args:
             run_id: Run identifier
-            
+
         Returns:
             Progress data or None
         """
@@ -171,7 +171,7 @@ class TsimProgressTracker:
             if run_id in self.progress:
                 # Return a copy to prevent external modification
                 return dict(self.progress[run_id])
-        
+
         # Fallback to file-based progress if not in memory
         return self._read_file_progress(run_id)
 
@@ -193,13 +193,13 @@ class TsimProgressTracker:
     
     def get_all_progress(self) -> Dict[str, Dict[str, Any]]:
         """Get progress for all active runs
-        
+
         Returns:
             Dictionary of run_id -> progress data
         """
         with self.lock:
             return {k: dict(v) for k, v in self.progress.items()}
-    
+
     def set_pdf_url(self, run_id: str, pdf_path: str):
         """Set the PDF URL for a run
         
@@ -284,16 +284,21 @@ class TsimProgressTracker:
             if username in self.active_runs:
                 del self.active_runs[username]
     
-    def mark_complete(self, run_id: str, success: bool = True, 
+    def mark_complete(self, run_id: str, success: bool = True,
                      pdf_file: Optional[str] = None, error: Optional[str] = None):
         """Mark a test as complete
-        
+
+        This method works across Apache worker processes - if the run_id is not in
+        memory (e.g., reconciler in different process), it loads from file, updates,
+        and writes back.
+
         Args:
             run_id: Run identifier
             success: Whether test succeeded
             pdf_file: Optional PDF file path
             error: Optional error message
         """
+        # Try to update in-memory progress if available
         with self.lock:
             if run_id in self.progress:
                 progress = self.progress[run_id]
@@ -311,29 +316,33 @@ class TsimProgressTracker:
                         progress['pdf_url'] = f"/pdf?id={run_id}"
                 if error:
                     progress['error'] = error
-                
+
                 # Clear active run for any user that has this run
                 for username, active_run_id in list(self.active_runs.items()):
                     if active_run_id == run_id:
                         del self.active_runs[username]
                         self.logger.debug(f"Cleared active run {run_id} for user {username}")
-        
+            else:
+                # Not in memory (different worker process) - will update file directly below
+                self.logger.debug(f"Run {run_id} not in memory, will update file directly")
+
         # Log completion phase
         phase = 'COMPLETE' if success else 'FAILED'
         message = 'Test completed successfully' if success else f'Test failed: {error or "Unknown error"}'
         details = {}
         if pdf_file:
             details['pdf_file'] = str(pdf_file)
-        
+
         self.log_phase(run_id, phase, message, details)
-        
+
         # Log TOTAL phase for compatibility
         if success:
             elapsed = time.time() - self.progress.get(run_id, {}).get('start_time', time.time())
             self.log_phase(run_id, 'TOTAL', f"Total execution time: {elapsed:.2f}s", details)
-        
+
         # Write final progress to file AFTER all phases are logged
-        self._write_progress_json(run_id)
+        # This now handles both in-memory and file-only cases
+        self._write_progress_json_force(run_id, success, pdf_file, error)
     
     def cleanup_memory(self, max_age_seconds: int = 3600):
         """Clean up old in-memory progress data
@@ -404,8 +413,8 @@ class TsimProgressTracker:
             self.logger.warning(f"Failed to write timing file: {e}")
     
     def _write_progress_json(self, run_id: str):
-        """Write progress.json for easy reading
-        
+        """Write progress.json for easy reading (only if in memory)
+
         Args:
             run_id: Run identifier
         """
@@ -418,6 +427,68 @@ class TsimProgressTracker:
                         json.dump(progress_data, f, indent=2)
         except Exception as e:
             self.logger.warning(f"Failed to write progress.json: {e}")
+
+    def _write_progress_json_force(self, run_id: str, success: bool,
+                                   pdf_file: Optional[str] = None, error: Optional[str] = None):
+        """Force write progress.json with completion status (works across processes)
+
+        This method loads from file if not in memory, updates completion status,
+        and writes back. This allows the reconciler (running in a different Apache
+        worker process) to mark zombie jobs as complete.
+
+        Args:
+            run_id: Run identifier
+            success: Whether test succeeded
+            pdf_file: Optional PDF file path
+            error: Optional error message
+        """
+        progress_file = self.run_dir / run_id / 'progress.json'
+
+        try:
+            with self.lock:
+                # Try to get from memory first
+                if run_id in self.progress:
+                    progress_data = dict(self.progress[run_id])
+                else:
+                    # Load from file (cross-process case)
+                    if not progress_file.exists():
+                        self.logger.warning(f"Cannot mark {run_id} complete: progress.json does not exist")
+                        return
+
+                    try:
+                        with open(progress_file, 'r') as f:
+                            progress_data = json.load(f)
+                        self.logger.debug(f"Loaded progress from file for {run_id} (cross-process update)")
+                    except Exception as e:
+                        self.logger.error(f"Failed to load progress.json for {run_id}: {e}")
+                        return
+
+                # Update completion status
+                progress_data['complete'] = True
+                progress_data['success'] = success
+                progress_data['overall_progress'] = 100
+
+                if pdf_file:
+                    progress_data['pdf_file'] = str(pdf_file)
+                    try:
+                        rel = str(pdf_file).split('/dev/shm/tsim/runs/')[1]
+                        rid = rel.split('/')[0]
+                        progress_data['pdf_url'] = f"/pdf?id={rid}"
+                    except Exception:
+                        progress_data['pdf_url'] = f"/pdf?id={run_id}"
+
+                if error:
+                    progress_data['error'] = error
+
+                # Write back to file
+                with open(progress_file, 'w') as f:
+                    json.dump(progress_data, f, indent=2)
+
+                self.logger.debug(f"Wrote completion status to progress.json for {run_id} "
+                                f"(complete={success}, error={error})")
+
+        except Exception as e:
+            self.logger.error(f"Failed to force write progress.json for {run_id}: {e}")
     
     def _write_audit_file(self, run_id: str, phase: str, message: str, 
                          details: Optional[Dict[str, Any]] = None):

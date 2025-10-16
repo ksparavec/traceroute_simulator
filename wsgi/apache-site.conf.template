@@ -77,18 +77,18 @@ WSGISocketPrefix /var/run/wsgi
     WSGIDaemonProcess tsim \
         python-home=${TSIM_VENV_PATH} \
         processes=1 \
-        threads=5 \
+        threads=30 \
         maximum-requests=10000 \
-        inactivity-timeout=300 \
-        request-timeout=60 \
+        inactivity-timeout=600 \
+        request-timeout=600 \
         socket-timeout=60 \
-        cpu-time-limit=300 \
+        cpu-time-limit=600 \
         display-name=tsim-wsgi \
         user=__WEB_USER__ \
         group=__WEB_GROUP__ \
         lang=C.UTF-8 \
         locale=C.UTF-8 \
-        home=/tmp
+        home=${TSIM_DATA_DIR}
     
     WSGIProcessGroup tsim
     WSGIApplicationGroup %{GLOBAL}

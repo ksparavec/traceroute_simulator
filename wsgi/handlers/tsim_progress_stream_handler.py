@@ -247,14 +247,54 @@ class TsimProgressStreamHandler(TsimBaseHandler):
                             event = f"data: {json.dumps(snapshot)}\n\n"
                             yield event.encode('utf-8')
                 else:
-                    # No progress file yet - send waiting event
-                    if retry_count % 10 == 0:  # Every 5 seconds
+                    # No progress file yet - check audit log for queue status
+                    audit_file = run_dir / "audit.log"
+                    queue_position = None
+                    in_queue = False
+
+                    if audit_file.exists():
+                        # Read audit log to find queue position
+                        try:
+                            with open(audit_file, 'r') as f:
+                                for line in f:
+                                    try:
+                                        entry = json.loads(line.strip())
+                                        if entry.get('phase') == 'QUEUED':
+                                            in_queue = True
+                                            # Try to extract position from message like "In queue (position 2)"
+                                            msg = entry.get('message', '')
+                                            import re
+                                            match = re.search(r'position\s+(\d+)', msg)
+                                            if match:
+                                                queue_position = int(match.group(1))
+                                    except (json.JSONDecodeError, ValueError):
+                                        continue
+                        except Exception as e:
+                            self.logger.debug(f"Could not read audit log for {run_id}: {e}")
+
+                    # Also try to get live queue position from queue service
+                    if self.queue_service and not queue_position:
+                        try:
+                            queue_position = self.queue_service.get_position(run_id)
+                            if queue_position:
+                                in_queue = True
+                        except Exception:
+                            pass
+
+                    # Send waiting event with queue position if available
+                    if retry_count % 2 == 0:  # Every 1 second
+                        if in_queue and queue_position:
+                            details_msg = f'In queue (position {queue_position})'
+                        else:
+                            details_msg = 'Waiting for test to start...'
+
                         data = {
-                            'phase': 'WAITING',
-                            'details': 'Waiting for test to start...',
+                            'phase': 'QUEUED' if in_queue else 'WAITING',
+                            'details': details_msg,
                             'duration': 0,
                             'all_phases': all_phases,
                             'complete': False,
+                            'queue_position': queue_position,
                             'redirect_url': None
                         }
                         event = f"data: {json.dumps(data)}\n\n"

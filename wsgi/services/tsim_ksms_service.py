@@ -15,6 +15,20 @@ from typing import Dict, List, Any, Optional, Tuple
 
 from .tsim_dscp_registry import TsimDscpRegistry
 
+# Import core modules required for registry operations
+from tsim.core.creator_tag import CreatorTagManager
+from tsim.simulators.host_namespace_setup import generate_mac_address
+
+
+# Local exception class to avoid circular import with hybrid_executor
+class JobCancelledException(Exception):
+    """Exception raised when a job is cancelled"""
+    def __init__(self, message, cancelled_by=None, reason=None):
+        super().__init__(message)
+        self.cancelled_by = cancelled_by
+        self.reason = reason
+
+
 # Import for direct Python execution (no tsimsh subprocess for quick analysis)
 try:
     from tsim.simulators.host_namespace_setup import HostNamespaceManager
@@ -107,28 +121,67 @@ class TsimKsmsService:
         exec_mode = "direct" if self.host_manager else "tsimsh"
         self.logger.info(f"KSMS Service initialized: enabled={self.enabled}, "
                         f"execution_mode={exec_mode}")
-    
-    
+
+    def _check_cancellation(self, run_id: str):
+        """Check if job has been cancelled
+
+        Args:
+            run_id: Run ID to check
+
+        Raises:
+            JobCancelledException: If job was cancelled
+        """
+        cancel_file = Path('/dev/shm/tsim/runs') / run_id / 'cancel.json'
+        if cancel_file.exists():
+            try:
+                with open(cancel_file, 'r') as f:
+                    cancel_data = json.load(f)
+                cancelled_by = cancel_data.get('cancelled_by', 'unknown')
+                cancelled_at = cancel_data.get('cancelled_at', 'unknown time')
+                reason = cancel_data.get('reason', 'No reason provided')
+                self.logger.warning(f"KSMS job {run_id} was cancelled by {cancelled_by} at {cancelled_at}: {reason}")
+                raise JobCancelledException(
+                    f"Job cancelled by {cancelled_by} at {cancelled_at}",
+                    cancelled_by=cancelled_by,
+                    reason=reason
+                )
+            except json.JSONDecodeError:
+                self.logger.warning(f"KSMS job {run_id} has invalid cancel.json file")
+                raise JobCancelledException(
+                    "Job cancelled (invalid cancel marker)",
+                    cancelled_by="unknown",
+                    reason="Invalid cancel file"
+                )
+
     def execute_quick_analysis(self, params: Dict[str, Any], progress_callback=None) -> Dict[str, Any]:
         """Execute KSMS quick analysis mode
-        
+
         Args:
             params: Job parameters
-            
+
         Returns:
             Analysis results in service-based format for PDF compatibility
         """
         if not self.enabled:
             raise RuntimeError("KSMS is disabled in configuration")
-        
+
         run_id = params['run_id']
         source_ip = params['source_ip']
         dest_ip = params['dest_ip']
-        
+
         services = params['services']  # List of parsed services
-        
+
+        # Set TSIM_WSGI_USERNAME for creator tag detection in background thread
+        # This is needed because environment variables don't propagate to thread pools
+        if 'username' in params and params['username']:
+            os.environ['TSIM_WSGI_USERNAME'] = params['username']
+            self.logger.debug(f"Set TSIM_WSGI_USERNAME={params['username']} for creator tag detection")
+
         self.logger.info(f"Starting KSMS quick analysis: {run_id}, {len(services)} services")
-        
+
+        # Track created resources for cleanup on cancellation
+        created_hosts = []
+
         # Helper function for progress logging
         def log_progress(phase: str, message: str):
             if progress_callback:
@@ -137,8 +190,11 @@ class TsimKsmsService:
                     self.logger.debug(f"Progress logged: {phase}")
                 except Exception as e:
                     self.logger.error(f"Failed to log progress {phase}: {e}")
-        
+
         try:
+            # Check cancellation at start
+            self._check_cancellation(run_id)
+
             # Step 1: Update progress - Start
             log_progress('PHASE2_ksms_start', f'Starting KSMS quick analysis for {len(services)} services')
 
@@ -154,10 +210,44 @@ class TsimKsmsService:
 
             created_hosts = self._setup_source_hosts(params, run_id, log_progress)
 
+            # Check cancellation after host setup
+            self._check_cancellation(run_id)
+
             # Step 4: Execute KSMS bulk scan
             log_progress('PHASE3_ksms_scan', f'Executing KSMS bulk scan with DSCP {job_dscp}')
 
             ksms_results = self._execute_ksms_scan(source_ip, dest_ip, services, job_dscp, run_id)
+
+            # Check for errors in KSMS results
+            if 'error' in ksms_results:
+                error_msg = ksms_results['error']
+                self.logger.error(f"KSMS scan failed: {error_msg}")
+                raise RuntimeError(f"KSMS scan failed: {error_msg}")
+
+            # Validate that we got actual scan results (not all UNKNOWN)
+            routers = ksms_results.get('routers', [])
+            if not routers:
+                self.logger.error("KSMS scan returned no routers")
+                raise RuntimeError("KSMS scan returned no routers - check ksms_tester permissions and kernel module")
+
+            # Check if all results are UNKNOWN (indicates kernel scan failure)
+            all_unknown = True
+            total_tests = 0
+            for router in routers:
+                for svc in router.get('services', []):
+                    total_tests += 1
+                    if svc.get('result') != 'UNKNOWN':
+                        all_unknown = False
+                        break
+                if not all_unknown:
+                    break
+
+            if all_unknown and total_tests > 0:
+                self.logger.error(f"KSMS scan failed: all {total_tests} tests returned UNKNOWN")
+                raise RuntimeError(f"KSMS kernel scan failed: all {total_tests} tests returned UNKNOWN")
+
+            # Check cancellation after scan
+            self._check_cancellation(run_id)
 
             # Step 5: Cleanup source hosts (only those created by this job)
             log_progress('PHASE3_cleanup', 'Removing created source hosts')
@@ -191,10 +281,35 @@ class TsimKsmsService:
 
             self.logger.info(f"KSMS quick analysis completed: {run_id}")
             return final_result
-        
+
         except Exception as e:
-            log_progress('ERROR', f'KSMS analysis failed: {str(e)}')
-            self.logger.error(f"KSMS quick analysis failed for {run_id}: {e}")
+            # Check exception type by name to avoid circular import
+            exception_name = type(e).__name__
+
+            if exception_name == 'JobCancelledException':
+                self.logger.info(f"KSMS quick analysis cancelled for {run_id}: {e}")
+
+                # CLEANUP: Remove any source hosts that were created before cancellation
+                if created_hosts:
+                    self.logger.info(f"Cleaning up {len(created_hosts)} source host(s) due to cancellation")
+                    try:
+                        self._cleanup_source_hosts(created_hosts, run_id)
+                        self.logger.info(f"Successfully cleaned up source hosts after cancellation")
+                    except Exception as cleanup_err:
+                        self.logger.error(f"Failed to cleanup source hosts after cancellation: {cleanup_err}")
+            else:
+                # Regular error
+                log_progress('ERROR', f'KSMS analysis failed: {str(e)}')
+                self.logger.error(f"KSMS quick analysis failed for {run_id}: {e}")
+
+                # CLEANUP: Also cleanup on regular errors to avoid leaving orphaned resources
+                if created_hosts:
+                    self.logger.info(f"Cleaning up {len(created_hosts)} source host(s) due to error")
+                    try:
+                        self._cleanup_source_hosts(created_hosts, run_id)
+                    except Exception as cleanup_err:
+                        self.logger.error(f"Failed to cleanup source hosts after error: {cleanup_err}")
+
             raise
     
     def _execute_ksms_scan(self, source_ip: str, dest_ip: str, services: List[Dict],
@@ -779,7 +894,12 @@ class TsimKsmsService:
         return hints_map
     
     def _setup_source_hosts(self, params: Dict[str, Any], run_id: str, log_progress) -> List[str]:
-        """Setup source hosts from trace file
+        """Setup source hosts from trace file with atomic rollback on failure
+
+        This implements the all-or-nothing principle:
+        - If ANY operation fails, ALL hosts created so far are rolled back
+        - Critical errors are logged to Apache error log
+        - Returns only successfully created hosts (not reused ones)
 
         Args:
             params: Parameters including trace_file
@@ -790,7 +910,7 @@ class TsimKsmsService:
             List of host names that were successfully created
 
         Raises:
-            RuntimeError: If any host creation fails or verification fails
+            RuntimeError: If any host creation fails (after rollback)
         """
         routers = []
 
@@ -806,11 +926,13 @@ class TsimKsmsService:
                 routers = [hop['name'] for hop in path if hop.get('is_router')]
 
             except Exception as e:
-                self.logger.error(f"Failed to read trace file {trace_file}: {e}")
-                raise RuntimeError(f"Failed to read trace file: {e}")
+                error_msg = f"Failed to read trace file {trace_file}: {e}"
+                self.logger.critical(f"KSMS ATOMIC HOST CREATION FAILED: {error_msg}")
+                raise RuntimeError(error_msg)
 
         if not routers:
-            self.logger.error(f"No routers found in trace for {run_id}")
+            error_msg = f"No routers found in trace for {run_id}"
+            self.logger.critical(f"KSMS ATOMIC HOST CREATION FAILED: {error_msg}")
             raise RuntimeError("No routers found in trace file")
 
         source_ip = params['source_ip']
@@ -820,99 +942,219 @@ class TsimKsmsService:
         for i in range(1, len(routers) + 1):
             expected_hosts.append(f"source-{i}")
 
-        # Track which hosts were actually created (vs reused)
+        # Track which hosts were actually created (vs reused) - for rollback
         created_hosts = []
 
-        # Execute host creation commands and WAIT for completion
-        for i, router in enumerate(routers, 1):
-            src_host_name = f"source-{i}"
+        try:
+            # ATOMIC OPERATION BEGINS
+            # Execute host creation commands with rollback capability
+            for i, router in enumerate(routers, 1):
+                src_host_name = f"source-{i}"
 
-            # Log individual host creation step
-            log_progress(f'PHASE2_host_{i}', f'Creating source host {src_host_name} on {router.split(".")[0]}')
+                # Log individual host creation step
+                log_progress(f'PHASE2_host_{i}', f'Creating source host {src_host_name} on {router.split(".")[0]}')
 
-            # Check if host already exists in registry
-            skip_creation = False
+                # ATOMIC: Try to register host in registry first (TOCTOU-free)
+                # This prevents race condition when multiple parallel jobs try to create same hosts
+                registered_in_registry = False
+                host_reused = False
+
+                if self.registry_mgr:
+                    try:
+                        # Generate deterministic MAC address from host name
+                        mac_address = generate_mac_address(src_host_name)
+
+                        # Get creator tag with method and username (e.g., 'wsgi:admin')
+                        creator_tag = CreatorTagManager.get_creator_tag()
+
+                        # Try to atomically register host in registry
+                        # This is TOCTOU-free - entire check-and-register under single lock
+                        registered_in_registry = self.registry_mgr.check_and_register_host(
+                            host_name=src_host_name,
+                            primary_ip=f"{source_ip}/24",
+                            connected_to=router,
+                            mac_address=mac_address,
+                            additional_info={'created_by': creator_tag}
+                        )
+
+                        if not registered_in_registry:
+                            # Registration failed - host already exists in registry
+                            # Check if existing host matches our requirements (IP and router)
+                            host_info = self.registry_mgr.get_host_info(src_host_name)
+                            if host_info:
+                                existing_ip = host_info.get('primary_ip', '').split('/')[0]
+                                existing_router = host_info.get('connected_to', '')
+
+                                if existing_ip == source_ip and existing_router == router:
+                                    # Perfect match - reuse existing host
+                                    self.logger.info(f"Host {src_host_name} already exists with matching IP {source_ip} and router {router}, reusing")
+                                    host_reused = True
+                                else:
+                                    # Collision with different IP or router - fail
+                                    error_msg = f"Host {src_host_name} already exists with different config: IP={existing_ip} (want {source_ip}), router={existing_router} (want {router})"
+                                    self.logger.critical(f"KSMS ATOMIC HOST CREATION FAILED: {error_msg} - Rolling back {len(created_hosts)} hosts")
+                                    self._rollback_host_creation(created_hosts, run_id)
+                                    raise RuntimeError(error_msg)
+                            else:
+                                # Strange - registration failed but can't get host info
+                                error_msg = f"Host {src_host_name} registration failed but host info unavailable"
+                                self.logger.critical(f"KSMS ATOMIC HOST CREATION FAILED: {error_msg} - Rolling back {len(created_hosts)} hosts")
+                                self._rollback_host_creation(created_hosts, run_id)
+                                raise RuntimeError(error_msg)
+                    except Exception as e:
+                        error_msg = f"Registry operation failed for {src_host_name}: {e}"
+                        self.logger.critical(f"KSMS ATOMIC HOST CREATION FAILED: {error_msg} - Rolling back {len(created_hosts)} hosts")
+                        self._rollback_host_creation(created_hosts, run_id)
+                        raise RuntimeError(error_msg)
+
+                # Now create physical host if we registered it (or skip if reused)
+                if not host_reused:
+                    # Add source host to this router using tsimsh
+                    self.logger.info(f"Adding host {src_host_name} via tsimsh (registry_registered={registered_in_registry})")
+                    result = tsimsh_exec(
+                        f"host add --name {src_host_name} --primary-ip {source_ip}/24 --connect-to {router} --no-delay",
+                        capture_output=True, verbose=2
+                    )
+
+                    if result is None:
+                        error_msg = f"Host add command failed for {src_host_name} on {router}"
+                        self.logger.critical(f"KSMS ATOMIC HOST CREATION FAILED: {error_msg} - Rolling back {len(created_hosts)} hosts")
+
+                        # ROLLBACK: Unregister from registry if we registered it
+                        if registered_in_registry and self.registry_mgr:
+                            try:
+                                self.registry_mgr.unregister_host(src_host_name)
+                                self.logger.info(f"Unregistered {src_host_name} from registry after physical creation failure")
+                            except Exception as unreg_error:
+                                self.logger.error(f"Failed to unregister {src_host_name} from registry: {unreg_error}")
+
+                        # ROLLBACK: Clean up all hosts created so far
+                        self._rollback_host_creation(created_hosts, run_id)
+                        raise RuntimeError(error_msg)
+                    else:
+                        # Physical host created successfully
+                        # Check if host was reused (already existed physically) or created
+                        if "[REUSED]" in result:
+                            self.logger.info(f"Host {src_host_name} was reused (pre-existing physically), will not clean up")
+                        else:
+                            created_hosts.append(src_host_name)
+                            self.logger.info(f"Host {src_host_name} was created, will clean up after test")
+                else:
+                    self.logger.info(f"Host {src_host_name} reused from registry, skipping physical creation")
+
+            # NOW verify ALL hosts exist
+            log_progress('PHASE2_verify', 'Verifying all source hosts were created')
+            self.logger.info(f"Verifying {len(expected_hosts)} source hosts exist: {expected_hosts}")
+
+            # Try registry manager first for verification (lock-free read)
+            existing_hosts = set()
+            use_registry = False
+
             if self.registry_mgr:
                 try:
-                    host_info = self.registry_mgr.get_host_info(src_host_name)
-                    if host_info:
-                        self.logger.info(f"Host {src_host_name} already exists in registry, skipping creation")
-                        skip_creation = True
+                    all_hosts = self.registry_mgr.list_all_hosts()
+                    existing_hosts = set(all_hosts.keys())
+                    use_registry = True
+                    self.logger.info(f"Using registry manager for verification (lock-free)")
                 except Exception as e:
-                    self.logger.warning(f"Failed to check host registry: {e}")
+                    self.logger.warning(f"Failed to read host registry: {e}, falling back to tsimsh")
 
-            if not skip_creation:
-                # Add source host to this router using tsimsh
-                self.logger.info(f"Adding host {src_host_name} via tsimsh")
-                result = tsimsh_exec(
-                    f"host add --name {src_host_name} --primary-ip {source_ip}/24 --connect-to {router} --no-delay",
-                    capture_output=True, verbose=2
-                )
+            # Fall back to tsimsh if registry not available
+            if not use_registry:
+                list_result = tsimsh_exec("host list -j", capture_output=True, verbose=2)
 
-                if result is None:
-                    self.logger.error(f"Host add command failed for {src_host_name} on {router}")
-                    raise RuntimeError(f"Failed to create host {src_host_name}")
-                else:
-                    # Check if host was reused (already existed) or created
-                    if "[REUSED]" in result:
-                        self.logger.info(f"Host {src_host_name} was reused (pre-existing), will not clean up")
-                    else:
-                        created_hosts.append(src_host_name)
-                        self.logger.info(f"Host {src_host_name} was created, will clean up after test")
+                if list_result is None:
+                    error_msg = "Failed to execute 'host list' command for verification"
+                    self.logger.critical(f"KSMS ATOMIC HOST CREATION FAILED: {error_msg} - Rolling back {len(created_hosts)} hosts")
+                    self._rollback_host_creation(created_hosts, run_id)
+                    raise RuntimeError(error_msg)
 
-        # NOW verify ALL hosts exist
-        log_progress('PHASE2_verify', 'Verifying all source hosts were created')
-        self.logger.info(f"Verifying {len(expected_hosts)} source hosts exist: {expected_hosts}")
+                try:
+                    host_data = json.loads(list_result.strip())
+                    existing_hosts = set(host_data.get('hosts', {}).keys())
+                    self.logger.info(f"Found existing hosts via tsimsh: {existing_hosts}")
+                except json.JSONDecodeError as e:
+                    error_msg = f"Failed to parse host list output: {e}"
+                    self.logger.critical(f"KSMS ATOMIC HOST CREATION FAILED: {error_msg} - Rolling back {len(created_hosts)} hosts")
+                    self._rollback_host_creation(created_hosts, run_id)
+                    raise RuntimeError(error_msg)
 
-        # Try registry manager first for verification (lock-free read)
-        existing_hosts = set()
-        use_registry = False
-
-        if self.registry_mgr:
-            try:
-                all_hosts = self.registry_mgr.list_all_hosts()
-                existing_hosts = set(all_hosts.keys())
-                use_registry = True
-                self.logger.info(f"Using registry manager for verification (lock-free)")
-            except Exception as e:
-                self.logger.warning(f"Failed to read host registry: {e}, falling back to tsimsh")
-
-        # Fall back to tsimsh if registry not available
-        if not use_registry:
-            list_result = tsimsh_exec("host list -j", capture_output=True, verbose=2)
-
-            if list_result is None:
-                self.logger.error("Failed to execute 'host list' command")
-                raise RuntimeError("Failed to verify host creation - 'host list' command failed")
-
-            try:
-                host_data = json.loads(list_result.strip())
-                existing_hosts = set(host_data.get('hosts', {}).keys())
-                self.logger.info(f"Found existing hosts via tsimsh: {existing_hosts}")
-            except json.JSONDecodeError as e:
-                self.logger.error(f"Failed to parse host list output: {e}")
-                raise RuntimeError(f"Failed to parse host list output: {e}")
-
-        # Check which expected hosts are missing
-        missing_hosts = []
-        for host_name in expected_hosts:
-            if host_name not in existing_hosts:
-                missing_hosts.append(host_name)
-                self.logger.error(f"Host {host_name} is missing from registry")
-
-        if missing_hosts:
-            # Cleanup any hosts that were created
+            # Check which expected hosts are missing
+            missing_hosts = []
             for host_name in expected_hosts:
-                if host_name in existing_hosts:
-                    self.logger.debug(f"Cleaning up {host_name} after verification failure")
-                    tsimsh_exec(f"host remove --name {host_name} --force", capture_output=True, verbose=1)
+                if host_name not in existing_hosts:
+                    missing_hosts.append(host_name)
+                    self.logger.error(f"Host {host_name} is missing from registry")
 
-            missing_list = ", ".join(missing_hosts)
-            raise RuntimeError(f"Host creation verification failed - missing hosts: {missing_list}")
+            if missing_hosts:
+                missing_list = ", ".join(missing_hosts)
+                error_msg = f"Host creation verification failed - missing hosts: {missing_list}"
+                self.logger.critical(f"KSMS ATOMIC HOST CREATION FAILED: {error_msg} - Rolling back {len(created_hosts)} hosts")
+                self._rollback_host_creation(created_hosts, run_id)
+                raise RuntimeError(error_msg)
 
-        self.logger.info(f"Successfully verified all {len(expected_hosts)} source hosts exist")
-        self.logger.info(f"Created {len(created_hosts)} new hosts, reused {len(expected_hosts) - len(created_hosts)} existing hosts")
-        return created_hosts  # Only return hosts we created, not reused ones
+            # SUCCESS - All hosts created and verified
+            self.logger.info(f"ATOMIC HOST CREATION SUCCESS: Created {len(created_hosts)} new hosts, reused {len(expected_hosts) - len(created_hosts)} existing hosts")
+            return created_hosts  # Only return hosts we created, not reused ones
+
+        except RuntimeError:
+            # Re-raise RuntimeError after rollback (already logged)
+            raise
+        except Exception as e:
+            # Unexpected error - log and rollback
+            error_msg = f"Unexpected error during host creation: {e}"
+            self.logger.critical(f"KSMS ATOMIC HOST CREATION FAILED: {error_msg} - Rolling back {len(created_hosts)} hosts", exc_info=True)
+            self._rollback_host_creation(created_hosts, run_id)
+            raise RuntimeError(error_msg)
+
+    def _rollback_host_creation(self, created_hosts: List[str], run_id: str):
+        """Roll back host creation - remove all hosts that were created
+
+        This is called when atomic host creation fails to restore original state.
+
+        Args:
+            created_hosts: List of host names that were created (not reused)
+            run_id: Run ID for logging
+        """
+        if not created_hosts:
+            self.logger.info("No hosts to roll back")
+            return
+
+        self.logger.error(f"ROLLING BACK {len(created_hosts)} hosts for {run_id}: {created_hosts}")
+
+        rollback_failures = []
+        for src_host_name in created_hosts:
+            self.logger.info(f"Rolling back host {src_host_name}")
+
+            # Use tsimsh to remove host
+            result = tsimsh_exec(
+                f"host remove --name {src_host_name} --force",
+                capture_output=True, verbose=1
+            )
+
+            if result is None:
+                self.logger.error(f"ROLLBACK FAILED for host {src_host_name}")
+                rollback_failures.append(src_host_name)
+            else:
+                # Check if removal was successful
+                if "[SUCCESS]" in result or "[INFO]" in result:
+                    self.logger.info(f"Successfully rolled back host {src_host_name}")
+
+                    # Also unregister from registry
+                    if self.registry_mgr:
+                        try:
+                            self.registry_mgr.unregister_host(src_host_name)
+                            self.logger.info(f"Unregistered {src_host_name} from registry during rollback")
+                        except Exception as unreg_error:
+                            self.logger.warning(f"Failed to unregister {src_host_name} from registry: {unreg_error}")
+                else:
+                    self.logger.warning(f"Uncertain rollback status for {src_host_name}: {result[:100]}")
+                    rollback_failures.append(src_host_name)
+
+        if rollback_failures:
+            self.logger.critical(f"ROLLBACK INCOMPLETE: Failed to remove {len(rollback_failures)} hosts: {rollback_failures}")
+        else:
+            self.logger.info(f"ROLLBACK COMPLETE: Successfully removed all {len(created_hosts)} hosts")
 
     def _cleanup_source_hosts(self, created_hosts: List[str], run_id: str):
         """Remove created source hosts
@@ -940,6 +1182,14 @@ class TsimKsmsService:
                 # Check if removal was successful
                 if "[SUCCESS]" in result or "[INFO]" in result:
                     removed_count += 1
+
+                    # Also unregister from registry
+                    if self.registry_mgr:
+                        try:
+                            self.registry_mgr.unregister_host(src_host_name)
+                            self.logger.debug(f"Unregistered {src_host_name} from registry during cleanup")
+                        except Exception as unreg_error:
+                            self.logger.warning(f"Failed to unregister {src_host_name} from registry: {unreg_error}")
                 else:
                     self.logger.warning(f"Uncertain status removing {src_host_name}: {result[:100]}")
                     failed_count += 1

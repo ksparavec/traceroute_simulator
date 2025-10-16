@@ -281,6 +281,15 @@ window.addEventListener('DOMContentLoaded', () => {
         // Perform AJAX submission to capture server-side validation errors
         e.preventDefault();
         saveFormData();
+
+        // Disable submit button immediately to prevent double-clicks
+        const submitBtn = form.querySelector('button[type="submit"]');
+        const originalBtnText = submitBtn ? submitBtn.textContent : 'Run Test';
+        if (submitBtn) {
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Submitting...';
+        }
+
         try {
             const fd = new FormData(form);
             const resp = await fetch('/main', {
@@ -322,19 +331,36 @@ window.addEventListener('DOMContentLoaded', () => {
                 }
                 // Log for debugging
                 console.log('Server error response:', resp.status, payload);
+
+                // Re-enable button on error
+                if (submitBtn) {
+                    submitBtn.disabled = false;
+                    submitBtn.textContent = originalBtnText;
+                }
                 showError(msg);
                 return;
             }
 
             if (payload && payload.success) {
                 const url = (payload.redirect) || `/progress.html?id=${payload.run_id}`;
+                // Keep button disabled during redirect
                 window.location.href = url;
             } else {
                 const msg = (payload && (payload.message || payload.error)) || 'Unexpected response. Please try again.';
+                // Re-enable button on error
+                if (submitBtn) {
+                    submitBtn.disabled = false;
+                    submitBtn.textContent = originalBtnText;
+                }
                 showError(msg);
             }
         } catch (err) {
             console.error('Form submission error:', err);
+            // Re-enable button on error
+            if (submitBtn) {
+                submitBtn.disabled = false;
+                submitBtn.textContent = originalBtnText;
+            }
             showError('Network or server error. Please try again.');
         }
     });

@@ -31,12 +31,13 @@ import hashlib
 
 # Use absolute imports for installed package
 from tsim.core.exceptions import (
-    ExecutionError, NetworkError, ValidationError, 
+    ExecutionError, NetworkError, ValidationError,
     PortValidationError, ConfigurationError, ErrorHandler
 )
 from tsim.core.models import IptablesRule
 from tsim.core.structured_logging import get_logger, setup_logging
 from tsim.core.config_loader import get_registry_paths, load_traceroute_config
+from tsim.core.creator_tag import CreatorTagManager
 
 
 class ServiceProtocol(str, Enum):
@@ -142,18 +143,23 @@ class ServiceConfig:
     timeout: int = 30
     pid_file: Optional[str] = None
     log_file: Optional[str] = None
+    created_by: Optional[str] = None  # Track creator: "wsgi", "cli", "api", etc.
     
     def __post_init__(self):
         """Validate configuration after initialization."""
         # Validate port
         if not 1 <= self.port <= 65535:
             raise PortValidationError(str(self.port))
-            
+
         # Set default paths if not provided - use /dev/shm/tsim for all files
         if not self.pid_file:
             self.pid_file = f"/dev/shm/tsim/service_{self.namespace}_{self.name}_{self.port}.pid"
         if not self.log_file:
             self.log_file = f"/dev/shm/tsim/service_{self.namespace}_{self.name}_{self.port}.log"
+
+        # Auto-detect creator if not set
+        if self.created_by is None:
+            self.created_by = CreatorTagManager.get_creator_tag()
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for JSON serialization."""

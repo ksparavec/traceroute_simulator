@@ -1,12 +1,13 @@
 #!/usr/bin/env -S python3 -B -u
 """
 TSIM Scheduler Service
-Background scheduler supporting both serial and parallel execution modes.
+Background scheduler with unified execution model.
 
 Execution Modes:
-- serial: Jobs execute one at a time (proven baseline, default)
-- parallel: Quick jobs run concurrently (up to 32), detailed jobs serialize
+- serial: Jobs execute one at a time (max_workers=1, default)
+- parallel: Quick jobs run concurrently (max_workers configurable, typically 33)
 
+Both modes use the same code path - serial is just parallel with max_workers=1.
 Configuration: Set "wsgi_execution_mode" in config.json
 """
 
@@ -22,11 +23,12 @@ from concurrent.futures import ThreadPoolExecutor, Future
 class TsimSchedulerService:
     """Background scheduler with centralized coordination via TsimRegistryManager.
 
-    Supports two execution modes:
-    - serial: One job at a time (baseline, proven code path)
-    - parallel: Multiple quick jobs concurrently, detailed jobs serialize
+    Unified execution model:
+    - Always uses thread pool for execution
+    - serial mode: max_workers=1 (one job at a time)
+    - parallel mode: max_workers=33 (multiple quick jobs concurrently)
 
-    Mode is configured via wsgi_execution_mode in config.json
+    Mode is configured via wsgi_execution_mode in config.json (default: serial)
     """
 
     def __init__(self, config_service, queue_service, progress_tracker, executor, lock_manager):
@@ -41,28 +43,35 @@ class TsimSchedulerService:
         self._thread: Optional[threading.Thread] = None
 
         # Execution mode configuration
+        # Note: serial is just parallel with max_workers=1
         self.execution_mode = config_service.get('wsgi_execution_mode', 'serial')
         if self.execution_mode not in ['serial', 'parallel']:
             self.logger.error(f"Invalid wsgi_execution_mode '{self.execution_mode}', defaulting to serial")
             self.execution_mode = 'serial'
 
-        self.logger.info(f"Scheduler execution mode: {self.execution_mode}")
-
-        # Parallel execution infrastructure
+        # Unified execution infrastructure (always use thread pool)
         self.parallel_config = config_service.get('wsgi_parallel_config', {})
         self.enable_fallback = self.parallel_config.get('enable_fallback_to_serial', True)
         self.log_metrics = self.parallel_config.get('log_execution_metrics', True)
 
+        # Serial mode = parallel mode with max_workers=1
         if self.execution_mode == 'parallel':
-            max_workers = self.parallel_config.get('thread_pool_workers', 33)
-            self.thread_pool = ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix='job-executor')
-            self.running_jobs: Dict[str, Dict[str, Any]] = {}
-            self.running_lock = threading.Lock()
-            self.logger.info(f"Parallel execution enabled: max_workers={max_workers}")
+            self.max_workers = self.parallel_config.get('thread_pool_workers', 33)
+            self.max_quick_jobs = self.parallel_config.get('max_quick_jobs', 32)
         else:
-            self.thread_pool = None
-            self.running_jobs = None
-            self.running_lock = None
+            # Serial mode: override all batch/parallel settings to 1
+            self.max_workers = 1
+            self.max_quick_jobs = 1
+            # Override parallel config to ensure no batching
+            self.parallel_config = dict(self.parallel_config)  # Copy
+            self.parallel_config['thread_pool_workers'] = 1
+            self.parallel_config['max_quick_jobs'] = 1
+
+        self.thread_pool = ThreadPoolExecutor(max_workers=self.max_workers, thread_name_prefix='job-executor')
+        self.running_jobs: Dict[str, Dict[str, Any]] = {}
+        self.running_lock = threading.Lock()
+
+        self.logger.info(f"Scheduler execution mode: {self.execution_mode} (max_workers={self.max_workers}, max_quick_jobs={self.max_quick_jobs})")
 
         # Initialize TsimRegistryManager for coordination visibility
         # (scripts initialize their own instances, but this provides monitoring capability)
@@ -75,9 +84,9 @@ class TsimSchedulerService:
             self.logger.warning(f"Failed to initialize TsimRegistryManager: {e}")
             self.logger.warning("Coordination will still work (scripts initialize their own instances)")
 
-        # Initialize Quick Job Host Pool Service for parallel quick job execution
+        # Initialize Quick Job Host Pool Service for quick job execution
         self.host_pool = None
-        if self.execution_mode == 'parallel' and self.registry_mgr:
+        if self.registry_mgr:
             try:
                 from services.tsim_quick_job_host_pool_service import TsimQuickJobHostPoolService
 
@@ -146,131 +155,43 @@ class TsimSchedulerService:
                 time.sleep(0.5)
                 continue
             try:
-                # Dispatch to appropriate leader loop based on execution mode
-                if self.execution_mode == 'parallel':
-                    self._leader_loop_parallel()
-                else:
-                    self._leader_loop_serial()
+                # Always use parallel loop (serial mode is just parallel with max_workers=1)
+                self._leader_loop_parallel()
             finally:
                 self.lock_manager.release_lock(leader_name)
             # Yield to others briefly
             time.sleep(0.25)
 
-    def _leader_loop_serial(self):
-        """While leader, pull jobs and execute one-at-a-time (serial mode)."""
-        while not self._stop_event.is_set():
-            job = self.queue.pop_next()
-            if not job:
-                # Nothing to do; short sleep
-                time.sleep(0.5)
-                return
-
-            run_id = job.get('run_id')
-            username = job.get('username')
-            params = job.get('params', {})
-
-            # Ensure run directory and initial progress exist
-            try:
-                self.progress.create_run_directory(run_id)
-            except Exception:
-                pass
-            # NOTE: No global lock needed - coordination handled by TsimRegistryManager
-            # in the scripts themselves (router locks, host leases, etc.)
-
-            # Record current running job for admin view
-            current = {
-                'run_id': run_id,
-                'username': username,
-                'status': 'STARTING',
-                'created_at': job.get('created_at'),
-                'params': params
-            }
-            self.queue.set_current(current)
-
-            # Persist run metadata for admin/details
-            try:
-                run_dir = Path(self.config.get('run_dir', '/dev/shm/tsim/runs')) / run_id
-                run_dir.mkdir(parents=True, exist_ok=True)
-                meta = {
-                    'run_id': run_id,
-                    'username': username,
-                    'created_at': current.get('created_at'),
-                    'params': params,
-                    'status': 'STARTING'
-                }
-                with open(run_dir / 'run.json', 'w') as f:
-                    json.dump(meta, f, indent=2)
-            except Exception:
-                pass
-
-            # Mark starting and execute
-            self.queue.update_status(run_id, 'STARTING')
-            try:
-                # If cancel was requested before start, skip execution
-                cur = self.queue.get_current() or {}
-                if cur.get('cancel_requested'):
-                    try:
-                        self.progress.log_phase(run_id, 'FAILED', 'Cancelled before start by admin')
-                    except Exception:
-                        pass
-                    self.queue.update_status(run_id, 'FAILED')
-                    return
-
-                # Execute job - coordination happens inside scripts via TsimRegistryManager
-                result = self.executor.execute(
-                    run_id,
-                    params.get('source_ip'),
-                    params.get('dest_ip'),
-                    params.get('source_port'),
-                    params.get('port_protocol_list', []),
-                    params.get('user_trace_data'),
-                    params.get('analysis_mode', 'detailed'),
-                    params.get('dest_ports', ''),
-                    username=username
-                )
-
-                # Update current as running (for completeness)
-                current['status'] = 'RUNNING'
-                self.queue.set_current(current)
-                try:
-                    run_dir = Path(self.config.get('run_dir', '/dev/shm/tsim/runs')) / run_id
-                    with open(run_dir / 'run.json', 'r') as f:
-                        meta = json.load(f)
-                    meta['status'] = 'RUNNING'
-                    with open(run_dir / 'run.json', 'w') as f:
-                        json.dump(meta, f, indent=2)
-                except Exception:
-                    pass
-
-                # executor marks completion via progress tracker; nothing else to do here
-                self.queue.update_status(run_id, 'RUNNING')
-
-            except Exception as e:
-                self.queue.update_status(run_id, 'FAILED')
-                try:
-                    self.progress.log_phase(run_id, 'ERROR', f'Scheduler error: {e}')
-                except Exception:
-                    pass
-            finally:
-                # Clear current job
-                self.queue.clear_current()
-
-    # ==================== PARALLEL EXECUTION MODE ====================
-
     def _leader_loop_parallel(self):
-        """While leader, manage parallel job execution."""
+        """While leader, manage job execution via thread pool.
+
+        Used for both serial (max_workers=1) and parallel modes (max_workers=33).
+        """
         while not self._stop_event.is_set():
             # Check for completed jobs
             self._cleanup_completed_jobs()
 
-            # Pop compatible jobs
+            # Calculate available capacity: max_workers - current running jobs
             with self.running_lock:
+                current_running = len(self.running_jobs)
                 running_jobs_info = {
                     run_id: {'type': info['type'], 'dscp': info.get('dscp')}
                     for run_id, info in self.running_jobs.items()
                 }
 
-            jobs_to_start = self.queue.pop_compatible_jobs(running_jobs_info)
+            available_slots = self.max_workers - current_running
+            if available_slots <= 0:
+                # No capacity available - wait for jobs to complete
+                time.sleep(0.5)
+                continue
+
+            # Pop compatible jobs (limited by available capacity)
+            jobs_to_start = self.queue.pop_compatible_jobs(running_jobs_info, max_jobs=available_slots)
+
+            # Debug logging for serial mode
+            if jobs_to_start and self.execution_mode == 'serial':
+                self.logger.info(f"[SERIAL DEBUG] current_running={current_running}, max_workers={self.max_workers}, "
+                               f"available_slots={available_slots}, jobs_popped={len(jobs_to_start)}")
 
             if not jobs_to_start:
                 time.sleep(0.5)
@@ -280,8 +201,9 @@ class TsimSchedulerService:
             all_quick = all(j.get('analysis_mode') == 'quick' for j in jobs_to_start)
 
             if all_quick and len(jobs_to_start) > 0 and self.host_pool:
-                # Use host pool service for batch quick job execution
-                self.logger.info(f"Using host pool for batch of {len(jobs_to_start)} quick jobs")
+                # Use host pool service for quick job execution
+                # Works for both serial (batch=1) and parallel (batch=N) modes
+                self.logger.info(f"Using host pool for {len(jobs_to_start)} quick job(s)")
                 self._start_quick_jobs_batch(jobs_to_start)
             else:
                 # Start jobs individually (fallback or detailed jobs)
@@ -418,7 +340,7 @@ class TsimSchedulerService:
                     pass
 
     def _start_job_parallel(self, job: Dict[str, Any]):
-        """Start a single job in thread pool (parallel mode)."""
+        """Start a single job in thread pool (used for both serial and parallel modes)."""
         run_id = job.get('run_id')
         analysis_mode = job.get('analysis_mode', 'detailed')
         start_time = time.time()
@@ -477,7 +399,7 @@ class TsimSchedulerService:
             self.running_jobs[run_id]['future'] = future
 
     def _execute_job_wrapper(self, job: Dict[str, Any], dscp: Optional[int], start_time: float) -> Dict[str, Any]:
-        """Wrapper for job execution with error handling (parallel mode)."""
+        """Wrapper for job execution with error handling (used for both serial and parallel modes)."""
         run_id = job.get('run_id')
         analysis_mode = job.get('analysis_mode', 'detailed')
 
@@ -553,7 +475,7 @@ class TsimSchedulerService:
                     self.logger.error(f"Failed to release DSCP for {run_id}: {e}")
 
     def _cleanup_completed_jobs(self):
-        """Remove completed jobs from running_jobs (parallel mode)."""
+        """Remove completed jobs from running_jobs (used for both serial and parallel modes)."""
         with self.running_lock:
             completed = []
             for run_id, info in self.running_jobs.items():

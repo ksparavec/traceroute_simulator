@@ -200,7 +200,7 @@ class TsimQueueService:
                 pass
 
     # --------------- parallel execution support ---------------
-    def pop_compatible_jobs(self, running_jobs: Dict[str, Dict]) -> List[Dict[str, Any]]:
+    def pop_compatible_jobs(self, running_jobs: Dict[str, Dict], max_jobs: int = 32) -> List[Dict[str, Any]]:
         """Pop compatible jobs based on current running jobs.
 
         Parallel Execution Logic:
@@ -210,6 +210,7 @@ class TsimQueueService:
 
         Args:
             running_jobs: Dict of {run_id: {'type': 'quick'|'detailed', 'dscp': int}}
+            max_jobs: Maximum number of jobs to pop (respects thread pool capacity)
 
         Returns:
             List of job dicts to execute
@@ -231,11 +232,11 @@ class TsimQueueService:
             # If quick jobs running, only more quick jobs can start
             if quick_count > 0:
                 max_quick = 32  # From dscp_registry max_concurrent_jobs
-                slots_available = max_quick - quick_count
+                slots_available = min(max_quick - quick_count, max_jobs)
                 if slots_available <= 0:
                     return []
 
-                # Pop up to slots_available quick jobs
+                # Pop up to slots_available quick jobs (limited by max_jobs)
                 quick_jobs = [j for j in jobs if j.get('analysis_mode') == 'quick']
                 to_pop = quick_jobs[:slots_available]
 
@@ -249,9 +250,9 @@ class TsimQueueService:
             # Nothing running - check first job
             first_job = jobs[0]
             if first_job.get('analysis_mode') == 'quick':
-                # Pop multiple quick jobs (up to max)
+                # Pop multiple quick jobs (limited by max_jobs and DSCP limit)
                 quick_jobs = [j for j in jobs if j.get('analysis_mode') == 'quick']
-                to_pop = quick_jobs[:32]
+                to_pop = quick_jobs[:min(32, max_jobs)]
 
                 remaining = [j for j in jobs if j not in to_pop]
                 q['jobs'] = remaining

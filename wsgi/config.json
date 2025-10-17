@@ -87,6 +87,8 @@
         "log_execution_metrics": true
     },
 
+    "quick_job_host_cleanup_grace_period": 30,
+
     "data_dir": "/dev/shm/tsim",
     "log_dir": "/var/log/tsim",
     "session_dir": "/dev/shm/tsim/sessions",

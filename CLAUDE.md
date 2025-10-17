@@ -90,3 +90,7 @@ When errors appear to be "silent", check:
 - all directories in /dev/shm/tsim must have following permissions: 2775 and all group ownerships must be set to unix_group parameter.
 all files in /dev/shm/tsim must have following permissions: 0660 and all group ownerships must be set to unix_group parameter.
 - never execute any python script as root using sudo!
+- when implementing similar functionality to existing code, copy the working implementation verbatim - do not reimplement or modify the pattern
+- if a command or tool handles state management internally (like registry operations), do not duplicate that state management externally before calling it
+- error messages indicating "already registered but doesn't exist" or similar state inconsistencies are strong indicators of duplicate operations on shared state
+- let commands handle their full responsibility - if a command is designed to manage both physical resources and registry state atomically, do not split those operations

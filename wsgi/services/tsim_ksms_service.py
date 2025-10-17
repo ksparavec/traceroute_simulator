@@ -206,9 +206,19 @@ class TsimKsmsService:
             self.logger.info(f"Using DSCP {job_dscp} for job {run_id} (allocated by scheduler)")
 
             # Step 3: Setup source hosts from trace
-            log_progress('PHASE2_host_setup', 'Creating source hosts from trace')
+            # Check if hosts are managed by host pool service (batch quick jobs)
+            if params.get('host_pool_managed'):
+                # Hosts already created by host pool - skip creation
+                allocated_hosts = params.get('allocated_hosts', {})
+                self.logger.info(f"Using {len(allocated_hosts)} hosts from host pool: {list(allocated_hosts.keys())}")
+                log_progress('PHASE2_host_setup', f'Using {len(allocated_hosts)} pre-created hosts from pool')
 
-            created_hosts = self._setup_source_hosts(params, run_id, log_progress)
+                # Don't track hosts for cleanup - host pool will handle it
+                created_hosts = []
+            else:
+                # Traditional flow: create hosts ourselves
+                log_progress('PHASE2_host_setup', 'Creating source hosts from trace')
+                created_hosts = self._setup_source_hosts(params, run_id, log_progress)
 
             # Check cancellation after host setup
             self._check_cancellation(run_id)

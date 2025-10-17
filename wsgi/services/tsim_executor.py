@@ -62,7 +62,9 @@ class TsimExecutor:
     def execute(self, run_id: str, source_ip: str, dest_ip: str,
                 source_port: Optional[str], port_protocol_list: List[Tuple[int, str]],
                 user_trace_data: Optional[str] = None, analysis_mode: str = 'detailed',
-                dest_ports: Optional[str] = None, job_dscp: Optional[int] = None) -> Dict[str, Any]:
+                dest_ports: Optional[str] = None, job_dscp: Optional[int] = None,
+                allocated_hosts: Optional[Dict[str, Dict]] = None,
+                host_pool_managed: bool = False) -> Dict[str, Any]:
         """Execute complete test pipeline using hybrid executor
 
         Args:
@@ -75,6 +77,8 @@ class TsimExecutor:
             analysis_mode: Analysis mode ('quick' or 'detailed')
             dest_ports: Original port specification string (for PDF display)
             job_dscp: Optional pre-allocated DSCP value for quick analysis
+            allocated_hosts: Optional pre-allocated hosts from host pool service
+            host_pool_managed: Flag indicating hosts are managed by host pool
 
         Returns:
             Dictionary with execution results
@@ -106,6 +110,12 @@ class TsimExecutor:
         # Add DSCP if provided (for quick analysis jobs)
         if job_dscp is not None:
             params['job_dscp'] = job_dscp
+
+        # Add host pool parameters if provided (for parallel quick jobs)
+        if allocated_hosts is not None:
+            params['allocated_hosts'] = allocated_hosts
+        if host_pool_managed:
+            params['host_pool_managed'] = host_pool_managed
         
         # Execute directly using hybrid executor
         self.logger.info(f"Starting direct execution for run {run_id}")

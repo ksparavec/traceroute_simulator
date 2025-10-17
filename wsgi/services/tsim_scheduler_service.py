@@ -15,7 +15,7 @@ import json
 import logging
 import threading
 from pathlib import Path
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from concurrent.futures import ThreadPoolExecutor, Future
 
 
@@ -74,6 +74,21 @@ class TsimSchedulerService:
         except Exception as e:
             self.logger.warning(f"Failed to initialize TsimRegistryManager: {e}")
             self.logger.warning("Coordination will still work (scripts initialize their own instances)")
+
+        # Initialize Quick Job Host Pool Service for parallel quick job execution
+        self.host_pool = None
+        if self.execution_mode == 'parallel' and self.registry_mgr:
+            try:
+                from services.tsim_quick_job_host_pool_service import TsimQuickJobHostPoolService
+                self.host_pool = TsimQuickJobHostPoolService(
+                    config_service,
+                    self.registry_mgr,
+                    logger_service=None
+                )
+                self.logger.info("Quick job host pool service initialized")
+            except Exception as e:
+                self.logger.warning(f"Failed to initialize host pool service: {e}")
+                self.logger.warning("Quick jobs will use fallback mode (individual host creation)")
 
     def start(self):
         if self._thread and self._thread.is_alive():
@@ -225,11 +240,146 @@ class TsimSchedulerService:
                 time.sleep(0.5)
                 continue
 
-            # Start all compatible jobs
-            for job in jobs_to_start:
-                self._start_job_parallel(job)
+            # Check if ALL jobs are quick jobs - if so, use host pool service
+            all_quick = all(j.get('analysis_mode') == 'quick' for j in jobs_to_start)
+
+            if all_quick and len(jobs_to_start) > 0 and self.host_pool:
+                # Use host pool service for batch quick job execution
+                self.logger.info(f"Using host pool for batch of {len(jobs_to_start)} quick jobs")
+                self._start_quick_jobs_batch(jobs_to_start)
+            else:
+                # Start jobs individually (fallback or detailed jobs)
+                for job in jobs_to_start:
+                    self._start_job_parallel(job)
 
             time.sleep(0.25)
+
+    def _start_quick_jobs_batch(self, jobs: List[Dict[str, Any]]):
+        """Start batch of quick jobs using host pool service.
+
+        Args:
+            jobs: List of quick job dictionaries
+        """
+        if not jobs:
+            return
+
+        self.logger.info(f"Preparing batch of {len(jobs)} quick jobs with host pool")
+
+        # Create executor callback that will be called for each job after hosts are ready
+        def executor_callback(job_params: Dict[str, Any], allocated_hosts: Dict[str, Dict]):
+            """Callback invoked by host pool after hosts are created"""
+            run_id = job_params['run_id']
+
+            # Allocate DSCP for this job
+            dscp = None
+            try:
+                from services.tsim_dscp_registry import TsimDscpRegistry
+                dscp_registry = TsimDscpRegistry(self.config)
+                dscp = dscp_registry.allocate_dscp(run_id)
+                if dscp is None:
+                    self.logger.error(f"No DSCP available for quick job {run_id}")
+                    self.queue.update_status(run_id, 'FAILED')
+                    try:
+                        self.progress.log_phase(run_id, 'ERROR', 'No DSCP values available')
+                    except Exception:
+                        pass
+                    # Release hosts since we couldn't start the job
+                    if self.host_pool:
+                        self.host_pool.release_job(run_id, list(allocated_hosts.keys()))
+                    return
+            except Exception as e:
+                self.logger.error(f"Failed to allocate DSCP for {run_id}: {e}")
+                if self.host_pool:
+                    self.host_pool.release_job(run_id, list(allocated_hosts.keys()))
+                return
+
+            # Add allocated hosts to job params
+            job_params['allocated_hosts'] = allocated_hosts
+            job_params['host_pool_managed'] = True  # Flag to skip host creation in KSMS
+
+            # Reconstruct job dict from params
+            job = {
+                'run_id': run_id,
+                'username': job_params.get('username'),
+                'analysis_mode': 'quick',
+                'params': job_params,
+                'created_at': job_params.get('created_at')
+            }
+
+            # Add to running jobs
+            start_time = time.time()
+            with self.running_lock:
+                self.running_jobs[run_id] = {
+                    'type': 'quick',
+                    'dscp': dscp,
+                    'started_at': start_time,
+                    'job': job,
+                    'allocated_hosts': list(allocated_hosts.keys())  # Track for cleanup
+                }
+
+            # Update queue tracking
+            running_list = []
+            with self.running_lock:
+                for rid, info in self.running_jobs.items():
+                    running_list.append({
+                        'run_id': rid,
+                        'username': info['job'].get('username'),
+                        'status': 'RUNNING',
+                        'type': info['type'],
+                        'dscp': info.get('dscp'),
+                        'started_at': info['started_at'],
+                        'params': info['job'].get('params', {})
+                    })
+            self.queue.set_running(running_list)
+
+            # Log start
+            if self.log_metrics:
+                self.logger.info(f"Starting job {run_id} (mode=quick, dscp={dscp}, hosts={list(allocated_hosts.keys())})")
+
+            # Submit to thread pool
+            future = self.thread_pool.submit(self._execute_job_wrapper, job, dscp, start_time)
+
+            with self.running_lock:
+                self.running_jobs[run_id]['future'] = future
+
+        # Convert jobs to params format expected by host pool
+        job_params_list = []
+        for job in jobs:
+            params = job.get('params', {})
+            params['run_id'] = job['run_id']
+            params['username'] = job.get('username')
+            params['created_at'] = job.get('created_at')
+            job_params_list.append(params)
+
+        # Call host pool service to prepare hosts and execute jobs
+        try:
+            result = self.host_pool.prepare_and_execute_jobs(job_params_list, executor_callback)
+
+            if not result['success']:
+                error_msg = result.get('error', 'Unknown error')
+                self.logger.error(f"Host pool batch preparation failed: {error_msg}")
+
+                # Mark failed jobs
+                failed_jobs = result.get('failed_jobs', [j['run_id'] for j in jobs])
+                for run_id in failed_jobs:
+                    self.queue.update_status(run_id, 'FAILED')
+                    try:
+                        self.progress.log_phase(run_id, 'ERROR', f'Batch preparation failed: {error_msg}')
+                    except Exception:
+                        pass
+            else:
+                self.logger.info(f"Successfully launched {result['jobs_launched']}/{len(jobs)} jobs in batch")
+
+        except Exception as e:
+            self.logger.error(f"Exception in batch job preparation: {e}", exc_info=True)
+            # Mark all jobs as failed
+            for job in jobs:
+                run_id = job['run_id']
+                self.queue.update_status(run_id, 'FAILED')
+                try:
+                    self.progress.log_phase(run_id, 'ERROR', f'Batch preparation exception: {e}')
+                except Exception:
+                    pass
 
     def _start_job_parallel(self, job: Dict[str, Any]):
         """Start a single job in thread pool (parallel mode)."""
@@ -318,7 +468,7 @@ class TsimSchedulerService:
             except Exception:
                 pass
 
-            # Execute the job (pass DSCP for quick analysis)
+            # Execute the job (pass DSCP and host pool params for quick analysis)
             result = self.executor.execute(
                 run_id,
                 params.get('source_ip'),
@@ -328,7 +478,9 @@ class TsimSchedulerService:
                 params.get('user_trace_data'),
                 analysis_mode,
                 params.get('dest_ports', ''),
-                job_dscp=dscp
+                job_dscp=dscp,
+                allocated_hosts=params.get('allocated_hosts'),
+                host_pool_managed=params.get('host_pool_managed', False)
             )
 
             # Log metrics if enabled
@@ -370,8 +522,17 @@ class TsimSchedulerService:
             for run_id, info in self.running_jobs.items():
                 future = info.get('future')
                 if future and future.done():
-                    completed.append(run_id)
+                    completed.append((run_id, info))
 
-            for run_id in completed:
+            for run_id, info in completed:
+                # Release hosts if this was a host-pool-managed job
+                allocated_hosts = info.get('allocated_hosts')
+                if allocated_hosts and self.host_pool:
+                    try:
+                        self.host_pool.release_job(run_id, allocated_hosts)
+                        self.logger.debug(f"Released {len(allocated_hosts)} hosts for completed job {run_id}")
+                    except Exception as e:
+                        self.logger.error(f"Failed to release hosts for {run_id}: {e}")
+
                 del self.running_jobs[run_id]
                 self.queue.remove_running(run_id)

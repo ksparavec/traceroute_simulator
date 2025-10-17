@@ -427,6 +427,7 @@ from handlers.tsim_cleanup_handler import TsimCleanupHandler
 from handlers.tsim_queue_admin_handler import TsimQueueAdminHandler
 from handlers.tsim_job_details_handler import TsimJobDetailsHandler
 from handlers.tsim_admin_queue_stream_handler import TsimAdminQueueStreamHandler
+from handlers.tsim_admin_host_remove_handler import TsimAdminHostRemoveHandler
 logger.info("All handler modules loaded")
 
 # Script modules are loaded on-demand, not preloaded
@@ -613,7 +614,15 @@ def application(environ, start_response):
                     username = session_data.get('username')
                     if username:
                         os.environ['TSIM_WSGI_USERNAME'] = username
-        except Exception:
+                        logger.debug(f"Set TSIM_WSGI_USERNAME={username} from session {session_id[:8]}...")
+                    else:
+                        logger.debug(f"Session {session_id[:8]}... has no username")
+                else:
+                    logger.debug(f"No session data for session_id {session_id[:8]}...")
+            else:
+                logger.debug("No session_id found in cookies")
+        except Exception as e:
+            logger.debug(f"Failed to set TSIM_WSGI_USERNAME: {e}")
             pass  # Silently fail - not critical
 
     # Call the actual application

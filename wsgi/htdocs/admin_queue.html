@@ -75,10 +75,28 @@
       font-weight: bold;
       text-shadow: 1px 1px 2px rgba(0,0,0,0.5);
     }
+    .courier-bold {
+      font-family: 'Courier New', Courier, monospace;
+      font-weight: bold;
+    }
+    .courier {
+      font-family: 'Courier New', Courier, monospace;
+    }
+    .bold {
+      font-weight: bold;
+    }
   </style>
 </head>
 <body>
   <div class="container">
+    <div id="currentHostsContainer" style="margin: 16px 0;">
+      <h2>Current Hosts (<span id="currentHostsCount">0</span>)</h2>
+      <table class="queue-table" id="currentHostsTable">
+        <thead><tr><th>Host Name</th><th>Connected To</th><th>Primary IP</th><th>Created At</th><th>Created By</th><th>Expiry (seconds)</th><th>Actions</th></tr></thead>
+        <tbody id="currentHostsBody"></tbody>
+      </table>
+    </div>
+
     <div id="runningPoolContainer" style="margin: 16px 0;">
       <h2>Running Pool (<span id="runningPoolCount">0</span>)</h2>
       <table class="queue-table" id="runningPoolTable">
@@ -245,6 +263,77 @@
 
           return parts.join(', ');
         }
+
+        // Display Current Hosts
+        const currentHosts = data.current_hosts || [];
+        const chBody = document.getElementById('currentHostsBody');
+        document.getElementById('currentHostsCount').textContent = currentHosts.length;
+        chBody.innerHTML = '';
+
+        currentHosts.forEach(host => {
+          if (!host) return;
+
+          const tr = document.createElement('tr');
+          const expiryDisplay = host.expiry_seconds !== null && host.expiry_seconds !== undefined
+            ? host.expiry_seconds
+            : 'N/A';
+
+          // Create Remove button - disabled if host is in use
+          const removeBtn = document.createElement('button');
+          removeBtn.textContent = 'Remove';
+          removeBtn.className = 'cancel-button';
+          removeBtn.disabled = host.in_use;
+          removeBtn.title = host.in_use ? 'Host is currently in use by jobs' : 'Remove this host';
+
+          if (!host.in_use) {
+            removeBtn.onclick = async () => {
+              if (!confirm(`Are you sure you want to remove host ${host.host_name}?`)) {
+                return;
+              }
+
+              removeBtn.disabled = true;
+              removeBtn.textContent = 'Removing...';
+
+              try {
+                const response = await fetch('/admin-host-remove', {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json'
+                  },
+                  body: JSON.stringify({ host_name: host.host_name })
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                  alert(`Success: ${result.message}`);
+                  // Row will disappear on next SSE update
+                } else {
+                  alert(`Error: ${result.message}`);
+                  removeBtn.disabled = false;
+                  removeBtn.textContent = 'Remove';
+                }
+              } catch (error) {
+                alert(`Error removing host: ${error}`);
+                removeBtn.disabled = false;
+                removeBtn.textContent = 'Remove';
+              }
+            };
+          }
+
+          tr.innerHTML = `<td class="courier-bold">${sanitizeAscii(host.host_name||'')}</td>` +
+                        `<td class="courier">${sanitizeAscii(host.connected_to||'')}</td>` +
+                        `<td class="courier">${sanitizeAscii(host.primary_ip||'')}</td>` +
+                        `<td>${sanitizeAscii(host.created_at||'')}</td>` +
+                        `<td>${sanitizeAscii(host.created_by||'')}</td>` +
+                        `<td class="bold">${expiryDisplay}</td>`;
+
+          const actionCell = document.createElement('td');
+          actionCell.appendChild(removeBtn);
+          tr.appendChild(actionCell);
+
+          chBody.appendChild(tr);
+        });
 
         // Display Running Pool (actually executing jobs)
         const runningPool = data.running_pool || [];

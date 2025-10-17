@@ -753,7 +753,9 @@ class HostNamespaceManager:
                         additional_info[field] = host_config[field]
 
                 # Add creator tag for audit trail and cleanup
-                additional_info['created_by'] = CreatorTagManager.get_creator_tag()
+                creator_tag = CreatorTagManager.get_creator_tag()
+                print(f"[DEBUG] host_namespace_setup detected creator_tag: {creator_tag} (TSIM_CREATOR_TAG env={os.environ.get('TSIM_CREATOR_TAG', 'NOT SET')})", file=sys.stderr)
+                additional_info['created_by'] = creator_tag
 
                 # Atomic check-and-register (eliminates TOCTOU vulnerability)
                 success = self.registry_mgr.check_and_register_host(

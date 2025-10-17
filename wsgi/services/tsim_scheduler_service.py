@@ -80,10 +80,45 @@ class TsimSchedulerService:
         if self.execution_mode == 'parallel' and self.registry_mgr:
             try:
                 from services.tsim_quick_job_host_pool_service import TsimQuickJobHostPoolService
+
+                # Create callback function that returns running jobs from scheduler's internal state
+                def get_running_jobs():
+                    """Return list of running jobs from scheduler's internal state
+
+                    This is called from two contexts:
+                    1. From scheduler thread (with lock held) in _cleanup_completed_jobs()
+                    2. From Timer threads (no lock) in host_pool._cleanup_host()
+
+                    To avoid deadlock while maintaining thread safety, we use a snapshot
+                    of the running_jobs dict.
+                    """
+                    # Create snapshot to avoid holding lock during iteration
+                    # Use list() to create snapshot of items before iteration
+                    try:
+                        running_list = []
+                        # Make a shallow copy of dict items to avoid RuntimeError during iteration
+                        snapshot = list(self.running_jobs.items())
+                        for rid, info in snapshot:
+                            running_list.append({
+                                'run_id': rid,
+                                'username': info['job'].get('username'),
+                                'status': 'RUNNING',
+                                'type': info['type'],
+                                'dscp': info.get('dscp'),
+                                'started_at': info['started_at'],
+                                'params': info['job'].get('params', {})
+                            })
+                        return running_list
+                    except (RuntimeError, KeyError):
+                        # Dict changed during iteration - return empty list
+                        return []
+
                 self.host_pool = TsimQuickJobHostPoolService(
                     config_service,
                     self.registry_mgr,
-                    logger_service=None
+                    logger_service=None,
+                    queue_service=queue_service,
+                    get_running_jobs_fn=get_running_jobs
                 )
                 self.logger.info("Quick job host pool service initialized")
             except Exception as e:
@@ -190,7 +225,8 @@ class TsimSchedulerService:
                     params.get('port_protocol_list', []),
                     params.get('user_trace_data'),
                     params.get('analysis_mode', 'detailed'),
-                    params.get('dest_ports', '')
+                    params.get('dest_ports', ''),
+                    username=username
                 )
 
                 # Update current as running (for completeness)
@@ -480,7 +516,8 @@ class TsimSchedulerService:
                 params.get('dest_ports', ''),
                 job_dscp=dscp,
                 allocated_hosts=params.get('allocated_hosts'),
-                host_pool_managed=params.get('host_pool_managed', False)
+                host_pool_managed=params.get('host_pool_managed', False),
+                username=job.get('username')
             )
 
             # Log metrics if enabled

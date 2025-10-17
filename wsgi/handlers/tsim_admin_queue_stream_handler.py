@@ -12,11 +12,12 @@ from .tsim_base_handler import TsimBaseHandler
 
 
 class TsimAdminQueueStreamHandler(TsimBaseHandler):
-    def __init__(self, config_service, session_manager, logger_service, queue_service, lock_manager):
+    def __init__(self, config_service, session_manager, logger_service, queue_service, lock_manager, scheduler=None):
         super().__init__(session_manager, logger_service)
         self.config = config_service
         self.queue_service = queue_service
         self.lock_manager = lock_manager
+        self.scheduler = scheduler  # For accessing host pool
         self.logger = logging.getLogger('tsim.handler.admin_queue_stream')
 
     def handle(self, environ: Dict[str, Any], start_response) -> Generator[bytes, None, None]:
@@ -191,6 +192,9 @@ class TsimAdminQueueStreamHandler(TsimBaseHandler):
         running_list = [truncate_ports(j) for j in running_list]
         waiting_queue = [truncate_ports(j) for j in waiting_queue]
 
+        # Get current hosts from host pool and registry
+        current_hosts = self._get_current_hosts()
+
         # For backward compatibility, return first running job as 'running' (for single-job UI)
         return {
             'running': running_list[0] if running_list else None,
@@ -199,11 +203,95 @@ class TsimAdminQueueStreamHandler(TsimBaseHandler):
             'running_jobs': running_list,       # Legacy: for backward compatibility
             'queue': jobs,                      # Legacy: scheduler queue only
             'history': self._history(),
+            'current_hosts': current_hosts,     # New: active hosts with expiry info
             'locks': {
                 'scheduler_leader': self.lock_manager.is_locked('scheduler_leader'),
                 'network_test': self.lock_manager.is_locked('network_test')
             }
         }
+
+    def _get_current_hosts(self) -> List[Dict[str, Any]]:
+        """Get current active hosts with expiry information
+
+        Returns:
+            List of host dictionaries with registry info + expiry time
+        """
+        hosts_list = []
+
+        try:
+            # Get host pool status if available (from scheduler, not queue_service)
+            host_pool_status = {}
+            host_expiry_times = {}
+            active_hosts = {}  # Hosts currently in use by quick jobs (from host pool)
+            if self.scheduler and hasattr(self.scheduler, 'host_pool') and self.scheduler.host_pool:
+                pool_status = self.scheduler.host_pool.get_status()
+                host_expiry_times = pool_status.get('host_expiry_times', {})
+                active_hosts = pool_status.get('active_hosts', {})
+
+            # Check if there are any running detailed jobs
+            # Detailed jobs create their own hosts (not managed by host pool)
+            # If any detailed jobs are running, we should disable Remove for hosts not in pool
+            has_running_detailed_jobs = False
+            try:
+                running_jobs = self.queue_service.get_running()
+                if isinstance(running_jobs, list):
+                    for job in running_jobs:
+                        if not isinstance(job, dict):
+                            continue
+                        # Type field is guaranteed to be set to 'quick' or 'detailed'
+                        if job.get('type') == 'detailed':
+                            has_running_detailed_jobs = True
+                            break
+            except Exception as e:
+                self.logger.debug(f"Error checking for running detailed jobs: {e}")
+
+            # Read host registry
+            registry_files = self.config.get('registry_files', {})
+            host_registry_path = registry_files.get('hosts', '/dev/shm/tsim/host_registry.json')
+
+            import json
+            try:
+                with open(host_registry_path, 'r') as f:
+                    host_registry = json.load(f)
+            except Exception:
+                host_registry = {}
+
+            # Build list of hosts with combined info
+            current_time = time.time()
+            for host_name, host_info in host_registry.items():
+                # Check if host is currently in use by any jobs
+                # Quick jobs: check active_hosts from host pool (these are managed by host pool service)
+                # Detailed jobs: check if host is NOT in pool and there are running detailed jobs
+                #   (detailed jobs create their own hosts outside of pool)
+                in_host_pool = host_name in active_hosts
+                in_use_by_quick_job = in_host_pool and len(active_hosts[host_name]) > 0
+                in_use_by_detailed_job = (not in_host_pool) and has_running_detailed_jobs
+                in_use = in_use_by_quick_job or in_use_by_detailed_job
+
+                host_data = {
+                    'host_name': host_name,
+                    'connected_to': host_info.get('connected_to', ''),
+                    'primary_ip': host_info.get('primary_ip', ''),
+                    'created_at': host_info.get('created_at', ''),
+                    'created_by': host_info.get('created_by', ''),
+                    'expiry_seconds': None,  # Default to no expiry
+                    'in_use': in_use  # Flag indicating if host is being used by jobs (quick or detailed)
+                }
+
+                # Add expiry time if host is pending cleanup
+                # BUT: Don't show expiry if detailed jobs are running
+                # (all cleanup is paused during detailed job execution)
+                if host_name in host_expiry_times and not has_running_detailed_jobs:
+                    expiry_time = host_expiry_times[host_name]
+                    seconds_remaining = int(expiry_time - current_time)
+                    host_data['expiry_seconds'] = max(0, seconds_remaining)
+
+                hosts_list.append(host_data)
+
+        except Exception as e:
+            self.logger.debug(f"Error getting current hosts: {e}")
+
+        return hosts_list
 
     def _history(self) -> List[Dict[str, Any]]:
         out = []

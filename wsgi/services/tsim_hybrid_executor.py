@@ -571,17 +571,25 @@ class TsimHybridExecutor:
     
     def _execute_detailed_analysis(self, params: Dict[str, Any], results_dir: Path) -> Dict[str, Any]:
         """Execute detailed analysis using MultiServiceTester
-        
+
         Args:
             params: Test parameters
             results_dir: Results directory
-            
+
         Returns:
             Detailed analysis results
         """
         # Import the network reachability test module
         from scripts.network_reachability_test_multi import MultiServiceTester
-        
+
+        # Set TSIM_CREATOR_TAG environment variable so hosts are tagged correctly
+        # Extract username from params (added by scheduler)
+        username = params.get('username', 'unknown')
+        creator_tag = f"wsgi:{username}"
+        import os
+        os.environ['TSIM_CREATOR_TAG'] = creator_tag
+        self.logger.info(f"Set TSIM_CREATOR_TAG={creator_tag} for detailed analysis")
+
         # Initialize tester
         tester = MultiServiceTester(
             source_ip=params['source_ip'],

@@ -88,7 +88,10 @@ class TsimQueueService:
                     return idx + 1
 
             # Store analysis_mode in job metadata for parallel execution support
+            # IMPORTANT: Every job must have a type field set to 'quick' or 'detailed'
             analysis_mode = params.get('analysis_mode', 'detailed')
+            if analysis_mode not in ('quick', 'detailed'):
+                raise ValueError(f"Invalid analysis_mode '{analysis_mode}' - must be 'quick' or 'detailed'")
 
             jobs.append({
                 'run_id': run_id,
@@ -96,7 +99,8 @@ class TsimQueueService:
                 'created_at': time.time(),
                 'status': 'QUEUED',
                 'params': params,
-                'analysis_mode': analysis_mode,  # NEW: for parallel execution
+                'analysis_mode': analysis_mode,  # For backward compatibility
+                'type': analysis_mode,  # NEW: Always set type field explicitly
             })
             q['jobs'] = jobs
             q['updated_at'] = time.time()

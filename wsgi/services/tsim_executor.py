@@ -64,7 +64,7 @@ class TsimExecutor:
                 user_trace_data: Optional[str] = None, analysis_mode: str = 'detailed',
                 dest_ports: Optional[str] = None, job_dscp: Optional[int] = None,
                 allocated_hosts: Optional[Dict[str, Dict]] = None,
-                host_pool_managed: bool = False) -> Dict[str, Any]:
+                host_pool_managed: bool = False, username: Optional[str] = None) -> Dict[str, Any]:
         """Execute complete test pipeline using hybrid executor
 
         Args:
@@ -79,6 +79,7 @@ class TsimExecutor:
             job_dscp: Optional pre-allocated DSCP value for quick analysis
             allocated_hosts: Optional pre-allocated hosts from host pool service
             host_pool_managed: Flag indicating hosts are managed by host pool
+            username: Username who submitted the job (for creator tagging)
 
         Returns:
             Dictionary with execution results
@@ -106,6 +107,10 @@ class TsimExecutor:
                 'services': [{'port': port, 'protocol': protocol} for port, protocol in port_protocol_list]
             }
         }
+
+        # Add username if provided (for creator tagging of hosts)
+        if username:
+            params['username'] = username
 
         # Add DSCP if provided (for quick analysis jobs)
         if job_dscp is not None:

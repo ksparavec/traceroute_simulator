@@ -24,6 +24,7 @@ from handlers.tsim_cleanup_handler import TsimCleanupHandler
 from handlers.tsim_queue_admin_handler import TsimQueueAdminHandler
 from handlers.tsim_job_details_handler import TsimJobDetailsHandler
 from handlers.tsim_admin_queue_stream_handler import TsimAdminQueueStreamHandler
+from handlers.tsim_admin_host_remove_handler import TsimAdminHostRemoveHandler
 
 # All services are already preloaded in app.wsgi
 from services.tsim_session_manager import TsimSessionManager
@@ -43,7 +44,7 @@ class TsimWSGIApp:
     
     def __init__(self):
         """Initialize shared services once at startup
-        
+
         PERFORMANCE NOTE: All service classes are already loaded in memory
         from app.wsgi preloading. This just instantiates them.
         """
@@ -86,7 +87,7 @@ class TsimWSGIApp:
                                         self.progress_tracker, self.hybrid_executor, self.queue_service,
                                         self.lock_manager),
                 '/pdf': TsimPDFHandler(self.config, self.session_manager, self.logger_service),
-                '/progress': TsimProgressHandler(self.config, self.session_manager, self.logger_service, 
+                '/progress': TsimProgressHandler(self.config, self.session_manager, self.logger_service,
                                                 self.progress_tracker, self.queue_service),
                 '/progress-stream': TsimProgressStreamHandler(self.config, self.session_manager, self.logger_service,
                                                              self.progress_tracker, self.queue_service),
@@ -96,7 +97,9 @@ class TsimWSGIApp:
                                                      self.queue_service, self.lock_manager),
                 '/admin-job': TsimJobDetailsHandler(self.config, self.session_manager, self.logger_service),
                 '/admin-queue-stream': TsimAdminQueueStreamHandler(self.config, self.session_manager, self.logger_service,
-                                                                   self.queue_service, self.lock_manager),
+                                                                   self.queue_service, self.lock_manager, self.scheduler),
+                '/admin-host-remove': TsimAdminHostRemoveHandler(self.config, self.session_manager, self.logger_service,
+                                                                 self.scheduler),
             }
             
             self.logger.info(f"Initialized {len(self.handlers)} request handlers")
@@ -349,4 +352,6 @@ class TsimWSGIApp:
 
 # Expose a module-level WSGI callable for local testing tools
 # Example: python3 -m wsgiref.simple_server tsim_app:application 8000
-application = TsimWSGIApp()
+# NOTE: Only create instance when running directly, not when imported by app.wsgi
+if __name__ == '__main__':
+    application = TsimWSGIApp()

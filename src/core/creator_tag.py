@@ -22,6 +22,9 @@ from typing import Optional
 class CreatorTagManager:
     """Manages creator tag detection and formatting"""
 
+    # Environment variable for pre-computed creator tag (passed to subprocesses)
+    ENV_CREATOR_TAG = 'TSIM_CREATOR_TAG'
+
     # Environment variable for WSGI to set logged-in username
     ENV_WSGI_USERNAME = 'TSIM_WSGI_USERNAME'
 
@@ -36,9 +39,14 @@ class CreatorTagManager:
         """Auto-detect and return creator tag in format 'method:username'.
 
         Detection logic:
-        1. Detect execution context (WSGI, API, or CLI)
-        2. Get username from appropriate source
-        3. Format as 'method:username'
+        1. Check for pre-computed tag (TSIM_CREATOR_TAG) - used for subprocesses
+        2. Detect execution context (WSGI, API, or CLI)
+        3. Get username from appropriate source
+        4. Format as 'method:username'
+
+        Pre-computed tag:
+        - If TSIM_CREATOR_TAG is set, return it directly
+        - Used when parent process passes creator tag to subprocess
 
         WSGI detection:
         - Checks for mod_wsgi environment variables
@@ -57,6 +65,11 @@ class CreatorTagManager:
             Creator tag string (e.g., 'wsgi:bob', 'cli:alice')
             Never returns None - always provides a tag
         """
+        # Check for pre-computed tag first (passed from parent process)
+        precomputed_tag = os.environ.get(CreatorTagManager.ENV_CREATOR_TAG)
+        if precomputed_tag:
+            return precomputed_tag
+
         method, username = CreatorTagManager._detect_context()
         return f"{method}:{username}"
 

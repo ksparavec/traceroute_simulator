@@ -511,12 +511,16 @@ class IntegrationTester:
         results = []
 
         if parallel:
-            # Submit all jobs in parallel
+            # Submit jobs with 1 second delay between each to preserve queue order
+            # This prevents the scheduler from reordering jobs that arrive at the same time
             with ThreadPoolExecutor(max_workers=len(jobs)) as executor:
-                futures = {
-                    executor.submit(self.submit_job, i, job): i
-                    for i, job in enumerate(jobs)
-                }
+                futures = {}
+                for i, job in enumerate(jobs):
+                    # Add 1 second delay before submitting next job
+                    if i > 0:
+                        time.sleep(1)
+                    future = executor.submit(self.submit_job, i, job)
+                    futures[future] = i
 
                 for future in as_completed(futures):
                     job_id = futures[future]

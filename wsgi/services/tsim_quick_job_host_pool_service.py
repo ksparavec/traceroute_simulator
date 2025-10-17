@@ -28,6 +28,8 @@ from pathlib import Path
 from typing import Dict, List, Any, Optional, Set, Tuple
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
+from tsim.core.creator_tag import CreatorTagManager
+
 
 def tsimsh_exec(command: str, capture_output: bool = False, verbose: int = 0, env: dict = None) -> Optional[str]:
     """Execute tsimsh command (copied exactly from MultiServiceTester pattern)"""
@@ -37,6 +39,11 @@ def tsimsh_exec(command: str, capture_output: bool = False, verbose: int = 0, en
     cmd = [tsimsh_path, "-q"]
 
     try:
+        # Debug environment variable
+        if verbose > 2 and env:
+            creator_tag_val = env.get('TSIM_CREATOR_TAG', 'NOT SET')
+            print(f"[DEBUG] TSIM_CREATOR_TAG in env: {creator_tag_val}", file=sys.stderr)
+
         result = subprocess.run(
             cmd,
             input=command,
@@ -70,16 +77,20 @@ def tsimsh_exec(command: str, capture_output: bool = False, verbose: int = 0, en
 class TsimQuickJobHostPoolService:
     """Manages source hosts for parallel quick job execution"""
 
-    def __init__(self, config_service, registry_manager, logger_service=None):
+    def __init__(self, config_service, registry_manager, logger_service=None, queue_service=None, get_running_jobs_fn=None):
         """Initialize host pool service
 
         Args:
             config_service: TsimConfigService instance
             registry_manager: TsimRegistryManager instance for atomic operations
             logger_service: Optional TsimLoggerService instance
+            queue_service: Optional TsimQueueService instance (for checking running jobs)
+            get_running_jobs_fn: Optional callable that returns list of running jobs
         """
         self.config = config_service
         self.registry_mgr = registry_manager
+        self.queue_service = queue_service
+        self.get_running_jobs_fn = get_running_jobs_fn
         self.logger = logging.getLogger('tsim.host_pool')
 
         # Track which jobs are using which hosts
@@ -89,6 +100,14 @@ class TsimQuickJobHostPoolService:
         # Track cleanup timers for hosts with zero refcount
         # Structure: {host_name: threading.Timer}
         self.cleanup_timers = {}
+
+        # Track expiry timestamps for hosts pending cleanup
+        # Structure: {host_name: expiry_timestamp}
+        self.host_expiry_times = {}
+
+        # Track hosts whose cleanup is paused due to running detailed jobs
+        # Structure: set(host_name1, host_name2, ...)
+        self.paused_for_detailed_jobs = set()
 
         # Lock for thread-safe operations
         self.lock = threading.Lock()
@@ -169,7 +188,7 @@ class TsimQuickJobHostPoolService:
 
             # PHASE 3: Create all required hosts atomically
             self.logger.info("Phase 3: Creating all hosts atomically")
-            created_hosts = self._create_hosts_atomic(host_requirements)
+            created_hosts = self._create_hosts_atomic(host_requirements, job_list)
 
             # PHASE 4: Update reference counts for all jobs
             self.logger.info("Phase 4: Registering host usage for all jobs")
@@ -185,6 +204,10 @@ class TsimQuickJobHostPoolService:
                             self.cleanup_timers[host_name].cancel()
                             del self.cleanup_timers[host_name]
                             self.logger.debug(f"Cancelled cleanup timer for {host_name} (reused by {job_id})")
+
+                        # Clear expiry time since host is back in use
+                        if host_name in self.host_expiry_times:
+                            del self.host_expiry_times[host_name]
 
             # PHASE 5: Launch all KSMS testers in parallel
             self.logger.info("Phase 5: Launching all KSMS testers")
@@ -443,7 +466,8 @@ class TsimQuickJobHostPoolService:
 
         return host_requirements
 
-    def _create_hosts_atomic(self, host_requirements: Dict[str, Dict[str, Dict[str, str]]]) -> Set[str]:
+    def _create_hosts_atomic(self, host_requirements: Dict[str, Dict[str, Dict[str, str]]],
+                             job_list: List[Dict[str, Any]]) -> Set[str]:
         """Create all required hosts atomically
 
         This creates hosts in order, using atomic registry operations to prevent conflicts.
@@ -477,6 +501,12 @@ class TsimQuickJobHostPoolService:
         created_hosts = set()
         reused_hosts = set()
 
+        # Get creator tag from job params (more reliable than environment variables in threads)
+        # All jobs in batch should have same username, so use first job
+        username = job_list[0].get('username', 'unknown')
+        creator_tag = f"wsgi:{username}"
+        self.logger.info(f"Creating hosts with creator tag: {creator_tag} (username from job params)")
+
         for host_name, host_info in sorted(all_hosts.items()):
             ip = host_info['ip']
             router = host_info['router']
@@ -486,10 +516,15 @@ class TsimQuickJobHostPoolService:
                 # Create host using tsimsh (which handles registry internally)
                 self.logger.info(f"Creating host {host_name} on {router} (used by {len(jobs)} jobs)")
 
+                # Set environment with creator tag so subprocess can use it
+                env = os.environ.copy()
+                env['TSIM_CREATOR_TAG'] = creator_tag
+                self.logger.info(f"Passing TSIM_CREATOR_TAG={creator_tag} to subprocess for {host_name}")
+
                 # Use exact same method as KSMS service
                 result = tsimsh_exec(
                     f"host add --name {host_name} --primary-ip {ip}/24 --connect-to {router} --no-delay",
-                    capture_output=True, verbose=2
+                    capture_output=True, verbose=3, env=env
                 )
 
                 if result is None:
@@ -531,39 +566,166 @@ class TsimQuickJobHostPoolService:
 
                     if len(self.host_refcounts[host_name]) == 0:
                         # No more jobs using this host - schedule cleanup
-                        self.logger.info(f"Host {host_name} no longer in use, scheduling cleanup in {self.cleanup_grace_period}s")
+                        # But check if detailed jobs are running first
+                        if self._has_running_detailed_jobs():
+                            # Detailed jobs running - pause immediately, don't set expiry
+                            self.logger.info(f"Host {host_name} no longer in use, but detailed jobs running - pausing")
+                            self.paused_for_detailed_jobs.add(host_name)
 
-                        timer = threading.Timer(
-                            self.cleanup_grace_period,
-                            self._cleanup_host,
-                            args=(host_name,)
-                        )
-                        timer.daemon = True
-                        timer.start()
+                            # Schedule short check (10s) instead of full grace period
+                            timer = threading.Timer(10.0, self._cleanup_host, args=(host_name,))
+                            timer.daemon = True
+                            timer.start()
+                            self.cleanup_timers[host_name] = timer
+                            # Don't set expiry_time - will show N/A in admin interface
+                        else:
+                            # No detailed jobs - normal grace period
+                            self.logger.info(f"Host {host_name} no longer in use, scheduling cleanup in {self.cleanup_grace_period}s")
 
-                        self.cleanup_timers[host_name] = timer
+                            # Calculate and record expiry timestamp
+                            expiry_time = time.time() + self.cleanup_grace_period
+                            self.host_expiry_times[host_name] = expiry_time
+
+                            # Schedule periodic checks (every 10s) instead of waiting full grace period
+                            # This ensures we detect detailed jobs that start during the grace period
+                            timer = threading.Timer(10.0, self._cleanup_host, args=(host_name,))
+                            timer.daemon = True
+                            timer.start()
+
+                            self.cleanup_timers[host_name] = timer
                     else:
                         # Still in use by other jobs
                         remaining_jobs = len(self.host_refcounts[host_name])
                         self.logger.debug(f"Host {host_name} still in use by {remaining_jobs} job(s)")
 
+    def _has_running_detailed_jobs(self) -> bool:
+        """Check if any detailed jobs are currently running
+
+        Returns:
+            True if any detailed jobs are running
+        """
+        # Prefer callback function (more reliable than reading from queue file)
+        if self.get_running_jobs_fn:
+            try:
+                running_jobs = self.get_running_jobs_fn()
+                self.logger.debug(f"Checking running jobs (via callback): {len(running_jobs) if isinstance(running_jobs, list) else 'not a list'}")
+                if isinstance(running_jobs, list):
+                    detailed_count = 0
+                    for job in running_jobs:
+                        if not isinstance(job, dict):
+                            continue
+                        # Type field is guaranteed to be set to 'quick' or 'detailed'
+                        if job.get('type') == 'detailed':
+                            detailed_count += 1
+                    if detailed_count > 0:
+                        self.logger.debug(f"Found {detailed_count} running detailed job(s)")
+                        return True
+                self.logger.debug("No running detailed jobs found (via callback)")
+                return False
+            except Exception as e:
+                self.logger.warning(f"Error checking for detailed jobs via callback: {e}")
+                return False
+
+        # Fallback to queue_service
+        if not self.queue_service:
+            self.logger.debug("No queue_service or callback available for checking detailed jobs")
+            return False
+
+        try:
+            running_jobs = self.queue_service.get_running()
+            self.logger.debug(f"Checking running jobs (via queue_service): {running_jobs}")
+            if isinstance(running_jobs, list):
+                detailed_count = 0
+                for job in running_jobs:
+                    if not isinstance(job, dict):
+                        continue
+                    # Type field is guaranteed to be set to 'quick' or 'detailed'
+                    if job.get('type') == 'detailed':
+                        detailed_count += 1
+                if detailed_count > 0:
+                    self.logger.debug(f"Found {detailed_count} running detailed job(s)")
+                    return True
+            self.logger.debug("No running detailed jobs found (via queue_service)")
+            return False
+        except Exception as e:
+            self.logger.warning(f"Error checking for detailed jobs via queue_service: {e}")
+            return False
+
     def _cleanup_host(self, host_name: str) -> None:
         """Remove host after grace period expires
+
+        This is called periodically (every 10s) to check if:
+        1. Detailed jobs started (if so, pause)
+        2. Grace period expired (if so, clean up)
 
         Args:
             host_name: Name of host to clean up
         """
+        # Check if detailed jobs are running - if so, reschedule cleanup
+        # This prevents deletion of hosts that detailed jobs might be using
+        if self._has_running_detailed_jobs():
+            with self.lock:
+                # Mark as paused if not already
+                if host_name not in self.paused_for_detailed_jobs:
+                    self.logger.info(f"Detailed jobs running, pausing cleanup for {host_name}")
+                    self.paused_for_detailed_jobs.add(host_name)
+
+                # Schedule another check in 10 seconds
+                timer = threading.Timer(10.0, self._cleanup_host, args=(host_name,))
+                timer.daemon = True
+                timer.start()
+                self.cleanup_timers[host_name] = timer
+
+                # Remove expiry time so admin interface shows N/A (paused)
+                if host_name in self.host_expiry_times:
+                    del self.host_expiry_times[host_name]
+            return
+
+        # No detailed jobs running - check if this host was paused
         with self.lock:
+            was_paused = host_name in self.paused_for_detailed_jobs
+            if was_paused:
+                # Detailed jobs finished - restart grace period from beginning
+                self.logger.info(f"Detailed jobs finished, restarting grace period for {host_name} ({self.cleanup_grace_period}s)")
+                self.paused_for_detailed_jobs.remove(host_name)
+
+                # Schedule cleanup with full grace period
+                expiry_time = time.time() + self.cleanup_grace_period
+                self.host_expiry_times[host_name] = expiry_time
+
+                # Continue periodic checks every 10s
+                timer = threading.Timer(10.0, self._cleanup_host, args=(host_name,))
+                timer.daemon = True
+                timer.start()
+                self.cleanup_timers[host_name] = timer
+                return
+
             # Double-check refcount (might have been reused during grace period)
             if host_name in self.host_refcounts and len(self.host_refcounts[host_name]) > 0:
                 self.logger.info(f"Host {host_name} was reused during grace period, skipping cleanup")
                 return
+
+            # Check if grace period has expired
+            if host_name in self.host_expiry_times:
+                expiry_time = self.host_expiry_times[host_name]
+                time_remaining = expiry_time - time.time()
+                if time_remaining > 1.0:
+                    # Grace period not expired yet - schedule another check
+                    self.logger.debug(f"Host {host_name} grace period not expired, {int(time_remaining)}s remaining")
+                    timer = threading.Timer(10.0, self._cleanup_host, args=(host_name,))
+                    timer.daemon = True
+                    timer.start()
+                    self.cleanup_timers[host_name] = timer
+                    return
+                # Grace period expired - proceed with cleanup below
 
             # Remove from tracking
             if host_name in self.host_refcounts:
                 del self.host_refcounts[host_name]
             if host_name in self.cleanup_timers:
                 del self.cleanup_timers[host_name]
+            if host_name in self.host_expiry_times:
+                del self.host_expiry_times[host_name]
 
         # Remove physical host using exact same method as KSMS service
         self.logger.info(f"Cleaning up unused host {host_name}")
@@ -595,7 +757,10 @@ class TsimQuickJobHostPoolService:
         """Get current status of host pool
 
         Returns:
-            Dictionary with status information
+            Dictionary with status information including:
+            - active_hosts: dict of {host_name: [job_ids]}
+            - cleanup_pending: list of host names pending cleanup
+            - host_expiry_times: dict of {host_name: expiry_timestamp}
         """
         with self.lock:
             active_hosts = {
@@ -606,9 +771,90 @@ class TsimQuickJobHostPoolService:
 
             cleanup_pending = list(self.cleanup_timers.keys())
 
+            # Copy expiry times for hosts pending cleanup
+            expiry_times = dict(self.host_expiry_times)
+
         return {
             'active_hosts': active_hosts,
             'active_host_count': len(active_hosts),
             'cleanup_pending': cleanup_pending,
-            'cleanup_pending_count': len(cleanup_pending)
+            'cleanup_pending_count': len(cleanup_pending),
+            'host_expiry_times': expiry_times
         }
+
+    def remove_host_manual(self, host_name: str) -> Dict[str, Any]:
+        """Manually remove a host (admin operation)
+
+        This allows admins to manually remove hosts from the pool.
+        Host can only be removed if it's not currently in use by any jobs.
+
+        Args:
+            host_name: Name of host to remove
+
+        Returns:
+            Dictionary with 'success' (bool) and 'message' (str) keys
+        """
+        with self.lock:
+            # Check if host is currently in use
+            if host_name in self.host_refcounts and len(self.host_refcounts[host_name]) > 0:
+                active_jobs = list(self.host_refcounts[host_name])
+                return {
+                    'success': False,
+                    'message': f'Host {host_name} is currently in use by {len(active_jobs)} job(s): {", ".join(active_jobs)}'
+                }
+
+            # Cancel cleanup timer if exists
+            if host_name in self.cleanup_timers:
+                timer = self.cleanup_timers[host_name]
+                timer.cancel()
+                del self.cleanup_timers[host_name]
+                self.logger.info(f"Cancelled cleanup timer for {host_name} (manual removal)")
+
+            # Remove from tracking
+            if host_name in self.host_refcounts:
+                del self.host_refcounts[host_name]
+            if host_name in self.host_expiry_times:
+                del self.host_expiry_times[host_name]
+            if host_name in self.paused_for_detailed_jobs:
+                self.paused_for_detailed_jobs.remove(host_name)
+
+        # Remove physical host using tsimsh (outside lock)
+        self.logger.info(f"Manually removing host {host_name}")
+
+        result = tsimsh_exec(
+            f"host remove --name {host_name} --force",
+            capture_output=True, verbose=1
+        )
+
+        if result is None:
+            return {
+                'success': False,
+                'message': f'Failed to execute removal command for {host_name}'
+            }
+
+        if 'successfully removed' in result.lower() or 'removed successfully' in result.lower():
+            self.logger.info(f"Successfully removed host {host_name}")
+
+            # Unregister from registry
+            try:
+                self.registry_mgr.unregister_host(host_name)
+                self.logger.debug(f"Unregistered {host_name} from registry")
+            except Exception as unreg_error:
+                self.logger.warning(f"Failed to unregister {host_name} from registry: {unreg_error}")
+
+            return {
+                'success': True,
+                'message': f'Host {host_name} removed successfully'
+            }
+        elif 'error' in result.lower() or 'failed' in result.lower():
+            self.logger.error(f"Error removing {host_name}: {result[:200]}")
+            return {
+                'success': False,
+                'message': f'Error removing host: {result[:100]}'
+            }
+        else:
+            self.logger.warning(f"Uncertain status removing {host_name}: {result[:100]}")
+            return {
+                'success': False,
+                'message': f'Uncertain removal status: {result[:100]}'
+            }
